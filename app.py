@@ -31,6 +31,25 @@ app.register_blueprint(user_auth_bp)
 app.register_blueprint(api_auth_bp)
 app.register_blueprint(monitor_bp)
 
+# ========== 自動初始化資料庫 ==========
+# 在應用啟動時自動初始化資料庫（適用於 Render 等生產環境）
+# 使用 before_request 但只執行一次
+_database_initialized = False
+
+@app.before_request
+def initialize_database():
+    """在首次請求前初始化資料庫"""
+    global _database_initialized
+    if not _database_initialized:
+        try:
+            init_database()
+            print("✅ 資料庫自動初始化完成")
+            _database_initialized = True
+        except Exception as e:
+            print(f"⚠️  資料庫初始化失敗: {e}")
+            # 不阻止應用啟動，讓用戶可以訪問錯誤頁面
+            _database_initialized = True  # 標記為已嘗試，避免重複嘗試
+
 
 # ========== 登入驗證裝飾器 ==========
 def login_required(f):
