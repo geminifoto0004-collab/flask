@@ -131,11 +131,10 @@ class EmailConfig:
     if not SMTP_PASSWORD:
         SMTP_PASSWORD = 'pczr wlzh uxxl ozot'  # 👈 改為你的 Gmail 應用密碼（16位，原本文檔中的格式）
     
-    # 注意：Gmail 應用密碼可能需要保留空格，或者去掉空格
-    # 如果認證失敗，請嘗試：
-    # 1. 保留空格：'pczr wlzh uxxl ozot'
-    # 2. 去掉空格：'pczrwlzhuxxlozot'
-    # 根據實際情況選擇
+    # Gmail 應用密碼處理：保留原始格式（在發送郵件時會自動嘗試兩種格式：去掉空格和保留空格）
+    # 這樣可以兼容兩種情況：
+    # 1. 如果密碼是 'pczr wlzh uxxl ozot'（帶空格），會先嘗試 'pczrwlzhuxxlozot'（去掉空格）
+    # 2. 如果去掉空格失敗，會再嘗試保留空格的原始格式
     
     # 如果仍未設置，發出警告
     if not SMTP_EMAIL or not SMTP_PASSWORD or SMTP_EMAIL == 'your@gmail.com' or SMTP_PASSWORD == 'your-app-password':

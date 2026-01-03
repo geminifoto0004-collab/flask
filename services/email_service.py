@@ -157,19 +157,66 @@ def send_email(to_email, subject, html_content):
         # 連接 SMTP 服務器（設置超時，避免在 Render 上卡住）
         # 超時設置：10 秒（適用於所有 SMTP 操作）
         # 根據端口選擇連接方式：465 使用 SSL，587 使用 STARTTLS
+        print(f"[SMTP] 嘗試連接到 {email_config.SMTP_SERVER}:{email_config.SMTP_PORT}")
+        
         if email_config.SMTP_PORT == 465:
             # 使用 SSL 連接（端口 465）
+            print("[SMTP] 使用 SSL 連接（端口 465）")
             server = smtplib.SMTP_SSL(email_config.SMTP_SERVER, email_config.SMTP_PORT, timeout=10)
             server.set_debuglevel(0)  # 關閉調試輸出
         else:
             # 使用普通連接然後啟動 TLS（端口 587）
+            print("[SMTP] 使用 STARTTLS 連接（端口 587）")
             server = smtplib.SMTP(email_config.SMTP_SERVER, email_config.SMTP_PORT, timeout=10)
             server.set_debuglevel(0)  # 關閉調試輸出
             # 啟動 TLS
             server.starttls()
         
-        # 登入（設置超時）
-        server.login(email_config.SMTP_EMAIL, email_config.SMTP_PASSWORD)
+        print(f"[SMTP] 連接成功，嘗試登入: {email_config.SMTP_EMAIL}")
+        
+        # 登入（自動嘗試兩種密碼格式：去掉空格和保留空格）
+        password_original = email_config.SMTP_PASSWORD
+        login_success = False
+        last_error = None
+        
+        # 準備兩種密碼格式
+        if ' ' in password_original:
+            # 如果密碼包含空格，準備兩種格式
+            password_no_space = password_original.replace(' ', '')
+            passwords_to_try = [
+                (password_no_space, f"去掉空格（長度: {len(password_no_space)}）"),
+                (password_original, f"保留空格（長度: {len(password_original)}）")
+            ]
+        else:
+            # 如果密碼沒有空格，也嘗試添加空格（如果長度是 16，可能是 Gmail 應用密碼）
+            if len(password_original) == 16:
+                # 嘗試添加空格：每 4 個字符加一個空格
+                password_with_space = ' '.join([password_original[i:i+4] for i in range(0, len(password_original), 4)])
+                passwords_to_try = [
+                    (password_original, f"原始格式（長度: {len(password_original)}）"),
+                    (password_with_space, f"添加空格（長度: {len(password_with_space)}）")
+                ]
+            else:
+                # 長度不是 16，直接使用原始密碼
+                passwords_to_try = [(password_original, f"原始格式（長度: {len(password_original)}）")]
+        
+        # 嘗試每種密碼格式
+        for password, description in passwords_to_try:
+            try:
+                print(f"[SMTP] 嘗試登入 - {description}")
+                server.login(email_config.SMTP_EMAIL, password)
+                login_success = True
+                print(f"[SMTP] 登入成功 - {description}")
+                break
+            except smtplib.SMTPAuthenticationError as e:
+                last_error = e
+                print(f"[SMTP] 登入失敗 - {description}: {str(e)}")
+                # 繼續嘗試下一種格式
+                continue
+        
+        if not login_success:
+            # 所有格式都失敗，拋出最後的錯誤
+            raise last_error or smtplib.SMTPAuthenticationError("所有密碼格式都失敗")
         
         # 發送郵件
         server.send_message(msg)
@@ -192,8 +239,9 @@ def send_email(to_email, subject, html_content):
         if 'timeout' in error_str or 'timed out' in error_str:
             return False, "SMTP 連接超時: 請檢查網絡連接或稍後再試"
         elif 'network is unreachable' in error_str or '101' in error_code:
-            # Render 可能無法訪問 Gmail SMTP，提供解決方案
-            return False, "SMTP 網絡不可達: Render 可能無法訪問 Gmail SMTP 服務器。\n💡 解決方案：\n1. 檢查 Render 的網絡設置\n2. 嘗試使用其他 SMTP 服務（如 SendGrid、Mailgun）\n3. 或使用 Render 的環境變數配置 SMTP"
+            # 網絡不可達錯誤，可能是 DNS 解析或網絡配置問題
+            # 提供詳細的調試信息
+            return False, f"SMTP 網絡不可達: {str(e)}\n💡 請檢查：\n1. SMTP 服務器地址是否正確: {email_config.SMTP_SERVER}\n2. 端口是否正確: {email_config.SMTP_PORT}\n3. Render 網絡設置是否允許出站連接\n4. 嘗試使用端口 465 (SSL) 或 587 (STARTTLS)"
         elif 'connection refused' in error_str or '111' in error_code:
             return False, "SMTP 連接被拒絕: 請檢查 SMTP 服務器地址和端口是否正確"
         else:
