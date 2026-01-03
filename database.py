@@ -154,7 +154,7 @@ def get_db_connection():
             # TiDB Cloud 要求 SSL 連接，自動啟用 SSL
             # 如果 host 包含 tidbcloud.com，自動啟用 SSL
             if 'tidbcloud.com' in db_config.get('host', '').lower():
-                db_config['ssl'] = {"ssl": True}
+                db_config['ssl'] = {'check_hostname': False}
             
             # MySQL/TiDB 連接
             conn = pymysql.connect(**db_config)

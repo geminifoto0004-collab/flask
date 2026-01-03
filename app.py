@@ -12,7 +12,7 @@ from utils.time_utils import get_chile_time_naive
 
 # 導入配置和資料庫
 from config import config, admin_config, license_config, feature_flags
-from database import get_db_connection, init_database, get_lastrowid
+from database import get_db_connection, init_database, get_lastrowid, get_cursor
 
 # 導入 Blueprint
 from blueprints.user_auth_bp import user_auth_bp
@@ -170,31 +170,52 @@ def login():
             print("Super Admin登入成功！")
             session['logged_in'] = True
             # 從數據庫獲取超級管理員的實際 user_id，如果不存在則創建
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute('SELECT id, company_name FROM users WHERE email = ?', (admin_config.SUPER_ADMIN_EMAIL,))
-            user_row = cursor.fetchone()
-            
-            if user_row:
-                # 如果數據庫中已有，使用數據庫的ID和公司名稱
-                session['user_id'] = user_row[0]
-                session['company_name'] = user_row[1] if len(user_row) > 1 and user_row[1] else None
-            else:
-                # 如果數據庫中沒有，自動創建超級管理員用戶
-                print("⚠️ 數據庫中沒有超級管理員，正在創建...")
-                from services.user_service import hash_password
-                password_hash = hash_password(admin_config.SUPER_ADMIN_PASSWORD)
-                cursor.execute('''
-                    INSERT INTO users (username, email, password_hash, role, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (admin_config.SUPER_ADMIN_USERNAME, admin_config.SUPER_ADMIN_EMAIL, 
-                      password_hash, admin_config.SUPER_ADMIN_ROLE, get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')))
-                session['user_id'] = get_lastrowid(cursor, conn)
-                conn.commit()
-                print(f"✅ 超級管理員創建成功，user_id={session['user_id']}")
-                session['company_name'] = None  # 新創建的用戶沒有公司名稱
-            
-            conn.close()
+            conn = None
+            try:
+                conn = get_db_connection()
+                cursor = get_cursor(conn)  # 使用 get_cursor 以支持不同數據庫類型
+                cursor.execute('SELECT id, company_name FROM users WHERE email = ?', (admin_config.SUPER_ADMIN_EMAIL,))
+                user_row = cursor.fetchone()
+                
+                if user_row:
+                    # 如果數據庫中已有，使用數據庫的ID和公司名稱
+                    # 處理不同數據庫返回格式：SQLite 返回元組，MySQL/TiDB 返回字典
+                    if isinstance(user_row, dict):
+                        session['user_id'] = user_row['id']
+                        session['company_name'] = user_row.get('company_name')
+                    else:
+                        session['user_id'] = user_row[0]
+                        session['company_name'] = user_row[1] if len(user_row) > 1 and user_row[1] else None
+                else:
+                    # 如果數據庫中沒有，自動創建超級管理員用戶
+                    print("⚠️ 數據庫中沒有超級管理員，正在創建...")
+                    from services.user_service import hash_password
+                    password_hash = hash_password(admin_config.SUPER_ADMIN_PASSWORD)
+                    cursor.execute('''
+                        INSERT INTO users (username, email, password_hash, role, created_at)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (admin_config.SUPER_ADMIN_USERNAME, admin_config.SUPER_ADMIN_EMAIL, 
+                          password_hash, admin_config.SUPER_ADMIN_ROLE, get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')))
+                    session['user_id'] = get_lastrowid(cursor, conn)
+                    conn.commit()
+                    print(f"✅ 超級管理員創建成功，user_id={session['user_id']}")
+                    session['company_name'] = None  # 新創建的用戶沒有公司名稱
+                
+                if conn:
+                    conn.close()
+            except Exception as e:
+                import traceback
+                print(f"❌ 數據庫操作失敗: {e}")
+                print(f"   詳細錯誤: {traceback.format_exc()}")
+                # 如果數據庫操作失敗，仍然允許登入（使用默認值）
+                if 'user_id' not in session:
+                    session['user_id'] = None  # 臨時設置，後續可能需要處理
+                if conn:
+                    try:
+                        conn.close()
+                    except:
+                        pass
+                # 繼續執行，不阻止登入
             session['username'] = admin_config.SUPER_ADMIN_USERNAME
             session['email'] = admin_config.SUPER_ADMIN_EMAIL
             session['role'] = admin_config.SUPER_ADMIN_ROLE
