@@ -156,11 +156,17 @@ def send_email(to_email, subject, html_content):
         
         # 連接 SMTP 服務器（設置超時，避免在 Render 上卡住）
         # 超時設置：10 秒（適用於所有 SMTP 操作）
-        server = smtplib.SMTP(email_config.SMTP_SERVER, email_config.SMTP_PORT, timeout=10)
-        server.set_debuglevel(0)  # 關閉調試輸出
-        
-        # 啟動 TLS
-        server.starttls()
+        # 根據端口選擇連接方式：465 使用 SSL，587 使用 STARTTLS
+        if email_config.SMTP_PORT == 465:
+            # 使用 SSL 連接（端口 465）
+            server = smtplib.SMTP_SSL(email_config.SMTP_SERVER, email_config.SMTP_PORT, timeout=10)
+            server.set_debuglevel(0)  # 關閉調試輸出
+        else:
+            # 使用普通連接然後啟動 TLS（端口 587）
+            server = smtplib.SMTP(email_config.SMTP_SERVER, email_config.SMTP_PORT, timeout=10)
+            server.set_debuglevel(0)  # 關閉調試輸出
+            # 啟動 TLS
+            server.starttls()
         
         # 登入（設置超時）
         server.login(email_config.SMTP_EMAIL, email_config.SMTP_PASSWORD)
@@ -181,9 +187,17 @@ def send_email(to_email, subject, html_content):
     except (TimeoutError, OSError) as e:
         # 捕獲超時和網絡錯誤
         error_str = str(e).lower()
+        error_code = str(e)
+        
         if 'timeout' in error_str or 'timed out' in error_str:
             return False, "SMTP 連接超時: 請檢查網絡連接或稍後再試"
-        return False, f"SMTP 連接錯誤: {str(e)}"
+        elif 'network is unreachable' in error_str or '101' in error_code:
+            # Render 可能無法訪問 Gmail SMTP，提供解決方案
+            return False, "SMTP 網絡不可達: Render 可能無法訪問 Gmail SMTP 服務器。\n💡 解決方案：\n1. 檢查 Render 的網絡設置\n2. 嘗試使用其他 SMTP 服務（如 SendGrid、Mailgun）\n3. 或使用 Render 的環境變數配置 SMTP"
+        elif 'connection refused' in error_str or '111' in error_code:
+            return False, "SMTP 連接被拒絕: 請檢查 SMTP 服務器地址和端口是否正確"
+        else:
+            return False, f"SMTP 連接錯誤: {str(e)}"
     except smtplib.SMTPException as e:
         return False, f"郵件發送失敗: {str(e)}"
     except Exception as e:
