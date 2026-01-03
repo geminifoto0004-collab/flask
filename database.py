@@ -219,6 +219,17 @@ def get_text_type_with_default():
     else:
         return 'TEXT'  # SQLite 和 PostgreSQL 使用 TEXT
 
+def get_text_type_unique():
+    """
+    獲取用於 UNIQUE 約束的文本類型
+    MySQL/TiDB 的 TEXT 類型不能直接用於 UNIQUE 約束，所以使用 VARCHAR(255)
+    SQLite 和 PostgreSQL 使用 TEXT
+    """
+    if config.DATABASE_TYPE in ('mysql', 'tidb'):
+        return 'VARCHAR(255)'  # MySQL/TiDB 使用 VARCHAR 以支持 UNIQUE 約束
+    else:
+        return 'TEXT'  # SQLite 和 PostgreSQL 使用 TEXT
+
 
 def get_timestamp_default():
     """獲取時間戳默認值"""
@@ -415,8 +426,8 @@ def init_database():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id {id_type},
-                username {text_type} UNIQUE NOT NULL,
-                email {text_type} UNIQUE NOT NULL,
+                username {text_type_unique} UNIQUE NOT NULL,
+                email {text_type_unique} UNIQUE NOT NULL,
                 password_hash {text_type} NOT NULL,
                 role {text_type_with_default} DEFAULT 'user',
                 created_at TIMESTAMP {timestamp_default}
@@ -424,6 +435,7 @@ def init_database():
         '''.format(
             id_type=get_id_type(),
             text_type=get_text_type(),
+            text_type_unique=get_text_type_unique(),
             text_type_with_default=get_text_type_with_default(),
             timestamp_default=get_timestamp_default()
         ))
@@ -577,7 +589,7 @@ def init_database():
             CREATE TABLE IF NOT EXISTS user_monitor_configs (
                 id {id_type},
                 user_id INTEGER NOT NULL,
-                api_key {text_type} UNIQUE NOT NULL,
+                api_key {text_type_unique} UNIQUE NOT NULL,
                 zofri_username {text_type} NOT NULL,
                 zofri_password {text_type} NOT NULL,
                 zofri_rut_entidad {text_type} NOT NULL,
@@ -593,6 +605,7 @@ def init_database():
         '''.format(
             id_type=get_id_type(),
             text_type=get_text_type(),
+            text_type_unique=get_text_type_unique(),
             boolean_type=boolean_type,
             timestamp_default=get_timestamp_default()
         ))
