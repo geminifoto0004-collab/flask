@@ -257,7 +257,10 @@ class AdaptedConnection:
         elif config.DATABASE_TYPE in ('mysql', 'tidb'):
             # PyMySQL 使用 pymysql.cursors.DictCursor 來返回字典
             import pymysql.cursors
-            cursor = self._conn.cursor(pymysql.cursors.DictCursor, *args, **kwargs)
+            # PyMySQL 需要使用 cursorclass 關鍵字參數
+            if 'cursorclass' not in kwargs:
+                kwargs['cursorclass'] = pymysql.cursors.DictCursor
+            cursor = self._conn.cursor(*args, **kwargs)
         else:
             cursor = self._conn.cursor(*args, **kwargs)
         return AdaptedCursor(cursor)
@@ -276,7 +279,8 @@ def get_cursor(conn, use_adapter=True):
         cursor = conn.cursor(cursor_factory=RealDictCursor)
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
         import pymysql.cursors
-        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        # PyMySQL 需要使用 cursorclass 關鍵字參數
+        cursor = conn.cursor(cursorclass=pymysql.cursors.DictCursor)
     else:
         cursor = conn.cursor()
     
