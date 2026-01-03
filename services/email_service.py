@@ -154,11 +154,15 @@ def send_email(to_email, subject, html_content):
         html_part = MIMEText(html_content, 'html', 'utf-8')
         msg.attach(html_part)
         
-        # 連接 SMTP 服務器
-        server = smtplib.SMTP(email_config.SMTP_SERVER, email_config.SMTP_PORT)
+        # 連接 SMTP 服務器（設置超時，避免在 Render 上卡住）
+        # 超時設置：10 秒（適用於所有 SMTP 操作）
+        server = smtplib.SMTP(email_config.SMTP_SERVER, email_config.SMTP_PORT, timeout=10)
+        server.set_debuglevel(0)  # 關閉調試輸出
+        
+        # 啟動 TLS
         server.starttls()
         
-        # 登入
+        # 登入（設置超時）
         server.login(email_config.SMTP_EMAIL, email_config.SMTP_PASSWORD)
         
         # 發送郵件
@@ -174,10 +178,21 @@ def send_email(to_email, subject, html_content):
         if 'gmail.com' in email_config.SMTP_EMAIL.lower():
             error_msg += "\n💡 Gmail 提示：請使用「應用程式密碼」，不是 Gmail 登入密碼！\n獲取方法：https://myaccount.google.com/apppasswords"
         return False, error_msg
+    except (TimeoutError, OSError) as e:
+        # 捕獲超時和網絡錯誤
+        error_str = str(e).lower()
+        if 'timeout' in error_str or 'timed out' in error_str:
+            return False, "SMTP 連接超時: 請檢查網絡連接或稍後再試"
+        return False, f"SMTP 連接錯誤: {str(e)}"
     except smtplib.SMTPException as e:
         return False, f"郵件發送失敗: {str(e)}"
     except Exception as e:
-        return False, f"未知錯誤: {str(e)}"
+        # 捕獲所有其他異常，包括 socket 超時
+        error_str = str(e).lower()
+        error_type = type(e).__name__
+        if 'timeout' in error_str or 'timed out' in error_str:
+            return False, "SMTP 連接超時: 請檢查網絡連接或稍後再試"
+        return False, f"郵件發送失敗: {error_type} - {str(e)}"
 
 
 # ========== 發送驗證碼 ==========
