@@ -156,6 +156,10 @@ def get_db_connection():
             if 'tidbcloud.com' in db_config.get('host', '').lower():
                 db_config['ssl'] = {'check_hostname': False}
             
+            # 設置默認使用 DictCursor（返回字典格式）
+            import pymysql.cursors
+            db_config['cursorclass'] = pymysql.cursors.DictCursor
+            
             # MySQL/TiDB 連接
             conn = pymysql.connect(**db_config)
             # 包裝連接以自動適配 cursor
@@ -255,11 +259,8 @@ class AdaptedConnection:
             from psycopg2.extras import RealDictCursor  # type: ignore
             cursor = self._conn.cursor(cursor_factory=RealDictCursor, *args, **kwargs)
         elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-            # PyMySQL 使用 pymysql.cursors.DictCursor 來返回字典
-            import pymysql.cursors
-            # PyMySQL 需要使用 cursorclass 關鍵字參數
-            if 'cursorclass' not in kwargs:
-                kwargs['cursorclass'] = pymysql.cursors.DictCursor
+            # PyMySQL 連接時已經設置了 cursorclass=DictCursor
+            # 直接創建 cursor 即可，會自動使用 DictCursor
             cursor = self._conn.cursor(*args, **kwargs)
         else:
             cursor = self._conn.cursor(*args, **kwargs)
@@ -278,9 +279,9 @@ def get_cursor(conn, use_adapter=True):
         from psycopg2.extras import RealDictCursor  # type: ignore
         cursor = conn.cursor(cursor_factory=RealDictCursor)
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-        import pymysql.cursors
-        # PyMySQL 需要使用 cursorclass 關鍵字參數
-        cursor = conn.cursor(cursorclass=pymysql.cursors.DictCursor)
+        # PyMySQL 連接時已經設置了 cursorclass=DictCursor
+        # 直接創建 cursor 即可，會自動使用 DictCursor
+        cursor = conn.cursor()
     else:
         cursor = conn.cursor()
     
