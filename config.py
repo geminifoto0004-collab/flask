@@ -6,6 +6,14 @@ Flask 授權管理系統 - 配置管理
 import os
 import hashlib
 
+# 加載 .env 文件（如果存在）
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # 如果 python-dotenv 未安裝，跳過（不影響生產環境）
+    pass
+
 
 # ========== 基礎配置 ==========
 class Config:
@@ -109,13 +117,28 @@ class EmailConfig:
     SMTP_PORT = 587
     SMTP_USE_TLS = True
     
-    # 郵件帳號（從環境變數讀取，必須設置）
-    # ⚠️ 安全提示：請務必通過環境變數設置，不要硬編碼！
-    SMTP_EMAIL = os.environ.get('SMTP_EMAIL', '')
-    SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+    # 郵件帳號配置
+    # 優先從環境變數讀取，如果未設置則使用下面的硬編碼值
+    # ⚠️ 安全提示：生產環境建議使用環境變數，本地開發可以直接在這裡設置
+    SMTP_EMAIL = os.environ.get('SMTP_EMAIL', '')  # 如果環境變數未設置，改為你的 Gmail 地址
+    SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')  # 如果環境變數未設置，改為你的 Gmail 應用密碼
     
-    # 如果未設置，發出警告（郵件功能可能無法使用）
-    if not SMTP_EMAIL or not SMTP_PASSWORD:
+    # 如果環境變數未設置，可以在這裡直接設置（僅用於本地開發）
+    # ⚠️ 注意：如果使用 Gmail，需要使用「應用程式密碼」，不是 Gmail 登入密碼！
+    # 獲取方法：https://myaccount.google.com/apppasswords
+    if not SMTP_EMAIL:
+        SMTP_EMAIL = 'geminifoto0004@gmail.com'  # 👈 改為你的 Gmail 地址
+    if not SMTP_PASSWORD:
+        SMTP_PASSWORD = 'pczr wlzh uxxl ozot'  # 👈 改為你的 Gmail 應用密碼（16位，原本文檔中的格式）
+    
+    # 注意：Gmail 應用密碼可能需要保留空格，或者去掉空格
+    # 如果認證失敗，請嘗試：
+    # 1. 保留空格：'pczr wlzh uxxl ozot'
+    # 2. 去掉空格：'pczrwlzhuxxlozot'
+    # 根據實際情況選擇
+    
+    # 如果仍未設置，發出警告
+    if not SMTP_EMAIL or not SMTP_PASSWORD or SMTP_EMAIL == 'your@gmail.com' or SMTP_PASSWORD == 'your-app-password':
         import warnings
         warnings.warn("⚠️  SMTP_EMAIL 或 SMTP_PASSWORD 未設置，郵件功能可能無法使用", UserWarning)
     

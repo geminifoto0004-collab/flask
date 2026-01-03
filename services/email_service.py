@@ -168,8 +168,12 @@ def send_email(to_email, subject, html_content):
         print(f"郵件已發送到: {to_email}")
         return True, ""
         
-    except smtplib.SMTPAuthenticationError:
-        return False, "SMTP 認證失敗，請檢查郵箱和密碼"
+    except smtplib.SMTPAuthenticationError as e:
+        error_msg = f"SMTP 認證失敗: {str(e)}"
+        # 如果是 Gmail，提供更詳細的提示
+        if 'gmail.com' in email_config.SMTP_EMAIL.lower():
+            error_msg += "\n💡 Gmail 提示：請使用「應用程式密碼」，不是 Gmail 登入密碼！\n獲取方法：https://myaccount.google.com/apppasswords"
+        return False, error_msg
     except smtplib.SMTPException as e:
         return False, f"郵件發送失敗: {str(e)}"
     except Exception as e:
