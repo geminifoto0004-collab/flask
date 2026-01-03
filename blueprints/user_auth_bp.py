@@ -119,15 +119,8 @@ def submit_registration():
         if email.lower() == admin_config.SUPER_ADMIN_EMAIL.lower():
             return jsonify({'success': False, 'message': f'{admin_config.SUPER_ADMIN_EMAIL} es un correo reservado para el super administrador, no se puede registrar'})
         
-        # 檢查用戶名是否已存在
-        if username_exists(username):
-            return jsonify({'success': False, 'message': 'Este nombre de usuario ya está en uso'})
-        
-        # 檢查郵箱是否已註冊
-        if email_exists(email):
-            return jsonify({'success': False, 'message': 'Este correo electrónico ya está registrado'})
-        
-        # 創建用戶
+        # 創建用戶（create_user 內部會檢查用戶名和郵箱是否已存在，無需重複檢查）
+        # 這樣可以減少數據庫操作，避免在 Render 上卡住
         success, result = create_user(username, email, password)
         
         if success:

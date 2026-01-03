@@ -160,6 +160,14 @@ def get_db_connection():
             import pymysql.cursors
             db_config['cursorclass'] = pymysql.cursors.DictCursor
             
+            # 添加超時設置（避免在 Render 上卡住）
+            # connect_timeout: 連接超時（秒）
+            # read_timeout: 讀取超時（秒）
+            # write_timeout: 寫入超時（秒）
+            db_config['connect_timeout'] = 10  # 10 秒連接超時
+            db_config['read_timeout'] = 10     # 10 秒讀取超時
+            db_config['write_timeout'] = 10    # 10 秒寫入超時
+            
             # MySQL/TiDB 連接
             conn = pymysql.connect(**db_config)
             # 包裝連接以自動適配 cursor
@@ -171,8 +179,24 @@ def get_db_connection():
             if db_dir and not os.path.exists(db_dir):
                 os.makedirs(db_dir, exist_ok=True)
             
-            conn = sqlite3.connect(config.DATABASE_PATH)
+            # SQLite 連接配置（優化並發性能，避免在 Render 上卡住）
+            # timeout: 20 秒（等待鎖定的超時時間，避免卡死）
+            # check_same_thread: False（允許多線程訪問，Flask 是多線程的）
+            conn = sqlite3.connect(
+                config.DATABASE_PATH,
+                timeout=20.0,  # 20 秒超時，避免長時間等待鎖定
+                check_same_thread=False  # 允許多線程訪問
+            )
             conn.row_factory = sqlite3.Row  # 使查詢結果可以像字典一樣訪問
+            
+            # 啟用 WAL 模式（Write-Ahead Logging）提高並發性能
+            # WAL 模式允許多個讀取和一個寫入同時進行，減少鎖定
+            try:
+                conn.execute('PRAGMA journal_mode=WAL')
+            except Exception:
+                # 如果啟用 WAL 失敗（例如某些只讀文件系統），忽略錯誤
+                pass
+            
             # 包裝連接以自動適配 cursor（即使 SQLite 不需要轉換，也保持一致性）
             return AdaptedConnection(conn)
     except Exception as e:
