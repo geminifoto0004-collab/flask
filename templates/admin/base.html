@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}管理控制台{% endblock %} - XINGWANG</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* 通用模態框樣式 - 確保模態框置中且有合適間距 */
+        .modal-content {
+            margin: 5% auto !important; /* 保持置中 */
+            margin-left: calc(50% + 25px) !important; /* 向右偏移25px，避免貼近側邊欄 */
+            transform: translateX(-50%) !important; /* 重新置中 */
+        }
+        
+        /* 響應式設計 - 在小屏幕上調整間距 */
+        @media (max-width: 768px) {
+            .modal-content {
+                margin: 10% auto !important;
+                margin-left: 50% !important;
+                transform: translateX(-50%) !important;
+                width: 95% !important;
+            }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 側邊欄 -->
+    {% include 'admin/sidebar.html' %}
+
+    <!-- 主內容區 -->
+    <div class="main-content">
+        <!-- 頂部欄 -->
+        <div class="top-bar">
+            <div class="breadcrumb">
+                <i class="fas fa-home"></i>
+                <span>{% block breadcrumb %}管理控制台{% endblock %}</span>
+            </div>
+            <div class="top-actions">
+                {% block top_actions %}{% endblock %}
+            </div>
+        </div>
+
+        <!-- 頁面內容 -->
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- 頁面特定的JavaScript -->
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

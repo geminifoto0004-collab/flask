@@ -1,0 +1,40 @@
+<!-- 用戶側邊欄組件 -->
+<div class="sidebar">
+    <div class="sidebar-header">
+        <h2><i class="fas fa-user"></i> Centro de Usuario</h2>
+        <p>Sistema de Gestión de Autorización Xingwang</p>
+    </div>
+    
+    <nav class="sidebar-nav">
+        <a href="/user/portal" class="nav-item {% if request.endpoint == 'user_auth.user_portal' %}active{% endif %}">
+            <i class="fas fa-home"></i>
+            <span>Inicio</span>
+        </a>
+        <a href="/user/services" class="nav-item {% if request.endpoint == 'user_services' %}active{% endif %}">
+            <i class="fas fa-shopping-cart"></i>
+            <span>Mis Servicios</span>
+        </a>
+        <a href="/user/monitor/tasks" class="nav-item {% if request.endpoint == 'monitor.user_monitor_tasks_page' %}active{% endif %}">
+            <i class="fas fa-bell"></i>
+            <span>Tareas de Monitoreo</span>
+        </a>
+        <a href="/user/change-password" class="nav-item {% if request.endpoint == 'user_auth.change_password_page' %}active{% endif %}">
+            <i class="fas fa-key"></i>
+            <span>Cambiar Contraseña</span>
+        </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+        <div class="user-profile">
+            <i class="fas fa-user-circle"></i>
+            <div>
+                <strong>{{ session.username }}</strong>
+                <small>{{ session.email }}</small>
+            </div>
+        </div>
+        <a href="/logout" class="logout-btn">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Cerrar Sesión</span>
+        </a>
+    </div>
+</div>

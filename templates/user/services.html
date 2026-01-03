@@ -1,0 +1,528 @@
+{% extends "user/base.html" %}
+
+{% block title %}Mis Servicios{% endblock %}
+{% block breadcrumb %}Mis Servicios{% endblock %}
+
+{% block content %}
+<!-- 服務頁面標題 -->
+<div class="content-card services-header-card">
+    <div class="services-header">
+        <div class="header-icon">
+            <i class="fas fa-shopping-cart"></i>
+        </div>
+        <h2>Mis Servicios</h2>
+        <p class="header-subtitle">Gestiona y monitorea todos tus servicios activos</p>
+        <div class="header-stats">
+            <div class="stat-badge">
+                <i class="fas fa-check-circle"></i>
+                <span id="activeServicesCount">0</span> Activos
+            </div>
+            <div class="stat-badge">
+                <i class="fas fa-clock"></i>
+                <span id="totalServicesCount">0</span> Total
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 服務列表容器 -->
+<div class="content-card services-container-card">
+    <div class="services-container">
+    <div id="loadingMessage" class="loading-message">
+        <div class="spinner"></div>
+        <p>Cargando sus servicios...</p>
+    </div>
+
+    <div id="servicesList" class="services-list" style="display: none;">
+        <!-- La lista de servicios se cargará aquí dinámicamente -->
+    </div>
+
+    <div id="noServicesMessage" class="no-services" style="display: none;">
+        <div class="empty-state">
+            <div class="empty-icon">📦</div>
+            <h3>Sin Servicios</h3>
+            <p>Actualmente no tiene ningún servicio</p>
+            <p class="help-text">Para comprar servicios, contacte al administrador</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadUserServices();
+});
+
+function loadUserServices() {
+    fetch('/user/services/api')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('loadingMessage').style.display = 'none';
+            
+            if (data.success && data.services && data.services.length > 0) {
+                displayServices(data.services);
+            } else {
+                document.getElementById('noServicesMessage').style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error('Error al cargar servicios:', error);
+            document.getElementById('loadingMessage').style.display = 'none';
+            showError('Error al cargar servicios, intente más tarde');
+        });
+}
+
+function displayServices(services) {
+    const servicesList = document.getElementById('servicesList');
+    servicesList.innerHTML = '';
+    
+    // 更新統計數據
+    updateServiceStats(services);
+    
+    services.forEach(service => {
+        const serviceCard = createServiceCard(service);
+        servicesList.appendChild(serviceCard);
+    });
+    
+    servicesList.style.display = 'block';
+}
+
+function updateServiceStats(services) {
+    // 計算真正激活的服務（status 為 active 且未過期）
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const activeCount = services.filter(service => {
+        if (service.status !== 'active') return false;
+        if (!service.end_date) return true; // 沒有結束日期，視為永久激活
+        const endDate = new Date(service.end_date);
+        endDate.setHours(0, 0, 0, 0);
+        return endDate >= today;
+    }).length;
+    
+    const totalCount = services.length;
+    
+    const activeElement = document.getElementById('activeServicesCount');
+    const totalElement = document.getElementById('totalServicesCount');
+    
+    if (activeElement) {
+        animateNumber(activeElement, 0, activeCount, 1000);
+    }
+    
+    if (totalElement) {
+        animateNumber(totalElement, 0, totalCount, 1200);
+    }
+}
+
+function animateNumber(element, start, end, duration) {
+    const startTime = performance.now();
+    
+    function updateNumber(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        const current = Math.floor(start + (end - start) * progress);
+        element.textContent = current;
+        
+        if (progress < 1) {
+            requestAnimationFrame(updateNumber);
+        }
+    }
+    
+    requestAnimationFrame(updateNumber);
+}
+
+function createServiceCard(service) {
+    const card = document.createElement('div');
+    card.className = 'service-card';
+    
+    // 檢查服務是否過期
+    let isExpired = false;
+    let actualStatus = service.status;
+    
+    if (service.end_date) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const endDate = new Date(service.end_date);
+        endDate.setHours(0, 0, 0, 0);
+        
+        if (endDate < today) {
+            isExpired = true;
+            actualStatus = 'inactive';
+        }
+    }
+    
+    const statusClass = actualStatus === 'active' ? 'status-active' : 'status-inactive';
+    const statusText = actualStatus === 'active' ? 'Activo' : (isExpired ? 'Expirado' : 'Inactivo');
+    
+    // 直接使用日期字符串，避免時區轉換問題
+    const startDate = service.start_date || 'N/A';
+    const endDate = service.end_date || 'N/A';
+    
+    card.innerHTML = `
+        <div class="service-header">
+            <h3>${service.service_name}</h3>
+            <span class="service-status ${statusClass} ${isExpired ? 'status-expired' : ''}">${statusText}</span>
+        </div>
+        <div class="service-content">
+            <p class="service-description">${service.description || 'Sin descripción'}</p>
+            <div class="service-dates">
+                <div class="date-item">
+                    <span class="date-label">Fecha de Inicio:</span>
+                    <span class="date-value">${startDate}</span>
+                </div>
+                <div class="date-item">
+                    <span class="date-label">Fecha de Fin:</span>
+                    <span class="date-value ${isExpired ? 'date-expired' : ''}">${endDate}</span>
+                </div>
+            </div>
+            ${isExpired ? '<div class="expired-warning"><i class="fas fa-exclamation-triangle"></i> Este servicio ha expirado</div>' : ''}
+            <div class="service-meta">
+                <span class="created-date">Tiempo de Compra: ${new Date(service.created_at).toLocaleString('es-ES')}</span>
+            </div>
+        </div>
+    `;
+    
+    return card;
+}
+
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.textContent = message;
+    errorDiv.style.display = 'block';
+    errorDiv.style.margin = '1rem 0';
+    
+    const container = document.querySelector('.services-container');
+    container.insertBefore(errorDiv, container.firstChild);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* 服務頁面卡片樣式 */
+.services-header-card {
+    margin-bottom: 2rem;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border: none;
+    box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
+}
+
+.services-header {
+    text-align: center;
+    padding: 3rem 2rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.services-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    animation: float 8s ease-in-out infinite;
+}
+
+.header-icon {
+    font-size: 3rem;
+    margin-bottom: 1.5rem;
+    opacity: 0.9;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.services-header h2 {
+    color: white;
+    margin-bottom: 0.5rem;
+    font-size: 2.5rem;
+    font-weight: 700;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    position: relative;
+    z-index: 1;
+}
+
+.header-subtitle {
+    color: rgba(255,255,255,0.9);
+    font-size: 1.3rem;
+    margin-bottom: 2rem;
+    position: relative;
+    z-index: 1;
+}
+
+.header-stats {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+    position: relative;
+    z-index: 1;
+}
+
+.stat-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255,255,255,0.2);
+    padding: 0.75rem 1.5rem;
+    border-radius: 25px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.3);
+    transition: all 0.3s ease;
+}
+
+.stat-badge:hover {
+    background: rgba(255,255,255,0.3);
+    transform: translateY(-2px);
+}
+
+.stat-badge i {
+    font-size: 1.1rem;
+    color: #fbbf24;
+}
+
+    .stat-badge span {
+        font-weight: 700;
+        font-size: 1.1rem;
+    }
+    
+    /* 響應式設計 */
+    @media (max-width: 768px) {
+        .services-header {
+            padding: 2rem 1rem;
+        }
+        
+        .services-header h2 {
+            font-size: 2rem;
+        }
+        
+        .header-subtitle {
+            font-size: 1.1rem;
+        }
+        
+        .header-stats {
+            gap: 1rem;
+        }
+        
+        .stat-badge {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .header-icon {
+            font-size: 2.5rem;
+        }
+    }
+
+.services-container-card {
+    min-height: 400px;
+}
+
+.services-container {
+    padding: 0;
+    min-height: 400px;
+}
+
+.loading-message {
+    text-align: center;
+    padding: 3rem;
+    color: #64748b;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e2e8f0;
+    border-top: 4px solid #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.services-list {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.service-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.service-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.service-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.service-header h3 {
+    color: #1e293b;
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.service-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.status-active {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-inactive {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.status-expired {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.date-expired {
+    color: #dc2626;
+    font-weight: 600;
+}
+
+.expired-warning {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.expired-warning i {
+    font-size: 1rem;
+}
+
+.service-content {
+    padding: 1.5rem;
+}
+
+.service-description {
+    color: #64748b;
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+}
+
+.service-dates {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.date-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.date-label {
+    font-size: 0.875rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.date-value {
+    font-size: 1rem;
+    color: #1e293b;
+    font-weight: 600;
+}
+
+.service-meta {
+    padding-top: 1rem;
+    border-top: 1px solid #f1f5f9;
+}
+
+.created-date {
+    font-size: 0.875rem;
+    color: #64748b;
+}
+
+.no-services {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 300px;
+}
+
+.empty-state {
+    text-align: center;
+    color: #64748b;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    margin-bottom: 0.5rem;
+}
+
+.help-text {
+    font-size: 0.875rem;
+    color: #94a3b8;
+}
+
+.error-message {
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .service-dates {
+        grid-template-columns: 1fr;
+    }
+    
+    .service-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+}
+</style>
+{% endblock %}

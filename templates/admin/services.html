@@ -1,0 +1,1064 @@
+{% extends "admin/base.html" %}
+
+{% block title %}服務管理{% endblock %}
+{% block breadcrumb %}服務管理{% endblock %}
+
+{% block extra_css %}
+<style>
+    .modal-content {
+        background-color: #fefefe;
+        padding: 0;
+        border: none;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 1200px;
+        max-height: 90vh;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        animation: modalSlideIn 0.3s ease-out;
+        overflow-y: auto;
+    }
+    
+    .modal-layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+        align-items: start;
+        min-height: 0;
+    }
+    
+    .form-section {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        min-height: 0;
+        overflow-y: auto;
+    }
+    
+    .version-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+    }
+    
+    .version-actions .btn-save,
+    .version-actions .btn-delete {
+        flex: 1;
+        padding: 10px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    
+    .version-actions .btn-save {
+        background: #28a745;
+        color: white;
+    }
+    
+    .version-actions .btn-save:hover {
+        background: #218838;
+    }
+    
+    .version-actions .btn-delete {
+        background: #dc3545;
+        color: white;
+    }
+    
+    .version-actions .btn-delete:hover {
+        background: #c82333;
+    }
+    
+    .param-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 20px;
+        padding: 12px;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+    }
+    
+    .param-button {
+        padding: 6px 12px;
+        background: #6c757d;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: all 0.2s;
+    }
+    
+    .param-button:hover {
+        background: #5a6268;
+    }
+    
+    .param-button.active {
+        background: #007bff;
+    }
+    
+    .param-content-area {
+        margin-bottom: 20px;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    
+    .param-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 15px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .param-header h5 {
+        margin: 0;
+        color: #495057;
+        font-size: 14px;
+    }
+    
+    .param-actions {
+        display: flex;
+        gap: 8px;
+    }
+    
+    .btn-edit-small, .btn-delete-small {
+        padding: 4px 8px;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.2s;
+    }
+    
+    .btn-edit-small {
+        background: #28a745;
+        color: white;
+    }
+    
+    .btn-edit-small:hover {
+        background: #218838;
+    }
+    
+    .btn-delete-small {
+        background: #dc3545;
+        color: white;
+    }
+    
+    .btn-delete-small:hover {
+        background: #c82333;
+    }
+    
+    .param-content-display {
+        padding: 15px;
+        min-height: 120px;
+    }
+    
+    .no-param-selected {
+        color: #6c757d;
+        text-align: center;
+        margin: 0;
+        font-style: italic;
+    }
+    
+    .param-content-display pre {
+        background: #f8f9fa;
+        padding: 12px;
+        border-radius: 4px;
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    
+    .param-edit-area {
+        margin-bottom: 20px;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    
+    .param-edit-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 15px;
+        background: #e9ecef;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .param-edit-header h5 {
+        margin: 0;
+        color: #495057;
+        font-size: 14px;
+    }
+    
+    .btn-cancel-small {
+        padding: 4px 8px;
+        background: #6c757d;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+    
+    .btn-cancel-small:hover {
+        background: #5a6268;
+    }
+    
+    .param-edit-actions {
+        padding: 15px;
+        background: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+    }
+    
+    .btn-add-param {
+        padding: 6px 12px;
+        background: #28a745;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background-color 0.2s;
+    }
+    
+    .btn-add-param:hover {
+        background: #218838;
+    }
+    
+    .param-info {
+        margin-bottom: 15px;
+        padding: 10px;
+        background: #e9ecef;
+        border-radius: 4px;
+    }
+    
+    .param-content-display {
+        margin-bottom: 15px;
+    }
+    
+    .param-content-display pre {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        border: 1px solid #e9ecef;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .param-actions {
+        display: flex;
+        gap: 10px;
+    }
+    
+    .param-actions button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    
+    .param-actions .btn-edit {
+        background: #28a745;
+        color: white;
+    }
+    
+    .param-actions .btn-edit:hover {
+        background: #218838;
+    }
+    
+    .param-actions .btn-delete {
+        background: #dc3545;
+        color: white;
+    }
+    
+    .param-actions .btn-delete:hover {
+        background: #c82333;
+    }
+    
+    .param-actions .btn-close {
+        background: #6c757d;
+        color: white;
+    }
+    
+    .param-actions .btn-close:hover {
+        background: #545b62;
+    }
+    
+    .form-group {
+        margin-bottom: 0;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #374151;
+        font-size: 14px;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 2px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.2s;
+        box-sizing: border-box;
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .form-group textarea {
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+        line-height: 1.4;
+        resize: vertical;
+        min-height: 200px;
+    }
+    
+    .form-group small {
+        display: block;
+        margin-top: 5px;
+        color: #6b7280;
+        font-size: 12px;
+    }
+    
+    .param-header-section {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 20px 0 10px 0;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .param-header-section h4 {
+        color: #333;
+        margin: 0;
+        font-size: 16px;
+    }
+    
+    h4 {
+        color: #333;
+        margin: 20px 0 10px 0;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #e0e0e0;
+        font-size: 16px;
+    }
+    
+</style>
+{% endblock %}
+
+{% block top_actions %}
+<button class="btn-primary" onclick="showAddForm()">
+    <i class="fas fa-plus"></i>
+    新增服務
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- 服務列表 -->
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-list"></i> 服務列表</h3>
+        <div class="card-actions">
+            <button class="btn-refresh" onclick="refreshServices()">
+                <i class="fas fa-sync-alt"></i>
+                刷新
+            </button>
+        </div>
+    </div>
+    
+    <div class="table-container">
+        <table class="data-table" id="servicesTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>服務名稱</th>
+                    <th>描述</th>
+                    <th>價格</th>
+                    <th>有效期</th>
+                    <th>狀態</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for service in services %}
+                <tr>
+                    <td>{{ service.id }}</td>
+                    <td>{{ service.name }}</td>
+                    <td>{{ service.description or '-' }}</td>
+                    <td>
+                        {% if service.price %}
+                            ${{ "%.2f"|format(service.price) }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if service.duration_days %}
+                            {{ service.duration_days }} 天
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="status-badge status-{{ service.status }}">
+                            {% if service.status == 'active' %}
+                                <i class="fas fa-check-circle"></i> 啟用
+                            {% else %}
+                                <i class="fas fa-times-circle"></i> 停用
+                            {% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn-edit" onclick="editService({{ service.id }})" title="編輯">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn-delete" onclick="deleteService({{ service.id }})" title="刪除">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 新增/編輯服務 Modal -->
+<div id="serviceModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitle">新增服務</h3>
+            <button class="modal-close" onclick="closeModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="serviceForm">
+                        <div class="modal-layout">
+                            <!-- 左側：基本信息 -->
+                            <div class="form-section">
+                                <h4>基本信息</h4>
+                <div class="form-group">
+                                    <label for="serviceName">服務名稱</label>
+                                    <input type="text" id="serviceName" name="name" required>
+                </div>
+                <div class="form-group">
+                                    <label for="serviceDescription">描述</label>
+                                    <input type="text" id="serviceDescription" name="description">
+                </div>
+                <div class="form-group">
+                                    <label for="servicePrice">價格</label>
+                                    <input type="number" id="servicePrice" name="price" step="0.01" min="0" required>
+                </div>
+                <div class="form-group">
+                                    <label for="serviceDuration">有效期（天）</label>
+                                    <input type="number" id="serviceDuration" name="duration_days" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="serviceStatus">狀態</label>
+                    <select id="serviceStatus" name="status">
+                        <option value="active">啟用</option>
+                        <option value="inactive">停用</option>
+                    </select>
+                                </div>
+                            </div>
+                            
+                            <!-- 右側：參數配置 -->
+                            <div class="form-section" id="versionSection" style="display: none;">
+                                <div class="param-header-section">
+                                    <h4>參數配置</h4>
+                                    <button type="button" class="btn-add-param" onclick="showAddParamForm()">
+                                        <i class="fas fa-plus"></i> 新增參數配置
+                                    </button>
+                                </div>
+                                
+                                <!-- 參數切換按鈕區域 -->
+                                <div class="param-buttons" id="paramButtons">
+                                    <!-- 動態生成的參數切換按鈕將在這裡顯示 -->
+                                </div>
+                                
+                                <!-- 參數內容顯示區域 -->
+                                <div class="param-content-area" id="paramContentArea">
+                                    <div class="param-header">
+                                        <h5 id="currentParamTitle">選擇參數配置</h5>
+                                        <div class="param-actions" id="paramActions" style="display: none;">
+                                            <button type="button" class="btn-edit-small" onclick="editCurrentParam()">編輯</button>
+                                            <button type="button" class="btn-delete-small" onclick="deleteCurrentParam()">刪除</button>
+                                        </div>
+                                    </div>
+                                    <div class="param-content-display" id="paramContentDisplay">
+                                        <p class="no-param-selected">請選擇一個參數配置查看內容</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- 新增/編輯參數區域 -->
+                                <div class="param-edit-area" id="paramEditArea" style="display: none;">
+                                    <div class="param-edit-header">
+                                        <h5 id="editParamTitle">新增參數配置</h5>
+                                        <button type="button" class="btn-cancel-small" onclick="cancelParamEdit()">取消</button>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="paramName">參數名稱</label>
+                                        <input type="text" id="paramName" name="param_name" placeholder="例如: FREE, PRO, ULTRA">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="paramContent">參數內容</label>
+                                        <textarea id="paramContent" name="param_content" rows="8" placeholder="請輸入參數內容"></textarea>
+                                    </div>
+                                    <div class="param-edit-actions">
+                                        <button type="button" class="btn-save" onclick="saveParam()">保存參數</button>
+                                    </div>
+                                </div>
+                                
+                            </div>
+                            
+                            <!-- 服務配置區域 -->
+                            <div class="form-section" id="configSection" style="display: none;">
+                                <div class="param-header-section">
+                                    <h4>服務配置 (config_json)</h4>
+                                    <button type="button" class="btn-add-param" onclick="toggleConfigEdit()">
+                                        <i class="fas fa-edit"></i> 編輯配置
+                                    </button>
+                                </div>
+                                
+                                <!-- 配置顯示區域 -->
+                                <div class="param-content-area" id="configDisplayArea">
+                                    <div class="param-header">
+                                        <h5>當前服務配置</h5>
+                                    </div>
+                                    <div class="param-content-display" id="configContentDisplay">
+                                        <p class="no-param-selected">點擊編輯配置查看內容</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- 配置編輯區域 -->
+                                <div class="param-edit-area" id="configEditArea" style="display: none;">
+                                    <div class="param-edit-header">
+                                        <h5>編輯服務配置</h5>
+                                        <button type="button" class="btn-cancel-small" onclick="cancelConfigEdit()">取消</button>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="configJson">配置 JSON</label>
+                                        <textarea id="configJson" name="config_json" rows="15" placeholder="請輸入 JSON 配置"></textarea>
+                                        <small>請輸入有效的 JSON 格式配置</small>
+                                    </div>
+                                    <div class="param-edit-actions">
+                                        <button type="button" class="btn-save" onclick="saveConfig()">保存配置</button>
+                                    </div>
+                                </div>
+                            </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeModal()">取消</button>
+            <button type="button" class="btn-save" onclick="saveService()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 確認刪除 Modal -->
+<div id="deleteModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>確認刪除</h3>
+            <button class="modal-close" onclick="closeDeleteModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="warning-text">此操作將刪除服務及其所有相關記錄，且無法撤銷！</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeDeleteModal()">取消</button>
+            <button type="button" class="btn-delete-confirm" onclick="confirmDelete()">確認刪除</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentServiceId = null;
+    let currentParams = [];
+    let currentParamId = null;
+
+    function showAddForm() {
+        currentServiceId = null;
+        document.getElementById('modalTitle').textContent = '新增服務';
+        document.getElementById('serviceForm').reset();
+        
+        // 隱藏版本配置區域（新增時不需要）
+        document.getElementById('versionSection').style.display = 'none';
+        
+        // 顯示配置區域（所有服務都可以配置）
+        document.getElementById('configSection').style.display = 'block';
+        
+        document.getElementById('serviceModal').style.display = 'block';
+    }
+
+    function editService(id) {
+        currentServiceId = id;
+        document.getElementById('modalTitle').textContent = '編輯服務';
+        
+        // 載入服務數據
+        fetch(`/admin/services/${id}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const service = data.service;
+                    document.getElementById('serviceName').value = service.name;
+                    document.getElementById('serviceDescription').value = service.description || '';
+                    document.getElementById('servicePrice').value = service.price;
+                    document.getElementById('serviceDuration').value = service.duration_days;
+                    document.getElementById('serviceStatus').value = service.status;
+                    
+                    // 如果是 Zofri_Compra_Venta 服務，顯示版本配置區域
+                    if (service.name === 'Zofri_Compra_Venta') {
+                        document.getElementById('versionSection').style.display = 'block';
+                        document.getElementById('configSection').style.display = 'block';
+                        loadServiceVersions(id);
+                    } else {
+                        document.getElementById('versionSection').style.display = 'none';
+                        document.getElementById('configSection').style.display = 'block'; // 所有服務都顯示配置區域
+                    }
+                    
+                    document.getElementById('serviceModal').style.display = 'block';
+                } else {
+                    alert('載入服務數據失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('載入服務數據失敗，請重試');
+            });
+    }
+
+    function closeModal() {
+        document.getElementById('serviceModal').style.display = 'none';
+        document.getElementById('serviceForm').reset();
+        document.getElementById('versionSection').style.display = 'none';
+        document.getElementById('configSection').style.display = 'none';
+    }
+
+    function loadServiceVersions(serviceId) {
+        fetch(`/admin/services/${serviceId}/versions`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.params) {
+                    currentParams = data.params;
+                    displayParamButtons();
+                } else {
+                    currentParams = [];
+                    displayParamButtons();
+                }
+                // 清空新增參數字段
+                document.getElementById('paramName').value = '';
+                document.getElementById('paramContent').value = '';
+            })
+            .catch(error => {
+                console.error('Error loading versions:', error);
+                currentParams = [];
+                displayParamButtons();
+            });
+    }
+
+    function displayParamButtons() {
+        const paramButtons = document.getElementById('paramButtons');
+        if (currentParams.length === 0) {
+            paramButtons.innerHTML = '<p style="color: #6c757d; text-align: center; margin: 0;">暫無參數配置</p>';
+            return;
+        }
+
+        paramButtons.innerHTML = currentParams.map(param => 
+            `<button class="param-button" onclick="showParamDetail(${param.id}); return false;" title="點擊查看 ${param.param_name} 參數配置">${param.param_name}</button>`
+        ).join('');
+    }
+
+    function showParamDetail(paramId) {
+        const param = currentParams.find(p => p.id === paramId);
+        if (!param) return;
+
+        // 更新按鈕狀態
+        document.querySelectorAll('.param-button').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        // 顯示內容顯示區域
+        document.getElementById('paramContentArea').style.display = 'block';
+        
+        // 顯示參數內容
+        document.getElementById('currentParamTitle').textContent = param.param_name;
+        document.getElementById('paramContentDisplay').innerHTML = `<pre>${param.param_content}</pre>`;
+        document.getElementById('paramActions').style.display = 'flex';
+        
+        // 隱藏編輯區域
+        document.getElementById('paramEditArea').style.display = 'none';
+        
+        // 保存當前參數ID
+        window.currentParamId = paramId;
+    }
+
+    function editCurrentParam() {
+        if (!window.currentParamId) return;
+        
+        const param = currentParams.find(p => p.id === window.currentParamId);
+        if (!param) return;
+
+        // 顯示編輯區域
+        document.getElementById('paramEditArea').style.display = 'block';
+        document.getElementById('editParamTitle').textContent = '編輯參數配置';
+        document.getElementById('paramName').value = param.param_name;
+        document.getElementById('paramContent').value = param.param_content;
+        
+        // 隱藏內容顯示區域
+        document.getElementById('paramContentArea').style.display = 'none';
+    }
+
+    function showAddParamForm() {
+        // 顯示編輯區域
+        document.getElementById('paramEditArea').style.display = 'block';
+        document.getElementById('editParamTitle').textContent = '新增參數配置';
+        document.getElementById('paramName').value = '';
+        document.getElementById('paramContent').value = '';
+        
+        // 隱藏內容顯示區域
+        document.getElementById('paramContentArea').style.display = 'none';
+        
+        // 清除當前參數ID
+        window.currentParamId = null;
+    }
+
+    function cancelParamEdit() {
+        // 隱藏編輯區域
+        document.getElementById('paramEditArea').style.display = 'none';
+        
+        // 顯示內容顯示區域
+        document.getElementById('paramContentArea').style.display = 'block';
+        
+        // 清除表單
+        document.getElementById('paramName').value = '';
+        document.getElementById('paramContent').value = '';
+        
+        // 清除當前參數ID
+        window.currentParamId = null;
+    }
+
+    function deleteCurrentParam() {
+        if (!window.currentParamId) return;
+        
+        if (!confirm('確定要刪除這個參數配置嗎？')) {
+            return;
+        }
+
+        fetch(`/admin/services/${currentServiceId}/param/${window.currentParamId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                alert('參數配置刪除成功！');
+                loadServiceVersions(currentServiceId);
+                
+                // 顯示內容顯示區域
+                document.getElementById('paramContentArea').style.display = 'block';
+                
+                // 重置顯示區域
+                document.getElementById('currentParamTitle').textContent = '選擇參數配置';
+                document.getElementById('paramContentDisplay').innerHTML = '<p class="no-param-selected">請選擇一個參數配置查看內容</p>';
+                document.getElementById('paramActions').style.display = 'none';
+                
+                // 清除當前參數ID
+                window.currentParamId = null;
+                } else {
+                    alert('刪除失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+            console.error('Error:', error);
+                alert('刪除失敗，請重試');
+            });
+        }
+
+    function saveParam() {
+        const paramName = document.getElementById('paramName').value.trim();
+        const paramContent = document.getElementById('paramContent').value.trim();
+        
+        if (!paramName || !paramContent) {
+            alert('請填寫參數名稱和參數內容');
+            return;
+        }
+        
+        const paramData = {
+            param_name: paramName,
+            param_content: paramContent
+        };
+        
+        fetch(`/admin/services/${currentServiceId}/param`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(paramData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('參數配置保存成功！');
+                
+                // 隱藏編輯區域
+                document.getElementById('paramEditArea').style.display = 'none';
+                
+                // 顯示內容顯示區域
+                document.getElementById('paramContentArea').style.display = 'block';
+                
+                // 清空字段
+                document.getElementById('paramName').value = '';
+                document.getElementById('paramContent').value = '';
+                
+                // 重新載入參數列表
+                loadServiceVersions(currentServiceId);
+                
+                // 清除當前參數ID
+                window.currentParamId = null;
+            } else {
+                alert('保存失敗：' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('保存失敗，請重試');
+        });
+    }
+
+    function saveService() {
+        const form = document.getElementById('serviceForm');
+        const formData = new FormData(form);
+        
+        // 如果是新增服務，檢查是否有配置數據
+        if (!currentServiceId) {
+            const configJson = document.getElementById('configJson').value.trim();
+            if (configJson) {
+                try {
+                    // 驗證 JSON 格式
+                    JSON.parse(configJson);
+                    formData.append('config_json', configJson);
+                } catch (e) {
+                    alert('配置 JSON 格式錯誤，請檢查後再保存');
+                    return;
+                }
+            }
+        }
+        
+        // 保存服務基本信息
+        const url = currentServiceId ? `/admin/services/${currentServiceId}` : '/admin/services';
+        const method = currentServiceId ? 'PUT' : 'POST';
+        
+        fetch(url, {
+            method: method,
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 顯示成功提示
+                const message = currentServiceId ? '服務更新成功！' : '服務創建成功！';
+                
+                // 如果是新增服務，詢問是否繼續添加
+                if (!currentServiceId) {
+                    if (confirm(message + '\n\n是否繼續添加新服務？')) {
+                        // 重置表單，保持 Modal 打開
+                        document.getElementById('serviceForm').reset();
+                        currentServiceId = null;
+                        document.getElementById('modalTitle').textContent = '新增服務';
+                        // 刷新服務列表
+                        refreshServices();
+                    } else {
+                        // 關閉 Modal 並刷新頁面
+                        closeModal();
+                        setTimeout(() => {
+                            location.reload();
+                        }, 300);
+                    }
+                } else {
+                    // 更新服務，關閉 Modal 並刷新
+                    alert(message);
+                    closeModal();
+                    setTimeout(() => {
+                        location.reload();
+                    }, 300);
+                }
+            } else {
+                alert('保存失敗：' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('保存失敗，請重試');
+        });
+    }
+
+    function deleteService(id) {
+        currentServiceId = id;
+        document.getElementById('deleteModal').style.display = 'block';
+    }
+
+    function confirmDelete() {
+        if (currentServiceId) {
+            fetch(`/admin/services/${currentServiceId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('服務已刪除！');
+                    closeDeleteModal();
+                    location.reload();
+                } else {
+                    alert('刪除失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('刪除失敗，請重試');
+            });
+        }
+    }
+
+    function closeDeleteModal() {
+        document.getElementById('deleteModal').style.display = 'none';
+    }
+
+    function refreshServices() {
+        location.reload();
+    }
+
+    // 配置編輯相關函數
+    function toggleConfigEdit() {
+        // 顯示編輯區域
+        document.getElementById('configEditArea').style.display = 'block';
+        
+        // 隱藏顯示區域
+        document.getElementById('configDisplayArea').style.display = 'none';
+        
+        // 載入當前配置
+        loadServiceConfig();
+    }
+
+    function cancelConfigEdit() {
+        // 隱藏編輯區域
+        document.getElementById('configEditArea').style.display = 'none';
+        
+        // 顯示顯示區域
+        document.getElementById('configDisplayArea').style.display = 'block';
+    }
+
+    function loadServiceConfig() {
+        if (!currentServiceId) return;
+        
+        fetch(`/admin/services/${currentServiceId}/config`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const configJson = JSON.stringify(data.config, null, 2);
+                    document.getElementById('configJson').value = configJson;
+                } else {
+                    alert('載入配置失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('載入配置失敗，請重試');
+            });
+    }
+
+    function saveConfig() {
+        const configJson = document.getElementById('configJson').value.trim();
+        
+        if (!configJson) {
+            alert('請輸入配置內容');
+            return;
+        }
+        
+        try {
+            // 驗證 JSON 格式
+            const config = JSON.parse(configJson);
+            
+            const configData = {
+                config: config
+            };
+            
+            fetch(`/admin/services/${currentServiceId}/config`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(configData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('服務配置保存成功！');
+                    
+                    // 隱藏編輯區域
+                    document.getElementById('configEditArea').style.display = 'none';
+                    
+                    // 顯示顯示區域
+                    document.getElementById('configDisplayArea').style.display = 'block';
+                    
+                    // 更新顯示內容
+                    document.getElementById('configContentDisplay').innerHTML = `<pre>${configJson}</pre>`;
+                } else {
+                    alert('保存失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存失敗，請重試');
+            });
+            
+        } catch (e) {
+            alert('JSON 格式錯誤，請檢查配置內容');
+        }
+    }
+
+    // 點擊模態框外部關閉
+    window.onclick = function(event) {
+        const serviceModal = document.getElementById('serviceModal');
+        const deleteModal = document.getElementById('deleteModal');
+        
+        if (event.target === serviceModal) {
+            closeModal();
+        }
+        if (event.target === deleteModal) {
+            closeDeleteModal();
+        }
+    }
+</script>
+{% endblock %}

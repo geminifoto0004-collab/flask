@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Centro de Usuario{% endblock %} - Sistema Xingwang</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/user.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* 用戶頁面通用樣式 */
+        .main-content {
+            margin-left: 280px;
+            padding: 0;
+            min-height: 100vh;
+            background: #f8fafc;
+        }
+        
+        .top-bar {
+            background: white;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #64748b;
+            font-weight: 500;
+        }
+        
+        .breadcrumb i {
+            color: #3b82f6;
+        }
+        
+        .top-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        /* 用戶頁面內容容器 */
+        .user-content {
+            padding: 2rem;
+        }
+        
+        /* 用戶頁面卡片樣式 */
+        .content-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+        }
+        
+        .content-card .card-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        }
+        
+        .content-card .card-header h3 {
+            color: #1e293b;
+            font-weight: 600;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .content-card .card-body {
+            padding: 1.5rem;
+        }
+        
+        /* 響應式設計 */
+        @media (max-width: 768px) {
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .top-bar {
+                padding: 1rem;
+            }
+            
+            .user-content {
+                padding: 1rem;
+            }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 側邊欄 -->
+    {% include 'user/sidebar.html' %}
+
+    <!-- 主內容區 -->
+    <div class="main-content">
+        <!-- 頂部欄 -->
+        <div class="top-bar">
+            <div class="breadcrumb">
+                <i class="fas fa-home"></i>
+                <span>{% block breadcrumb %}Centro de Usuario{% endblock %}</span>
+            </div>
+            <div class="top-actions">
+                {% block top_actions %}{% endblock %}
+            </div>
+        </div>
+
+        <!-- 頁面內容 -->
+        <div class="user-content">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <!-- 頁面特定的JavaScript -->
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

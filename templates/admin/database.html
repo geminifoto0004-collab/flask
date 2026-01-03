@@ -1,0 +1,337 @@
+{% extends "admin/base.html" %}
+
+{% block title %}資料庫瀏覽{% endblock %}
+{% block breadcrumb %}資料庫瀏覽{% endblock %}
+
+{% block content %}
+{% if error %}
+<!-- 錯誤信息 -->
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-exclamation-triangle"></i> 錯誤</h3>
+    </div>
+    <div class="error-message">
+        <p>資料庫瀏覽出現錯誤：{{ error }}</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- 表選擇器 -->
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-database"></i> 選擇資料表</h3>
+    </div>
+    <div class="table-selector">
+        {% if tables %}
+        <div class="table-buttons">
+            {% for table in tables %}
+            <button class="table-btn" onclick="showTable('{{ table.name }}')">
+                <i class="fas fa-table"></i>
+                {{ table.name }}
+            </button>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="no-data">
+            <p>沒有找到任何資料表</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 資料顯示區 -->
+<div id="dataDisplay" class="content-card" style="display: none;">
+    <div class="card-header">
+        <h3 id="currentTableName"><i class="fas fa-table"></i> 資料表</h3>
+        <div class="card-actions">
+            <button class="btn-refresh" onclick="refreshCurrentTable()">
+                <i class="fas fa-sync-alt"></i>
+                刷新
+            </button>
+        </div>
+    </div>
+    
+    <div class="table-container">
+        <table id="dataTable" class="data-table">
+            <thead id="tableHead"></thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentTable = '';
+    const tableData = {{ table_data | tojson }};
+
+    function showTable(tableName) {
+        currentTable = tableName;
+        document.getElementById('currentTableName').innerHTML = `<i class="fas fa-table"></i> ${tableName}`;
+        document.getElementById('dataDisplay').style.display = 'block';
+        
+        const data = tableData[tableName];
+        if (data && data.length > 0) {
+            // 創建表頭
+            const headers = Object.keys(data[0]);
+            const thead = document.getElementById('tableHead');
+            thead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+            
+            // 創建表體
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = data.map((row, rowIndex) => {
+                // 使用行的主键或索引作为唯一ID
+                const rowId = row.id || rowIndex;
+                return '<tr>' + headers.map(h => {
+                    const value = row[h];
+                    // 檢查是否是 JSON 字段（通常是 TEXT 類型且包含 JSON 結構）
+                    const trimmedValue = value ? String(value).trim() : '';
+                    if (value && typeof value === 'string' && (trimmedValue.startsWith('{') || trimmedValue.startsWith('['))) {
+                        try {
+                            // 嘗試解析 JSON
+                            const jsonData = JSON.parse(value);
+                            const jsonString = JSON.stringify(jsonData, null, 2);
+                            // 如果 JSON 字符串很長（超過100字符），使用可折叠显示
+                            if (jsonString.length > 100) {
+                                const shortPreview = jsonString.substring(0, 80).replace(/\n/g, ' ').replace(/\s+/g, ' ') + '...';
+                                const uniqueId = `json-${rowId}-${h}-${rowIndex}`;
+                                return `<td class="json-cell">
+                                    <div class="json-preview" onclick="toggleJson('${uniqueId}')">
+                                        <span class="json-toggle-icon">▶</span>
+                                        <span class="json-text">${escapeHtml(shortPreview)}</span>
+                                    </div>
+                                    <pre class="json-full" id="${uniqueId}" style="display: none;">${escapeHtml(jsonString)}</pre>
+                                </td>`;
+                            } else {
+                                // 短 JSON 直接显示
+                                return `<td><pre style="margin: 0; font-size: 0.85rem; white-space: pre-wrap; word-break: break-word;">${escapeHtml(jsonString)}</pre></td>`;
+                            }
+                        } catch (e) {
+                            // 不是有效的 JSON，正常显示（但截斷過長的文本）
+                            const strValue = String(value);
+                            if (strValue.length > 200) {
+                                return `<td title="${escapeHtml(strValue)}">${escapeHtml(strValue.substring(0, 200))}...</td>`;
+                            }
+                            return `<td>${escapeHtml(strValue)}</td>`;
+                        }
+                    }
+                    // 普通字段：如果太長也截斷
+                    const strValue = String(value || '');
+                    if (strValue.length > 200) {
+                        return `<td title="${escapeHtml(strValue)}">${escapeHtml(strValue.substring(0, 200))}...</td>`;
+                    }
+                    return `<td>${escapeHtml(strValue)}</td>`;
+                }).join('') + '</tr>';
+            }).join('');
+        } else {
+            // 空表
+            const thead = document.getElementById('tableHead');
+            const tbody = document.getElementById('tableBody');
+            thead.innerHTML = '<tr><th>無資料</th></tr>';
+            tbody.innerHTML = '<tr><td>此表沒有資料</td></tr>';
+        }
+    }
+
+    function refreshCurrentTable() {
+        if (currentTable) {
+            location.reload();
+        }
+    }
+
+    function toggleJson(uniqueId) {
+        const jsonFull = document.getElementById(uniqueId);
+        if (!jsonFull) return;
+        
+        const jsonPreview = jsonFull.previousElementSibling;
+        const icon = jsonPreview.querySelector('.json-toggle-icon');
+        
+        if (jsonFull.style.display === 'none' || !jsonFull.style.display) {
+            jsonFull.style.display = 'block';
+            icon.textContent = '▼';
+            jsonPreview.classList.add('expanded');
+        } else {
+            jsonFull.style.display = 'none';
+            icon.textContent = '▶';
+            jsonPreview.classList.remove('expanded');
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 頁面載入時顯示第一個表
+    document.addEventListener('DOMContentLoaded', function() {
+        const tables = {{ tables | tojson }};
+        if (tables && tables.length > 0) {
+            showTable(tables[0].name);
+        }
+    });
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .table-selector {
+        padding: 1.5rem;
+    }
+
+    .table-buttons {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .table-btn {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        text-align: left;
+    }
+
+    .table-btn:hover {
+        background: #f1f5f9;
+        border-color: #3b82f6;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .table-btn i {
+        color: #3b82f6;
+        font-size: 1.2rem;
+    }
+
+    #dataTable {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    #dataTable th,
+    #dataTable td {
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    #dataTable th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #374151;
+        font-size: 0.9rem;
+    }
+
+    #dataTable tr:hover {
+        background: #f8fafc;
+    }
+
+    .data-display {
+        margin-top: 1.5rem;
+    }
+
+    .error-message {
+        padding: 1.5rem;
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        color: #991b1b;
+    }
+
+    .no-data {
+        padding: 2rem;
+        text-align: center;
+        color: #64748b;
+    }
+
+    .no-data p {
+        font-size: 1.1rem;
+    }
+
+    /* JSON 折叠样式 */
+    .json-cell {
+        position: relative;
+        max-width: 400px;
+    }
+
+    .json-preview {
+        cursor: pointer;
+        padding: 0.5rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s ease;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+    }
+
+    .json-preview:hover {
+        background: #f1f5f9;
+        border-color: #3b82f6;
+    }
+
+    .json-preview.expanded {
+        background: #eff6ff;
+        border-color: #3b82f6;
+    }
+
+    .json-toggle-icon {
+        color: #3b82f6;
+        font-size: 0.75rem;
+        transition: transform 0.2s ease;
+        flex-shrink: 0;
+    }
+
+    .json-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+    }
+
+    .json-full {
+        margin: 0.5rem 0 0 0;
+        padding: 1rem;
+        background: #1e293b;
+        color: #e2e8f0;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        max-height: 500px;
+        overflow-y: auto;
+        border: 1px solid #3b82f6;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .json-full::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    .json-full::-webkit-scrollbar-track {
+        background: #0f172a;
+    }
+
+    .json-full::-webkit-scrollbar-thumb {
+        background: #475569;
+        border-radius: 4px;
+    }
+
+    .json-full::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+    }
+
+</style>
+{% endblock %}

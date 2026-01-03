@@ -1,0 +1,541 @@
+{% extends "admin/base.html" %}
+
+{% block title %}用戶服務管理{% endblock %}
+{% block breadcrumb %}用戶服務管理{% endblock %}
+
+{% block top_actions %}
+<button class="btn-primary" onclick="showAddUserServiceForm()">
+    <i class="fas fa-plus"></i>
+    分配服務
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- 統計卡片 -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="fas fa-shopping-cart"></i>
+        </div>
+        <div class="stat-content">
+            <h3>總服務數</h3>
+            <div class="stat-number">{{ user_services|length }}</div>
+        </div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-icon">
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <div class="stat-content">
+            <h3>啟用中</h3>
+            <div class="stat-number">{{ user_services|selectattr('status', 'equalto', 'active')|list|length }}</div>
+        </div>
+    </div>
+    <div class="stat-card danger">
+        <div class="stat-icon">
+            <i class="fas fa-times-circle"></i>
+        </div>
+        <div class="stat-content">
+            <h3>已停用</h3>
+            <div class="stat-number">{{ user_services|selectattr('status', 'equalto', 'inactive')|list|length }}</div>
+        </div>
+    </div>
+    <div class="stat-card info">
+        <div class="stat-icon">
+            <i class="fas fa-users"></i>
+        </div>
+        <div class="stat-content">
+            <h3>活躍用戶</h3>
+            <div class="stat-number" id="activeUsers">-</div>
+        </div>
+    </div>
+</div>
+
+<!-- 用戶服務列表 -->
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-list"></i> 用戶服務列表</h3>
+        <div class="card-actions">
+            <button class="btn-refresh" onclick="refreshUserServices()">
+                <i class="fas fa-sync-alt"></i>
+                刷新
+            </button>
+        </div>
+    </div>
+    
+    <div class="table-container">
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>用戶</th>
+                <th>服務</th>
+                <th>狀態</th>
+                <th>開始日期</th>
+                <th>結束日期</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user_service in user_services %}
+            <tr>
+                <td>{{ user_service.id }}</td>
+                <td>
+                    <div class="user-info">
+                        <strong>{{ user_service.username }}</strong>
+                        <small>{{ user_service.email }}</small>
+                    </div>
+                </td>
+                <td>
+                    <div class="service-info">
+                        <strong>{{ user_service.service_name }}</strong>
+                        <small>{{ user_service.description }}</small>
+                    </div>
+                </td>
+                <td>
+                    <span class="status-badge status-{{ user_service.status }}">
+                        <i class="fas fa-{{ 'check' if user_service.status == 'active' else 'times' }}"></i>
+                        {{ '啟用' if user_service.status == 'active' else '停用' }}
+                    </span>
+                </td>
+                <td>{{ user_service.start_date }}</td>
+                <td>{{ user_service.end_date }}</td>
+                <td>
+                    <div class="action-buttons">
+                        <button class="btn-edit" onclick="editUserService({{ user_service.id }})" title="編輯">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn-delete" onclick="deleteUserService({{ user_service.id }})" title="刪除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<!-- 編輯用戶服務 Modal -->
+<div id="editUserServiceModal" class="modal">
+    <div class="modal-content modal-wide">
+        <div class="modal-header">
+            <h3>編輯用戶服務</h3>
+            <button class="modal-close" onclick="closeEditModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="editUserServiceForm">
+                <input type="hidden" id="editUserServiceId" name="user_service_id">
+                
+                <div class="form-layout-horizontal">
+                    <!-- 左側：基本信息 -->
+                    <div class="form-section-left">
+                        <h4>基本信息</h4>
+                        
+                        <div class="form-group">
+                            <label for="editServiceName">服務名稱</label>
+                            <input type="text" id="editServiceName" readonly>
+                            <small>服務名稱不可修改</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editUserName">用戶名稱</label>
+                            <input type="text" id="editUserName" readonly>
+                            <small>用戶名稱不可修改</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editStartDate">開始日期</label>
+                            <input type="date" id="editStartDate" name="start_date" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editEndDate">結束日期</label>
+                            <input type="date" id="editEndDate" name="end_date" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="editStatus">狀態</label>
+                            <select id="editStatus" name="status">
+                                <option value="active">啟用</option>
+                                <option value="inactive">停用</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 右側：參數配置 -->
+                    <div class="form-section-right">
+                        <div class="param-header-section">
+                            <h4>參數配置</h4>
+                            <div class="current-param-info" id="currentParamInfo" style="display: none;">
+                                <span class="param-badge" id="currentParamBadge">當前：無</span>
+                            </div>
+                        </div>
+                        
+                        <!-- 參數選擇區域 -->
+                        <div class="param-selection-area">
+                            <div class="form-group">
+                                <label for="editParamConfig">選擇參數配置</label>
+                                <select id="editParamConfig" name="param_config" onchange="showParamPreview()">
+                                    <option value="">選擇參數配置</option>
+                                </select>
+                                <small>選擇服務的參數配置版本（如 FREE、PRO、ULTRA）</small>
+                            </div>
+                        </div>
+                        
+                        <!-- 參數預覽區域 -->
+                        <div class="param-preview-area" id="paramPreviewArea" style="display: none;">
+                            <div class="param-preview-header">
+                                <h5 id="previewParamName">參數詳情</h5>
+                            </div>
+                            <div class="param-preview-content">
+                                <pre id="previewParamContent">請選擇參數配置查看詳情</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeEditModal()">取消</button>
+            <button type="button" class="btn-save" onclick="saveUserServiceEdit()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 水平布局樣式 */
+    .modal-wide {
+        max-width: 1000px;
+        width: 90%;
+        margin-left: 50px; /* 增加左邊距，避免貼近側邊欄 */
+    }
+    
+    .form-layout-horizontal {
+        display: flex;
+        gap: 30px;
+        min-height: 400px;
+    }
+    
+    .form-section-left {
+        flex: 1;
+        padding-right: 15px;
+        border-right: 1px solid #e0e0e0;
+    }
+    
+    .form-section-right {
+        flex: 1;
+        padding-left: 15px;
+    }
+    
+    .param-header-section {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .param-header-section h4 {
+        margin: 0;
+        color: #333;
+        font-size: 16px;
+    }
+    
+    .current-param-info {
+        display: flex;
+        align-items: center;
+    }
+    
+    .param-badge {
+        background: #28a745;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+    
+    .param-selection-area {
+        margin-bottom: 20px;
+    }
+    
+    .param-preview-area {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    
+    .param-preview-header {
+        background: #e9ecef;
+        padding: 10px 15px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .param-preview-header h5 {
+        margin: 0;
+        color: #495057;
+        font-size: 14px;
+    }
+    
+    .param-preview-content {
+        padding: 15px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .param-preview-content pre {
+        background: #fff;
+        padding: 12px;
+        border-radius: 4px;
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        border: 1px solid #e9ecef;
+    }
+    
+    /* 確保模態框不會貼近側邊欄 */
+    .modal {
+        padding-left: 20px;
+    }
+    
+    .modal-content {
+        margin-left: auto;
+        margin-right: auto;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentUserServiceId = null;
+    let availableParams = []; // 存儲可用的參數配置
+
+    // 載入服務的參數配置列表
+    function loadServiceParamConfigs(serviceName) {
+        if (!serviceName) {
+            document.getElementById('editParamConfig').innerHTML = '<option value="">選擇參數配置</option>';
+            return;
+        }
+        
+        fetch(`/admin/services/versions?service_name=${encodeURIComponent(serviceName)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const select = document.getElementById('editParamConfig');
+                    select.innerHTML = '<option value="">選擇參數配置</option>';
+                    
+                    // 存儲參數配置數據
+                    availableParams = data.versions;
+                    
+                    data.versions.forEach(version => {
+                        const option = document.createElement('option');
+                        option.value = version.param_name;
+                        option.textContent = version.param_name;
+                        select.appendChild(option);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('載入參數配置失敗:', error);
+            });
+    }
+
+    // 顯示參數預覽
+    function showParamPreview() {
+        const selectedParam = document.getElementById('editParamConfig').value;
+        
+        if (!selectedParam) {
+            // 隱藏預覽區域
+            document.getElementById('paramPreviewArea').style.display = 'none';
+            return;
+        }
+        
+        // 查找選中的參數配置
+        const param = availableParams.find(p => p.param_name === selectedParam);
+        if (!param) return;
+        
+        // 顯示預覽區域
+        document.getElementById('paramPreviewArea').style.display = 'block';
+        document.getElementById('previewParamName').textContent = param.param_name;
+        document.getElementById('previewParamContent').textContent = param.param_content;
+    }
+
+    function showAddUserServiceForm() {
+        // 跳轉到用戶管理頁面進行服務分配
+        window.location.href = '/admin/users';
+    }
+
+    function editUserService(id) {
+        currentUserServiceId = id;
+        
+        // 先显示MODAL，但显示加载状态
+        document.getElementById('editUserServiceModal').style.display = 'block';
+        
+        // 显示加载指示器（如果存在）
+        const form = document.getElementById('editUserServiceForm');
+        if (form) {
+            form.style.opacity = '0.5';
+            form.style.pointerEvents = 'none';
+        }
+        
+        // 載入用戶服務數據
+        fetch(`/admin/user-services/${id}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const userService = data.user_service;
+                    document.getElementById('editUserServiceId').value = userService.id;
+                    document.getElementById('editServiceName').value = userService.service_name;
+                    document.getElementById('editUserName').value = userService.username;
+                    document.getElementById('editStartDate').value = userService.start_date;
+                    document.getElementById('editEndDate').value = userService.end_date;
+                    document.getElementById('editStatus').value = userService.status;
+                    
+                    // 載入該服務的參數配置
+                    loadServiceParamConfigs(userService.service_name);
+                    
+                    // 設置當前選擇的參數配置（如果有的話）
+                    if (userService.param_config) {
+                        document.getElementById('editParamConfig').value = userService.param_config;
+                        // 顯示當前參數配置標記
+                        document.getElementById('currentParamInfo').style.display = 'flex';
+                        document.getElementById('currentParamBadge').textContent = `當前：${userService.param_config}`;
+                        // 顯示參數預覽
+                        showParamPreview();
+                    } else {
+                        // 隱藏當前參數配置標記
+                        document.getElementById('currentParamInfo').style.display = 'none';
+                    }
+                    
+                    // 恢复表单状态
+                    if (form) {
+                        form.style.opacity = '1';
+                        form.style.pointerEvents = 'auto';
+                    }
+                } else {
+                    alert('載入用戶服務數據失敗：' + data.error);
+                    closeEditModal();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('載入用戶服務數據失敗，請重試');
+                closeEditModal();
+            });
+    }
+
+    function deleteUserService(id) {
+        if (confirm('確定要刪除此用戶服務嗎？\n此操作將移除用戶的服務權限，且無法撤銷！')) {
+            fetch(`/admin/user-services/${id}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('用戶服務已刪除！');
+                    location.reload();
+                } else {
+                    alert('刪除失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('刪除失敗，請重試');
+            });
+        }
+    }
+
+    function refreshUserServices() {
+        location.reload();
+    }
+
+    function closeEditModal() {
+        document.getElementById('editUserServiceModal').style.display = 'none';
+        
+        // 重置表单状态
+        const form = document.getElementById('editUserServiceForm');
+        if (form) {
+            form.style.opacity = '1';
+            form.style.pointerEvents = 'auto';
+        }
+        
+        // 重置參數配置狀態
+        document.getElementById('paramPreviewArea').style.display = 'none';
+        document.getElementById('currentParamInfo').style.display = 'none';
+        availableParams = [];
+    }
+
+    function saveUserServiceEdit() {
+        const form = document.getElementById('editUserServiceForm');
+        const formData = new FormData(form);
+        
+        // 驗證日期
+        const startDate = formData.get('start_date');
+        const endDate = formData.get('end_date');
+        
+        if (new Date(endDate) <= new Date(startDate)) {
+            alert('結束日期必須晚於開始日期');
+            return;
+        }
+        
+        // 收集參數配置信息
+        const paramConfig = document.getElementById('editParamConfig').value;
+        
+        fetch(`/admin/user-services/${currentUserServiceId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                start_date: formData.get('start_date'),
+                end_date: formData.get('end_date'),
+                status: formData.get('status'),
+                param_config: paramConfig || null
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('用戶服務更新成功！');
+                closeEditModal();
+                location.reload();
+            } else {
+                alert('更新失敗：' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('更新失敗，請重試');
+        });
+    }
+    
+    // 添加ESC键关闭MODAL的功能
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            const editModal = document.getElementById('editUserServiceModal');
+            if (editModal && editModal.style.display === 'block') {
+                closeEditModal();
+            }
+        }
+    });
+
+    // 點擊模態框外部關閉
+    window.onclick = function(event) {
+        const editModal = document.getElementById('editUserServiceModal');
+        if (event.target === editModal) {
+            closeEditModal();
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,200 @@
+{% extends "admin/base.html" %}
+
+{% block title %}儀表板{% endblock %}
+{% block breadcrumb %}儀表板{% endblock %}
+
+{% block top_actions %}
+{% endblock %}
+
+{% block content %}
+<!-- 統計卡片 -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="fas fa-users"></i>
+        </div>
+        <div class="stat-content">
+            <h3>總用戶數</h3>
+            <div class="stat-number">{{ total_users }}</div>
+        </div>
+    </div>
+    <div class="stat-card danger">
+        <div class="stat-icon">
+            <i class="fas fa-crown"></i>
+        </div>
+        <div class="stat-content">
+            <h3>管理員</h3>
+            <div class="stat-number">{{ admin_users }}</div>
+        </div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-icon">
+            <i class="fas fa-user"></i>
+        </div>
+        <div class="stat-content">
+            <h3>普通用戶</h3>
+            <div class="stat-number">{{ regular_users }}</div>
+        </div>
+    </div>
+    <div class="stat-card info">
+        <div class="stat-icon">
+            <i class="fas fa-cogs"></i>
+        </div>
+        <div class="stat-content">
+            <h3>服務總數</h3>
+            <div class="stat-number" id="totalServices">-</div>
+        </div>
+    </div>
+</div>
+
+<!-- 快速操作 -->
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-bolt"></i> 快速操作</h3>
+    </div>
+    <div class="quick-actions">
+        <a href="/admin/users" class="quick-action-card">
+            <i class="fas fa-users"></i>
+            <h4>用戶管理</h4>
+            <p>管理用戶帳號和權限</p>
+        </a>
+        <a href="/admin/services" class="quick-action-card">
+            <i class="fas fa-cogs"></i>
+            <h4>服務管理</h4>
+            <p>管理服務產品和定價</p>
+        </a>
+        <a href="/admin/user-services" class="quick-action-card">
+            <i class="fas fa-shopping-cart"></i>
+            <h4>用戶服務</h4>
+            <p>查看用戶購買的服務</p>
+        </a>
+        <a href="/admin/user-sessions" class="quick-action-card">
+            <i class="fas fa-heartbeat"></i>
+            <h4>會話監控</h4>
+            <p>監控用戶會話狀態</p>
+        </a>
+        <a href="/admin/database" class="quick-action-card">
+            <i class="fas fa-database"></i>
+            <h4>資料庫瀏覽</h4>
+            <p>瀏覽所有數據表</p>
+        </a>
+    </div>
+</div>
+
+<!-- 系統信息 -->
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-info-circle"></i> 系統信息</h3>
+    </div>
+    <div class="system-info">
+        <div class="info-item">
+            <strong>系統版本：</strong> v1.0.0
+        </div>
+        <div class="info-item">
+            <strong>最後更新：</strong> <span id="lastUpdate"></span>
+        </div>
+        <div class="info-item">
+            <strong>資料庫狀態：</strong> <span class="status-online">正常</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 載入服務統計
+    document.addEventListener('DOMContentLoaded', function() {
+        loadServiceStats();
+        updateLastUpdateTime();
+    });
+
+    function loadServiceStats() {
+        fetch('/admin/services')
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const serviceCount = doc.querySelectorAll('tbody tr').length;
+                document.getElementById('totalServices').textContent = serviceCount;
+            })
+            .catch(error => {
+                console.error('載入服務統計失敗:', error);
+            });
+    }
+
+    function updateLastUpdateTime() {
+        const now = new Date();
+        const timeString = now.toLocaleString('zh-TW');
+        document.getElementById('lastUpdate').textContent = timeString;
+    }
+
+    function showAddServiceForm() {
+        // 跳轉到服務管理頁面
+        window.location.href = '/admin/services';
+    }
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .quick-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        padding: 1.5rem;
+    }
+
+    .quick-action-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-decoration: none;
+        color: inherit;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+
+    .quick-action-card:hover {
+        background: #f1f5f9;
+        border-color: #3b82f6;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .quick-action-card i {
+        font-size: 2rem;
+        color: #3b82f6;
+        margin-bottom: 1rem;
+    }
+
+    .quick-action-card h4 {
+        margin-bottom: 0.5rem;
+        color: #1e293b;
+    }
+
+    .quick-action-card p {
+        color: #64748b;
+        font-size: 0.9rem;
+    }
+
+    .system-info {
+        padding: 1.5rem;
+    }
+
+    .info-item {
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background: #f8fafc;
+        border-radius: 8px;
+    }
+
+    .status-online {
+        color: #10b981;
+        font-weight: 500;
+    }
+</style>
+{% endblock %}

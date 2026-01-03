@@ -1,0 +1,338 @@
+{% extends "user/base.html" %}
+
+{% block title %}Portal de Usuario{% endblock %}
+{% block breadcrumb %}Portal de Usuario{% endblock %}
+
+{% block content %}
+<!-- 歡迎區域 -->
+<div class="content-card welcome-card">
+    <div class="welcome-section">
+        <div class="welcome-icon">
+            <i class="fas fa-rocket"></i>
+        </div>
+        <h2>¡Bienvenido de vuelta!</h2>
+        <p class="welcome-subtitle">Hola, <span class="username-highlight">{{ session.username }}</span></p>
+        <p class="welcome-description">Su centro de control personal está listo. Gestiona tus servicios y configuración desde aquí.</p>
+        <div class="welcome-stats">
+            <div class="stat-item">
+                <i class="fas fa-shield-alt"></i>
+                <span>Cuenta Segura</span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-clock"></i>
+                <span id="currentTime"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 用戶菜單 -->
+<div class="user-menu">
+    <div class="menu-card">
+        <h3>🔑 Cambiar Contraseña</h3>
+        <p>Cambie su contraseña de inicio de sesión</p>
+        <a href="/user/change-password" class="btn-action">Cambiar Contraseña</a>
+    </div>
+
+    <div class="menu-card">
+        <h3>📋 Mis Servicios</h3>
+        <p>Vea los servicios que ha comprado</p>
+        <a href="/user/services" class="btn-action">Ver Servicios</a>
+    </div>
+
+    <div class="menu-card">
+        <h3>🔔 Tareas de Monitoreo</h3>
+        <p>Administre sus tareas de monitoreo ITI/ZOFRI</p>
+        <a href="/user/monitor/tasks" class="btn-action">Gestionar Tareas</a>
+    </div>
+
+    <div class="menu-card">
+        <h3>📊 Resumen de Cuenta</h3>
+        <p>Vista rápida del estado de su cuenta</p>
+        <div class="account-overview">
+            <div class="overview-item">
+                <span class="label">Nombre de Usuario:</span>
+                <span class="value">{{ session.username }}</span>
+            </div>
+            <div class="overview-item">
+                <span class="label">Correo Electrónico:</span>
+                <span class="value">{{ session.email }}</span>
+            </div>
+            <div class="overview-item">
+                <span class="label">Hora de Inicio de Sesión:</span>
+                <span class="value" id="loginTime"></span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 頁面載入時顯示登入時間和實時時間
+    document.addEventListener('DOMContentLoaded', function() {
+        const loginTimeElement = document.getElementById('loginTime');
+        const currentTimeElement = document.getElementById('currentTime');
+        
+        // 顯示登入時間
+        if (loginTimeElement) {
+            const now = new Date();
+            const loginTime = now.toLocaleString('es-ES', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            loginTimeElement.textContent = loginTime;
+        }
+        
+        // 實時時間更新
+        function updateCurrentTime() {
+            if (currentTimeElement) {
+                const now = new Date();
+                const timeString = now.toLocaleTimeString('es-ES', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+                currentTimeElement.textContent = timeString;
+            }
+        }
+        
+        // 立即更新一次
+        updateCurrentTime();
+        
+        // 每秒更新
+        setInterval(updateCurrentTime, 1000);
+    });
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 歡迎卡片樣式 */
+    .welcome-card {
+        margin-bottom: 2rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+    }
+    
+    .welcome-section {
+        text-align: center;
+        padding: 3rem 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .welcome-section::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        animation: float 6s ease-in-out infinite;
+    }
+    
+    @keyframes float {
+        0%, 100% { transform: translateY(0px) rotate(0deg); }
+        50% { transform: translateY(-20px) rotate(180deg); }
+    }
+
+    .welcome-icon {
+        font-size: 3rem;
+        margin-bottom: 1.5rem;
+        opacity: 0.9;
+        animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+    }
+
+    .welcome-section h2 {
+        color: white;
+        margin-bottom: 0.5rem;
+        font-size: 2.5rem;
+        font-weight: 700;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        position: relative;
+        z-index: 1;
+    }
+
+    .welcome-subtitle {
+        color: rgba(255,255,255,0.9);
+        font-size: 1.3rem;
+        margin-bottom: 1rem;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .username-highlight {
+        color: #fbbf24;
+        font-weight: 700;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+
+    .welcome-description {
+        color: rgba(255,255,255,0.8);
+        font-size: 1.1rem;
+        margin-bottom: 2rem;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+        line-height: 1.6;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .welcome-stats {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        flex-wrap: wrap;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: rgba(255,255,255,0.2);
+        padding: 0.75rem 1.5rem;
+        border-radius: 25px;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255,255,255,0.3);
+        transition: all 0.3s ease;
+    }
+    
+    .stat-item:hover {
+        background: rgba(255,255,255,0.3);
+        transform: translateY(-2px);
+    }
+    
+    .stat-item i {
+        font-size: 1.1rem;
+        color: #fbbf24;
+    }
+    
+    .stat-item span {
+        font-weight: 500;
+        font-size: 0.95rem;
+    }
+    
+    /* 響應式設計 */
+    @media (max-width: 768px) {
+        .welcome-section {
+            padding: 2rem 1rem;
+        }
+        
+        .welcome-section h2 {
+            font-size: 2rem;
+        }
+        
+        .welcome-subtitle {
+            font-size: 1.1rem;
+        }
+        
+        .welcome-description {
+            font-size: 1rem;
+        }
+        
+        .welcome-stats {
+            gap: 1rem;
+        }
+        
+        .stat-item {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .welcome-icon {
+            font-size: 2.5rem;
+        }
+    }
+
+    .user-menu {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .menu-card {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .menu-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .menu-card h3 {
+        color: #1e293b;
+        margin-bottom: 1rem;
+        font-size: 1.25rem;
+    }
+
+    .menu-card p {
+        color: #64748b;
+        margin-bottom: 1.5rem;
+    }
+
+    .btn-action {
+        background: #3b82f6;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.3s ease;
+    }
+
+    .btn-action:hover {
+        background: #2563eb;
+        transform: translateY(-1px);
+    }
+
+    .account-overview {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: #f8fafc;
+        border-radius: 8px;
+    }
+
+    .overview-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .overview-item:last-child {
+        border-bottom: none;
+    }
+
+    .overview-item .label {
+        font-weight: 500;
+        color: #64748b;
+    }
+
+    .overview-item .value {
+        font-weight: 600;
+        color: #1e293b;
+    }
+</style>
+{% endblock %}

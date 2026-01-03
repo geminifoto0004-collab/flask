@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Usuario - Sistema de Autorización Xingwang</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/user.css') }}">
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <h1>📝 Registro de Usuario</h1>
+            <p>Sistema de Gestión de Autorización Xingwang</p>
+        </div>
+
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+        <div id="successMessage" class="success-message" style="display: none;"></div>
+
+        <!-- 步驟 1: 基本信息 -->
+        <div id="step1" class="form-step">
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="username">Nombre de Usuario</label>
+                    <input 
+                        type="text" 
+                        id="username" 
+                        name="username" 
+                        placeholder="Por favor ingrese su nombre de usuario (3-30 caracteres)"
+                        required
+                    >
+                    <div id="usernameStatus" class="validation-status" style="display: none;"></div>
+                    <small>Solo puede contener letras, números y guiones bajos, no puede comenzar con números</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Dirección de Correo Electrónico</label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        name="email" 
+                        placeholder="Por favor ingrese su dirección de correo electrónico"
+                        required
+                    >
+                    <div id="emailStatus" class="validation-status" style="display: none;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Contraseña</label>
+                    <div class="input-group">
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            placeholder="Por favor ingrese su contraseña (mínimo 8 caracteres)"
+                            required
+                        >
+                        <button type="button" class="toggle-password" onclick="togglePassword('password')">
+                            <i class="icon">👁️</i>
+                        </button>
+                    </div>
+                    <small>Mínimo 8 caracteres, debe contener números</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword">Confirmar Contraseña</label>
+                    <div class="input-group">
+                        <input 
+                            type="password" 
+                            id="confirmPassword" 
+                            name="confirmPassword" 
+                            placeholder="Por favor ingrese su contraseña nuevamente"
+                            required
+                        >
+                        <button type="button" class="toggle-password" onclick="togglePassword('confirmPassword')">
+                            <i class="icon">👁️</i>
+                        </button>
+                    </div>
+                    <div class="password-match" id="passwordMatch" style="display: none;">
+                        <i class="icon">✅</i>
+                        <span>Contraseñas coinciden</span>
+                    </div>
+                </div>
+
+                <button type="button" class="btn-login" onclick="sendVerificationCode()">
+                    Enviar Código de Verificación
+                </button>
+            </form>
+        </div>
+
+        <!-- 步驟 2: 驗證碼 -->
+        <div id="step2" class="form-step" style="display: none;">
+            <div class="verification-info">
+                <h3>Código de Verificación Enviado</h3>
+                <p>Hemos enviado un código de verificación a <strong id="sentEmail"></strong></p>
+                <p>Por favor revise su correo electrónico e ingrese el código de verificación de 6 dígitos</p>
+            </div>
+
+            <form id="verifyForm">
+                <div class="form-group">
+                    <label for="verificationCode">Código de Verificación</label>
+                    <input 
+                        type="text" 
+                        id="verificationCode" 
+                        name="verificationCode" 
+                        placeholder="Por favor ingrese el código de verificación de 6 dígitos"
+                        maxlength="6"
+                        required
+                    >
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-login" onclick="submitRegistration()">
+                        Completar Registro
+                    </button>
+                </div>
+                
+                <div class="back-link">
+                    <a href="#" onclick="confirmBackToStep1()" class="back-link-text">
+                        ← Volver a modificar información
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <div class="auth-links">
+            <a href="/login">¿Ya tiene una cuenta? Iniciar Sesión</a>
+        </div>
+
+        <div class="footer">
+            © 2025 Xingwang Textiles - Sistema de Gestión de Autorización
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/user.js') }}"></script>
+    <script>
+    // 密碼顯示/隱藏功能
+    function togglePassword(inputId) {
+        const input = document.getElementById(inputId);
+        const button = input.nextElementSibling;
+        const icon = button.querySelector('.icon');
+        
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.textContent = '🙈';
+        } else {
+            input.type = 'password';
+            icon.textContent = '👁️';
+        }
+    }
+
+    // 實時驗證功能
+    let emailCheckTimeout;
+    let usernameCheckTimeout;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const emailInput = document.getElementById('email');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+
+        // 郵箱實時驗證
+        emailInput.addEventListener('input', function() {
+            clearTimeout(emailCheckTimeout);
+            const email = this.value.trim();
+            
+            if (email.length > 0) {
+                emailCheckTimeout = setTimeout(() => {
+                    checkEmailAvailability(email);
+                }, 500); // 延遲500ms避免頻繁請求
+            } else {
+                hideValidationStatus('emailStatus');
+            }
+        });
+
+        // 用戶名實時驗證
+        usernameInput.addEventListener('input', function() {
+            clearTimeout(usernameCheckTimeout);
+            const username = this.value.trim();
+            
+            if (username.length > 0) {
+                usernameCheckTimeout = setTimeout(() => {
+                    checkUsernameAvailability(username);
+                }, 500); // 延遲500ms避免頻繁請求
+            } else {
+                hideValidationStatus('usernameStatus');
+            }
+        });
+
+        // 密碼實時驗證
+        passwordInput.addEventListener('input', validatePassword);
+        confirmPasswordInput.addEventListener('input', validatePassword);
+    });
+
+    // 檢查郵箱可用性
+    function checkEmailAvailability(email) {
+        fetch('/user/check-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: email })
+        })
+        .then(response => response.json())
+        .then(data => {
+            showValidationStatus('emailStatus', data.available, data.message);
+        })
+        .catch(error => {
+            console.error('Error checking email:', error);
+        });
+    }
+
+    // 檢查用戶名可用性
+    function checkUsernameAvailability(username) {
+        fetch('/user/check-username', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username: username })
+        })
+        .then(response => response.json())
+        .then(data => {
+            showValidationStatus('usernameStatus', data.available, data.message);
+        })
+        .catch(error => {
+            console.error('Error checking username:', error);
+        });
+    }
+
+    // 顯示驗證狀態
+    function showValidationStatus(elementId, isValid, message) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.style.display = 'block';
+            element.className = `validation-status ${isValid ? 'valid' : 'invalid'}`;
+            element.innerHTML = `<i class="icon">${isValid ? '✅' : '❌'}</i><span>${message}</span>`;
+        }
+    }
+
+    // 隱藏驗證狀態
+    function hideValidationStatus(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.style.display = 'none';
+        }
+    }
+
+    // 確認返回第一步
+    function confirmBackToStep1() {
+        if (confirm('¿Está seguro de que desea volver a modificar la información? Se perderá el código de verificación enviado.')) {
+            backToStep1();
+        }
+    }
+
+    // 密碼驗證功能
+    function validatePassword() {
+        const password = document.getElementById('password').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+        
+        // 驗證密碼匹配
+        const matchValid = password === confirmPassword && password.length > 0;
+        updatePasswordMatch(matchValid);
+    }
+    
+    function updatePasswordMatch(isValid) {
+        const element = document.getElementById('passwordMatch');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        
+        if (element && confirmPasswordInput.value.length > 0) {
+            element.style.display = 'flex';
+            const icon = element.querySelector('.icon');
+            icon.textContent = isValid ? '✅' : '❌';
+            element.style.color = isValid ? '#16a34a' : '#dc2626';
+        } else if (element) {
+            element.style.display = 'none';
+        }
+    }
+    </script>
+    <style>
+    .input-group {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+    
+    .input-group input {
+        width: 100%;
+        padding-right: 3rem;
+    }
+    
+    .toggle-password {
+        position: absolute;
+        right: 0.75rem;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0.5rem;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+    }
+    
+    .toggle-password:hover {
+        background-color: #f3f4f6;
+    }
+    
+    .validation-status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        transition: all 0.3s ease;
+    }
+    
+    .validation-status.valid {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+    
+    .validation-status.invalid {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+    
+    .validation-status .icon {
+        font-size: 1rem;
+    }
+    
+    .password-match {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+        transition: color 0.3s ease;
+    }
+    
+    .back-link {
+        text-align: center;
+        margin-top: 20px;
+    }
+    
+    .back-link-text {
+        color: #6c757d;
+        text-decoration: none;
+        font-size: 14px;
+        padding: 8px 16px;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+        display: inline-block;
+    }
+    
+    .back-link-text:hover {
+        color: #495057;
+        background-color: #f8f9fa;
+        text-decoration: none;
+    }
+    
+    @media (max-width: 768px) {
+        .input-group input {
+            padding-right: 2.5rem;
+        }
+        
+        .toggle-password {
+            right: 0.5rem;
+            padding: 0.4rem;
+        }
+    }
+    </style>
+</body>
+</html>

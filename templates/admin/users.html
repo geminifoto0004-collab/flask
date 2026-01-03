@@ -1,0 +1,1416 @@
+{% extends "admin/base.html" %}
+
+{% block title %}用戶管理{% endblock %}
+{% block breadcrumb %}用戶管理{% endblock %}
+
+{% block top_actions %}
+<button class="btn-primary" onclick="refreshUsers()">
+    <i class="fas fa-sync-alt"></i>
+    刷新用戶列表
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- 統計卡片 -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="fas fa-users"></i>
+        </div>
+        <div class="stat-content">
+            <h3>總用戶數</h3>
+            <div class="stat-number">{{ users|length }}</div>
+        </div>
+    </div>
+    <div class="stat-card danger">
+        <div class="stat-icon">
+            <i class="fas fa-crown"></i>
+        </div>
+        <div class="stat-content">
+            <h3>管理員</h3>
+            <div class="stat-number">{{ users|selectattr('role', 'equalto', 'admin')|list|length }}</div>
+        </div>
+    </div>
+    <div class="stat-card warning">
+        <div class="stat-icon">
+            <i class="fas fa-star"></i>
+        </div>
+        <div class="stat-content">
+            <h3>超級管理員</h3>
+            <div class="stat-number">{{ users|selectattr('role', 'equalto', super_admin_role)|list|length }}</div>
+        </div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-icon">
+            <i class="fas fa-user"></i>
+        </div>
+        <div class="stat-content">
+            <h3>普通用戶</h3>
+            <div class="stat-number">{{ users|selectattr('role', 'equalto', 'user')|list|length }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- 用戶列表 -->
+<div class="content-card users-list-card">
+    <div class="card-header">
+        <h3><i class="fas fa-list"></i> 用戶列表</h3>
+    </div>
+    
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>用戶名</th>
+                    <th>郵箱</th>
+                    <th>角色</th>
+                    <th>註冊時間</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ user.id }}</td>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.email }}</td>
+                    <td>
+                        {% if user.role == super_admin_role %}
+                            <span class="status-badge status-super-admin">
+                                <i class="fas fa-star"></i> 超級管理員
+                            </span>
+                        {% elif user.role == 'admin' %}
+                            <span class="status-badge status-active">
+                                <i class="fas fa-crown"></i> 管理員
+                            </span>
+                        {% else %}
+                            <span class="status-badge status-inactive">
+                                <i class="fas fa-user"></i> 用戶
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td>{{ user.created_at }}</td>
+                    <td>
+                        <div class="action-buttons">
+                            {% if user.role == super_admin_role %}
+                                <span class="super-admin-protected">
+                                    <i class="fas fa-shield-alt"></i> 受保護
+                                </span>
+                            {% else %}
+                                <select class="role-select" data-user-id="{{ user.id }}" onchange="updateUserRole(this)">
+                                    <option value="user" {% if user.role == 'user' %}selected{% endif %}>普通用戶</option>
+                                    <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>管理員</option>
+                                </select>
+                                <button class="btn-view" onclick="viewUserPassword({{ user.id }})" title="查看密碼">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="btn-services" onclick="manageUserServices({{ user.id }}, '{{ user.username }}')" title="管理服務">
+                                    <i class="fas fa-cogs"></i>
+                                </button>
+                                <button class="btn-monitor" onclick="manageUserMonitorTasks({{ user.id }}, '{{ user.username }}')" title="監控任務" style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                                    <i class="fas fa-bell"></i>
+                                </button>
+                                <button class="btn-delete" onclick="deleteUser({{ user.id }}, '{{ user.username }}')" title="刪除用戶">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 查看密碼 Modal -->
+<div id="passwordModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>用戶密碼</h3>
+            <button class="modal-close" onclick="closePasswordModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="password-display">
+                <p><strong>用戶名：</strong><span id="passwordUsername"></span></p>
+                <p><strong>密碼狀態：</strong><span id="passwordValue"></span></p>
+                <p><strong>密碼Hash：</strong><span id="passwordHash"></span></p>
+                <p class="password-note" id="passwordNote"></p>
+            </div>
+            <div class="reset-password-section">
+                <h4>重置密碼</h4>
+                <form id="resetPasswordForm">
+                    <input type="hidden" id="resetUserId" name="user_id">
+                    <div class="form-group">
+                        <label for="newPassword">新密碼</label>
+                        <div class="input-group">
+                            <input type="password" id="newPassword" name="new_password" placeholder="請輸入新密碼（至少8位數字）" required>
+                            <button type="button" class="toggle-password" onclick="togglePassword('newPassword')">
+                                <i class="icon">👁️</i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-save">重置密碼</button>
+                </form>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closePasswordModal()">關閉</button>
+        </div>
+    </div>
+</div>
+
+<!-- 用戶服務管理 Modal -->
+<div id="userServicesModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="userServicesTitle">用戶服務管理</h3>
+            <button class="modal-close" onclick="closeUserServicesModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="user-services-content">
+                <div class="current-services">
+                    <h4>當前服務</h4>
+                    <div id="currentServicesList"></div>
+                </div>
+                <div class="add-service">
+                    <h4>分配新服務</h4>
+                    <form id="assignServiceForm">
+                        <input type="hidden" id="assignUserId" name="user_id">
+                        <div class="form-group">
+                            <label for="assignServiceId">選擇服務</label>
+                            <select id="assignServiceId" name="service_id" required>
+                                <option value="">請選擇服務</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="startDate">開始日期</label>
+                            <input type="date" id="startDate" name="start_date" required>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="autoCalculate" name="auto_calculate" checked>
+                                自動計算結束日期（根據服務標準期限）
+                            </label>
+                        </div>
+                        <div class="form-group" id="endDateGroup">
+                            <label for="endDate">結束日期</label>
+                            <input type="date" id="endDate" name="end_date">
+                            <small>如果選擇自動計算，此欄位將被忽略</small>
+                        </div>
+                        <button type="submit" class="btn-save">分配服務</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 編輯用戶服務 Modal -->
+<div id="editUserServiceModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>編輯用戶服務</h3>
+            <button class="modal-close" onclick="closeEditUserServiceModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="editUserServiceForm">
+                <input type="hidden" id="editUserServiceId" name="user_service_id">
+                <div class="form-group">
+                    <label for="editServiceName">服務名稱</label>
+                    <input type="text" id="editServiceName" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="editUserName">用戶名稱</label>
+                    <input type="text" id="editUserName" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="editStartDate">開始日期</label>
+                    <input type="date" id="editStartDate" name="start_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="editEndDate">結束日期</label>
+                    <input type="date" id="editEndDate" name="end_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="editStatus">服務狀態</label>
+                    <select id="editStatus" name="status" required>
+                        <option value="active">啟用</option>
+                        <option value="inactive">停用</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeEditUserServiceModal()">取消</button>
+            <button type="button" class="btn-save" onclick="saveUserServiceEdit()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 用戶監控任務管理 Modal -->
+<div id="userMonitorTasksModal" class="modal">
+    <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+            <h3 id="userMonitorTasksTitle">用戶監控任務管理</h3>
+            <button class="modal-close" onclick="closeUserMonitorTasksModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="user-monitor-tasks-content">
+                <div class="current-tasks">
+                    <h4>當前監控任務</h4>
+                    <div id="currentMonitorTasksList" style="margin-top: 15px;">
+                        <p style="color: #999;">載入中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeUserMonitorTasksModal()">關閉</button>
+        </div>
+    </div>
+</div>
+
+<!-- 確認刪除 Modal -->
+<div id="deleteUserModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>確認刪除用戶</h3>
+            <button class="modal-close" onclick="closeDeleteUserModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p>確定要刪除用戶 <strong id="deleteUserName"></strong> 嗎？</p>
+            <p class="warning-text">此操作將刪除用戶的所有數據，包括服務記錄，且無法撤銷！</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeDeleteUserModal()">取消</button>
+            <button type="button" class="btn-delete-confirm" onclick="confirmDeleteUser()">確認刪除</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentUserId = null;
+    let currentUsername = null;
+
+    // 密碼顯示/隱藏功能
+    function togglePassword(inputId) {
+        const input = document.getElementById(inputId);
+        const button = input.nextElementSibling;
+        const icon = button.querySelector('.icon');
+        
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.textContent = '🙈';
+        } else {
+            input.type = 'password';
+            icon.textContent = '👁️';
+        }
+    }
+
+    // 刷新用戶列表
+    function refreshUsers() {
+        location.reload();
+    }
+
+    function updateUserRole(selectElement) {
+        const userId = selectElement.dataset.userId;
+        const newRole = selectElement.value;
+        const currentRole = selectElement.value === 'admin' ? 'user' : 'admin'; // 當前角色是相反的
+        
+        // 獲取當前用戶角色（從服務器端傳遞）
+        const currentUserRole = '{{ session.role }}';
+        const superAdminRole = '{{ super_admin_role }}';
+        
+        // 如果是降級管理員，顯示特殊警告
+        if (currentRole === 'admin' && newRole === 'user') {
+            // 檢查當前用戶是否為超級管理員
+            if (currentUserRole !== superAdminRole) {
+                alert('❌ 權限不足：只有超級管理員可以將管理員降級為普通用戶');
+                selectElement.value = currentRole;
+                return;
+            }
+            
+            if (!confirm(`⚠️ 警告：您正在將管理員降級為普通用戶。\n\n確定要繼續嗎？`)) {
+                selectElement.value = currentRole;
+                return;
+            }
+        } else {
+            if (!confirm(`確定要將此用戶的角色更改為 ${newRole === 'admin' ? '管理員' : '普通用戶'} 嗎？`)) {
+                selectElement.value = currentRole;
+                return;
+            }
+        }
+        
+        const formData = new FormData();
+        formData.append('role', newRole);
+        
+        fetch(`/admin/users/${userId}/role`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ 角色更新成功！');
+                location.reload();
+            } else {
+                alert('❌ 更新失敗：' + data.error);
+                // 恢復原來的選擇
+                selectElement.value = currentRole;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('❌ 更新失敗，請重試');
+            // 恢復原來的選擇
+            selectElement.value = currentRole;
+        });
+    }
+
+    function viewUserPassword(userId) {
+        fetch(`/admin/users/${userId}/password`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('passwordUsername').textContent = data.username;
+                    document.getElementById('passwordValue').textContent = data.password;
+                    document.getElementById('passwordHash').textContent = data.password_hash;
+                    document.getElementById('passwordNote').textContent = data.note;
+                    document.getElementById('resetUserId').value = userId;
+                    document.getElementById('passwordModal').style.display = 'block';
+                } else {
+                    alert('獲取密碼失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('獲取密碼失敗，請重試');
+            });
+    }
+
+    function manageUserServices(userId, username) {
+        currentUserId = userId;
+        currentUsername = username;
+        
+        document.getElementById('userServicesTitle').textContent = `管理用戶服務 - ${username}`;
+        document.getElementById('assignUserId').value = userId;
+        
+        // 載入用戶當前服務
+        loadUserServices(userId);
+        
+        // 載入可用服務
+        loadAvailableServices();
+        
+        document.getElementById('userServicesModal').style.display = 'block';
+    }
+
+    function loadUserServices(userId) {
+        fetch(`/admin/users/${userId}/services`)
+            .then(response => response.json())
+            .then(data => {
+                const servicesList = document.getElementById('currentServicesList');
+                if (data.services && data.services.length > 0) {
+                    servicesList.innerHTML = data.services.map(service => `
+                        <div class="service-item">
+                            <div class="service-info">
+                                <strong>${service.service_name}</strong>
+                                <span class="status-badge status-${service.status}">
+                                    ${service.status === 'active' ? '啟用' : '停用'}
+                                </span>
+                            </div>
+                            <div class="service-dates">
+                                <small>${service.start_date || '未設定'} - ${service.end_date || '未設定'}</small>
+                            </div>
+                            <div class="service-actions">
+                                <button class="btn-edit" onclick="editUserService(${service.id})">編輯</button>
+                                <button class="btn-delete" onclick="deleteUserService(${service.id})">刪除</button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    servicesList.innerHTML = '<p class="no-services">該用戶暫無服務</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('currentServicesList').innerHTML = '<p class="error">載入服務失敗</p>';
+            });
+    }
+
+    function loadAvailableServices() {
+        fetch('/admin/services')
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const serviceSelect = document.getElementById('assignServiceId');
+                
+                // 清空現有選項
+                serviceSelect.innerHTML = '<option value="">請選擇服務</option>';
+                
+                doc.querySelectorAll('tbody tr').forEach(row => {
+                    const serviceName = row.cells[1].textContent.trim();
+                    const price = row.cells[3].textContent.trim();
+                    const option = document.createElement('option');
+                    option.value = row.cells[0].textContent.trim();
+                    option.textContent = `${serviceName} (${price})`;
+                    serviceSelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+
+    function deleteUser(userId, username) {
+        currentUserId = userId;
+        currentUsername = username;
+        document.getElementById('deleteUserName').textContent = username;
+        
+        // 檢查是否為管理員，顯示特殊警告
+        const row = document.querySelector(`tr[data-user-id="${userId}"]`) || 
+                   document.querySelector(`select[data-user-id="${userId}"]`).closest('tr');
+        const roleBadge = row.querySelector('.status-badge');
+        const isAdmin = roleBadge && roleBadge.textContent.includes('管理員');
+        
+        if (isAdmin) {
+            document.querySelector('#deleteUserModal .warning-text').innerHTML = 
+                '⚠️ <strong>警告：</strong>您正在刪除管理員帳號。如果這是系統中最後一個管理員，此操作將被阻止。此操作將刪除用戶的所有數據，包括服務記錄，且無法撤銷！';
+        } else {
+            document.querySelector('#deleteUserModal .warning-text').innerHTML = 
+                '此操作將刪除用戶的所有數據，包括服務記錄，且無法撤銷！';
+        }
+        
+        document.getElementById('deleteUserModal').style.display = 'block';
+    }
+
+    function confirmDeleteUser() {
+        if (currentUserId) {
+            fetch(`/admin/users/${currentUserId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('用戶刪除成功！');
+                    location.reload();
+                } else {
+                    alert('刪除失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('刪除失敗，請重試');
+            });
+        }
+        closeDeleteUserModal();
+    }
+
+    // Modal 關閉函數
+    function closePasswordModal() {
+        document.getElementById('passwordModal').style.display = 'none';
+    }
+
+    function closeUserServicesModal() {
+        document.getElementById('userServicesModal').style.display = 'none';
+    }
+
+    // 監控任務管理
+    function manageUserMonitorTasks(userId, username) {
+        currentUserId = userId;
+        currentUsername = username;
+        
+        document.getElementById('userMonitorTasksTitle').textContent = `監控任務管理 - ${username}`;
+        
+        // 載入用戶的監控任務
+        loadUserMonitorTasks(userId);
+        
+        document.getElementById('userMonitorTasksModal').style.display = 'block';
+    }
+
+    function loadUserMonitorTasks(userId) {
+        const tasksList = document.getElementById('currentMonitorTasksList');
+        tasksList.innerHTML = '<p style="color: #999;">載入中...</p>';
+        
+        fetch(`/api/admin/users/${userId}/monitor-tasks`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.tasks && data.tasks.length > 0) {
+                        tasksList.innerHTML = data.tasks.map(task => `
+                            <div class="task-item" style="border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 6px;">
+                                <div style="display: flex; justify-content: space-between; align-items: start;">
+                                    <div style="flex: 1;">
+                                        <p><strong>ZOFRI 用戶名：</strong>${task.zofri_username}</p>
+                                        <p><strong>RUT 實體：</strong>${task.zofri_rut_entidad}</p>
+                                        <p><strong>通知郵箱：</strong>${task.notification_emails ? task.notification_emails.join(', ') : ''}</p>
+                                        <p><strong>狀態：</strong>
+                                            <span class="status-badge status-${task.is_active ? 'active' : 'inactive'}">
+                                                ${task.is_active ? '啟用' : '停用'}
+                                            </span>
+                                        </p>
+                                        <p><strong>上次檢查：</strong>${task.last_check_time || '尚未檢查'}</p>
+                                        <p><strong>API Key：</strong><code style="font-size: 12px;">${task.api_key}</code></p>
+                                    </div>
+                                    <div style="display: flex; gap: 5px;">
+                                        <button onclick="editMonitorTask(${task.id})" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                            <i class="fas fa-edit"></i> 編輯
+                                        </button>
+                                        <button onclick="deleteMonitorTask(${task.id})" style="padding: 6px 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                            <i class="fas fa-trash"></i> 刪除
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+                    } else {
+                        tasksList.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">該用戶尚無監控任務</p>';
+                    }
+                } else {
+                    tasksList.innerHTML = `<p style="color: #dc3545;">載入失敗：${data.error || '未知錯誤'}</p>`;
+                }
+            })
+            .catch(error => {
+                console.error('Error loading monitor tasks:', error);
+                tasksList.innerHTML = '<p style="color: #dc3545;">載入失敗，請重試</p>';
+            });
+    }
+
+    function editMonitorTask(taskId) {
+        // TODO: 實現編輯功能（可以打開編輯 Modal 或直接編輯）
+        alert('編輯功能開發中，請用戶在自己的頁面中編輯');
+    }
+
+    function deleteMonitorTask(taskId) {
+        if (!confirm('確定要刪除此監控任務嗎？')) {
+            return;
+        }
+        
+        fetch(`/api/admin/monitor/tasks/${taskId}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('任務已刪除');
+                loadUserMonitorTasks(currentUserId);
+            } else {
+                alert('刪除失敗：' + (data.error || '未知錯誤'));
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting task:', error);
+            alert('刪除失敗，請重試');
+        });
+    }
+
+    function closeUserMonitorTasksModal() {
+        document.getElementById('userMonitorTasksModal').style.display = 'none';
+    }
+
+    function closeDeleteUserModal() {
+        document.getElementById('deleteUserModal').style.display = 'none';
+    }
+
+    // 自動計算結束日期功能
+    document.getElementById('autoCalculate').addEventListener('change', function() {
+        const endDateGroup = document.getElementById('endDateGroup');
+        const endDateInput = document.getElementById('endDate');
+        
+        if (this.checked) {
+            endDateGroup.style.opacity = '0.5';
+            endDateInput.disabled = true;
+            endDateInput.required = false;
+        } else {
+            endDateGroup.style.opacity = '1';
+            endDateInput.disabled = false;
+            endDateInput.required = true;
+        }
+    });
+
+    // 開始日期變化時自動計算結束日期
+    document.getElementById('startDate').addEventListener('change', function() {
+        const autoCalculate = document.getElementById('autoCalculate');
+        if (autoCalculate.checked) {
+            calculateEndDate();
+        }
+    });
+
+    // 服務選擇變化時自動計算結束日期
+    document.getElementById('assignServiceId').addEventListener('change', function() {
+        const autoCalculate = document.getElementById('autoCalculate');
+        if (autoCalculate.checked && this.value) {
+            calculateEndDate();
+        }
+    });
+
+    function calculateEndDate() {
+        const startDate = document.getElementById('startDate').value;
+        const serviceId = document.getElementById('assignServiceId').value;
+        
+        if (!startDate || !serviceId) return;
+        
+        // 獲取服務的標準期限
+        fetch(`/admin/services/${serviceId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const durationDays = data.service.duration_days;
+                    const start = new Date(startDate);
+                    const end = new Date(start);
+                    end.setDate(start.getDate() + durationDays);
+                    
+                    const endDateStr = end.toISOString().split('T')[0];
+                    document.getElementById('endDate').value = endDateStr;
+                    
+                    // 顯示計算結果
+                    const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+                    console.log(`自動計算：${startDate} + ${durationDays}天 = ${endDateStr} (${daysDiff}天)`);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+
+    // 服務分配表單提交
+    document.getElementById('assignServiceForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        
+        fetch('/admin/user-services/assign', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message || '服務分配成功！');
+                loadUserServices(currentUserId);
+                this.reset();
+                // 重置自動計算狀態
+                document.getElementById('autoCalculate').checked = true;
+                document.getElementById('endDateGroup').style.opacity = '0.5';
+                document.getElementById('endDate').disabled = true;
+            } else {
+                alert('分配失敗：' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('分配失敗，請重試');
+        });
+    });
+
+    // 重置密碼表單提交
+    document.getElementById('resetPasswordForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const userId = document.getElementById('resetUserId').value;
+        const formData = new FormData(this);
+        
+        fetch(`/admin/users/${userId}/reset-password`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`密碼重置成功！\n新密碼：${data.new_password}\n請將此密碼告知用戶。`);
+                this.reset();
+                closePasswordModal();
+            } else {
+                alert('重置失敗：' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('重置失敗，請重試');
+        });
+    });
+
+    // 用戶服務管理函數
+    let currentUserServiceId = null;
+
+    function editUserService(serviceId) {
+        currentUserServiceId = serviceId;
+        
+        // 顯示編輯 Modal
+        document.getElementById('editUserServiceModal').style.display = 'block';
+        
+        // 顯示加載狀態
+        const form = document.getElementById('editUserServiceForm');
+        if (form) {
+            form.style.opacity = '0.5';
+            form.style.pointerEvents = 'none';
+        }
+        
+        // 載入用戶服務數據
+        fetch(`/admin/user-services/${serviceId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const userService = data.user_service;
+                    document.getElementById('editUserServiceId').value = userService.id;
+                    document.getElementById('editServiceName').value = userService.service_name;
+                    document.getElementById('editUserName').value = userService.username;
+                    document.getElementById('editStartDate').value = userService.start_date;
+                    document.getElementById('editEndDate').value = userService.end_date;
+                    document.getElementById('editStatus').value = userService.status;
+                    
+                    // 恢復表單狀態
+                    if (form) {
+                        form.style.opacity = '1';
+                        form.style.pointerEvents = 'auto';
+                    }
+                } else {
+                    alert('載入用戶服務數據失敗：' + data.error);
+                    closeEditUserServiceModal();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('載入用戶服務數據失敗，請重試');
+                closeEditUserServiceModal();
+            });
+    }
+
+    function deleteUserService(serviceId) {
+        if (confirm('確定要刪除此用戶服務嗎？\n此操作將移除用戶的服務權限，且無法撤銷！')) {
+            fetch(`/admin/user-services/${serviceId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('用戶服務已刪除！');
+                    loadUserServices(currentUserId); // 重新載入服務列表
+                } else {
+                    alert('刪除失敗：' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('刪除失敗，請重試');
+            });
+        }
+    }
+
+    function saveUserServiceEdit() {
+        const form = document.getElementById('editUserServiceForm');
+        const formData = new FormData(form);
+        
+        // 驗證日期
+        const startDate = formData.get('start_date');
+        const endDate = formData.get('end_date');
+        
+        if (new Date(endDate) <= new Date(startDate)) {
+            alert('結束日期必須晚於開始日期');
+            return;
+        }
+        
+        fetch(`/admin/user-services/${currentUserServiceId}`, {
+            method: 'PUT',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('用戶服務更新成功！');
+                closeEditUserServiceModal();
+                loadUserServices(currentUserId); // 重新載入服務列表
+            } else {
+                alert('更新失敗：' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('更新失敗，請重試');
+        });
+    }
+
+    function closeEditUserServiceModal() {
+        document.getElementById('editUserServiceModal').style.display = 'none';
+        // 重置表單狀態
+        const form = document.getElementById('editUserServiceForm');
+        if (form) {
+            form.style.opacity = '1';
+            form.style.pointerEvents = 'auto';
+        }
+    }
+
+    // 暫時禁用點擊外部關閉MODAL，避免意外關閉
+    // window.onclick = function(event) {
+    //     const passwordModal = document.getElementById('passwordModal');
+    //     const userServicesModal = document.getElementById('userServicesModal');
+    //     const deleteUserModal = document.getElementById('deleteUserModal');
+    //     
+    //     if (event.target === passwordModal) {
+    //         closePasswordModal();
+    //     }
+    //     if (event.target === userServicesModal) {
+    //         closeUserServicesModal();
+    //     }
+    //     if (event.target === deleteUserModal) {
+    //         closeDeleteUserModal();
+    //     }
+    // }
+    
+    // 添加ESC键关闭MODAL的功能
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            const passwordModal = document.getElementById('passwordModal');
+            const userServicesModal = document.getElementById('userServicesModal');
+            const editUserServiceModal = document.getElementById('editUserServiceModal');
+            const deleteUserModal = document.getElementById('deleteUserModal');
+            
+            if (passwordModal.style.display === 'block') {
+                closePasswordModal();
+            } else if (userServicesModal.style.display === 'block') {
+                closeUserServicesModal();
+            } else if (editUserServiceModal.style.display === 'block') {
+                closeEditUserServiceModal();
+            } else if (deleteUserModal.style.display === 'block') {
+                closeDeleteUserModal();
+            }
+        }
+    });
+    
+    // 防止MODAL内容区域的点击事件冒泡
+    document.addEventListener('DOMContentLoaded', function() {
+        const modals = ['passwordModal', 'userServicesModal', 'editUserServiceModal', 'deleteUserModal'];
+        
+        modals.forEach(function(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                const modalContent = modal.querySelector('.modal-content');
+                if (modalContent) {
+                    modalContent.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                    });
+                }
+                
+                // 防止所有输入框的点击事件冒泡
+                const inputs = modal.querySelectorAll('input, textarea, select');
+                inputs.forEach(function(input) {
+                    input.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                    });
+                    
+                    input.addEventListener('focus', function(e) {
+                        e.stopPropagation();
+                    });
+                });
+            }
+        });
+    });
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 用戶管理頁面專用樣式 */
+    .users-list-card {
+        margin-top: 1rem;
+        margin-left: 2rem;
+        margin-right: 2rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stats-grid {
+        margin-bottom: 1rem;
+    }
+    
+    /* 改善卡片間距 */
+    .content-card {
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid #e2e8f0;
+    }
+    
+    .card-header {
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .card-header h3 {
+        color: #1e293b;
+        font-weight: 600;
+    }
+    
+    /* 表格樣式優化 */
+    .table-container {
+        padding: 0;
+        overflow-x: auto;
+    }
+    
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+    
+    .data-table th {
+        background: #f8fafc;
+        color: #475569;
+        font-weight: 600;
+        text-align: left;
+        padding: 1rem;
+        border-bottom: 2px solid #e2e8f0;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .data-table td {
+        padding: 1rem;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+    }
+    
+    .data-table tbody tr:hover {
+        background: #f8fafc;
+        transition: background-color 0.2s ease;
+    }
+    
+    .data-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+    
+    /* 狀態徽章樣式 */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .status-super-admin {
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        color: #92400e;
+        border: 1px solid #f59e0b;
+    }
+    
+    .status-active {
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+    }
+    
+    .status-inactive {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+    }
+    
+    /* 響應式間距調整 */
+    @media (max-width: 768px) {
+        .users-list-card {
+            margin-left: 1rem;
+            margin-right: 1rem;
+        }
+        
+        .stats-grid {
+            padding: 1rem;
+        }
+        
+        .data-table th,
+        .data-table td {
+            padding: 0.75rem 0.5rem;
+        }
+        
+        .action-buttons {
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    
+    .role-select {
+        padding: 0.5rem;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        background-color: white;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        min-width: 120px;
+    }
+    
+    .role-select:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    .btn-view, .btn-services, .btn-delete {
+        padding: 0.5rem;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-view {
+        background: #17a2b8;
+        color: white;
+    }
+    
+    .btn-view:hover {
+        background: #138496;
+    }
+    
+    .btn-services {
+        background: #28a745;
+        color: white;
+    }
+    
+    .btn-services:hover {
+        background: #218838;
+    }
+    
+    .btn-delete {
+        background: #dc3545;
+        color: white;
+    }
+    
+    .btn-delete:hover {
+        background: #c82333;
+    }
+    
+    /* Modal 樣式 */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+    }
+    
+    .modal-content {
+        background-color: #fefefe;
+        padding: 0;
+        border: none;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 600px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    
+    .modal-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #f8f9fa;
+        border-radius: 8px 8px 0 0;
+    }
+    
+    .modal-header h3 {
+        margin: 0;
+        color: #495057;
+    }
+    
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: #6c757d;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-close:hover {
+        color: #495057;
+    }
+    
+    .modal-body {
+        padding: 1.5rem;
+    }
+    
+    .modal-footer {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid #dee2e6;
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        background: #f8f9fa;
+        border-radius: 0 0 8px 8px;
+    }
+    
+    .btn-cancel, .btn-save, .btn-delete-confirm {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-cancel {
+        background: #6c757d;
+        color: white;
+    }
+    
+    .btn-cancel:hover {
+        background: #5a6268;
+    }
+    
+    .btn-save {
+        background: #28a745;
+        color: white;
+    }
+    
+    .btn-save:hover {
+        background: #218838;
+    }
+    
+    .btn-delete-confirm {
+        background: #dc3545;
+        color: white;
+    }
+    
+    .btn-delete-confirm:hover {
+        background: #c82333;
+    }
+    
+    /* 密碼顯示樣式 */
+    .password-display {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 4px;
+        border: 1px solid #dee2e6;
+    }
+    
+    .password-display p {
+        margin: 0.5rem 0;
+    }
+    
+    .password-note {
+        color: #6c757d;
+        font-size: 0.9rem;
+        font-style: italic;
+    }
+    
+    .reset-password-section {
+        margin-top: 2rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #dee2e6;
+    }
+    
+    .reset-password-section h4 {
+        margin-top: 0;
+        color: #495057;
+        border-bottom: 2px solid #dc3545;
+        padding-bottom: 0.5rem;
+    }
+    
+    /* 用戶服務管理樣式 */
+    .user-services-content {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+    }
+    
+    .current-services h4, .add-service h4 {
+        margin-top: 0;
+        color: #495057;
+        border-bottom: 2px solid #007bff;
+        padding-bottom: 0.5rem;
+    }
+    
+    .service-item {
+        background: #f8f9fa;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border-radius: 4px;
+        border: 1px solid #dee2e6;
+    }
+    
+    .service-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    
+    .status-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+    
+    .status-super-admin {
+        background: linear-gradient(45deg, #ffd700, #ffed4e);
+        color: #8b4513;
+        font-weight: bold;
+        border: 2px solid #ffd700;
+    }
+    
+    .status-active {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .status-inactive {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    
+    .super-admin-protected {
+        background: #e3f2fd;
+        color: #1565c0;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        font-weight: bold;
+        border: 1px solid #bbdefb;
+    }
+    
+    .service-dates {
+        margin-bottom: 0.5rem;
+        color: #6c757d;
+    }
+    
+    .service-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .btn-edit {
+        background: #ffc107;
+        color: #212529;
+        border: none;
+        padding: 0.25rem 0.5rem;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 0.8rem;
+    }
+    
+    .btn-edit:hover {
+        background: #e0a800;
+    }
+    
+    .no-services {
+        color: #6c757d;
+        font-style: italic;
+        text-align: center;
+        padding: 2rem;
+    }
+    
+    .error {
+        color: #dc3545;
+        text-align: center;
+        padding: 1rem;
+    }
+    
+    .warning-text {
+        color: #dc3545;
+        font-weight: bold;
+        margin-top: 1rem;
+    }
+    
+    .form-group {
+        margin-bottom: 1rem;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: bold;
+        color: #495057;
+    }
+    
+    .form-group input, .form-group select {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 0.9rem;
+    }
+
+    .input-group {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+    
+    .input-group input {
+        width: 100%;
+        padding-right: 3rem;
+    }
+    
+    .toggle-password {
+        position: absolute;
+        right: 0.75rem;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0.5rem;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+    }
+    
+    .toggle-password:hover {
+        background-color: #f3f4f6;
+    }
+    
+    .form-group input:focus, .form-group select:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+    }
+    
+    @media (max-width: 768px) {
+        .user-services-content {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+        
+        .action-buttons {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        
+        .modal-content {
+            width: 95%;
+            margin: 10% auto;
+        }
+    }
+</style>
+{% endblock %}

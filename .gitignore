@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.db
+databases/
+.env
+logs/
+.vscode/
+*.zip
+.DS_Store
+Thumbs.db

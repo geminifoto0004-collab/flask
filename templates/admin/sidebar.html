@@ -1,0 +1,48 @@
+<!-- 管理員側邊欄組件 -->
+<div class="sidebar">
+    <div class="sidebar-header">
+        <h2><i class="fas fa-crown"></i> 管理控制台</h2>
+        <p>XINGWANG授權管理系統</p>
+    </div>
+    
+    <nav class="sidebar-nav">
+        <a href="/admin" class="nav-item {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
+            <i class="fas fa-tachometer-alt"></i>
+            <span>儀表板</span>
+        </a>
+        <a href="/admin/users" class="nav-item {% if request.endpoint == 'admin_users' %}active{% endif %}">
+            <i class="fas fa-users"></i>
+            <span>用戶管理</span>
+        </a>
+        <a href="/admin/services" class="nav-item {% if request.endpoint == 'admin_services' %}active{% endif %}">
+            <i class="fas fa-cogs"></i>
+            <span>服務管理</span>
+        </a>
+        <a href="/admin/user-services" class="nav-item {% if request.endpoint == 'admin_user_services' %}active{% endif %}">
+            <i class="fas fa-shopping-cart"></i>
+            <span>用戶服務</span>
+        </a>
+        <a href="/admin/user-sessions" class="nav-item {% if request.endpoint == 'admin_user_sessions' %}active{% endif %}">
+            <i class="fas fa-heartbeat"></i>
+            <span>會話監控</span>
+        </a>
+        <a href="/admin/database" class="nav-item {% if request.endpoint == 'admin_database' %}active{% endif %}">
+            <i class="fas fa-database"></i>
+            <span>資料庫瀏覽</span>
+        </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+        <div class="user-profile">
+            <i class="fas fa-user-circle"></i>
+            <div>
+                <strong>{{ session.username }}</strong>
+                <small>{{ session.email }}</small>
+            </div>
+        </div>
+        <a href="/logout" class="logout-btn">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>登出</span>
+        </a>
+    </div>
+</div>

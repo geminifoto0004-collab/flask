@@ -1,0 +1,1100 @@
+{% extends "user/base.html" %}
+
+{% block title %}Gestión de Tareas de Monitoreo{% endblock %}
+{% block breadcrumb %}Gestión de Tareas de Monitoreo{% endblock %}
+
+{% block content %}
+<!-- 頁面標題 -->
+<div class="monitor-header">
+    <div class="header-content">
+        <div class="header-title-section">
+            <h1><i class="fas fa-bell"></i> Gestión de Tareas de Monitoreo</h1>
+            <p class="header-subtitle">Administre sus tareas de monitoreo ITI/ZOFRI</p>
+        </div>
+        <button class="btn-primary" onclick="showCreateForm()">
+            <i class="fas fa-plus"></i> Crear Nueva Tarea
+        </button>
+    </div>
+    <div class="header-stats">
+        <div class="stat-item">
+            <div class="stat-icon active"><i class="fas fa-check-circle"></i></div>
+            <div class="stat-info">
+                <div class="stat-number" id="activeTasksCount">0</div>
+                <div class="stat-label">Activas</div>
+            </div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-icon total"><i class="fas fa-list"></i></div>
+            <div class="stat-info">
+                <div class="stat-number" id="totalTasksCount">0</div>
+                <div class="stat-label">Total</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 任務列表容器 -->
+<div class="monitor-container">
+    <div id="loadingMessage" class="loading-state">
+        <div class="spinner"></div>
+        <p>Cargando tareas...</p>
+    </div>
+
+    <div id="tasksList" class="tasks-grid" style="display: none;">
+        <!-- 任務列表將在這裡動態載入 -->
+    </div>
+
+    <div id="noTasksMessage" class="empty-state" style="display: none;">
+        <div class="empty-icon">📋</div>
+        <h3>No hay tareas de monitoreo</h3>
+        <p>Actualmente no tiene ninguna tarea de monitoreo configurada</p>
+        <button class="btn-primary" onclick="showCreateForm()">
+            <i class="fas fa-plus"></i> Crear Primera Tarea
+        </button>
+    </div>
+</div>
+
+<!-- 創建/編輯任務 Modal -->
+<div id="taskModal" class="modal-overlay" style="display: none;" onclick="handleModalClick(event)">
+    <div class="modal-dialog" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 id="modalTitle">Crear Tarea de Monitoreo</h2>
+            <button class="modal-close-btn" onclick="closeTaskModal()" title="Cerrar">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="taskForm">
+                <input type="hidden" id="taskId" name="task_id">
+                
+                <div class="form-group">
+                    <label for="zofriUsername">Usuario ZOFRI <span class="required">*</span></label>
+                    <input type="text" id="zofriUsername" name="zofri_username" required placeholder="Ingrese su usuario ZOFRI">
+                </div>
+                
+                <div class="form-group">
+                    <label for="zofriPassword">Contraseña ZOFRI <span class="required">*</span></label>
+                    <input type="password" id="zofriPassword" name="zofri_password" required placeholder="Ingrese su contraseña ZOFRI">
+                </div>
+                
+                <div class="form-group">
+                    <label for="zofriRutEntidad">RUT Entidad <span class="required">*</span></label>
+                    <input type="text" id="zofriRutEntidad" name="zofri_rut_entidad" placeholder="Ejemplo: 76315010-0" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="notificationEmails">Correos de Notificación <span class="required">*</span></label>
+                    <textarea id="notificationEmails" name="notification_emails" rows="3" placeholder="email1@example.com, email2@example.com" required></textarea>
+                    <small class="form-hint">Separe múltiples correos con comas</small>
+                </div>
+                
+                <div class="form-group" id="isActiveGroup" style="display: none;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="isActive" name="is_active" checked>
+                        <span>Activar esta tarea</span>
+                    </label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-secondary" onclick="closeTaskModal()">Cancelar</button>
+            <button type="button" class="btn-primary" onclick="saveTask()">
+                <i class="fas fa-save"></i> Guardar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- API Key Modal -->
+<div id="apiKeyModal" class="modal-overlay" style="display: none;" onclick="closeApiKeyModal()">
+    <div class="modal-dialog modal-sm" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2>API Key</h2>
+            <button class="modal-close-btn" onclick="closeApiKeyModal()" title="Cerrar">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-description">Copie este endpoint completo para configurar en cron-job:</p>
+            <div class="api-key-display">
+                <code id="apiKeyDisplay"></code>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-primary btn-block" onclick="copyApiKey()">
+                    <i class="fas fa-copy"></i> Copiar Endpoint
+                </button>
+                <button class="btn-danger btn-block" onclick="regenerateApiKey()">
+                    <i class="fas fa-sync"></i> Regenerar API Key
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast 通知 -->
+<div id="toast" class="toast"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentTaskId = null;
+let currentApiKey = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadTasks();
+    
+    // 點擊背景關閉 Modal
+    document.getElementById('taskModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeTaskModal();
+        }
+    });
+    
+    document.getElementById('apiKeyModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeApiKeyModal();
+        }
+    });
+});
+
+function loadTasks() {
+    fetch('/api/user/monitor/tasks')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('loadingMessage').style.display = 'none';
+            
+            if (data.success && data.tasks && data.tasks.length > 0) {
+                displayTasks(data.tasks);
+            } else {
+                document.getElementById('noTasksMessage').style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading tasks:', error);
+            document.getElementById('loadingMessage').style.display = 'none';
+            showToast('Error al cargar tareas', 'error');
+        });
+}
+
+function displayTasks(tasks) {
+    const tasksList = document.getElementById('tasksList');
+    tasksList.innerHTML = '';
+    
+    updateTaskStats(tasks);
+    
+    tasks.forEach(task => {
+        const taskCard = createTaskCard(task);
+        tasksList.appendChild(taskCard);
+    });
+    
+    tasksList.style.display = 'grid';
+    document.getElementById('noTasksMessage').style.display = 'none';
+}
+
+function updateTaskStats(tasks) {
+    const activeCount = tasks.filter(task => task.is_active).length;
+    const totalCount = tasks.length;
+    
+    animateNumber('activeTasksCount', activeCount);
+    animateNumber('totalTasksCount', totalCount);
+}
+
+function animateNumber(elementId, targetValue) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    const startValue = parseInt(element.textContent) || 0;
+    const duration = 500;
+    const startTime = performance.now();
+    
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const current = Math.floor(startValue + (targetValue - startValue) * progress);
+        element.textContent = current;
+        
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        }
+    }
+    
+    requestAnimationFrame(update);
+}
+
+function createTaskCard(task) {
+    const card = document.createElement('div');
+    card.className = 'task-card';
+    
+    const statusClass = task.is_active ? 'status-active' : 'status-inactive';
+    const statusText = task.is_active ? 'Activa' : 'Inactiva';
+    const statusIcon = task.is_active ? 'fa-check-circle' : 'fa-pause-circle';
+    const lastCheck = task.last_check_time || 'Nunca';
+    const emails = task.notification_emails ? task.notification_emails.join(', ') : 'N/A';
+    
+    card.innerHTML = `
+        <div class="task-card-header">
+            <div class="task-title">
+                <h3>${escapeHtml(task.zofri_username)}</h3>
+                <span class="task-status ${statusClass}">
+                    <i class="fas ${statusIcon}"></i> ${statusText}
+                </span>
+            </div>
+        </div>
+        <div class="task-card-body">
+            <div class="task-info-item">
+                <i class="fas fa-id-card"></i>
+                <span class="info-label">RUT:</span>
+                <span class="info-value">${escapeHtml(task.zofri_rut_entidad)}</span>
+            </div>
+            <div class="task-info-item">
+                <i class="fas fa-envelope"></i>
+                <span class="info-label">Correos:</span>
+                <span class="info-value" title="${escapeHtml(emails)}">${truncateText(emails, 30)}</span>
+            </div>
+            <div class="task-info-item">
+                <i class="fas fa-clock"></i>
+                <span class="info-label">Última verificación:</span>
+                <span class="info-value">${escapeHtml(lastCheck)}</span>
+            </div>
+        </div>
+        <div class="task-card-actions">
+            <button class="btn-icon btn-primary" onclick="showApiKey(${task.id})" title="Ver API Key">
+                <i class="fas fa-key"></i>
+            </button>
+            <button class="btn-icon btn-warning" onclick="clearHistory(${task.id})" title="Restablecer historial">
+                <i class="fas fa-history"></i>
+            </button>
+            <button class="btn-icon btn-success" onclick="editTask(${task.id})" title="Editar">
+                <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn-icon btn-danger" onclick="deleteTask(${task.id})" title="Eliminar">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `;
+    
+    return card;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function truncateText(text, maxLength) {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+}
+
+function showCreateForm() {
+    currentTaskId = null;
+    document.getElementById('modalTitle').textContent = 'Crear Tarea de Monitoreo';
+    document.getElementById('taskForm').reset();
+    document.getElementById('isActiveGroup').style.display = 'none';
+    document.getElementById('taskModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function editTask(taskId) {
+    currentTaskId = taskId;
+    fetch(`/api/user/monitor/tasks/${taskId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.task) {
+                const task = data.task;
+                document.getElementById('zofriUsername').value = task.zofri_username || '';
+                document.getElementById('zofriPassword').value = '';
+                document.getElementById('zofriRutEntidad').value = task.zofri_rut_entidad || '';
+                document.getElementById('notificationEmails').value = task.notification_emails ? task.notification_emails.join(', ') : '';
+                if (document.getElementById('isActive')) {
+                    document.getElementById('isActive').checked = task.is_active !== false;
+                }
+                
+                document.getElementById('modalTitle').textContent = 'Editar Tarea de Monitoreo';
+                document.getElementById('isActiveGroup').style.display = 'block';
+                document.getElementById('taskModal').style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            } else {
+                showToast(data.error || 'Error al cargar tarea', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Error al cargar tarea', 'error');
+        });
+}
+
+function saveTask() {
+    const formData = {
+        zofri_username: document.getElementById('zofriUsername').value.trim(),
+        zofri_password: document.getElementById('zofriPassword').value.trim(),
+        zofri_rut_entidad: document.getElementById('zofriRutEntidad').value.trim(),
+        notification_emails: document.getElementById('notificationEmails').value.split(',').map(e => e.trim()).filter(e => e),
+        is_active: document.getElementById('isActive') ? document.getElementById('isActive').checked : true
+    };
+    
+    if (!formData.zofri_username || !formData.zofri_password || !formData.zofri_rut_entidad || formData.notification_emails.length === 0) {
+        showToast('Por favor complete todos los campos obligatorios', 'error');
+        return;
+    }
+    
+    const url = currentTaskId ? `/api/user/monitor/tasks/${currentTaskId}` : '/api/user/monitor/tasks';
+    const method = currentTaskId ? 'PUT' : 'POST';
+    
+    fetch(url, {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(currentTaskId ? 'Tarea actualizada exitosamente' : 'Tarea creada exitosamente', 'success');
+            closeTaskModal();
+            // 延遲刷新以確保數據已保存
+            setTimeout(() => {
+                loadTasks();
+            }, 300);
+        } else {
+            showToast(data.error || 'Error al guardar', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error al guardar', 'error');
+    });
+}
+
+function deleteTask(taskId) {
+    if (!confirm('¿Está seguro de que desea eliminar esta tarea?')) {
+        return;
+    }
+    
+    fetch(`/api/user/monitor/tasks/${taskId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Tarea eliminada', 'success');
+            loadTasks();
+        } else {
+            showToast(data.error || 'Error al eliminar', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error al eliminar', 'error');
+    });
+}
+
+function showApiKey(taskId) {
+    currentTaskId = taskId;
+    fetch(`/api/user/monitor/tasks/${taskId}/api-key`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentApiKey = data.api_key;
+                const baseUrl = window.location.origin;
+                const fullApiUrl = `${baseUrl}/api/monitor/check?api_key=${data.api_key}`;
+                document.getElementById('apiKeyDisplay').textContent = fullApiUrl;
+                document.getElementById('apiKeyModal').style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            } else {
+                showToast(data.error || 'Error al obtener API Key', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Error al obtener API Key', 'error');
+        });
+}
+
+function copyApiKey() {
+    const apiKeyDisplay = document.getElementById('apiKeyDisplay');
+    if (apiKeyDisplay && apiKeyDisplay.textContent) {
+        const fullUrl = apiKeyDisplay.textContent;
+        navigator.clipboard.writeText(fullUrl).then(() => {
+            showToast('Endpoint copiado al portapapeles', 'success');
+        }).catch(() => {
+            const textArea = document.createElement('textarea');
+            textArea.value = fullUrl;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showToast('Endpoint copiado al portapapeles', 'success');
+        });
+    }
+}
+
+function regenerateApiKey() {
+    if (!confirm('¿Está seguro de que desea regenerar el API Key? La clave anterior dejará de funcionar.')) {
+        return;
+    }
+    
+    fetch(`/api/user/monitor/tasks/${currentTaskId}/regenerate-key`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentApiKey = data.api_key;
+            const baseUrl = window.location.origin;
+            const fullApiUrl = `${baseUrl}/api/monitor/check?api_key=${data.api_key}`;
+            document.getElementById('apiKeyDisplay').textContent = fullApiUrl;
+            showToast('API Key regenerado', 'success');
+        } else {
+            showToast(data.error || 'Error al regenerar', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error al regenerar', 'error');
+    });
+}
+
+function clearHistory(taskId) {
+    if (!confirm('¿Está seguro de que desea limpiar el historial? La próxima verificación se considerará la primera.')) {
+        return;
+    }
+    
+    fetch(`/api/user/monitor/tasks/${taskId}/clear-history`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Historial limpiado exitosamente', 'success');
+            loadTasks();
+        } else {
+            showToast(data.error || 'Error al limpiar historial', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error al limpiar historial', 'error');
+    });
+}
+
+function closeTaskModal() {
+    document.getElementById('taskModal').style.display = 'none';
+    document.getElementById('taskForm').reset();
+    document.getElementById('zofriPassword').value = '';
+    currentTaskId = null;
+    document.body.style.overflow = '';
+}
+
+function closeApiKeyModal() {
+    document.getElementById('apiKeyModal').style.display = 'none';
+    currentApiKey = null;
+    document.body.style.overflow = '';
+}
+
+function handleModalClick(event) {
+    if (event.target === event.currentTarget) {
+        if (event.currentTarget.id === 'taskModal') {
+            closeTaskModal();
+        } else {
+            closeApiKeyModal();
+        }
+    }
+}
+
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast toast-${type} toast-show`;
+    
+    setTimeout(() => {
+        toast.classList.remove('toast-show');
+    }, 3000);
+}
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* 頁面標題 */
+.monitor-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    color: white;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.header-title-section h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.75rem;
+    font-weight: 600;
+}
+
+.header-title-section h1 i {
+    margin-right: 0.5rem;
+}
+
+.header-subtitle {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.95rem;
+}
+
+.header-stats {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+}
+
+.stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.stat-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-number {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    opacity: 0.9;
+}
+
+/* 容器 */
+.monitor-container {
+    position: relative;
+    min-height: 400px;
+}
+
+/* 加載狀態 */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+}
+
+.spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #e2e8f0;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 1rem;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* 空狀態 */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    margin: 1rem 0 0.5rem;
+    color: #2d3748;
+}
+
+.empty-state p {
+    color: #718096;
+    margin-bottom: 2rem;
+}
+
+/* 任務網格 */
+.tasks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+}
+
+/* 任務卡片 */
+.task-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.task-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+}
+
+.task-card-header {
+    padding: 1.25rem;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.task-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.task-title h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.task-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.task-status.status-active {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.task-status.status-inactive {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.task-card-body {
+    padding: 1.25rem;
+}
+
+.task-info-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.task-info-item:last-child {
+    border-bottom: none;
+}
+
+.task-info-item i {
+    width: 20px;
+    color: #667eea;
+    font-size: 0.9rem;
+}
+
+.info-label {
+    font-weight: 500;
+    color: #64748b;
+    min-width: 120px;
+    font-size: 0.9rem;
+}
+
+.info-value {
+    color: #2d3748;
+    flex: 1;
+    font-size: 0.9rem;
+}
+
+.task-card-actions {
+    padding: 1rem 1.25rem;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+/* 按鈕樣式 */
+.btn-primary {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+    font-size: 0.95rem;
+}
+
+.btn-primary:hover {
+    background: #5568d3;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+}
+
+.btn-secondary {
+    background: #e2e8f0;
+    color: #475569;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background: #cbd5e1;
+}
+
+.btn-danger {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+.btn-block {
+    width: 100%;
+}
+
+.btn-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+}
+
+.btn-icon.btn-primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn-icon.btn-primary:hover {
+    background: #5568d3;
+}
+
+.btn-icon.btn-success {
+    background: #10b981;
+    color: white;
+}
+
+.btn-icon.btn-success:hover {
+    background: #059669;
+}
+
+.btn-icon.btn-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.btn-icon.btn-warning:hover {
+    background: #d97706;
+}
+
+.btn-icon.btn-danger {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-icon.btn-danger:hover {
+    background: #dc2626;
+}
+
+/* Modal 樣式 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(4px);
+    padding: 1rem;
+}
+
+.modal-dialog {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    max-width: 600px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: modalSlideIn 0.3s ease;
+}
+
+.modal-dialog.modal-sm {
+    max-width: 500px;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px 12px 0 0;
+    position: relative;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.modal-close-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    font-size: 1.1rem;
+    z-index: 10001;
+}
+
+.modal-close-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: rotate(90deg);
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-description {
+    margin-bottom: 1rem;
+    color: #64748b;
+    font-size: 0.9rem;
+}
+
+.api-key-display {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    word-break: break-all;
+}
+
+.api-key-display code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: #2d3748;
+    line-height: 1.6;
+}
+
+.modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.modal-footer {
+    padding: 1.5rem;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    background: #f8fafc;
+}
+
+/* 表單樣式 */
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #2d3748;
+    font-size: 0.95rem;
+}
+
+.required {
+    color: #ef4444;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-hint {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #64748b;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: auto;
+    cursor: pointer;
+}
+
+/* Toast 通知 */
+.toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background: #2d3748;
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s ease;
+    z-index: 10002;
+    max-width: 400px;
+}
+
+.toast.toast-show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast-success {
+    background: #10b981;
+}
+
+.toast-error {
+    background: #ef4444;
+}
+
+.toast-info {
+    background: #3b82f6;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .header-content {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .header-stats {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .tasks-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .modal-dialog {
+        margin: 1rem;
+        max-height: calc(100vh - 2rem);
+    }
+    
+    .toast {
+        right: 1rem;
+        left: 1rem;
+        max-width: none;
+    }
+}
+</style>
+{% endblock %}
