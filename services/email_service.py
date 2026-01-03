@@ -240,8 +240,21 @@ def send_email(to_email, subject, html_content):
             return False, "SMTP 連接超時: 請檢查網絡連接或稍後再試"
         elif 'network is unreachable' in error_str or '101' in error_code:
             # 網絡不可達錯誤，可能是 DNS 解析或網絡配置問題
-            # 提供詳細的調試信息
-            return False, f"SMTP 網絡不可達: {str(e)}\n💡 請檢查：\n1. SMTP 服務器地址是否正確: {email_config.SMTP_SERVER}\n2. 端口是否正確: {email_config.SMTP_PORT}\n3. Render 網絡設置是否允許出站連接\n4. 嘗試使用端口 465 (SSL) 或 587 (STARTTLS)"
+            # 這是 Render 網絡環境的限制，Gmail SMTP 可能無法訪問
+            return False, (
+                f"SMTP 網絡不可達: {str(e)}\n\n"
+                f"⚠️ 這是 Render 網絡環境的限制，無法訪問 Gmail SMTP 服務器。\n\n"
+                f"💡 解決方案：\n"
+                f"1. 在 Render 環境變數中設置 SMTP_SERVER 和 SMTP_PORT，嘗試不同的配置\n"
+                f"2. 使用其他 SMTP 服務（推薦）：\n"
+                f"   - SendGrid（免費 100 封/天）: SMTP_SERVER=smtp.sendgrid.net, SMTP_PORT=587\n"
+                f"   - Mailgun（免費 5000 封/月）: SMTP_SERVER=smtp.mailgun.org, SMTP_PORT=587\n"
+                f"3. 或暫時禁用郵件功能，使用其他驗證方式\n\n"
+                f"當前配置：\n"
+                f"- SMTP 服務器: {email_config.SMTP_SERVER}\n"
+                f"- 端口: {email_config.SMTP_PORT}\n"
+                f"- 郵箱: {email_config.SMTP_EMAIL}"
+            )
         elif 'connection refused' in error_str or '111' in error_code:
             return False, "SMTP 連接被拒絕: 請檢查 SMTP 服務器地址和端口是否正確"
         else:

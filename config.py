@@ -112,9 +112,12 @@ class AdminConfig:
 class EmailConfig:
     """郵件服務配置"""
     
-    # Gmail SMTP 設定
-    SMTP_SERVER = 'smtp.gmail.com'
-    SMTP_PORT = 587
+    # Gmail SMTP 設定（可以通過環境變數覆蓋）
+    # 在 Render 上如果 Gmail 無法訪問，可以嘗試：
+    # 1. 使用其他 SMTP 服務（如 SendGrid、Mailgun）
+    # 2. 或嘗試不同的端口（465 或 587）
+    SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
+    SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))  # 支持環境變數，默認 587
     SMTP_USE_TLS = True
     
     # 郵件帳號配置
