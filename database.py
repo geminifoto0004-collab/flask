@@ -126,6 +126,12 @@ def get_db_connection():
                     'charset': 'utf8mb4',
                     'autocommit': False
                 }
+                # 檢查 URL 參數中是否有 SSL 設置
+                if parsed.query:
+                    query_params = urllib.parse.parse_qs(parsed.query)
+                    if query_params.get('ssl_mode') == ['REQUIRED']:
+                        # TiDB Cloud 要求 SSL 連接
+                        db_config['ssl'] = {'check_hostname': False}
             else:
                 if not config.MYSQL_HOST or not config.MYSQL_USER or not config.MYSQL_DATABASE:
                     raise ValueError("MySQL/TiDB 連接配置未設置，請設置 DATABASE_URL 或 MYSQL_HOST/MYSQL_USER/MYSQL_DATABASE")
@@ -138,6 +144,11 @@ def get_db_connection():
                     'charset': 'utf8mb4',
                     'autocommit': False
                 }
+            
+            # TiDB Cloud 要求 SSL 連接，自動啟用 SSL
+            # 如果 host 包含 tidbcloud.com，自動啟用 SSL
+            if 'tidbcloud.com' in db_config.get('host', '').lower():
+                db_config['ssl'] = {'check_hostname': False}
             
             # MySQL/TiDB 連接
             conn = pymysql.connect(**db_config)
