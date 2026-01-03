@@ -13,24 +13,30 @@ from utils.time_utils import get_chile_time_naive
 POSTGRESQL_AVAILABLE = None
 MYSQL_AVAILABLE = None
 
-if config.DATABASE_TYPE == 'postgresql':
-    try:
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
-        POSTGRESQL_AVAILABLE = True
-    except ImportError:
-        POSTGRESQL_AVAILABLE = False
+# 嘗試導入 PostgreSQL 模組（如果需要的話）
+try:
+    import psycopg2  # type: ignore
+    from psycopg2.extras import RealDictCursor  # type: ignore
+    POSTGRESQL_AVAILABLE = True
+except ImportError:
+    POSTGRESQL_AVAILABLE = False
+    # 只在需要時才顯示警告
+    if config.DATABASE_TYPE == 'postgresql':
         print("⚠️  PostgreSQL 模組未安裝，請運行: pip install psycopg2-binary")
-elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-    try:
-        import pymysql
-        pymysql.install_as_MySQLdb()  # 使 pymysql 兼容 MySQLdb
-        MYSQL_AVAILABLE = True
-    except ImportError:
-        MYSQL_AVAILABLE = False
+
+# 嘗試導入 MySQL/TiDB 模組（如果需要的話）
+try:
+    import pymysql  # noqa: F401
+    pymysql.install_as_MySQLdb()  # 使 pymysql 兼容 MySQLdb
+    MYSQL_AVAILABLE = True
+except ImportError:
+    MYSQL_AVAILABLE = False
+    # 只在需要時才顯示警告
+    if config.DATABASE_TYPE in ('mysql', 'tidb'):
         print("⚠️  MySQL/TiDB 模組未安裝，請運行: pip install PyMySQL")
-else:
-    import sqlite3
+
+# SQLite 是 Python 標準庫，總是可用
+import sqlite3  # noqa: F401
 
 
 # ========== SQL 參數占位符適配 ==========
@@ -246,7 +252,7 @@ class AdaptedConnection:
     def cursor(self, *args, **kwargs):
         """創建 cursor，自動包裝為 AdaptedCursor"""
         if config.DATABASE_TYPE == 'postgresql':
-            from psycopg2.extras import RealDictCursor
+            from psycopg2.extras import RealDictCursor  # type: ignore
             cursor = self._conn.cursor(cursor_factory=RealDictCursor, *args, **kwargs)
         elif config.DATABASE_TYPE in ('mysql', 'tidb'):
             # PyMySQL 使用 pymysql.cursors.DictCursor 來返回字典
@@ -266,7 +272,7 @@ def get_cursor(conn, use_adapter=True):
     返回：cursor 對象（如果 use_adapter=True，返回 AdaptedCursor）
     """
     if config.DATABASE_TYPE == 'postgresql':
-        from psycopg2.extras import RealDictCursor
+        from psycopg2.extras import RealDictCursor  # type: ignore
         cursor = conn.cursor(cursor_factory=RealDictCursor)
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
         import pymysql.cursors
