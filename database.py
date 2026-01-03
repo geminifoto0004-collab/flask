@@ -261,7 +261,9 @@ class AdaptedConnection:
         elif config.DATABASE_TYPE in ('mysql', 'tidb'):
             # PyMySQL 連接時已經設置了 cursorclass=DictCursor
             # 直接創建 cursor 即可，會自動使用 DictCursor
-            cursor = self._conn.cursor(*args, **kwargs)
+            # 移除任何可能傳遞的 cursorclass 或 cursor 參數（PyMySQL 不接受）
+            kwargs_clean = {k: v for k, v in kwargs.items() if k not in ('cursorclass', 'cursor', 'cursor_factory')}
+            cursor = self._conn.cursor(*args, **kwargs_clean)
         else:
             cursor = self._conn.cursor(*args, **kwargs)
         return AdaptedCursor(cursor)

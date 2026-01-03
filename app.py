@@ -46,7 +46,9 @@ def initialize_database():
             print("✅ 資料庫自動初始化完成")
             _database_initialized = True
         except Exception as e:
+            import traceback
             print(f"⚠️  資料庫初始化失敗: {e}")
+            print(f"   詳細錯誤: {traceback.format_exc()}")
             # 不阻止應用啟動，讓用戶可以訪問錯誤頁面
             _database_initialized = True  # 標記為已嘗試，避免重複嘗試
 
@@ -295,31 +297,46 @@ def admin_dashboard():
     if session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
         return redirect(url_for('login'))
     
-    from database import get_db_connection
-    conn = get_db_connection()
-    
-    # 獲取用戶統計
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) as total FROM users')
-    db_total_users = cursor.fetchone()['total']
-    
-    cursor.execute('SELECT COUNT(*) as total FROM users WHERE role = "admin"')
-    db_admin_users = cursor.fetchone()['total']
-    
-    cursor.execute('SELECT COUNT(*) as total FROM users WHERE role = "user"')
-    db_regular_users = cursor.fetchone()['total']
-    
-    # 包含超級管理員的統計
-    total_users = db_total_users + 1  # +1 for super admin
-    admin_users = db_admin_users + 1  # +1 for super admin
-    regular_users = db_regular_users
-    
-    conn.close()
-    
-    return render_template('admin/dashboard.html', 
-                         total_users=total_users,
-                         admin_users=admin_users,
-                         regular_users=regular_users)
+    try:
+        from database import get_db_connection, get_cursor
+        conn = get_db_connection()
+        
+        # 獲取用戶統計（使用 get_cursor 以支持不同數據庫類型）
+        cursor = get_cursor(conn)
+        cursor.execute('SELECT COUNT(*) as total FROM users')
+        result = cursor.fetchone()
+        # 處理不同數據庫返回格式
+        db_total_users = result['total'] if isinstance(result, dict) else result[0]
+        
+        cursor.execute('SELECT COUNT(*) as total FROM users WHERE role = ?', ('admin',))
+        result = cursor.fetchone()
+        db_admin_users = result['total'] if isinstance(result, dict) else result[0]
+        
+        cursor.execute('SELECT COUNT(*) as total FROM users WHERE role = ?', ('user',))
+        result = cursor.fetchone()
+        db_regular_users = result['total'] if isinstance(result, dict) else result[0]
+        
+        # 包含超級管理員的統計
+        total_users = db_total_users + 1  # +1 for super admin
+        admin_users = db_admin_users + 1  # +1 for super admin
+        regular_users = db_regular_users
+        
+        conn.close()
+        
+        return render_template('admin/dashboard.html', 
+                             total_users=total_users,
+                             admin_users=admin_users,
+                             regular_users=regular_users)
+    except Exception as e:
+        import traceback
+        print(f"❌ 管理員儀表板錯誤: {e}")
+        print(f"   詳細錯誤: {traceback.format_exc()}")
+        # 返回錯誤頁面或重定向到登入
+        return render_template('admin/dashboard.html', 
+                             total_users=0,
+                             admin_users=0,
+                             regular_users=0,
+                             error=f"資料庫錯誤: {str(e)}")
 
 @app.route('/admin/dashboard')
 @login_required
@@ -1062,25 +1079,26 @@ def admin_database():
         return redirect(url_for('login'))
     
     try:
-        from database import get_db_connection
+        from database import get_db_connection, get_cursor, get_table_names
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)  # 使用 get_cursor 以支持不同數據庫類型
         
-        # 獲取所有表名
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables_rows = cursor.fetchall()
-        # 將Row對象轉換為字典列表
-        tables = [dict(row) for row in tables_rows]
+        # 獲取所有表名（使用統一的函數）
+        table_names = get_table_names(cursor)
+        tables = [{'name': name} for name in table_names]
         
         # 獲取每個表的數據
         table_data = {}
-        for table in tables:
-            table_name = table['name']
+        for table_name in table_names:
             try:
                 cursor.execute(f"SELECT * FROM {table_name}")
                 rows = cursor.fetchall()
-                # 將Row對象轉換為字典列表
-                table_data[table_name] = [dict(row) for row in rows]
+                # 處理不同數據庫返回格式
+                if rows and isinstance(rows[0], dict):
+                    table_data[table_name] = rows
+                else:
+                    # SQLite 返回 Row 對象，需要轉換
+                    table_data[table_name] = [dict(row) for row in rows]
             except Exception as e:
                 print(f"獲取表 {table_name} 數據失敗: {e}")
                 table_data[table_name] = []
@@ -1090,7 +1108,9 @@ def admin_database():
         return render_template('admin/database.html', tables=tables, table_data=table_data)
         
     except Exception as e:
+        import traceback
         print(f"資料庫瀏覽錯誤: {e}")
+        print(f"   詳細錯誤: {traceback.format_exc()}")
         return render_template('admin/database.html', tables=[], table_data={}, error=str(e))
 
 
