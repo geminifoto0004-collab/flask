@@ -104,7 +104,7 @@ def verify_password(email, password):
         
         # 查詢用戶
         cursor.execute('''
-            SELECT id, username, email, password_hash, role 
+            SELECT id, username, email, password_hash, role, company_name 
             FROM users WHERE email=?
         ''', (email,))
         
@@ -124,7 +124,8 @@ def verify_password(email, password):
             'id': user[0],      # id
             'username': user[1], # username
             'email': user[2],    # email
-            'role': user[4]      # role
+            'role': user[4],     # role
+            'company_name': user[5] if len(user) > 5 and user[5] else None  # company_name
         }
         
         return True, user_info

@@ -58,9 +58,12 @@ class AdminConfig:
     #   詳見: HOW_TO_CHANGE_ADMIN_PASSWORD.md
     #
     # 💡 提示：這裡設定的值就是登入時使用的帳號和密碼
+    # 💡 也可以通過環境變數設置（優先級更高）：
+    #   - SUPER_ADMIN_EMAIL 環境變數
+    #   - SUPER_ADMIN_PASSWORD 環境變數
     
-    SUPER_ADMIN_EMAIL = 'admin@xingwang.com'  # 超級管理員郵箱（帳號）- 直接修改這裡即可
-    SUPER_ADMIN_PASSWORD = '12345678'  # 超級管理員密碼 - 直接修改這裡即可
+    SUPER_ADMIN_EMAIL = os.environ.get('SUPER_ADMIN_EMAIL', 'admin@xingwang.com')  # 超級管理員郵箱（帳號）- 可通過環境變數設置
+    SUPER_ADMIN_PASSWORD = os.environ.get('SUPER_ADMIN_PASSWORD', '12345678')  # 超級管理員密碼 - 可通過環境變數設置
     SUPER_ADMIN_USERNAME = 'super_admin'  # 超級管理員用戶名（固定值，通常不需要修改）
     SUPER_ADMIN_ROLE = 'super_admin'  # 超級管理員角色名稱（固定值，不可修改）
     

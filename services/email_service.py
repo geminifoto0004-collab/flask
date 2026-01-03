@@ -198,6 +198,23 @@ def send_verification_code(email, purpose='registration'):
     
     template = email_config.EMAIL_TEMPLATES[purpose]
     
+    # 從資料庫獲取用戶的公司名稱（如果用戶已註冊）
+    company_name = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT company_name FROM users WHERE email = ?', (email,))
+        user_row = cursor.fetchone()
+        if user_row and user_row[0]:
+            company_name = user_row[0]
+        conn.close()
+    except Exception as e:
+        print(f"獲取公司名稱失敗: {e}")
+    
+    # 如果沒有公司名稱，返回錯誤提示用戶設置
+    if not company_name:
+        return False, "請在用戶設置中設置公司名稱（company_name）後再發送郵件"
+    
     # 生成郵件內容
     html_content = f"""
     <!DOCTYPE html>
@@ -264,7 +281,7 @@ def send_verification_code(email, purpose='registration'):
             
             <div class="footer">
                 <p>此郵件由系統自動發送，請勿回復</p>
-                <p>© 2025 星旺紡織 - 授權管理系統</p>
+                <p>© 2025 {company_name} - 授權管理系統</p>
             </div>
         </div>
     </body>

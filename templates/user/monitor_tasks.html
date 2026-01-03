@@ -88,6 +88,18 @@
                     <small class="form-hint">Separe múltiples correos con comas</small>
                 </div>
                 
+                <div class="form-group">
+                    <label for="companyName">Nombre de la Empresa <span class="required">*</span></label>
+                    <input type="text" id="companyName" name="company_name" required placeholder="Ejemplo: XINGWANG, ABC Company">
+                    <small class="form-hint">Este nombre aparecerá en los correos de notificación</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="emailSubject">Asunto del Correo (Opcional)</label>
+                    <input type="text" id="emailSubject" name="email_subject" placeholder="Dejar vacío para usar formato predeterminado">
+                    <small class="form-hint">Si está vacío, se usará: 🚢 {Nombre de la Empresa} 櫃子通知🚢</small>
+                </div>
+                
                 <div class="form-group" id="isActiveGroup" style="display: none;">
                     <label class="checkbox-label">
                         <input type="checkbox" id="isActive" name="is_active" checked>
@@ -307,6 +319,8 @@ function editTask(taskId) {
                 document.getElementById('zofriPassword').value = '';
                 document.getElementById('zofriRutEntidad').value = task.zofri_rut_entidad || '';
                 document.getElementById('notificationEmails').value = task.notification_emails ? task.notification_emails.join(', ') : '';
+                document.getElementById('companyName').value = task.company_name || '';
+                document.getElementById('emailSubject').value = task.email_subject || '';
                 if (document.getElementById('isActive')) {
                     document.getElementById('isActive').checked = task.is_active !== false;
                 }
@@ -331,10 +345,12 @@ function saveTask() {
         zofri_password: document.getElementById('zofriPassword').value.trim(),
         zofri_rut_entidad: document.getElementById('zofriRutEntidad').value.trim(),
         notification_emails: document.getElementById('notificationEmails').value.split(',').map(e => e.trim()).filter(e => e),
+        company_name: document.getElementById('companyName').value.trim(),
+        email_subject: document.getElementById('emailSubject').value.trim(),
         is_active: document.getElementById('isActive') ? document.getElementById('isActive').checked : true
     };
     
-    if (!formData.zofri_username || !formData.zofri_password || !formData.zofri_rut_entidad || formData.notification_emails.length === 0) {
+    if (!formData.zofri_username || !formData.zofri_password || !formData.zofri_rut_entidad || formData.notification_emails.length === 0 || !formData.company_name) {
         showToast('Por favor complete todos los campos obligatorios', 'error');
         return;
     }

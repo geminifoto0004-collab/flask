@@ -393,6 +393,13 @@ def init_database():
         ))
         print("users 表已就緒")
         
+        # 檢查是否需要添加 company_name 列（向後兼容）
+        if not check_column_exists(cursor, 'users', 'company_name'):
+            cursor.execute('ALTER TABLE users ADD COLUMN company_name {text_type}'.format(
+                text_type=get_text_type()
+            ))
+            print("已添加 company_name 列到 users 表")
+        
         # 創建 services 表（服務產品）
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS services (
@@ -552,6 +559,19 @@ def init_database():
             timestamp_default=get_timestamp_default()
         ))
         print("user_monitor_configs 表已就緒")
+        
+        # 檢查是否需要添加新列（向後兼容）
+        if not check_column_exists(cursor, 'user_monitor_configs', 'company_name'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN company_name {text_type}'.format(
+                text_type=get_text_type()
+            ))
+            print("已添加 company_name 列到 user_monitor_configs 表")
+        
+        if not check_column_exists(cursor, 'user_monitor_configs', 'email_subject'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN email_subject {text_type}'.format(
+                text_type=get_text_type()
+            ))
+            print("已添加 email_subject 列到 user_monitor_configs 表")
         
         # 初始化默認服務
         init_default_services(cursor)

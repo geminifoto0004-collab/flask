@@ -86,8 +86,10 @@ def create_user_monitor_task():
         zofri_password = data.get('zofri_password', '').strip()
         zofri_rut_entidad = data.get('zofri_rut_entidad', '').strip()
         notification_emails = data.get('notification_emails', [])
+        company_name = data.get('company_name', '').strip()
+        email_subject = data.get('email_subject', '').strip()
         
-        if not all([zofri_username, zofri_password, zofri_rut_entidad]):
+        if not all([zofri_username, zofri_password, zofri_rut_entidad, company_name]):
             return jsonify({'success': False, 'error': '請填寫所有必填欄位'}), 400
         
         if not notification_emails or not isinstance(notification_emails, list):
@@ -99,7 +101,9 @@ def create_user_monitor_task():
             zofri_password=zofri_password,
             zofri_rut_entidad=zofri_rut_entidad,
             zofri_rut_representante='',  # 不使用，傳空字符串
-            notification_emails=notification_emails
+            notification_emails=notification_emails,
+            company_name=company_name,
+            email_subject=email_subject if email_subject else None
         )
         
         if success:
@@ -130,6 +134,8 @@ def update_user_monitor_task(task_id):
             zofri_password=data.get('zofri_password'),
             zofri_rut_entidad=data.get('zofri_rut_entidad'),
             notification_emails=data.get('notification_emails'),
+            company_name=data.get('company_name'),
+            email_subject=data.get('email_subject'),
             is_active=data.get('is_active')
         )
         
@@ -382,7 +388,8 @@ def check_monitor_api():
             # 發送所有當前容器
             send_success, send_message = send_notification_email(
                 task_config['notification_emails'],
-                result.get('containers', [])  # 發送所有容器
+                result.get('containers', []),  # 發送所有容器
+                task_config  # 傳遞任務配置以獲取公司名稱
             )
             notification_sent = send_success
             print(f"[監控API] 郵件發送結果: {send_success}, 消息: {send_message}")

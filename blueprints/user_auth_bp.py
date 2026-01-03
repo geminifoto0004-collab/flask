@@ -142,6 +142,7 @@ def submit_registration():
                 session['username'] = login_result['username']
                 session['email'] = login_result['email']
                 session['role'] = login_result['role']
+                session['company_name'] = login_result.get('company_name')  # 存儲公司名稱
                 
                 # 創建會話記錄（用於會話監控）
                 try:
@@ -211,6 +212,7 @@ def login_submit():
         session['username'] = result['username']
         session['email'] = result['email']
         session['role'] = result['role']
+        session['company_name'] = result.get('company_name')  # 存儲公司名稱
         
         # 創建會話記錄（用於會話監控）
         try:

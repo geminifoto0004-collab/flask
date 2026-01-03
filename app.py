@@ -153,12 +153,13 @@ def login():
             # 從數據庫獲取超級管理員的實際 user_id，如果不存在則創建
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('SELECT id FROM users WHERE email = ?', (admin_config.SUPER_ADMIN_EMAIL,))
+            cursor.execute('SELECT id, company_name FROM users WHERE email = ?', (admin_config.SUPER_ADMIN_EMAIL,))
             user_row = cursor.fetchone()
             
             if user_row:
-                # 如果數據庫中已有，使用數據庫的ID
+                # 如果數據庫中已有，使用數據庫的ID和公司名稱
                 session['user_id'] = user_row[0]
+                session['company_name'] = user_row[1] if len(user_row) > 1 and user_row[1] else None
             else:
                 # 如果數據庫中沒有，自動創建超級管理員用戶
                 print("⚠️ 數據庫中沒有超級管理員，正在創建...")
@@ -172,6 +173,7 @@ def login():
                 session['user_id'] = get_lastrowid(cursor, conn)
                 conn.commit()
                 print(f"✅ 超級管理員創建成功，user_id={session['user_id']}")
+                session['company_name'] = None  # 新創建的用戶沒有公司名稱
             
             conn.close()
             session['username'] = admin_config.SUPER_ADMIN_USERNAME

@@ -39,7 +39,9 @@ def create_monitor_task(
     zofri_password: str,
     zofri_rut_entidad: str,
     zofri_rut_representante: str = '',
-    notification_emails: List[str] = None
+    notification_emails: List[str] = None,
+    company_name: str = None,
+    email_subject: str = None
 ) -> Tuple[bool, str]:
     """
     創建監控任務
@@ -47,6 +49,9 @@ def create_monitor_task(
     """
     if not notification_emails:
         return False, "至少需要一個通知郵箱"
+    
+    if not company_name:
+        return False, "請設置公司名稱（company_name）"
     
     try:
         conn = get_db_connection()
@@ -64,10 +69,10 @@ def create_monitor_task(
         cursor.execute('''
             INSERT INTO user_monitor_configs 
             (user_id, api_key, zofri_username, zofri_password, zofri_rut_entidad, 
-             zofri_rut_representante, notification_emails, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+             zofri_rut_representante, notification_emails, company_name, email_subject, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ''', (user_id, api_key, zofri_username, zofri_password, zofri_rut_entidad,
-              zofri_rut_representante, emails_json))
+              zofri_rut_representante, emails_json, company_name, email_subject))
         
         task_id = get_lastrowid(cursor, conn)
         conn.commit()
@@ -150,6 +155,8 @@ def update_monitor_task(
     zofri_rut_entidad: str = None,
     zofri_rut_representante: str = None,
     notification_emails: List[str] = None,
+    company_name: str = None,
+    email_subject: str = None,
     is_active: bool = None
 ) -> Tuple[bool, str]:
     """更新監控任務"""
@@ -187,6 +194,14 @@ def update_monitor_task(
         if notification_emails:
             updates.append('notification_emails = ?')
             params.append(json.dumps(notification_emails))
+        
+        if company_name is not None:
+            updates.append('company_name = ?')
+            params.append(company_name)
+        
+        if email_subject is not None:
+            updates.append('email_subject = ?')
+            params.append(email_subject)
         
         if is_active is not None:
             updates.append('is_active = ?')
@@ -548,9 +563,14 @@ def has_result_changed(last_result: Optional[str], current_result: Dict) -> bool
 
 
 # ========== 發送通知郵件 ==========
-def send_notification_email(emails: List[str], containers: List[Dict]) -> Tuple[bool, str]:
+def send_notification_email(emails: List[str], containers: List[Dict], task_config: Dict = None) -> Tuple[bool, str]:
     """
     發送監控通知郵件
+    參數：
+        emails - 收件人郵箱列表
+        containers - 容器數據列表
+        task_config - 監控任務配置（可選，包含 company_name 和 email_subject）
+    返回：(bool, str) - (是否成功, 錯誤信息)
     """
     print(f"[監控郵件] 準備發送郵件，收件人: {emails}, 容器數量: {len(containers)}")
     
@@ -561,6 +581,23 @@ def send_notification_email(emails: List[str], containers: List[Dict]) -> Tuple[
     if not emails:
         print("[監控郵件] 沒有收件人郵箱，跳過發送")
         return False, "沒有收件人郵箱"
+    
+    # 從任務配置獲取公司名稱（必填）
+    if not task_config:
+        return False, "缺少任務配置信息"
+    
+    company_name = task_config.get('company_name')
+    if not company_name:
+        return False, "請在監控任務配置中設置公司名稱（company_name）"
+    
+    # 獲取郵件主題（優先從任務配置，如果沒有就使用默認格式）
+    email_subject = None
+    if task_config:
+        email_subject = task_config.get('email_subject')
+    
+    # 如果沒有自定義主題，使用默認格式（包含公司名稱）
+    if not email_subject:
+        email_subject = f"🚢 {company_name} 櫃子通知🚢"
     
     # 生成郵件內容
     matched_list = []
@@ -814,7 +851,7 @@ def send_notification_email(emails: List[str], containers: List[Dict]) -> Tuple[
     <body>
         <div class="email-wrapper">
             <div class="header">
-                <h1 style="color: #000000 !important; margin: 0 0 8px 0; font-size: 24px; font-weight: 600;">🚢 XING WANG TEXTIL ITI/ZOFRI 櫃子通知🚢</h1>
+                <h1 style="color: #000000 !important; margin: 0 0 8px 0; font-size: 24px; font-weight: 600;">🚢 {company_name} 櫃子通知🚢</h1>
                 <p>容器匹配狀態更新</p>
             </div>
             
@@ -862,7 +899,7 @@ def send_notification_email(emails: List[str], containers: List[Dict]) -> Tuple[
         print(f"[監控郵件] 正在發送郵件到: {email}")
         success, error = send_email(
             email,
-            "🚢 XING WANG TEXTIL ITI/ZOFRI 櫃子通知🚢",
+            email_subject,  # 使用動態獲取的郵件主題
             html_content
         )
         if success:
