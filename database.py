@@ -1,7 +1,7 @@
 """
 Flask 授權管理系統 - 資料庫管理
 功能：初始化表、提供連接、數據遷移
-支持：SQLite (PythonAnywhere) 和 PostgreSQL (Render)
+支持：SQLite (PythonAnywhere)、PostgreSQL (Render) 和 MySQL/TiDB (TiDB Cloud)
 """
 
 import os
@@ -10,6 +10,9 @@ from config import config
 from utils.time_utils import get_chile_time_naive
 
 # 根據資料庫類型導入相應模組
+POSTGRESQL_AVAILABLE = None
+MYSQL_AVAILABLE = None
+
 if config.DATABASE_TYPE == 'postgresql':
     try:
         import psycopg2
@@ -18,19 +21,26 @@ if config.DATABASE_TYPE == 'postgresql':
     except ImportError:
         POSTGRESQL_AVAILABLE = False
         print("⚠️  PostgreSQL 模組未安裝，請運行: pip install psycopg2-binary")
+elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+    try:
+        import pymysql
+        pymysql.install_as_MySQLdb()  # 使 pymysql 兼容 MySQLdb
+        MYSQL_AVAILABLE = True
+    except ImportError:
+        MYSQL_AVAILABLE = False
+        print("⚠️  MySQL/TiDB 模組未安裝，請運行: pip install PyMySQL")
 else:
     import sqlite3
-    POSTGRESQL_AVAILABLE = None
 
 
 # ========== SQL 參數占位符適配 ==========
 def adapt_sql(sql):
     """
     適配 SQL 語句的參數占位符
-    SQLite 使用 ?，PostgreSQL 使用 %s
-    為了兼容性，所有 SQL 語句都使用 ?，此函數會自動轉換為 %s（僅 PostgreSQL）
+    SQLite 使用 ?，PostgreSQL/MySQL/TiDB 使用 %s
+    為了兼容性，所有 SQL 語句都使用 ?，此函數會自動轉換為 %s（PostgreSQL/MySQL/TiDB）
     """
-    if config.DATABASE_TYPE == 'postgresql':
+    if config.DATABASE_TYPE in ('postgresql', 'mysql', 'tidb'):
         # 將 ? 轉換為 %s（但要注意不要替換字符串中的 ?）
         # 簡單的替換：將所有 ? 替換為 %s
         # 注意：這可能在某些複雜 SQL 中出問題，但對於大多數情況都適用
@@ -79,7 +89,7 @@ def executemany_sql(cursor, sql, params_list):
 def get_db_connection():
     """
     獲取資料庫連接
-    返回：資料庫連接對象（SQLite 或 PostgreSQL）
+    返回：資料庫連接對象（SQLite、PostgreSQL 或 MySQL/TiDB）
     """
     try:
         if config.DATABASE_TYPE == 'postgresql':
@@ -93,6 +103,44 @@ def get_db_connection():
             conn = psycopg2.connect(config.DATABASE_URL)
             # 設置自動提交為 False（與 SQLite 行為一致）
             conn.autocommit = False
+            # 包裝連接以自動適配 cursor
+            return AdaptedConnection(conn)
+        elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+            if not MYSQL_AVAILABLE:
+                raise ImportError("MySQL/TiDB 模組未安裝，請運行: pip install PyMySQL")
+            
+            import pymysql
+            
+            # 優先使用 DATABASE_URL，如果沒有則使用單獨的配置
+            if config.DATABASE_URL:
+                # 解析 MySQL URL 格式：mysql://user:password@host:port/database
+                # 或者 TiDB URL 格式類似
+                import urllib.parse
+                parsed = urllib.parse.urlparse(config.DATABASE_URL)
+                db_config = {
+                    'host': parsed.hostname or config.MYSQL_HOST,
+                    'port': parsed.port or config.MYSQL_PORT,
+                    'user': parsed.username or config.MYSQL_USER,
+                    'password': parsed.password or config.MYSQL_PASSWORD,
+                    'database': parsed.path.lstrip('/') if parsed.path else config.MYSQL_DATABASE,
+                    'charset': 'utf8mb4',
+                    'autocommit': False
+                }
+            else:
+                if not config.MYSQL_HOST or not config.MYSQL_USER or not config.MYSQL_DATABASE:
+                    raise ValueError("MySQL/TiDB 連接配置未設置，請設置 DATABASE_URL 或 MYSQL_HOST/MYSQL_USER/MYSQL_DATABASE")
+                db_config = {
+                    'host': config.MYSQL_HOST,
+                    'port': config.MYSQL_PORT,
+                    'user': config.MYSQL_USER,
+                    'password': config.MYSQL_PASSWORD,
+                    'database': config.MYSQL_DATABASE,
+                    'charset': 'utf8mb4',
+                    'autocommit': False
+                }
+            
+            # MySQL/TiDB 連接
+            conn = pymysql.connect(**db_config)
             # 包裝連接以自動適配 cursor
             return AdaptedConnection(conn)
         else:
@@ -113,17 +161,21 @@ def get_db_connection():
 
 # ========== 資料庫特定的 SQL 語法 ==========
 def get_id_type():
-    """獲取主鍵 ID 類型（SQLite 用 INTEGER PRIMARY KEY AUTOINCREMENT，PostgreSQL 用 SERIAL PRIMARY KEY）"""
+    """獲取主鍵 ID 類型"""
     if config.DATABASE_TYPE == 'postgresql':
         return 'SERIAL PRIMARY KEY'
+    elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+        return 'INT AUTO_INCREMENT PRIMARY KEY'
     else:
         return 'INTEGER PRIMARY KEY AUTOINCREMENT'
 
 
 def get_boolean_type():
-    """獲取布林類型（SQLite 用 INTEGER，PostgreSQL 用 BOOLEAN）"""
+    """獲取布林類型"""
     if config.DATABASE_TYPE == 'postgresql':
         return 'BOOLEAN'
+    elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+        return 'BOOLEAN'  # MySQL 5.7.8+ 和 TiDB 支持 BOOLEAN
     else:
         return 'INTEGER'
 
@@ -138,10 +190,8 @@ def get_text_type():
 
 def get_timestamp_default():
     """獲取時間戳默認值"""
-    if config.DATABASE_TYPE == 'postgresql':
-        return "DEFAULT CURRENT_TIMESTAMP"
-    else:
-        return "DEFAULT CURRENT_TIMESTAMP"
+    # 所有資料庫都支持 CURRENT_TIMESTAMP
+    return "DEFAULT CURRENT_TIMESTAMP"
 
 
 class AdaptedCursor:
@@ -187,6 +237,10 @@ class AdaptedConnection:
         if config.DATABASE_TYPE == 'postgresql':
             from psycopg2.extras import RealDictCursor
             cursor = self._conn.cursor(cursor_factory=RealDictCursor, *args, **kwargs)
+        elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+            # PyMySQL 使用 pymysql.cursors.DictCursor 來返回字典
+            import pymysql.cursors
+            cursor = self._conn.cursor(pymysql.cursors.DictCursor, *args, **kwargs)
         else:
             cursor = self._conn.cursor(*args, **kwargs)
         return AdaptedCursor(cursor)
@@ -194,14 +248,18 @@ class AdaptedConnection:
 
 def get_cursor(conn, use_adapter=True):
     """
-    獲取游標（PostgreSQL 使用 RealDictCursor，SQLite 使用普通游標）
+    獲取游標（PostgreSQL 使用 RealDictCursor，MySQL/TiDB 使用 DictCursor，SQLite 使用普通游標）
     參數：
         conn - 資料庫連接
         use_adapter - 是否使用適配器（默認 True，自動處理 SQL 占位符轉換）
     返回：cursor 對象（如果 use_adapter=True，返回 AdaptedCursor）
     """
     if config.DATABASE_TYPE == 'postgresql':
+        from psycopg2.extras import RealDictCursor
         cursor = conn.cursor(cursor_factory=RealDictCursor)
+    elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+        import pymysql.cursors
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
     else:
         cursor = conn.cursor()
     
@@ -213,21 +271,23 @@ def get_cursor(conn, use_adapter=True):
 
 
 def get_row_dict(row, cursor):
-    """將查詢結果轉換為字典（PostgreSQL 的 RealDictCursor 已經是字典，SQLite 需要轉換）"""
+    """將查詢結果轉換為字典"""
     if config.DATABASE_TYPE == 'postgresql':
         return dict(row) if row else None
+    elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+        # PyMySQL DictCursor 已經返回字典
+        return dict(row) if row else None
     else:
+        # SQLite Row 需要轉換
         if row:
             return {key: row[key] for key in row.keys()}
         return None
 
 
 def get_lastrowid(cursor, conn):
-    """獲取最後插入的 ID（PostgreSQL 和 SQLite 方式不同）"""
+    """獲取最後插入的 ID"""
     if config.DATABASE_TYPE == 'postgresql':
-        # PostgreSQL 需要從 cursor.fetchone() 或 cursor.returning 獲取
-        # 或者使用 cursor.lastrowid（某些版本支持）
-        # 這裡使用更通用的方式
+        # PostgreSQL 使用 LASTVAL()
         cursor.execute("SELECT LASTVAL()")
         result = cursor.fetchone()
         # 處理不同的返回格式
@@ -237,12 +297,23 @@ def get_lastrowid(cursor, conn):
             return result['lastval']
         else:
             return result
+    elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+        # MySQL/TiDB 使用 LAST_INSERT_ID()
+        cursor.execute("SELECT LAST_INSERT_ID()")
+        result = cursor.fetchone()
+        if isinstance(result, (list, tuple)):
+            return result[0]
+        elif isinstance(result, dict):
+            return result['LAST_INSERT_ID()']
+        else:
+            return result
     else:
+        # SQLite 使用 cursor.lastrowid
         return cursor.lastrowid
 
 
 def check_column_exists(cursor, table_name, column_name):
-    """檢查列是否存在（SQLite 和 PostgreSQL 方式不同）"""
+    """檢查列是否存在"""
     if config.DATABASE_TYPE == 'postgresql':
         cursor.execute("""
             SELECT column_name 
@@ -250,19 +321,36 @@ def check_column_exists(cursor, table_name, column_name):
             WHERE table_name = %s AND column_name = %s
         """, (table_name, column_name))
         return cursor.fetchone() is not None
+    elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+        # MySQL/TiDB 使用 information_schema（類似 PostgreSQL）
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = %s AND column_name = %s
+        """, (table_name, column_name))
+        return cursor.fetchone() is not None
     else:
+        # SQLite 使用 PRAGMA
         cursor.execute("PRAGMA table_info({})".format(table_name))
         columns = [column[1] for column in cursor.fetchall()]
         return column_name in columns
 
 
 def get_table_names(cursor):
-    """獲取所有表名（SQLite 和 PostgreSQL 方式不同）"""
+    """獲取所有表名"""
     if config.DATABASE_TYPE == 'postgresql':
         cursor.execute("""
             SELECT table_name 
             FROM information_schema.tables 
             WHERE table_schema = 'public'
+        """)
+        return [row[0] if isinstance(row, tuple) else row['table_name'] for row in cursor.fetchall()]
+    elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+        # MySQL/TiDB 使用 information_schema（類似 PostgreSQL，但使用 database() 函數）
+        cursor.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE()
         """)
         return [row[0] if isinstance(row, tuple) else row['table_name'] for row in cursor.fetchall()]
     else:
@@ -271,8 +359,8 @@ def get_table_names(cursor):
 
 
 def get_placeholder():
-    """獲取 SQL 參數占位符（SQLite 用 ?，PostgreSQL 用 %s）"""
-    if config.DATABASE_TYPE == 'postgresql':
+    """獲取 SQL 參數占位符（SQLite 用 ?，PostgreSQL/MySQL/TiDB 用 %s）"""
+    if config.DATABASE_TYPE in ('postgresql', 'mysql', 'tidb'):
         return '%s'
     else:
         return '?'

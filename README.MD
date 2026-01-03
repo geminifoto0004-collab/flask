@@ -647,19 +647,37 @@ SMTP_PASSWORD=your-app-password
 
 ## 🔄 資料庫類型切換
 
-系統支持在 SQLite 和 PostgreSQL 之間切換，只需設置環境變數：
+系統支持三種資料庫類型，只需設置環境變數即可切換：
 
-**PythonAnywhere (SQLite)**:
+### PythonAnywhere (SQLite)
 ```bash
 DATABASE_TYPE=sqlite
 DATABASE_PATH=/path/to/databases/app.db
 ```
 
-**Render (PostgreSQL)**:
+### Render (PostgreSQL)
 ```bash
 DATABASE_TYPE=postgresql
 DATABASE_URL=postgresql://user:password@host:port/database
 ```
+
+### TiDB Cloud (MySQL/TiDB)
+```bash
+DATABASE_TYPE=mysql
+DATABASE_URL=mysql://user:password@host:port/database
+```
+
+或者使用單獨的環境變數：
+```bash
+DATABASE_TYPE=mysql
+MYSQL_HOST=your-tidb-host.com
+MYSQL_PORT=4000
+MYSQL_USER=your_username
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=your_database
+```
+
+**詳細配置說明**：請參考 `TIDB_CLOUD_SETUP.md`
 
 系統會根據 `DATABASE_TYPE` 自動選擇正確的資料庫連接方式。
 
