@@ -11,8 +11,14 @@ import hashlib
 class Config:
     """基礎配置類"""
     
-    # Flask 密鑰
+    # Flask 密鑰（必須設置，用於 session 加密）
+    # ⚠️ 安全提示：生產環境必須設置環境變數 SECRET_KEY！
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+    
+    # 如果使用默認值，發出警告
+    if SECRET_KEY == 'dev-secret-key-change-in-production':
+        import warnings
+        warnings.warn("⚠️  使用默認 SECRET_KEY，生產環境請務必設置環境變數！", UserWarning)
     
     # 資料庫配置
     # 資料庫類型：'sqlite'、'postgresql' 或 'mysql'/'tidb'
@@ -55,19 +61,33 @@ class AdminConfig:
     
     # ========== 超級管理員帳號密碼設定（不可修改、不可刪除）==========
     # 
-    # 🔐 修改帳號和密碼：直接修改下面的值即可
-    #   - 修改郵箱（帳號）：修改 SUPER_ADMIN_EMAIL 的值
-    #   - 修改密碼：修改 SUPER_ADMIN_PASSWORD 的值
-    #   修改後保存文件，重啟應用即可生效
-    #   詳見: HOW_TO_CHANGE_ADMIN_PASSWORD.md
-    #
-    # 💡 提示：這裡設定的值就是登入時使用的帳號和密碼
-    # 💡 也可以通過環境變數設置（優先級更高）：
-    #   - SUPER_ADMIN_EMAIL 環境變數
-    #   - SUPER_ADMIN_PASSWORD 環境變數
+    # 🔐 安全提示：請務必通過環境變數設置帳號和密碼，不要使用硬編碼！
+    # 
+    # ⚠️ 必須設置的環境變數：
+    #   - SUPER_ADMIN_EMAIL：超級管理員郵箱（帳號）
+    #   - SUPER_ADMIN_PASSWORD：超級管理員密碼
+    # 
+    # 💡 設置方法：
+    #   1. 本地開發：創建 .env 文件（見 .env.example）
+    #   2. Render：在 Environment 標籤中設置
+    #   3. PythonAnywhere：在 Web 設置中設置環境變數
+    # 
+    # 📖 詳見: HOW_TO_CHANGE_ADMIN_PASSWORD.md
     
-    SUPER_ADMIN_EMAIL = os.environ.get('SUPER_ADMIN_EMAIL', 'admin@xingwang.com')  # 超級管理員郵箱（帳號）- 可通過環境變數設置
-    SUPER_ADMIN_PASSWORD = os.environ.get('SUPER_ADMIN_PASSWORD', '12345678')  # 超級管理員密碼 - 可通過環境變數設置
+    # 從環境變數讀取，如果未設置則拋出錯誤（生產環境必須設置）
+    SUPER_ADMIN_EMAIL = os.environ.get('SUPER_ADMIN_EMAIL')
+    SUPER_ADMIN_PASSWORD = os.environ.get('SUPER_ADMIN_PASSWORD')
+    
+    # 開發環境的默認值（僅用於本地開發，生產環境必須設置環境變數）
+    if not SUPER_ADMIN_EMAIL:
+        import warnings
+        warnings.warn("⚠️  SUPER_ADMIN_EMAIL 未設置，使用默認值（僅用於開發）", UserWarning)
+        SUPER_ADMIN_EMAIL = 'admin@xingwang.com'  # 僅開發環境默認值
+    
+    if not SUPER_ADMIN_PASSWORD:
+        import warnings
+        warnings.warn("⚠️  SUPER_ADMIN_PASSWORD 未設置，使用默認值（僅用於開發）", UserWarning)
+        SUPER_ADMIN_PASSWORD = '12345678'  # 僅開發環境默認值
     SUPER_ADMIN_USERNAME = 'super_admin'  # 超級管理員用戶名（固定值，通常不需要修改）
     SUPER_ADMIN_ROLE = 'super_admin'  # 超級管理員角色名稱（固定值，不可修改）
     
@@ -89,9 +109,15 @@ class EmailConfig:
     SMTP_PORT = 587
     SMTP_USE_TLS = True
     
-    # 郵件帳號（從環境變數讀取，或使用預設值）
-    SMTP_EMAIL = os.environ.get('SMTP_EMAIL', 'geminifoto0004@gmail.com')
-    SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', 'pczr wlzh uxxl ozot')
+    # 郵件帳號（從環境變數讀取，必須設置）
+    # ⚠️ 安全提示：請務必通過環境變數設置，不要硬編碼！
+    SMTP_EMAIL = os.environ.get('SMTP_EMAIL', '')
+    SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+    
+    # 如果未設置，發出警告（郵件功能可能無法使用）
+    if not SMTP_EMAIL or not SMTP_PASSWORD:
+        import warnings
+        warnings.warn("⚠️  SMTP_EMAIL 或 SMTP_PASSWORD 未設置，郵件功能可能無法使用", UserWarning)
     
     # 驗證碼配置
     CODE_LENGTH = 6  # 驗證碼長度

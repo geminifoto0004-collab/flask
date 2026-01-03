@@ -202,11 +202,22 @@ def get_boolean_type():
 
 
 def get_text_type():
-    """獲取文本類型（SQLite 用 TEXT，PostgreSQL 用 TEXT 或 VARCHAR）"""
+    """獲取文本類型（SQLite 用 TEXT，PostgreSQL 用 TEXT，MySQL/TiDB 用 TEXT）"""
     if config.DATABASE_TYPE == 'postgresql':
         return 'TEXT'
     else:
         return 'TEXT'
+
+def get_text_type_with_default():
+    """
+    獲取帶默認值的文本類型
+    MySQL/TiDB 的 TEXT 類型不支持 DEFAULT，所以使用 VARCHAR(255)
+    SQLite 和 PostgreSQL 使用 TEXT
+    """
+    if config.DATABASE_TYPE in ('mysql', 'tidb'):
+        return 'VARCHAR(255)'  # MySQL/TiDB 使用 VARCHAR 以支持 DEFAULT
+    else:
+        return 'TEXT'  # SQLite 和 PostgreSQL 使用 TEXT
 
 
 def get_timestamp_default():
@@ -407,12 +418,13 @@ def init_database():
                 username {text_type} UNIQUE NOT NULL,
                 email {text_type} UNIQUE NOT NULL,
                 password_hash {text_type} NOT NULL,
-                role {text_type} DEFAULT 'user',
+                role {text_type_with_default} DEFAULT 'user',
                 created_at TIMESTAMP {timestamp_default}
             )
         '''.format(
             id_type=get_id_type(),
             text_type=get_text_type(),
+            text_type_with_default=get_text_type_with_default(),
             timestamp_default=get_timestamp_default()
         ))
         print("users 表已就緒")
@@ -432,22 +444,23 @@ def init_database():
                 description {text_type},
                 price DECIMAL(10,2),
                 duration_days INTEGER,
-                version {text_type} DEFAULT 'FREE',
+                version {text_type_with_default} DEFAULT 'FREE',
                 config_json {text_type},
-                status {text_type} DEFAULT 'active',
+                status {text_type_with_default} DEFAULT 'active',
                 created_at TIMESTAMP {timestamp_default}
             )
         '''.format(
             id_type=get_id_type(),
             text_type=get_text_type(),
+            text_type_with_default=get_text_type_with_default(),
             timestamp_default=get_timestamp_default()
         ))
         print("services 表已就緒")
         
         # 檢查是否需要添加新列（向後兼容）
         if not check_column_exists(cursor, 'services', 'version'):
-            cursor.execute('ALTER TABLE services ADD COLUMN version {text_type} DEFAULT \'FREE\''.format(
-                text_type=get_text_type()
+            cursor.execute('ALTER TABLE services ADD COLUMN version {text_type_with_default} DEFAULT \'FREE\''.format(
+                text_type_with_default=get_text_type_with_default()
             ))
             print("已添加 version 列到 services 表")
         
@@ -463,7 +476,7 @@ def init_database():
                 id {id_type},
                 user_id INTEGER NOT NULL,
                 service_id INTEGER NOT NULL,
-                status {text_type} DEFAULT 'active',
+                status {text_type_with_default} DEFAULT 'active',
                 start_date DATE,
                 end_date DATE,
                 config_json {text_type},
@@ -474,6 +487,7 @@ def init_database():
         '''.format(
             id_type=get_id_type(),
             text_type=get_text_type(),
+            text_type_with_default=get_text_type_with_default(),
             timestamp_default=get_timestamp_default()
         ))
         print("user_services 表已就緒")
@@ -600,6 +614,9 @@ def init_database():
         # 初始化默認服務
         init_default_services(cursor)
         
+        # 自動創建超級管理員（如果不存在）
+        init_super_admin(cursor)
+        
         conn.commit()
         print("資料庫初始化完成")
         
@@ -652,6 +669,45 @@ def init_default_services(cursor):
     '''.format(placeholder, placeholder, placeholder, placeholder), default_services)
     
     print("默認服務已初始化")
+
+
+def init_super_admin(cursor):
+    """自動創建超級管理員用戶（如果不存在）"""
+    try:
+        from config import admin_config
+        from utils.time_utils import get_chile_time_naive
+        
+        # 檢查是否已存在
+        cursor.execute('SELECT id FROM users WHERE email = ?', (admin_config.SUPER_ADMIN_EMAIL,))
+        user_row = cursor.fetchone()
+        
+        if user_row:
+            # 超級管理員已存在，跳過
+            return
+        
+        # 創建超級管理員
+        from services.user_service import hash_password
+        password_hash = hash_password(admin_config.SUPER_ADMIN_PASSWORD)
+        created_at = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
+        
+        placeholder = get_placeholder()
+        cursor.execute(f'''
+            INSERT INTO users (username, email, password_hash, role, created_at)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        ''', (admin_config.SUPER_ADMIN_USERNAME, admin_config.SUPER_ADMIN_EMAIL, 
+              password_hash, admin_config.SUPER_ADMIN_ROLE, created_at))
+        
+        print(f"✅ 超級管理員已自動創建:")
+        print(f"   郵箱: {admin_config.SUPER_ADMIN_EMAIL}")
+        print(f"   密碼: {admin_config.SUPER_ADMIN_PASSWORD}")
+        print(f"   用戶名: {admin_config.SUPER_ADMIN_USERNAME}")
+        print(f"   角色: {admin_config.SUPER_ADMIN_ROLE}")
+        
+    except Exception as e:
+        print(f"⚠️  創建超級管理員失敗: {e}")
+        # 不拋出異常，避免阻止數據庫初始化
+        import traceback
+        traceback.print_exc()
 
 
 # ========== 資料庫檢查 ==========

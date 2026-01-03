@@ -3,8 +3,14 @@ __pycache__/
 *.db
 databases/
 .env
+.env.local
+.env.*.local
 logs/
 .vscode/
 *.zip
 .DS_Store
 Thumbs.db
+
+# 敏感配置文件（如果有的話）
+config.local.py
+secrets.py
