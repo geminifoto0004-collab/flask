@@ -17,7 +17,9 @@ class Config:
     # 資料庫配置
     # 資料庫類型：'sqlite'、'postgresql' 或 'mysql'/'tidb'
     # PythonAnywhere 使用 'sqlite'，Render 使用 'postgresql'，TiDB Cloud 使用 'mysql' 或 'tidb'
-    DATABASE_TYPE = os.environ.get('DATABASE_TYPE', 'sqlite').lower()
+    # 支持兩種環境變數名稱：DATABASE_TYPE 或 DB_TYPE
+    DATABASE_TYPE = os.environ.get('DATABASE_TYPE') or os.environ.get('DB_TYPE', 'sqlite')
+    DATABASE_TYPE = DATABASE_TYPE.lower()
     
     # SQLite 資料庫路徑（僅當 DATABASE_TYPE='sqlite' 時使用）
     DATABASE_PATH = os.environ.get(
@@ -29,14 +31,16 @@ class Config:
     # Render PostgreSQL 會自動提供 DATABASE_URL 環境變數
     # TiDB Cloud 連接字符串格式：mysql://user:password@host:port/database
     # 或者分別設置：MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
+    # 或者使用簡短名稱：DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
     DATABASE_URL = os.environ.get('DATABASE_URL', '')
     
     # MySQL/TiDB 單獨配置（可選，如果 DATABASE_URL 為空時使用）
-    MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
-    MYSQL_PORT = int(os.environ.get('MYSQL_PORT', '4000'))  # TiDB 默認端口 4000
-    MYSQL_USER = os.environ.get('MYSQL_USER', '')
-    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', '')
-    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', '')
+    # 支持兩種環境變數名稱：MYSQL_* 或 DB_*
+    MYSQL_HOST = os.environ.get('MYSQL_HOST') or os.environ.get('DB_HOST', 'localhost')
+    MYSQL_PORT = int(os.environ.get('MYSQL_PORT') or os.environ.get('DB_PORT', '4000'))  # TiDB 默認端口 4000
+    MYSQL_USER = os.environ.get('MYSQL_USER') or os.environ.get('DB_USER', '')
+    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD') or os.environ.get('DB_PASSWORD', '')
+    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE') or os.environ.get('DB_NAME', '')
     
     # Session 配置
     PERMANENT_SESSION_LIFETIME = 3600  # 1小時（秒）
