@@ -7,7 +7,7 @@ import hashlib
 import sqlite3
 from datetime import datetime
 
-from database import get_db_connection, get_lastrowid
+from database import get_db_connection, get_lastrowid, get_cursor, get_row_dict
 from utils.validators import validate_username, validate_email, validate_password
 from utils.time_utils import get_chile_time_naive
 
@@ -100,7 +100,7 @@ def verify_password(email, password):
     """
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)  # 使用 get_cursor 以支持自動 SQL 適配和 DictCursor
         
         # 查詢用戶
         cursor.execute('''
@@ -112,25 +112,51 @@ def verify_password(email, password):
         conn.close()
         
         if not user:
+            print(f"[Verify Password] 用戶不存在: email={email}")
             return False, "郵箱或密碼錯誤"
+        
+        # 處理返回格式（可能是字典或元組）
+        if isinstance(user, dict):
+            user_id = user['id']
+            username = user['username']
+            user_email = user['email']
+            stored_password_hash = user['password_hash']
+            user_role = user['role']
+            company_name = user.get('company_name')
+        else:
+            # 如果是元組，按順序解包
+            user_id = user[0]
+            username = user[1]
+            user_email = user[2]
+            stored_password_hash = user[3]
+            user_role = user[4]
+            company_name = user[5] if len(user) > 5 else None
         
         # 驗證密碼
         password_hash = hash_password(password)
-        if password_hash != user[3]:  # password_hash 是第4個字段（索引3）
+        print(f"[Verify Password] 輸入密碼 hash: {password_hash[:16]}...")
+        print(f"[Verify Password] 存儲密碼 hash: {stored_password_hash[:16] if stored_password_hash else 'None'}...")
+        
+        if password_hash != stored_password_hash:
+            print(f"[Verify Password] 密碼不匹配: email={email}")
             return False, "郵箱或密碼錯誤"
         
         # 返回用戶信息（不包含密碼）
         user_info = {
-            'id': user[0],      # id
-            'username': user[1], # username
-            'email': user[2],    # email
-            'role': user[4],     # role
-            'company_name': user[5] if len(user) > 5 and user[5] else None  # company_name
+            'id': user_id,
+            'username': username,
+            'email': user_email,
+            'role': user_role,
+            'company_name': company_name
         }
         
+        print(f"[Verify Password] 驗證成功: email={email}, user_id={user_id}")
         return True, user_info
         
     except Exception as e:
+        print(f"[Verify Password] 驗證失敗: {e}")
+        import traceback
+        traceback.print_exc()
         return False, f"驗證失敗: {str(e)}"
 
 
@@ -145,7 +171,7 @@ def verify_password_by_username(username, password):
     """
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)  # 使用 get_cursor 以支持自動 SQL 適配和 DictCursor
         
         # 查詢用戶
         cursor.execute('''
@@ -159,17 +185,32 @@ def verify_password_by_username(username, password):
         if not user:
             return False, "用戶名或密碼錯誤"
         
+        # 處理返回格式（可能是字典或元組）
+        if isinstance(user, dict):
+            stored_password_hash = user['password_hash']
+            user_id = user['id']
+            user_username = user['username']
+            user_email = user['email']
+            user_role = user['role']
+        else:
+            # 如果是元組，按順序解包
+            user_id = user[0]
+            user_username = user[1]
+            user_email = user[2]
+            stored_password_hash = user[3]
+            user_role = user[4]
+        
         # 驗證密碼
         password_hash = hash_password(password)
-        if password_hash != user['password_hash']:
+        if password_hash != stored_password_hash:
             return False, "用戶名或密碼錯誤"
         
         # 返回用戶信息
         user_info = {
-            'id': user['id'],
-            'username': user['username'],
-            'email': user['email'],
-            'role': user['role']
+            'id': user_id,
+            'username': user_username,
+            'email': user_email,
+            'role': user_role
         }
         
         return True, user_info
@@ -264,7 +305,17 @@ def get_user_by_email(email):
         conn.close()
         
         if user:
-            return dict(user)
+            # 兼容字典和元组格式
+            if isinstance(user, dict):
+                return user
+            else:
+                return {
+                    'id': user[0],
+                    'username': user[1],
+                    'email': user[2],
+                    'role': user[3],
+                    'created_at': user[4] if len(user) > 4 else None
+                }
         return None
         
     except Exception as e:
@@ -291,7 +342,17 @@ def get_user_by_id(user_id):
         conn.close()
         
         if user:
-            return dict(user)
+            # 兼容字典和元组格式
+            if isinstance(user, dict):
+                return user
+            else:
+                return {
+                    'id': user[0],
+                    'username': user[1],
+                    'email': user[2],
+                    'role': user[3],
+                    'created_at': user[4] if len(user) > 4 else None
+                }
         return None
         
     except Exception as e:
@@ -362,7 +423,20 @@ def get_all_users():
         users = cursor.fetchall()
         conn.close()
         
-        return [dict(user) for user in users]
+        # 兼容字典和元组格式
+        result = []
+        for user in users:
+            if isinstance(user, dict):
+                result.append(user)
+            else:
+                result.append({
+                    'id': user[0],
+                    'username': user[1],
+                    'email': user[2],
+                    'role': user[3],
+                    'created_at': user[4] if len(user) > 4 else None
+                })
+        return result
         
     except Exception as e:
         print(f"❌ 查詢用戶列表失敗: {e}")

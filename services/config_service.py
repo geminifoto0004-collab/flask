@@ -97,9 +97,12 @@ class ConfigService:
                 """, (service_name, version))
                 
                 result = cursor.fetchone()
-                if result and result[0]:
-                    # 解析 Python 代碼格式的參數
-                    return self._parse_python_config(result[0])
+                if result:
+                    # 處理返回格式（可能是字典或元組）
+                    config_params = result.get('param_content') if isinstance(result, dict) else (result[0] if len(result) > 0 else None)
+                    if config_params:
+                        # 解析 Python 代碼格式的參數
+                        return self._parse_python_config(config_params)
             
             # 如果沒有指定版本，嘗試從 services 表獲取
             query = """
@@ -118,9 +121,12 @@ class ConfigService:
             cursor.execute(query, params)
             result = cursor.fetchone()
             
-            if result and result[1]:  # config_json 不為空
-                config_data = json.loads(result[1])
-                return config_data
+            if result:
+                # 處理返回格式（可能是字典或元組）
+                config_json = result.get('config_json') if isinstance(result, dict) else (result[1] if len(result) > 1 else None)
+                if config_json:
+                    config_data = json.loads(config_json)
+                    return config_data
             
             return None
             

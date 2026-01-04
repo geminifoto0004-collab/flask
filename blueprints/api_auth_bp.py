@@ -382,15 +382,27 @@ def api_user_info():
                 'error': '用戶不存在'
             }), 404
         
-        return jsonify({
-            'success': True,
-            'user_info': {
+        # 處理返回格式（可能是字典或元組）
+        if isinstance(user, dict):
+            user_info = {
+                'id': user.get('id'),
+                'username': user.get('username'),
+                'email': user.get('email'),
+                'role': user.get('role'),
+                'created_at': user.get('created_at')
+            }
+        else:
+            user_info = {
                 'id': user[0],
                 'username': user[1],
                 'email': user[2],
                 'role': user[3],
-                'created_at': user[4]
+                'created_at': user[4] if len(user) > 4 else None
             }
+        
+        return jsonify({
+            'success': True,
+            'user_info': user_info
         })
         
     except Exception as e:
@@ -437,17 +449,31 @@ def api_user_services():
         
         service_list = []
         for service in services:
-            service_list.append({
-                'id': service[0],
-                'name': service[1],
-                'description': service[2],
-                'duration_days': service[3],
-                'price': float(service[4]) if service[4] else None,
-                'start_date': service[5],
-                'end_date': service[6],
-                'status': service[7],
-                'created_at': service[8]
-            })
+            # 處理返回格式（可能是字典或元組）
+            if isinstance(service, dict):
+                service_list.append({
+                    'id': service.get('id'),
+                    'name': service.get('name'),
+                    'description': service.get('description'),
+                    'duration_days': service.get('duration_days'),
+                    'price': float(service.get('price')) if service.get('price') else None,
+                    'start_date': service.get('start_date'),
+                    'end_date': service.get('end_date'),
+                    'status': service.get('status'),
+                    'created_at': service.get('created_at')
+                })
+            else:
+                service_list.append({
+                    'id': service[0],
+                    'name': service[1],
+                    'description': service[2],
+                    'duration_days': service[3],
+                    'price': float(service[4]) if service[4] else None,
+                    'start_date': service[5],
+                    'end_date': service[6],
+                    'status': service[7],
+                    'created_at': service[8] if len(service) > 8 else None
+                })
         
         return jsonify({
             'success': True,
@@ -506,17 +532,31 @@ def api_user_active_services():
         
         service_list = []
         for service in services:
-            service_list.append({
-                'id': service[0],
-                'name': service[1],
-                'description': service[2],
-                'duration_days': service[3],
-                'price': float(service[4]) if service[4] else None,
-                'start_date': service[5],
-                'end_date': service[6],
-                'status': service[7],
-                'created_at': service[8]
-            })
+            # 處理返回格式（可能是字典或元組）
+            if isinstance(service, dict):
+                service_list.append({
+                    'id': service.get('id'),
+                    'name': service.get('name'),
+                    'description': service.get('description'),
+                    'duration_days': service.get('duration_days'),
+                    'price': float(service.get('price')) if service.get('price') else None,
+                    'start_date': service.get('start_date'),
+                    'end_date': service.get('end_date'),
+                    'status': service.get('status'),
+                    'created_at': service.get('created_at')
+                })
+            else:
+                service_list.append({
+                    'id': service[0],
+                    'name': service[1],
+                    'description': service[2],
+                    'duration_days': service[3],
+                    'price': float(service[4]) if service[4] else None,
+                    'start_date': service[5],
+                    'end_date': service[6],
+                    'status': service[7],
+                    'created_at': service[8] if len(service) > 8 else None
+                })
         
         return jsonify({
             'success': True,
@@ -666,17 +706,30 @@ def api_get_current_user_sessions():
         
         session_list = []
         for session in sessions:
-            device_info = json.loads(session[2]) if session[2] else {}
-            
-            session_list.append({
-                'id': session[0],
-                'session_token': session[1],
-                'device_info': device_info,
-                'session_start': session[3],
-                'last_activity': session[4],
-                'is_online': bool(session[5]),
-                'is_current': session[1] == request.headers.get('X-Session-Token')
-            })
+            # 處理返回格式（可能是字典或元組）
+            if isinstance(session, dict):
+                device_info_str = session.get('device_info') or ''
+                device_info = json.loads(device_info_str) if device_info_str else {}
+                session_list.append({
+                    'id': session.get('id'),
+                    'session_token': session.get('session_token'),
+                    'device_info': device_info,
+                    'session_start': session.get('session_start'),
+                    'last_activity': session.get('last_activity'),
+                    'is_online': bool(session.get('is_online')),
+                    'is_current': session.get('session_token') == request.headers.get('X-Session-Token')
+                })
+            else:
+                device_info = json.loads(session[2]) if len(session) > 2 and session[2] else {}
+                session_list.append({
+                    'id': session[0],
+                    'session_token': session[1],
+                    'device_info': device_info,
+                    'session_start': session[3] if len(session) > 3 else None,
+                    'last_activity': session[4] if len(session) > 4 else None,
+                    'is_online': bool(session[5]) if len(session) > 5 else False,
+                    'is_current': session[1] == request.headers.get('X-Session-Token') if len(session) > 1 else False
+                })
         
         return jsonify({
             'success': True,
@@ -802,17 +855,31 @@ def api_get_user_sessions():
             else:  # 超過5分鐘 - 離線
                 status = 'offline'
             
-            session_list.append({
-                'id': session[0],
-                'user_id': session[1],
-                'username': session[2],
-                'email': session[3],
-                'service_name': session[4],
-                'session_start': session[5],
-                'last_activity': session[6],
-                'is_online': bool(session[7]),
-                'status': status
-            })
+            # 處理返回格式（可能是字典或元組）
+            if isinstance(session, dict):
+                session_list.append({
+                    'id': session.get('id'),
+                    'user_id': session.get('user_id'),
+                    'username': session.get('username'),
+                    'email': session.get('email'),
+                    'service_name': session.get('service_name'),
+                    'session_start': session.get('session_start'),
+                    'last_activity': session.get('last_activity'),
+                    'is_online': bool(session.get('is_online')),
+                    'status': status
+                })
+            else:
+                session_list.append({
+                    'id': session[0],
+                    'user_id': session[1],
+                    'username': session[2],
+                    'email': session[3],
+                    'service_name': session[4],
+                    'session_start': session[5],
+                    'last_activity': session[6],
+                    'is_online': bool(session[7]) if len(session) > 7 else False,
+                    'status': status
+                })
         
         return jsonify({
             'success': True,
@@ -891,7 +958,8 @@ def api_get_user_session_details(user_id):
         
         # 獲取總數
         cursor.execute("SELECT COUNT(*) FROM user_sessions WHERE user_id = ?", (user_id,))
-        total_count = cursor.fetchone()[0]
+        total_count_result = cursor.fetchone()
+        total_count = total_count_result[0] if isinstance(total_count_result, tuple) else (total_count_result.get('COUNT(*)') or total_count_result.get(list(total_count_result.keys())[0]) if total_count_result else 0)
         
         # 獲取分頁數據
         cursor.execute("""
@@ -952,19 +1020,36 @@ def api_get_user_session_details(user_id):
                 except:
                     device_info = {}
             
-            session_list.append({
-                'id': session[0],
-                'user_id': session[1],
-                'username': session[2],
-                'email': session[3],
-                'service_name': session[4],
-                'session_start': session[5],
-                'last_activity': session[6],
-                'is_online': bool(session[7]),
-                'session_token': session[8][:20] + '...' if session[8] else None,  # 只顯示前20個字符
-                'device_info': device_info,
-                'status': status
-            })
+            # 處理返回格式（可能是字典或元組）
+            if isinstance(session, dict):
+                session_token = session.get('session_token') or ''
+                session_list.append({
+                    'id': session.get('id'),
+                    'user_id': session.get('user_id'),
+                    'username': session.get('username'),
+                    'email': session.get('email'),
+                    'service_name': session.get('service_name'),
+                    'session_start': session.get('session_start'),
+                    'last_activity': session.get('last_activity'),
+                    'is_online': bool(session.get('is_online')),
+                    'session_token': session_token[:20] + '...' if session_token else None,
+                    'device_info': device_info,
+                    'status': status
+                })
+            else:
+                session_list.append({
+                    'id': session[0],
+                    'user_id': session[1],
+                    'username': session[2],
+                    'email': session[3],
+                    'service_name': session[4],
+                    'session_start': session[5],
+                    'last_activity': session[6],
+                    'is_online': bool(session[7]) if len(session) > 7 else False,
+                    'session_token': session[8][:20] + '...' if len(session) > 8 and session[8] else None,
+                    'device_info': device_info,
+                    'status': status
+                })
         
         return jsonify({
             'success': True,
@@ -1038,7 +1123,8 @@ def api_clear_all_sessions():
         
         # 獲取將要刪除的會話數量
         cursor.execute("SELECT COUNT(*) FROM user_sessions")
-        count_before = cursor.fetchone()[0]
+        count_before_result = cursor.fetchone()
+        count_before = count_before_result[0] if isinstance(count_before_result, tuple) else (count_before_result.get('COUNT(*)') or count_before_result.get(list(count_before_result.keys())[0]) if count_before_result else 0)
         
         if count_before == 0:
             conn.close()
@@ -1054,7 +1140,8 @@ def api_clear_all_sessions():
         
         # 獲取實際刪除的數量
         cursor.execute("SELECT changes()")
-        deleted_count = cursor.fetchone()[0]
+        deleted_count_result = cursor.fetchone()
+        deleted_count = deleted_count_result[0] if isinstance(deleted_count_result, tuple) else (deleted_count_result.get('COUNT(*)') or deleted_count_result.get(list(deleted_count_result.keys())[0]) if deleted_count_result else 0)
         
         conn.close()
         
@@ -1126,7 +1213,8 @@ def api_delete_user_sessions(user_id):
         
         # 獲取將要刪除的會話數量
         cursor.execute("SELECT COUNT(*) FROM user_sessions WHERE user_id = ?", (user_id,))
-        count_before = cursor.fetchone()[0]
+        count_before_result = cursor.fetchone()
+        count_before = count_before_result[0] if isinstance(count_before_result, tuple) else (count_before_result.get('COUNT(*)') or count_before_result.get(list(count_before_result.keys())[0]) if count_before_result else 0)
         
         if count_before == 0:
             conn.close()
@@ -1142,7 +1230,8 @@ def api_delete_user_sessions(user_id):
         
         # 獲取實際刪除的數量
         cursor.execute("SELECT changes()")
-        deleted_count = cursor.fetchone()[0]
+        deleted_count_result = cursor.fetchone()
+        deleted_count = deleted_count_result[0] if isinstance(deleted_count_result, tuple) else (deleted_count_result.get('COUNT(*)') or deleted_count_result.get(list(deleted_count_result.keys())[0]) if deleted_count_result else 0)
         
         conn.close()
         

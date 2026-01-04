@@ -104,9 +104,19 @@ def api_check_license():
             conn.close()
             return jsonify({'success': False, 'error': '用戶不存在'})
         
+        # 處理返回格式（可能是字典或元組）
+        if isinstance(user, dict):
+            user_id = user['id']
+            stored_password_hash = user['password_hash']
+            user_role = user['role']
+        else:
+            user_id = user[0]
+            stored_password_hash = user[1]
+            user_role = user[2]
+        
         # 驗證密碼
         password_hash = hashlib.sha256(password.encode()).hexdigest()
-        if user[1] != password_hash:
+        if stored_password_hash != password_hash:
             conn.close()
             return jsonify({'success': False, 'error': '密碼錯誤'})
         
@@ -116,7 +126,7 @@ def api_check_license():
             FROM user_services us
             JOIN services s ON us.service_id = s.id
             WHERE us.user_id = ? AND us.status = 'active'
-        ''', (user[0],))
+        ''', (user_id,))
         services = cursor.fetchall()
         
         # 檢查服務是否過期
@@ -124,15 +134,28 @@ def api_check_license():
         current_date = get_chile_time_naive().date()
         
         for service in services:
-            end_date = datetime.strptime(service[4], '%Y-%m-%d').date()  # end_date 在第5列
-            if end_date >= current_date:
-                valid_services.append({
-                    'name': service[6],  # service_name
-                    'description': service[7],  # description
-                    'status': 'active',
-                    'end_date': service[4],  # end_date
-                    'start_date': service[3]  # start_date
-                })
+            # 處理返回格式（可能是字典或元組）
+            if isinstance(service, dict):
+                end_date_str = service.get('end_date') or service.get('end_date')
+                start_date_str = service.get('start_date') or service.get('start_date')
+                service_name = service.get('service_name') or service.get('name')
+                description = service.get('description')
+            else:
+                end_date_str = service[4] if len(service) > 4 else None
+                start_date_str = service[3] if len(service) > 3 else None
+                service_name = service[6] if len(service) > 6 else None
+                description = service[7] if len(service) > 7 else None
+            
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                if end_date >= current_date:
+                    valid_services.append({
+                        'name': service_name,
+                        'description': description,
+                        'status': 'active',
+                        'end_date': end_date_str,
+                        'start_date': start_date_str
+                    })
         
         conn.close()
         
@@ -186,8 +209,13 @@ def login():
                         session['user_id'] = user_row['id']
                         session['company_name'] = user_row.get('company_name')
                     else:
-                        session['user_id'] = user_row[0]
-                        session['company_name'] = user_row[1] if len(user_row) > 1 and user_row[1] else None
+                        # 處理返回格式（可能是字典或元組）
+                        if isinstance(user_row, dict):
+                            session['user_id'] = user_row['id']
+                            session['company_name'] = user_row.get('company_name')
+                        else:
+                            session['user_id'] = user_row[0]
+                            session['company_name'] = user_row[1] if len(user_row) > 1 and user_row[1] else None
                 else:
                     # 如果數據庫中沒有，自動創建超級管理員用戶
                     print("⚠️ 數據庫中沒有超級管理員，正在創建...")
@@ -616,7 +644,8 @@ def delete_service(service_id):
         
         # 檢查是否有用戶正在使用此服務
         cursor.execute('SELECT COUNT(*) FROM user_services WHERE service_id = ?', (service_id,))
-        user_count = cursor.fetchone()[0]
+        user_count_result = cursor.fetchone()
+        user_count = user_count_result[0] if isinstance(user_count_result, tuple) else (user_count_result.get('COUNT(*)') or user_count_result.get(list(user_count_result.keys())[0]) if user_count_result else 0)
         
         if user_count > 0:
             return jsonify({'success': False, 'error': f'無法刪除：有 {user_count} 個用戶正在使用此服務'})
@@ -883,7 +912,11 @@ def get_user_service(user_service_id):
             
             param_result = cursor.fetchone()
             if param_result:
-                user_service_dict['param_config'] = param_result[0]
+                # 處理返回格式（可能是字典或元組）
+                if isinstance(param_result, dict):
+                    user_service_dict['param_config'] = param_result.get('param_content') or param_result.get(list(param_result.keys())[0])
+                else:
+                    user_service_dict['param_config'] = param_result[0]
             else:
                 user_service_dict['param_config'] = None
         else:
@@ -941,7 +974,11 @@ def update_user_service(user_service_id):
             cursor.execute('SELECT param_content FROM service_versions WHERE service_name = "Zofri_Compra_Venta" AND param_name = ?', (param_config,))
             config_result = cursor.fetchone()
             if config_result:
-                config_json = config_result[0]  # 這裡保存的是原始參數代碼
+                # 處理返回格式（可能是字典或元組）
+                if isinstance(config_result, dict):
+                    config_json = config_result.get('param_content') or config_result.get(list(config_result.keys())[0])
+                else:
+                    config_json = config_result[0]  # 這裡保存的是原始參數代碼
         
         # 更新用戶服務
         if config_json:
@@ -1202,9 +1239,17 @@ def get_user_service_config(user_service_id):
         result = cursor.fetchone()
         conn.close()
         
-        if result and result[0]:
+        # 處理返回格式（可能是字典或元組）
+        config_str = None
+        if result:
+            if isinstance(result, dict):
+                config_str = result.get('config_json') or result.get(list(result.keys())[0])
+            else:
+                config_str = result[0] if len(result) > 0 else None
+        
+        if config_str:
             import json
-            config = json.loads(result[0])
+            config = json.loads(config_str)
             return jsonify({'success': True, 'config': config})
         else:
             # 返回默認配置
@@ -1444,9 +1489,17 @@ def get_service_config(service_id):
         result = cursor.fetchone()
         conn.close()
         
-        if result and result[0]:
+        # 處理返回格式（可能是字典或元組）
+        config_str = None
+        if result:
+            if isinstance(result, dict):
+                config_str = result.get('config_json') or result.get(list(result.keys())[0])
+            else:
+                config_str = result[0] if len(result) > 0 else None
+        
+        if config_str:
             import json
-            config = json.loads(result[0])
+            config = json.loads(config_str)
             return jsonify({'success': True, 'config': config})
         else:
             # 返回默認配置
@@ -1558,11 +1611,19 @@ def get_user_config():
         result = cursor.fetchone()
         conn.close()
         
-        if result and result[0]:
+        # 處理返回格式（可能是字典或元組）
+        config_params = None
+        if result:
+            if isinstance(result, dict):
+                config_params = result.get('config_params') or result.get(list(result.keys())[0])
+            else:
+                config_params = result[0] if len(result) > 0 else None
+        
+        if config_params:
             # 返回原始參數代碼
             return jsonify({
                 'success': True,
-                'config_params': result[0]
+                'config_params': config_params
             })
         else:
             # 返回默認參數
