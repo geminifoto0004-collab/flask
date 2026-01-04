@@ -272,6 +272,37 @@ def send_email_via_resend(to_email, subject, html_content):
         return False, f"Resend API 發送失敗: {error_msg}"
 
 
+# ========== 清理和驗證郵件地址 ==========
+def clean_email_address(email: str) -> str:
+    """
+    清理郵件地址（去除空格、分號等）
+    參數：
+        email - 原始郵件地址
+    返回：清理後的郵件地址
+    """
+    if not email:
+        return ""
+    # 去除首尾空格
+    email = email.strip()
+    # 去除分號（如果用戶誤輸入）
+    email = email.rstrip(';')
+    # 去除多餘空格
+    email = email.strip()
+    return email
+
+
+def validate_email_format(email: str) -> bool:
+    """
+    驗證郵件地址格式
+    參數：
+        email - 郵件地址
+    返回：是否有效
+    """
+    import re
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
 # ========== 發送郵件 ==========
 def send_email(to_email, subject, html_content):
     """
@@ -284,11 +315,29 @@ def send_email(to_email, subject, html_content):
     如果設置了 PYANYWHERE_EMAIL_PROXY_URL，優先使用 PythonAnywhere 代理（臨時方案）
     
     參數：
-        to_email - 收件人郵箱
+        to_email - 收件人郵箱（字符串或列表）
         subject - 郵件主題
         html_content - HTML 內容
     返回：(bool, str) - (是否成功, 錯誤信息)
     """
+    # 清理和驗證郵件地址
+    if isinstance(to_email, str):
+        to_email = clean_email_address(to_email)
+        if not validate_email_format(to_email):
+            return False, f"無效的郵件地址格式: {to_email}"
+    elif isinstance(to_email, list):
+        # 清理列表中的每個郵件地址
+        cleaned_emails = []
+        for email in to_email:
+            cleaned = clean_email_address(email)
+            if cleaned and validate_email_format(cleaned):
+                cleaned_emails.append(cleaned)
+            else:
+                print(f"[Email] 跳過無效的郵件地址: {email}")
+        if not cleaned_emails:
+            return False, "沒有有效的郵件地址"
+        # Resend API 支持列表，SMTP 需要逐個發送
+        to_email = cleaned_emails
     # 優先檢查 PythonAnywhere 代理（如果設置了）
     if email_config.PYANYWHERE_EMAIL_PROXY_URL:
         from services.email_proxy import send_email_via_proxy

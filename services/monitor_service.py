@@ -982,7 +982,20 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
     success_count = 0
     error_messages = []
     
+    # 清理和驗證郵件地址
+    from services.email_service import clean_email_address, validate_email_format
+    cleaned_emails = []
     for email in emails:
+        cleaned = clean_email_address(str(email))
+        if cleaned and validate_email_format(cleaned):
+            cleaned_emails.append(cleaned)
+        else:
+            print(f"[監控郵件] 跳過無效的郵件地址: {email}")
+    
+    if not cleaned_emails:
+        return False, "沒有有效的郵件地址"
+    
+    for email in cleaned_emails:
         print(f"[監控郵件] 正在發送郵件到: {email}")
         success, error = send_email(
             email,

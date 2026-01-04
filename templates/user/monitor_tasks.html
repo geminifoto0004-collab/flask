@@ -55,7 +55,7 @@
 </div>
 
 <!-- 創建/編輯任務 Modal -->
-<div id="taskModal" class="modal-overlay" style="display: none;" onclick="handleModalClick(event)">
+<div id="taskModal" class="modal-overlay" style="display: none;">
     <div class="modal-dialog" onclick="event.stopPropagation()">
         <div class="modal-header">
             <h2 id="modalTitle">Crear Tarea de Monitoreo</h2>
@@ -73,8 +73,9 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="zofriPassword">Contraseña ZOFRI <span class="required">*</span></label>
-                    <input type="password" id="zofriPassword" name="zofri_password" required placeholder="Ingrese su contraseña ZOFRI">
+                    <label for="zofriPassword">Contraseña ZOFRI <span class="required" id="passwordRequired">*</span></label>
+                    <input type="password" id="zofriPassword" name="zofri_password" required placeholder="Ingrese su contraseña ZOFRI (editar: solo si desea cambiarla)">
+                    <small class="form-hint" id="passwordHint" style="display: none;">Dejar vacío para mantener la contraseña actual</small>
                 </div>
                 
                 <div class="form-group">
@@ -84,8 +85,8 @@
                 
                 <div class="form-group">
                     <label for="notificationEmails">Correos de Notificación <span class="required">*</span></label>
-                    <textarea id="notificationEmails" name="notification_emails" rows="3" placeholder="email1@example.com, email2@example.com" required></textarea>
-                    <small class="form-hint">Separe múltiples correos con comas</small>
+                    <textarea id="notificationEmails" name="notification_emails" rows="3" placeholder="email1@example.com, email2@example.com 或 email1@example.com; email2@example.com" required></textarea>
+                    <small class="form-hint">Separe múltiples correos con comas (,) o punto y coma (;)</small>
                 </div>
                 
                 <div class="form-group">
@@ -304,6 +305,10 @@ function showCreateForm() {
     document.getElementById('modalTitle').textContent = 'Crear Tarea de Monitoreo';
     document.getElementById('taskForm').reset();
     document.getElementById('isActiveGroup').style.display = 'none';
+    // 重置密碼字段為必填
+    document.getElementById('zofriPassword').required = true;
+    document.getElementById('passwordRequired').style.display = 'inline';
+    document.getElementById('passwordHint').style.display = 'none';
     document.getElementById('taskModal').style.display = 'flex';
     document.body.style.overflow = 'hidden';
 }
@@ -317,6 +322,9 @@ function editTask(taskId) {
                 const task = data.task;
                 document.getElementById('zofriUsername').value = task.zofri_username || '';
                 document.getElementById('zofriPassword').value = '';
+                document.getElementById('zofriPassword').required = false;  // 編輯時密碼可選
+                document.getElementById('passwordRequired').style.display = 'none';  // 隱藏必填標記
+                document.getElementById('passwordHint').style.display = 'block';  // 顯示提示
                 document.getElementById('zofriRutEntidad').value = task.zofri_rut_entidad || '';
                 document.getElementById('notificationEmails').value = task.notification_emails ? task.notification_emails.join(', ') : '';
                 document.getElementById('companyName').value = task.company_name || '';
@@ -344,14 +352,24 @@ function saveTask() {
         zofri_username: document.getElementById('zofriUsername').value.trim(),
         zofri_password: document.getElementById('zofriPassword').value.trim(),
         zofri_rut_entidad: document.getElementById('zofriRutEntidad').value.trim(),
-        notification_emails: document.getElementById('notificationEmails').value.split(',').map(e => e.trim()).filter(e => e),
+        notification_emails: document.getElementById('notificationEmails').value
+            .split(/[,;]/)  // 支持逗號和分號分隔
+            .map(e => e.trim())
+            .filter(e => e && e.includes('@')),  // 基本驗證：包含 @ 符號
         company_name: document.getElementById('companyName').value.trim(),
         email_subject: document.getElementById('emailSubject').value.trim(),
         is_active: document.getElementById('isActive') ? document.getElementById('isActive').checked : true
     };
     
-    if (!formData.zofri_username || !formData.zofri_password || !formData.zofri_rut_entidad || formData.notification_emails.length === 0 || !formData.company_name) {
+    // 驗證必填字段（編輯時密碼可選）
+    if (!formData.zofri_username || !formData.zofri_rut_entidad || formData.notification_emails.length === 0 || !formData.company_name) {
         showToast('Por favor complete todos los campos obligatorios', 'error');
+        return;
+    }
+    
+    // 創建時密碼必填，編輯時可選
+    if (!currentTaskId && !formData.zofri_password) {
+        showToast('La contraseña es obligatoria al crear una nueva tarea', 'error');
         return;
     }
     
