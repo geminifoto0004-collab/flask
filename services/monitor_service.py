@@ -440,6 +440,8 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
             }, ""
         
         # 4. 獲取 ITI 數據並匹配
+        print(f"[監控檢查] ZOFRI 容器總數: {len(df_zofri)}")
+        
         iti_results = iti_data()
         
         matched_data = pd.DataFrame()
@@ -473,6 +475,35 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         
         unmatched_data = df_zofri[~matched_indices]
         
+        # 打印 ZOFRI 容器匹配結果
+        matched_count = int(matched_indices.sum())
+        unmatched_count = len(unmatched_data)
+        print(f"[監控檢查] ZOFRI 容器匹配結果: 總數={len(df_zofri)}, 已匹配(VISADO)={matched_count}, 未匹配={unmatched_count}")
+        
+        # 打印已匹配的 ZOFRI 容器
+        if matched_count > 0:
+            print(f"[監控檢查] ========== 已匹配(VISADO)的 ZOFRI 容器 (共 {matched_count} 個) ==========")
+            for idx, row in df_zofri[matched_indices].iterrows():
+                codigo = row.get('codigo', 'N/A')
+                glosa_codigo = row.get('glosa_codigo', 'N/A')
+                glosa_descripcion = row.get('glosa_descripcion', 'N/A')
+                estado = row.get('nombre', 'N/A')
+                print(f"[監控檢查] ✅ VISADO: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查] ========== 已匹配容器列表結束 ==========")
+        
+        # 打印未匹配的 ZOFRI 容器
+        if unmatched_count > 0:
+            print(f"[監控檢查] ========== 未匹配的 ZOFRI 容器 (共 {unmatched_count} 個) ==========")
+            for idx, row in unmatched_data.iterrows():
+                codigo = row.get('codigo', 'N/A')
+                glosa_codigo = row.get('glosa_codigo', 'N/A')
+                glosa_descripcion = row.get('glosa_descripcion', 'N/A')
+                estado = row.get('nombre', 'N/A')
+                print(f"[監控檢查] ❌ 未匹配: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查] ========== 未匹配容器列表結束 ==========")
+        else:
+            print(f"[監控檢查] ✅ 所有 ZOFRI 容器都已匹配(VISADO)，沒有未匹配的容器")
+        
         # 5. 轉換為字典列表（參考 iti.py 的邏輯）
         all_containers = []
         for idx, row in df_zofri.iterrows():
@@ -484,13 +515,16 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                 # 如果索引不存在，默認為未匹配
                 is_matched = False
             
+            codigo = row.get('codigo', '')
+            glosa_codigo = row.get('glosa_codigo', '')
             container = {
-                'codigo': row.get('codigo', ''),
-                'glosa_codigo': row.get('glosa_codigo', ''),
+                'codigo': codigo,
+                'glosa_codigo': glosa_codigo,
                 'glosa_descripcion': row.get('glosa_descripcion', ''),
                 'estado': row.get('nombre', ''),
                 'matched': is_matched
             }
+            
             # 如果是已匹配的，添加 ITI 信息
             if idx in iti_info_map:
                 container['iti_item'] = iti_info_map[idx]['iti_item']
@@ -505,9 +539,16 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         
         # 額外調試：打印未匹配容器的詳細信息（與 iti.py 的打印邏輯一致）
         if not unmatched_data.empty:
-            print(f"[監控檢查] 未匹配容器列表:")
+            print(f"[監控檢查] ========== 未匹配容器列表 (共 {len(unmatched_data)} 個) ==========")
             for idx, row in unmatched_data.iterrows():
-                print(f"  - codigo: {row.get('codigo', 'N/A')}, glosa_codigo: {row.get('glosa_codigo', 'N/A')}")
+                codigo = row.get('codigo', 'N/A')
+                glosa_codigo = row.get('glosa_codigo', 'N/A')
+                glosa_descripcion = row.get('glosa_descripcion', 'N/A')
+                estado = row.get('nombre', 'N/A')
+                print(f"[監控檢查] ❌ 未匹配: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查] ========== 未匹配容器列表結束 ==========")
+        else:
+            print(f"[監控檢查] ✅ 所有容器都已匹配，沒有未匹配的容器")
         
         result = {
             'containers': all_containers,
@@ -669,7 +710,11 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
         </tr>
         """
             unmatched_list.append(item)
-            print(f"[監控郵件] 未匹配容器: {container.get('glosa_codigo', 'N/A')}")
+            codigo = container.get('codigo', 'N/A')
+            glosa_codigo = container.get('glosa_codigo', 'N/A')
+            glosa_descripcion = container.get('glosa_descripcion', 'N/A')
+            estado = container.get('estado', 'N/A')
+            print(f"[監控郵件] ❌ 未匹配容器: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
     
     print(f"[監控郵件] 郵件內容生成: 已匹配={len(matched_list)}, 未匹配={len(unmatched_list)}")
     

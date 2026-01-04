@@ -123,32 +123,31 @@ def process_data(data, cookies_dict):
     result_df = filtered_df[['codigo', 'estado.nombre', 'glosa']].copy()
     result_df.columns = ['codigo', 'nombre', 'glosa']
     
-    # 通過101編號API獲取集裝箱號（用於內部匹配）
-    # 優化：限制處理數量，添加延遲，避免超時和內存問題
-    # Render 的 worker timeout 是 30 秒，需要確保在 30 秒內完成
-    # 策略：只處理前 5 個文檔，每個請求 3 秒超時，加上延遲，總時間約 20 秒
-    max_docs = 5  # 最多處理5個文檔，確保在30秒內完成
-    original_len = len(result_df)
-    if len(result_df) > max_docs:
-        result_df = result_df.head(max_docs).copy()
+    # 處理所有 101- 文檔，不限制數量
+    print(f"[ZOFRI處理] 找到 {len(result_df)} 個符合條件的 101- 文檔（VISADO/CONTROLADO），將處理所有文檔")
     
-    # 使用循環處理，添加延遲，避免過快請求導致服務器拒絕或內存問題
+    # 通過101編號API獲取集裝箱號（用於內部匹配）
+    # 優化策略：處理所有文檔，但只對前 10 個調用 API，其他的使用 glosa_codigo 作為備用
+    # 由於現在是異步任務，不受 30 秒 worker timeout 限制，可以處理所有文檔
+    max_api_calls = 10  # 最多對前 10 個文檔調用 API（避免過多請求）
+    
+    # 使用循環處理所有文檔，添加延遲，避免過快請求導致服務器拒絕
     container_numbers = []
+    total_docs = len(result_df)
     for idx, codigo in enumerate(result_df['codigo']):
-        if idx > 0:
+        if idx > 0 and idx < max_api_calls:
             time.sleep(0.3)  # 每個請求間隔0.3秒，避免過快請求
-        container_number = get_container_from_document(codigo, cookies_dict) or ''
-        container_numbers.append(container_number)
-        # 如果已經處理了5個，停止（避免超時）
-        if idx >= 4:
-            break
+        # 只對前 max_api_calls 個文檔調用 API
+        if idx < max_api_calls:
+            container_number = get_container_from_document(codigo, cookies_dict) or ''
+            container_numbers.append(container_number)
+        else:
+            # 對於超過限制的文檔，先設置為空字符串，稍後使用 glosa_codigo 作為備用
+            container_numbers.append('')
+    
+    print(f"[ZOFRI處理] 已處理所有 {total_docs} 個文檔（前 {min(max_api_calls, total_docs)} 個調用 API，其餘使用 glosa 提取）")
     
     result_df['_container_number'] = container_numbers
-    
-    # 如果原始數據超過限制，為剩餘的文檔設置空字符串
-    if original_len > max_docs:
-        # 注意：這裡 result_df 已經被截斷了，所以不需要處理剩餘的
-        pass
     
     # 從glosa中提取集裝箱號用於顯示（格式：HAMU3735312）
     def extract_container_code(glosa):
