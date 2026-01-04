@@ -280,12 +280,32 @@ def send_email(to_email, subject, html_content):
     - 'auto': 自動檢測，優先 SMTP，失敗後自動切換到 Resend API（並記住）
     - 'smtp': 只使用 SMTP
     - 'resend': 只使用 Resend API
+    
+    如果設置了 PYANYWHERE_EMAIL_PROXY_URL，優先使用 PythonAnywhere 代理（臨時方案）
+    
     參數：
         to_email - 收件人郵箱
         subject - 郵件主題
         html_content - HTML 內容
     返回：(bool, str) - (是否成功, 錯誤信息)
     """
+    # 優先檢查 PythonAnywhere 代理（如果設置了）
+    if email_config.PYANYWHERE_EMAIL_PROXY_URL:
+        from services.email_proxy import send_email_via_proxy
+        print("[Email] 使用 PythonAnywhere 代理發送郵件")
+        success, error = send_email_via_proxy(
+            email_config.PYANYWHERE_EMAIL_PROXY_URL,
+            to_email,
+            subject,
+            html_content
+        )
+        if success:
+            return True, ""
+        else:
+            # 代理失敗，回退到原有邏輯
+            print(f"[Email] 代理失敗，回退到原有邏輯: {error}")
+            # 繼續執行下面的邏輯
+    
     provider = email_config.EMAIL_PROVIDER.lower()
     print(f"[Email] 郵件服務提供商: {provider}")
     print(f"[Email Debug] EMAIL_PROVIDER 環境變數: {os.environ.get('EMAIL_PROVIDER', '未設置')}")
