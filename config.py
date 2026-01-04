@@ -122,7 +122,14 @@ class EmailConfig:
     #   - EMAIL_PROVIDER=resend（直接使用 Resend API）
     #   或
     #   - SMTP_FAILED=1（在 auto 模式下永久跳過 SMTP）
-    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'auto').lower()  # auto/smtp/resend
+    # 從環境變數讀取 EMAIL_PROVIDER，如果未設置則默認為 'auto'
+    _email_provider_env = os.environ.get('EMAIL_PROVIDER', 'auto')
+    EMAIL_PROVIDER = _email_provider_env.lower() if _email_provider_env else 'auto'
+    # 調試信息（生產環境可以移除）
+    if _email_provider_env and _email_provider_env.lower() != 'auto':
+        print(f"[Config] EMAIL_PROVIDER 從環境變數讀取: {EMAIL_PROVIDER}")
+    else:
+        print(f"[Config] EMAIL_PROVIDER 使用默認值: {EMAIL_PROVIDER} (環境變數: {_email_provider_env})")
     
     # Resend API 配置（不受 Render 網絡限制）
     # 如果設置了 RESEND_API_KEY，可以作為 SMTP 的備選方案

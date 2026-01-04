@@ -264,6 +264,8 @@ def send_email(to_email, subject, html_content):
     """
     provider = email_config.EMAIL_PROVIDER.lower()
     print(f"[Email] 郵件服務提供商: {provider}")
+    print(f"[Email Debug] EMAIL_PROVIDER 環境變數: {os.environ.get('EMAIL_PROVIDER', '未設置')}")
+    print(f"[Email Debug] email_config.EMAIL_PROVIDER: {email_config.EMAIL_PROVIDER}")
     
     # 如果是 'auto' 模式，先檢查緩存
     if provider == 'auto':
