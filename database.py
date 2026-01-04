@@ -20,9 +20,10 @@ try:
     POSTGRESQL_AVAILABLE = True
 except ImportError:
     POSTGRESQL_AVAILABLE = False
-    # 只在需要時才顯示警告
-    if config.DATABASE_TYPE == 'postgresql':
-        print("⚠️  PostgreSQL 模組未安裝，請運行: pip install psycopg2-binary")
+
+# 只在需要時才顯示警告
+if not POSTGRESQL_AVAILABLE and config.DATABASE_TYPE == 'postgresql':
+    print("⚠️  PostgreSQL 模組未安裝，請運行: pip install psycopg2-binary")
 
 # 嘗試導入 MySQL/TiDB 模組（如果需要的話）
 try:
@@ -31,9 +32,10 @@ try:
     MYSQL_AVAILABLE = True
 except ImportError:
     MYSQL_AVAILABLE = False
-    # 只在需要時才顯示警告
-    if config.DATABASE_TYPE in ('mysql', 'tidb'):
-        print("⚠️  MySQL/TiDB 模組未安裝，請運行: pip install PyMySQL")
+
+# 只在需要時才顯示警告
+if not MYSQL_AVAILABLE and config.DATABASE_TYPE in ('mysql', 'tidb'):
+    print("⚠️  MySQL/TiDB 模組未安裝，請運行: pip install PyMySQL")
 
 # SQLite 是 Python 標準庫，總是可用
 import sqlite3  # noqa: F401

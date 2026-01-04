@@ -509,20 +509,29 @@ def has_result_changed(last_result: Optional[str], current_result: Dict) -> bool
     返回：True 表示有變化需要發送，False 表示沒有變化
     
     邏輯：
-    1. 第一次檢查（last_result 為空）：如果有數據，返回 True
-    2. 後續檢查：只關注共同存在的容器，如果有容器從 unmatched → matched，返回 True
-       - 如果容器消失（入庫了），不觸發發送
-       - 如果容器新增但狀態未變化，不觸發發送
-       - 只有當共同存在的容器中，有從 unmatched → matched 的變化，才觸發發送
+    1. 第一次檢查（last_result 為空）：如果有數據，返回 True（發送所有容器，包括匹配和未匹配的）
+    2. 後續檢查：
+       - 如果有容器從 unmatched → matched，返回 True（發送所有容器）
+       - 如果有新增的容器（無論匹配與否），返回 True（發送所有容器）
+       - 如果容器數量有變化，返回 True（發送所有容器）
+       - 否則返回 False（不發送）
     """
     if not last_result:
-        # 第一次檢查：如果有容器數據，就發送
+        # 第一次檢查：如果有容器數據，就發送（包括匹配和未匹配的）
         containers = current_result.get('containers', [])
         return len(containers) > 0
     
     try:
         # 對比上次和本次結果
         last_data = json.loads(last_result)
+        
+        # 獲取容器列表
+        last_containers = last_data.get('containers', [])
+        current_containers = current_result.get('containers', [])
+        
+        # 如果容器數量有變化，發送
+        if len(last_containers) != len(current_containers):
+            return True
         
         # 創建容器狀態映射：{codigo: matched}
         def create_status_map(data):
@@ -541,7 +550,12 @@ def has_result_changed(last_result: Optional[str], current_result: Dict) -> bool
         # 找出共同存在的容器（兩次檢查都存在的容器）
         common_codes = set(last_map.keys()) & set(current_map.keys())
         
-        # 只對比共同存在的容器，檢查是否有從 unmatched → matched 的變化
+        # 如果有新增的容器（不在上次結果中的），發送
+        new_codes = set(current_map.keys()) - set(last_map.keys())
+        if new_codes:
+            return True
+        
+        # 檢查共同存在的容器，是否有從 unmatched → matched 的變化
         for codigo in common_codes:
             last_matched = last_map.get(codigo)
             current_matched = current_map.get(codigo)
@@ -550,15 +564,14 @@ def has_result_changed(last_result: Optional[str], current_result: Dict) -> bool
             if last_matched is False and current_matched is True:
                 return True
         
-        # 沒有從 unmatched → matched 的變化
-        # （容器消失、新增但狀態未變化、狀態未變化等情況都不發送）
+        # 沒有變化（容器數量相同，沒有新增，沒有 unmatched → matched 的變化）
         return False
         
     except Exception as e:
         print(f"對比失敗: {e}")
         import traceback
         traceback.print_exc()
-        # 對比失敗時，為了安全起見，認為有變化
+        # 對比失敗時，為了安全起見，認為有變化（發送所有容器）
         return True
 
 
@@ -582,6 +595,11 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
         print("[監控郵件] 沒有收件人郵箱，跳過發送")
         return False, "沒有收件人郵箱"
     
+    # 統計匹配和未匹配的容器數量（用於調試）
+    matched_count = sum(1 for c in containers if c.get('matched', False))
+    unmatched_count = len(containers) - matched_count
+    print(f"[監控郵件] 容器統計: 總數={len(containers)}, 已匹配={matched_count}, 未匹配={unmatched_count}")
+    
     # 從任務配置獲取公司名稱（必填）
     if not task_config:
         return False, "缺少任務配置信息"
@@ -603,6 +621,7 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
     matched_list = []
     unmatched_list = []
     
+    print(f"[監控郵件] 開始處理 {len(containers)} 個容器...")
     for container in containers:
         is_matched = container.get('matched', False)
         status_class = "status-matched" if is_matched else "status-unmatched"
@@ -620,6 +639,7 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
         </tr>
         """
             matched_list.append(item)
+            print(f"[監控郵件] 已匹配容器: {container.get('glosa_codigo', 'N/A')}")
         else:
             item = f"""
         <tr>
@@ -630,6 +650,9 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
         </tr>
         """
             unmatched_list.append(item)
+            print(f"[監控郵件] 未匹配容器: {container.get('glosa_codigo', 'N/A')}")
+    
+    print(f"[監控郵件] 郵件內容生成: 已匹配={len(matched_list)}, 未匹配={len(unmatched_list)}")
     
     html_content = f"""
     <!DOCTYPE html>
