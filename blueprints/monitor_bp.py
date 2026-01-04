@@ -367,12 +367,15 @@ def check_monitor_api():
             async_task_id = create_async_task('monitor_check', task_config)
             
             # 立即返回任務 ID，任務在後台執行
+            current_time = get_chile_time_naive()
             return jsonify({
                 'success': True,
                 'message': '任務已啟動，正在後台執行',
                 'task_id': async_task_id,
                 'status': 'pending',
                 'task_config_id': task_config['id'],
+                'request_time': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'request_time_readable': current_time.strftime('%Y年%m月%d日 %H:%M:%S'),
                 'note': '請使用 /api/monitor/task/' + async_task_id + ' 查詢任務狀態'
             }), 202  # 202 Accepted 表示請求已接受，正在處理
         except ImportError:
@@ -409,47 +412,91 @@ def check_monitor_api():
                 print(f"[監控API] 郵件發送結果: {send_success}, 消息: {send_message}")
             else:
                 print(f"[監控API] 不需要發送郵件（結果無變化）")
+            
+            # 計算變化數量（用於響應信息）
+            new_matches_count = 0
+            if last_result:
+                try:
+                    last_data = json.loads(last_result)
+                    last_containers = last_data.get('containers', [])
+                    last_status_map = {c['codigo']: c.get('matched', False) for c in last_containers}
+                    current_containers = result.get('containers', [])
+                    for c in current_containers:
+                        codigo = c.get('codigo')
+                        current_matched = c.get('matched', False)
+                        last_matched = last_status_map.get(codigo, None)
+                        if last_matched is False and current_matched is True:
+                            new_matches_count += 1
+                except:
+                    pass
+            
+            # 更新數據庫記錄
+            check_time = get_chile_time_naive()
+            check_time_str = check_time.strftime('%Y-%m-%d %H:%M:%S')
+            check_time_readable = check_time.strftime('%Y年%m月%d日 %H:%M:%S')
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE user_monitor_configs
+                SET last_check_time = ?, last_check_result = ?
+                WHERE id = ?
+            ''', (
+                check_time_str,
+                json.dumps(result),
+                task_config['id']
+            ))
+            conn.commit()
+            conn.close()
+            
+            return jsonify({
+                'success': True,
+                'task_id': task_config['id'],
+                'matched_count': result.get('matched_count', 0),
+                'unmatched_count': result.get('unmatched_count', 0),
+                'new_matches_count': new_matches_count,
+                'notification_sent': notification_sent,
+                'check_time': check_time_str,
+                'check_time_readable': check_time_readable  # 人類可讀的時間格式
+            })
         
-        # 計算變化數量（用於響應信息）
-        new_matches_count = 0
-        if last_result:
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ========== 公開 API：查詢異步任務狀態 ==========
+@monitor_bp.route('/api/monitor/task/<task_id>', methods=['GET'])
+def get_async_task_status(task_id):
+    """
+    查詢異步任務狀態（公開，不需要認證）
+    用於查詢 /api/monitor/check 返回的異步任務狀態
+    """
+    try:
+        from services.async_task_service import get_task_status
+        task_status = get_task_status(task_id)
+        
+        if not task_status:
+            return jsonify({
+                'success': False,
+                'error': '任務不存在'
+            }), 404
+        
+        # 解析 result 和 error（如果是 JSON 字符串）
+        if task_status.get('result'):
             try:
-                last_data = json.loads(last_result)
-                last_containers = last_data.get('containers', [])
-                last_status_map = {c['codigo']: c.get('matched', False) for c in last_containers}
-                current_containers = result.get('containers', [])
-                for c in current_containers:
-                    codigo = c.get('codigo')
-                    current_matched = c.get('matched', False)
-                    last_matched = last_status_map.get(codigo, None)
-                    if last_matched is False and current_matched is True:
-                        new_matches_count += 1
+                task_status['result'] = json.loads(task_status['result'])
             except:
                 pass
         
-        # 更新數據庫記錄
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE user_monitor_configs
-            SET last_check_time = ?, last_check_result = ?
-            WHERE id = ?
-        ''', (
-            get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S'),
-            json.dumps(result),
-            task_config['id']
-        ))
-        conn.commit()
-        conn.close()
+        if task_status.get('error'):
+            try:
+                task_status['error'] = json.loads(task_status['error'])
+            except:
+                pass
         
         return jsonify({
             'success': True,
-            'task_id': task_config['id'],
-            'matched_count': result.get('matched_count', 0),
-            'unmatched_count': result.get('unmatched_count', 0),
-            'new_matches_count': new_matches_count,
-            'notification_sent': notification_sent,
-            'check_time': get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
+            'task': task_status
         })
         
     except Exception as e:

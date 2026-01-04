@@ -104,8 +104,9 @@ def get_task_status(task_id: str) -> Optional[Dict]:
             return None
         
         # 處理返回格式（可能是字典或元組）
+        task_status = {}
         if isinstance(row, dict):
-            return {
+            task_status = {
                 'task_id': row.get('task_id'),
                 'task_type': row.get('task_type'),
                 'status': row.get('status'),
@@ -115,7 +116,7 @@ def get_task_status(task_id: str) -> Optional[Dict]:
                 'updated_at': row.get('updated_at')
             }
         else:
-            return {
+            task_status = {
                 'task_id': row[0],
                 'task_type': row[1],
                 'status': row[2],
@@ -124,6 +125,25 @@ def get_task_status(task_id: str) -> Optional[Dict]:
                 'created_at': row[5],
                 'updated_at': row[6] if len(row) > 6 else None
             }
+        
+        # 添加人類可讀的時間格式
+        if task_status.get('created_at'):
+            try:
+                from datetime import datetime
+                created_dt = datetime.strptime(task_status['created_at'], '%Y-%m-%d %H:%M:%S')
+                task_status['created_at_readable'] = created_dt.strftime('%Y年%m月%d日 %H:%M:%S')
+            except:
+                pass
+        
+        if task_status.get('updated_at'):
+            try:
+                from datetime import datetime
+                updated_dt = datetime.strptime(task_status['updated_at'], '%Y-%m-%d %H:%M:%S')
+                task_status['updated_at_readable'] = updated_dt.strftime('%Y年%m月%d日 %H:%M:%S')
+            except:
+                pass
+        
+        return task_status
     except Exception as e:
         conn.close()
         return None
@@ -174,7 +194,8 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                 except Exception as e:
                     print(f"[Async Task] 獲取上次結果失敗: {e}")
                 
-                # 更新任務狀態
+                # 更新任務狀態（包含可讀時間）
+                updated_at_readable = get_chile_time_naive().strftime('%Y年%m月%d日 %H:%M:%S')
                 cursor.execute('''
                     UPDATE async_tasks 
                     SET status = ?, result = ?, updated_at = ?
