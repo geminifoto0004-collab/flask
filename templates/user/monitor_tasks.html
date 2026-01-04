@@ -156,13 +156,19 @@ let currentApiKey = null;
 document.addEventListener('DOMContentLoaded', function() {
     loadTasks();
     
-    // 點擊背景關閉 Modal
-    document.getElementById('taskModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeTaskModal();
-        }
-    });
+    // 移除點擊背景關閉 Modal 的功能，防止意外關閉
+    // 只能通過關閉按鈕或取消按鈕關閉 Modal
     
+    // 防止表單意外提交（按 Enter 鍵時）
+    const taskForm = document.getElementById('taskForm');
+    if (taskForm) {
+        taskForm.addEventListener('submit', function(e) {
+            e.preventDefault();  // 阻止表單默認提交
+            saveTask();  // 使用自定義的保存函數
+        });
+    }
+    
+    // API Key Modal 仍然可以點擊背景關閉（因為它只是顯示信息）
     document.getElementById('apiKeyModal').addEventListener('click', function(e) {
         if (e.target === this) {
             closeApiKeyModal();
