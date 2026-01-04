@@ -22,7 +22,7 @@ from services.config_service import config_service
 
 # 導入郵件代理 Blueprint（PythonAnywhere 端使用，可選）
 # 如果要在 PythonAnywhere 上使用代理功能，取消下面的註釋
-# from services.email_proxy import email_proxy_bp
+from services.email_proxy import email_proxy_bp
 
 
 # ========== Flask 應用初始化 ==========
@@ -37,7 +37,7 @@ app.register_blueprint(monitor_bp)
 
 # 註冊郵件代理 Blueprint（PythonAnywhere 端使用，可選）
 # 如果要在 PythonAnywhere 上使用代理功能，取消下面的註釋
-# app.register_blueprint(email_proxy_bp)
+app.register_blueprint(email_proxy_bp)
 
 # ========== 自動初始化資料庫 ==========
 # 在應用啟動時自動初始化資料庫（適用於 Render 等生產環境）
