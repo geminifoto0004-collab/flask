@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import os
 
 from config import email_config
-from database import get_db_connection
+from database import get_db_connection, get_cursor
 from utils.time_utils import get_chile_time_naive
 
 # ========== SMTP 失敗緩存 ==========
@@ -115,7 +115,7 @@ def save_verification_code(email, code, purpose='registration'):
     """
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)  # 使用 get_cursor 以支持自動 SQL 適配和 DictCursor
         
         # 計算過期時間
         expire_time = get_chile_time_naive() + timedelta(minutes=email_config.CODE_EXPIRE_MINUTES)
@@ -154,6 +154,8 @@ def save_verification_code(email, code, purpose='registration'):
         
     except Exception as e:
         print(f"保存驗證碼失敗: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -169,7 +171,7 @@ def verify_code(email, code, purpose='registration'):
     """
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = get_cursor(conn)  # 使用 get_cursor 以支持自動 SQL 適配和 DictCursor
         
         # 查詢驗證碼
         cursor.execute('''
@@ -182,29 +184,51 @@ def verify_code(email, code, purpose='registration'):
         
         if not result:
             conn.close()
+            print(f"[Verify Code] 未找到驗證碼: email={email}, code={code}, purpose={purpose}")
             return False, "驗證碼不正確"
         
+        # 處理返回格式（可能是字典或元組）
+        if isinstance(result, dict):
+            result_id = result['id']
+            result_used = result['used']
+            result_expire_time = result['expire_time']
+        else:
+            # 如果是元組，按順序解包
+            result_id = result[0]
+            result_expire_time = result[1]
+            result_used = result[2]
+        
         # 檢查是否已使用
-        if result['used']:
+        if result_used:
             conn.close()
+            print(f"[Verify Code] 驗證碼已被使用: email={email}, code={code}")
             return False, "驗證碼已被使用"
         
         # 檢查是否過期
-        expire_time = datetime.strptime(result['expire_time'], '%Y-%m-%d %H:%M:%S')
-        if get_chile_time_naive() > expire_time:
+        if isinstance(result_expire_time, str):
+            expire_time = datetime.strptime(result_expire_time, '%Y-%m-%d %H:%M:%S')
+        else:
+            expire_time = result_expire_time
+        
+        current_time = get_chile_time_naive()
+        if current_time > expire_time:
             conn.close()
+            print(f"[Verify Code] 驗證碼已過期: email={email}, code={code}, expire_time={expire_time}, current_time={current_time}")
             return False, "驗證碼已過期"
         
         # 標記為已使用
-        cursor.execute('UPDATE verification_codes SET used=1 WHERE id=?', (result['id'],))
+        cursor.execute('UPDATE verification_codes SET used=1 WHERE id=?', (result_id,))
         conn.commit()
         conn.close()
         
+        print(f"[Verify Code] 驗證成功: email={email}, code={code}")
         return True, ""
         
     except Exception as e:
         print(f"驗證碼驗證失敗: {e}")
-        return False, "系統錯誤"
+        import traceback
+        traceback.print_exc()
+        return False, f"系統錯誤: {str(e)}"
 
 
 # ========== 使用 Resend API 發送郵件 ==========
