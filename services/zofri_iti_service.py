@@ -29,7 +29,7 @@ def get_container_from_document(codigo, cookies_dict):
         # 構造獲取文檔詳情的URL
         timestamp = int(time.time() * 1000)
         detail_url = f"https://zvirtual.zofri.cl/controller?accion=documentosObtener&codigoDoc={codigo}&_={timestamp}"
-        print(f"正在獲取文檔 {codigo} 的詳情...")
+        # print(f"正在獲取文檔 {codigo} 的詳情...")
         
         response = requests.get(
             detail_url,
@@ -45,10 +45,10 @@ def get_container_from_document(codigo, cookies_dict):
         )
         
         if response.status_code != 200:
-            print(f"❌ 獲取文檔詳情失敗，狀態碼: {response.status_code}")
+            # print(f"❌ 獲取文檔詳情失敗，狀態碼: {response.status_code}")
             return None
         
-        print(f"詳情響應內容: {response.text[:500]}")
+        # print(f"詳情響應內容: {response.text[:500]}")
         
         # 從JSON響應中提取contenedor字段
         try:
@@ -85,22 +85,22 @@ def get_container_from_document(codigo, cookies_dict):
             if container_number:
                 # 清理：去空白、去"-"符號
                 container_number = str(container_number).strip().replace('-', '').replace(' ', '')
-                print(f"✅ 找到並清理後的集裝箱號: {container_number}")
+                # print(f"✅ 找到並清理後的集裝箱號: {container_number}")
                 return container_number
             else:
-                print(f"⚠️ 未能從JSON中找到contenedor字段")
-                print(f"JSON結構: {detail_data}")
+                # print(f"⚠️ 未能從JSON中找到contenedor字段")
+                # print(f"JSON結構: {detail_data}")
                 return None
                 
         except json.JSONDecodeError:
-            print(f"❌ 響應不是有效的JSON格式")
-            print(f"響應內容: {response.text[:500]}")
+            # print(f"❌ 響應不是有效的JSON格式")
+            # print(f"響應內容: {response.text[:500]}")
             return None
             
     except Exception as e:
-        print(f"❌ 獲取集裝箱號時發生錯誤: {e}")
-        import traceback
-        traceback.print_exc()
+        # print(f"❌ 獲取集裝箱號時發生錯誤: {e}")
+        # import traceback
+        # traceback.print_exc()
         return None
 
 
@@ -125,7 +125,7 @@ def process_data(data, cookies_dict):
     result_df.columns = ['codigo', 'nombre', 'glosa']
     
     # 通過101編號API獲取集裝箱號（用於內部匹配）
-    print("🔄 開始通過API獲取集裝箱號用於匹配...")
+    # print("🔄 開始通過API獲取集裝箱號用於匹配...")
     result_df['_container_number'] = result_df['codigo'].apply(
         lambda codigo: get_container_from_document(codigo, cookies_dict) or ''
     )
