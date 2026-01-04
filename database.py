@@ -648,6 +648,29 @@ def init_database():
             ))
             print("已添加 email_subject 列到 user_monitor_configs 表")
         
+        # 創建 async_tasks 表（用於異步任務）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS async_tasks (
+                id {id_type},
+                task_id {text_type_unique} UNIQUE NOT NULL,
+                task_type {text_type} NOT NULL,
+                status {text_type_with_default} DEFAULT 'pending',
+                task_config {text_type},
+                task_data {text_type},
+                result {text_type},
+                error {text_type},
+                created_at TIMESTAMP {timestamp_default},
+                updated_at TIMESTAMP
+            )
+        '''.format(
+            id_type=get_id_type(),
+            text_type=get_text_type(),
+            text_type_unique=get_text_type_unique(),
+            text_type_with_default=get_text_type_with_default(),
+            timestamp_default=get_timestamp_default()
+        ))
+        print("async_tasks 表已就緒")
+        
         # 初始化默認服務
         init_default_services(cursor)
         

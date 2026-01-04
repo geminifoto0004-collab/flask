@@ -361,18 +361,32 @@ def check_monitor_api():
         if not task_config.get('is_active', False):
             return jsonify({'success': False, 'error': '任務已停用'}), 400
         
-        # 執行檢查
-        # 注意：需要從數據庫讀取原始密碼（目前先假設 task_config 中有）
-        # TODO: 實現密碼解密邏輯
-        success, result, error = check_monitor_task(task_config)
-        
-        if not success:
+        # 使用異步任務執行檢查（避免超過 Render 的 30 秒超時限制）
+        try:
+            from services.async_task_service import create_async_task
+            async_task_id = create_async_task('monitor_check', task_config)
+            
+            # 立即返回任務 ID，任務在後台執行
             return jsonify({
-                'success': False,
-                'error': error,
-                'task_id': task_config['id']
-            }), 500
+                'success': True,
+                'message': '任務已啟動，正在後台執行',
+                'task_id': async_task_id,
+                'status': 'pending',
+                'task_config_id': task_config['id'],
+                'note': '請使用 /api/monitor/task/' + async_task_id + ' 查詢任務狀態'
+            }), 202  # 202 Accepted 表示請求已接受，正在處理
+        except ImportError:
+            # 如果異步任務服務不可用，回退到同步執行（可能超時）
+            success, result, error = check_monitor_task(task_config)
+            
+            if not success:
+                return jsonify({
+                    'success': False,
+                    'error': error,
+                    'task_id': task_config['id']
+                }), 500
         
+        # 同步執行模式（回退，如果異步任務服務不可用）
         # 對比上次結果，判斷是否有變化
         last_result = task_config.get('last_check_result')
         should_send = has_result_changed(last_result, result)

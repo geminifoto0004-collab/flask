@@ -39,7 +39,7 @@ def get_container_from_document(codigo, cookies_dict):
                 'X-Requested-With': 'XMLHttpRequest',
                 'Referer': 'https://zvirtual.zofri.cl/busquedadocumento'
             },
-            timeout=5,  # 減少超時時間從30秒到5秒，避免長時間阻塞
+            timeout=3,  # 減少超時時間到3秒，確保在30秒內完成多個請求
             verify=False
         )
         
@@ -125,19 +125,30 @@ def process_data(data, cookies_dict):
     
     # 通過101編號API獲取集裝箱號（用於內部匹配）
     # 優化：限制處理數量，添加延遲，避免超時和內存問題
-    max_docs = 50  # 最多處理50個文檔，避免超時
+    # Render 的 worker timeout 是 30 秒，需要確保在 30 秒內完成
+    # 策略：只處理前 5 個文檔，每個請求 3 秒超時，加上延遲，總時間約 20 秒
+    max_docs = 5  # 最多處理5個文檔，確保在30秒內完成
+    original_len = len(result_df)
     if len(result_df) > max_docs:
-        result_df = result_df.head(max_docs)
+        result_df = result_df.head(max_docs).copy()
     
     # 使用循環處理，添加延遲，避免過快請求導致服務器拒絕或內存問題
     container_numbers = []
     for idx, codigo in enumerate(result_df['codigo']):
-        if idx > 0 and idx % 10 == 0:  # 每10個請求暫停一下
-            time.sleep(0.5)  # 暫停0.5秒，避免過快請求
+        if idx > 0:
+            time.sleep(0.3)  # 每個請求間隔0.3秒，避免過快請求
         container_number = get_container_from_document(codigo, cookies_dict) or ''
         container_numbers.append(container_number)
+        # 如果已經處理了5個，停止（避免超時）
+        if idx >= 4:
+            break
     
     result_df['_container_number'] = container_numbers
+    
+    # 如果原始數據超過限制，為剩餘的文檔設置空字符串
+    if original_len > max_docs:
+        # 注意：這裡 result_df 已經被截斷了，所以不需要處理剩餘的
+        pass
     
     # 從glosa中提取集裝箱號用於顯示（格式：HAMU3735312）
     def extract_container_code(glosa):
@@ -147,6 +158,13 @@ def process_data(data, cookies_dict):
         return ''
     
     result_df['glosa_codigo'] = result_df['glosa'].apply(extract_container_code)
+    
+    # 如果 _container_number 為空（API 調用失敗），使用 glosa_codigo 作為備用
+    # 這樣即使 API 調用失敗，也能使用從 glosa 提取的集裝箱號進行匹配
+    result_df['_container_number'] = result_df.apply(
+        lambda row: row['_container_number'] if row['_container_number'] else row['glosa_codigo'],
+        axis=1
+    )
     
     # 從glosa中提取描述部分（格式：BUENOS AIRES EXPRESS）
     def extract_description(glosa):
@@ -192,23 +210,29 @@ def iti_data():
     tables = post_soup.find_all('table')
 
     if len(tables) > 1:
-        for index, row in enumerate(tables[1].find_all('tr')):
+        # 限制處理的行數，避免內存問題和超時
+        max_rows = 50  # 最多處理50行
+        rows = tables[1].find_all('tr')[:max_rows]
+        
+        for index, row in enumerate(rows):
             cells = row.find_all('td')
             row_data = [cell.get_text(strip=True) for cell in cells]
             row_data_map[index] = row_data
             
             buttons = row.find_all('input', {'type': 'image'})
             if buttons:
-                for button in buttons:
-                    button_name = button['name']
-                    button_post_data = {
-                        '__VIEWSTATE': viewstate,
-                        '__EVENTVALIDATION': event_validation,
-                        button_name + '.x': '10',
-                        button_name + '.y': '10',
-                    }
-                    
-                    button_response = session.post(url, data=button_post_data, verify=False)
+                # 只處理第一個按鈕，避免過多請求
+                button = buttons[0]
+                button_name = button['name']
+                button_post_data = {
+                    '__VIEWSTATE': viewstate,
+                    '__EVENTVALIDATION': event_validation,
+                    button_name + '.x': '10',
+                    button_name + '.y': '10',
+                }
+                
+                try:
+                    button_response = session.post(url, data=button_post_data, verify=False, timeout=5)
                     if button_response.status_code == 200:
                         button_soup = BeautifulSoup(button_response.text, 'html.parser')
                         new_tables = button_soup.find_all('table')
@@ -222,6 +246,9 @@ def iti_data():
                                     if index in row_data_map:
                                         combined_data = [row_data_map[index][0]] + new_row_data
                                         all_data.append(combined_data)
+                except:
+                    # 如果請求失敗，跳過
+                    continue
 
     return all_data
 
