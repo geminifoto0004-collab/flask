@@ -377,6 +377,7 @@ def check_monitor_api():
             }), 202  # 202 Accepted 表示請求已接受，正在處理
         except ImportError:
             # 如果異步任務服務不可用，回退到同步執行（可能超時）
+            print(f"[監控API] 異步任務服務不可用，使用同步執行模式")
             success, result, error = check_monitor_task(task_config)
             
             if not success:
@@ -385,30 +386,29 @@ def check_monitor_api():
                     'error': error,
                     'task_id': task_config['id']
                 }), 500
-        
-        # 同步執行模式（回退，如果異步任務服務不可用）
-        # 對比上次結果，判斷是否有變化
-        last_result = task_config.get('last_check_result')
-        should_send = has_result_changed(last_result, result)
-        
-        print(f"[監控API] 任務ID: {task_config['id']}, 應該發送: {should_send}")
-        print(f"[監控API] 上次結果存在: {last_result is not None}")
-        print(f"[監控API] 當前容器數量: {len(result.get('containers', []))}")
-        
-        # 如果有變化（或第一次檢查有數據），發送通知
-        notification_sent = False
-        if should_send:
-            print(f"[監控API] 準備發送郵件，收件人: {task_config['notification_emails']}")
-            # 發送所有當前容器
-            send_success, send_message = send_notification_email(
-                task_config['notification_emails'],
-                result.get('containers', []),  # 發送所有容器
-                task_config  # 傳遞任務配置以獲取公司名稱
-            )
-            notification_sent = send_success
-            print(f"[監控API] 郵件發送結果: {send_success}, 消息: {send_message}")
-        else:
-            print(f"[監控API] 不需要發送郵件（結果無變化）")
+            
+            # 同步執行模式：對比上次結果，判斷是否有變化
+            last_result = task_config.get('last_check_result')
+            should_send = has_result_changed(last_result, result)
+            
+            print(f"[監控API] 任務ID: {task_config['id']}, 應該發送: {should_send}")
+            print(f"[監控API] 上次結果存在: {last_result is not None}")
+            print(f"[監控API] 當前容器數量: {len(result.get('containers', []))}")
+            
+            # 如果有變化（或第一次檢查有數據），發送通知
+            notification_sent = False
+            if should_send:
+                print(f"[監控API] 準備發送郵件，收件人: {task_config['notification_emails']}")
+                # 發送所有當前容器
+                send_success, send_message = send_notification_email(
+                    task_config['notification_emails'],
+                    result.get('containers', []),  # 發送所有容器
+                    task_config  # 傳遞任務配置以獲取公司名稱
+                )
+                notification_sent = send_success
+                print(f"[監控API] 郵件發送結果: {send_success}, 消息: {send_message}")
+            else:
+                print(f"[監控API] 不需要發送郵件（結果無變化）")
         
         # 計算變化數量（用於響應信息）
         new_matches_count = 0
