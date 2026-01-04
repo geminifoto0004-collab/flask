@@ -29,7 +29,6 @@ def get_container_from_document(codigo, cookies_dict):
         # 構造獲取文檔詳情的URL
         timestamp = int(time.time() * 1000)
         detail_url = f"https://zvirtual.zofri.cl/controller?accion=documentosObtener&codigoDoc={codigo}&_={timestamp}"
-        # print(f"正在獲取文檔 {codigo} 的詳情...")
         
         response = requests.get(
             detail_url,
@@ -40,7 +39,7 @@ def get_container_from_document(codigo, cookies_dict):
                 'X-Requested-With': 'XMLHttpRequest',
                 'Referer': 'https://zvirtual.zofri.cl/busquedadocumento'
             },
-            timeout=30,
+            timeout=5,  # 減少超時時間從30秒到5秒，避免長時間阻塞
             verify=False
         )
         
@@ -125,10 +124,20 @@ def process_data(data, cookies_dict):
     result_df.columns = ['codigo', 'nombre', 'glosa']
     
     # 通過101編號API獲取集裝箱號（用於內部匹配）
-    # print("🔄 開始通過API獲取集裝箱號用於匹配...")
-    result_df['_container_number'] = result_df['codigo'].apply(
-        lambda codigo: get_container_from_document(codigo, cookies_dict) or ''
-    )
+    # 優化：限制處理數量，添加延遲，避免超時和內存問題
+    max_docs = 50  # 最多處理50個文檔，避免超時
+    if len(result_df) > max_docs:
+        result_df = result_df.head(max_docs)
+    
+    # 使用循環處理，添加延遲，避免過快請求導致服務器拒絕或內存問題
+    container_numbers = []
+    for idx, codigo in enumerate(result_df['codigo']):
+        if idx > 0 and idx % 10 == 0:  # 每10個請求暫停一下
+            time.sleep(0.5)  # 暫停0.5秒，避免過快請求
+        container_number = get_container_from_document(codigo, cookies_dict) or ''
+        container_numbers.append(container_number)
+    
+    result_df['_container_number'] = container_numbers
     
     # 從glosa中提取集裝箱號用於顯示（格式：HAMU3735312）
     def extract_container_code(glosa):
