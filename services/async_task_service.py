@@ -168,8 +168,10 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
         
         # 執行任務
         if task_type == 'monitor_check':
+            print(f"[Async Task-{task_id}] 開始執行監控檢查任務")
             from services.monitor_service import check_monitor_task
             success, result, error = check_monitor_task(task_config)
+            print(f"[Async Task-{task_id}] 監控檢查任務執行完成，成功: {success}")
             
             # 更新任務結果
             updated_at = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')

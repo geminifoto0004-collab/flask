@@ -358,6 +358,10 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
     執行監控檢查
     返回：(是否成功, 檢查結果, 錯誤信息)
     """
+    import uuid
+    execution_id = str(uuid.uuid4())[:8]  # 生成唯一執行ID用於追蹤
+    print(f"[監控檢查-{execution_id}] 開始執行監控檢查，任務ID: {task_config.get('id', 'N/A')}")
+    
     try:
         # 1. 使用任務配置登錄 ZOFRI
         login_success, cookies_dict, error = login_zofri_with_config(task_config)
@@ -440,7 +444,7 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
             }, ""
         
         # 4. 獲取 ITI 數據並匹配
-        print(f"[監控檢查] ZOFRI 容器總數: {len(df_zofri)}")
+        print(f"[監控檢查-{execution_id}] ZOFRI 容器總數: {len(df_zofri)}")
         
         iti_results = iti_data()
         
@@ -478,31 +482,31 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         # 打印 ZOFRI 容器匹配結果
         matched_count = int(matched_indices.sum())
         unmatched_count = len(unmatched_data)
-        print(f"[監控檢查] ZOFRI 容器匹配結果: 總數={len(df_zofri)}, 已匹配(VISADO)={matched_count}, 未匹配={unmatched_count}")
+        print(f"[監控檢查-{execution_id}] ZOFRI 容器匹配結果: 總數={len(df_zofri)}, 已匹配(VISADO)={matched_count}, 未匹配={unmatched_count}")
         
         # 打印已匹配的 ZOFRI 容器
         if matched_count > 0:
-            print(f"[監控檢查] ========== 已匹配(VISADO)的 ZOFRI 容器 (共 {matched_count} 個) ==========")
+            print(f"[監控檢查-{execution_id}] ========== 已匹配(VISADO)的 ZOFRI 容器 (共 {matched_count} 個) ==========")
             for idx, row in df_zofri[matched_indices].iterrows():
                 codigo = row.get('codigo', 'N/A')
                 glosa_codigo = row.get('glosa_codigo', 'N/A')
                 glosa_descripcion = row.get('glosa_descripcion', 'N/A')
                 estado = row.get('nombre', 'N/A')
-                print(f"[監控檢查] ✅ VISADO: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
-            print(f"[監控檢查] ========== 已匹配容器列表結束 ==========")
+                print(f"[監控檢查-{execution_id}] ✅ VISADO: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查-{execution_id}] ========== 已匹配容器列表結束 ==========")
         
         # 打印未匹配的 ZOFRI 容器
         if unmatched_count > 0:
-            print(f"[監控檢查] ========== 未匹配的 ZOFRI 容器 (共 {unmatched_count} 個) ==========")
+            print(f"[監控檢查-{execution_id}] ========== 未匹配的 ZOFRI 容器 (共 {unmatched_count} 個) ==========")
             for idx, row in unmatched_data.iterrows():
                 codigo = row.get('codigo', 'N/A')
                 glosa_codigo = row.get('glosa_codigo', 'N/A')
                 glosa_descripcion = row.get('glosa_descripcion', 'N/A')
                 estado = row.get('nombre', 'N/A')
-                print(f"[監控檢查] ❌ 未匹配: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
-            print(f"[監控檢查] ========== 未匹配容器列表結束 ==========")
+                print(f"[監控檢查-{execution_id}] ❌ 未匹配: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查-{execution_id}] ========== 未匹配容器列表結束 ==========")
         else:
-            print(f"[監控檢查] ✅ 所有 ZOFRI 容器都已匹配(VISADO)，沒有未匹配的容器")
+            print(f"[監控檢查-{execution_id}] ✅ 所有 ZOFRI 容器都已匹配(VISADO)，沒有未匹配的容器")
         
         # 5. 轉換為字典列表（參考 iti.py 的邏輯）
         all_containers = []
@@ -535,20 +539,20 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         # 調試：打印匹配統計（與 iti.py 的打印邏輯一致）
         matched_count = int(matched_indices.sum())
         unmatched_count = len(unmatched_data)  # 使用 unmatched_data 的長度（與 iti.py 一致）
-        print(f"[監控檢查] 容器統計: 總數={len(all_containers)}, 已匹配={matched_count}, 未匹配={unmatched_count}")
+        print(f"[監控檢查-{execution_id}] 容器統計: 總數={len(all_containers)}, 已匹配={matched_count}, 未匹配={unmatched_count}")
         
         # 額外調試：打印未匹配容器的詳細信息（與 iti.py 的打印邏輯一致）
         if not unmatched_data.empty:
-            print(f"[監控檢查] ========== 未匹配容器列表 (共 {len(unmatched_data)} 個) ==========")
+            print(f"[監控檢查-{execution_id}] ========== 未匹配容器列表 (共 {len(unmatched_data)} 個) ==========")
             for idx, row in unmatched_data.iterrows():
                 codigo = row.get('codigo', 'N/A')
                 glosa_codigo = row.get('glosa_codigo', 'N/A')
                 glosa_descripcion = row.get('glosa_descripcion', 'N/A')
                 estado = row.get('nombre', 'N/A')
-                print(f"[監控檢查] ❌ 未匹配: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
-            print(f"[監控檢查] ========== 未匹配容器列表結束 ==========")
+                print(f"[監控檢查-{execution_id}] ❌ 未匹配: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查-{execution_id}] ========== 未匹配容器列表結束 ==========")
         else:
-            print(f"[監控檢查] ✅ 所有容器都已匹配，沒有未匹配的容器")
+            print(f"[監控檢查-{execution_id}] ✅ 所有容器都已匹配，沒有未匹配的容器")
         
         result = {
             'containers': all_containers,
@@ -556,9 +560,13 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
             'unmatched_count': len(unmatched_data)
         }
         
+        print(f"[監控檢查-{execution_id}] 監控檢查完成")
         return True, result, ""
         
     except Exception as e:
+        print(f"[監控檢查-{execution_id}] 監控檢查失敗: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False, {}, f"檢查失敗: {str(e)}"
 
 
