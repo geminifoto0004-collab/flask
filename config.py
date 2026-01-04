@@ -112,7 +112,30 @@ class AdminConfig:
 class EmailConfig:
     """郵件服務配置"""
     
-    # Gmail SMTP 設定（可以通過環境變數覆蓋）
+    # 郵件服務提供商選擇（可以通過環境變數設置）
+    # 選項：
+    #   - 'auto'（推薦）：自動檢測，優先使用 SMTP，如果失敗一次後自動切換到 Resend API（並記住，避免重複嘗試）
+    #   - 'smtp'：只使用 SMTP（本機開發推薦）
+    #   - 'resend'：只使用 Resend API（Render 上推薦）
+    # 
+    # 💡 提示：如果知道 SMTP 不可用（如 Render），可以在 Render 環境變數中設置：
+    #   - EMAIL_PROVIDER=resend（直接使用 Resend API）
+    #   或
+    #   - SMTP_FAILED=1（在 auto 模式下永久跳過 SMTP）
+    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'auto').lower()  # auto/smtp/resend
+    
+    # Resend API 配置（不受 Render 網絡限制）
+    # 如果設置了 RESEND_API_KEY，可以作為 SMTP 的備選方案
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+    RESEND_FROM_EMAIL = os.environ.get('RESEND_FROM_EMAIL', '')  # 發送郵件的地址（需要在 Resend 驗證）
+    
+    # 如果環境變數未設置，可以在這裡直接設置（僅用於本地開發）
+    if not RESEND_API_KEY:
+        RESEND_API_KEY = 're_BMeetzHZ_HMFb9HRSihVcujLrtterRD9x'  # 👈 你的 Resend API Key
+    if not RESEND_FROM_EMAIL:
+        RESEND_FROM_EMAIL = 'onboarding@resend.dev'  # 👈 改為你在 Resend 驗證的發送地址
+    
+    # Gmail SMTP 設定（可以通過環境變數覆蓋，作為備選方案）
     # 在 Render 上如果 Gmail 無法訪問，可以嘗試：
     # 1. 使用其他 SMTP 服務（如 SendGrid、Mailgun）
     # 2. 或嘗試不同的端口（465 或 587）

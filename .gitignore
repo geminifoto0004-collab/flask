@@ -14,3 +14,6 @@ Thumbs.db
 # 敏感配置文件（如果有的話）
 config.local.py
 secrets.py
+
+# SMTP 失敗緩存（避免提交到 Git）
+.smtp_failed_cache

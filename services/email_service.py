@@ -9,10 +9,88 @@ import string
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
+import os
 
 from config import email_config
 from database import get_db_connection
 from utils.time_utils import get_chile_time_naive
+
+# ========== SMTP 失敗緩存 ==========
+# 用於記住 SMTP 是否可用，避免重複嘗試
+# 優先檢查環境變數（持久化，適用於 Render），其次檢查文件緩存（適用於本地）
+_SMTP_FAILED_CACHE_FILE = os.path.join(os.path.dirname(__file__), '..', '.smtp_failed_cache')
+_SMTP_FAILED = None  # None=未知, True=已失敗, False=可用
+
+def _load_smtp_cache():
+    """
+    加載 SMTP 失敗緩存
+    優先檢查環境變數 SMTP_FAILED（持久化，適用於 Render）
+    其次檢查文件緩存（適用於本地開發）
+    """
+    global _SMTP_FAILED
+    if _SMTP_FAILED is not None:
+        return _SMTP_FAILED
+    
+    # 1. 優先檢查環境變數（持久化，適用於 Render）
+    smtp_failed_env = os.environ.get('SMTP_FAILED', '').lower()
+    if smtp_failed_env in ('1', 'true', 'yes', 'on'):
+        _SMTP_FAILED = True
+        print("[Email Cache] 從環境變數讀取: SMTP 已失敗（永久記錄）")
+        return _SMTP_FAILED
+    
+    # 2. 檢查文件緩存（適用於本地開發）
+    try:
+        if os.path.exists(_SMTP_FAILED_CACHE_FILE):
+            with open(_SMTP_FAILED_CACHE_FILE, 'r') as f:
+                content = f.read().strip()
+                _SMTP_FAILED = (content == '1')
+                print(f"[Email Cache] 從文件緩存讀取: SMTP {'已失敗' if _SMTP_FAILED else '可用'}")
+        else:
+            _SMTP_FAILED = None
+            print("[Email Cache] 緩存不存在，將嘗試 SMTP")
+    except Exception as e:
+        print(f"[Email Cache] 讀取緩存失敗: {e}")
+        _SMTP_FAILED = None
+    
+    return _SMTP_FAILED
+
+def _save_smtp_cache(failed=True):
+    """
+    保存 SMTP 失敗狀態
+    同時保存到文件緩存（本地）和提示用戶設置環境變數（Render）
+    """
+    global _SMTP_FAILED
+    _SMTP_FAILED = failed
+    
+    # 保存到文件緩存（適用於本地開發）
+    try:
+        with open(_SMTP_FAILED_CACHE_FILE, 'w') as f:
+            f.write('1' if failed else '0')
+        print(f"[Email Cache] 已保存到文件: SMTP {'已失敗' if failed else '可用'}")
+    except Exception as e:
+        print(f"[Email Cache] 保存文件緩存失敗: {e}")
+    
+    # 如果是失敗狀態，提示用戶設置環境變數（適用於 Render）
+    if failed:
+        print("\n" + "="*60)
+        print("⚠️  SMTP 已失敗，已記錄到緩存")
+        print("="*60)
+        print("💡 為了避免每次重啟都嘗試 SMTP，建議在 Render 上設置環境變數：")
+        print("   SMTP_FAILED=1")
+        print("   這樣會永久跳過 SMTP，直接使用 Resend API")
+        print("="*60 + "\n")
+
+def _clear_smtp_cache():
+    """清除 SMTP 失敗緩存（用於測試或重置）"""
+    global _SMTP_FAILED
+    _SMTP_FAILED = None
+    try:
+        if os.path.exists(_SMTP_FAILED_CACHE_FILE):
+            os.remove(_SMTP_FAILED_CACHE_FILE)
+            print("[Email Cache] 已清除文件緩存")
+        print("💡 如果設置了環境變數 SMTP_FAILED=1，請在 Render 上刪除該環境變數")
+    except Exception as e:
+        print(f"[Email Cache] 清除緩存失敗: {e}")
 
 
 # ========== 生成驗證碼 ==========
@@ -129,16 +207,131 @@ def verify_code(email, code, purpose='registration'):
         return False, "系統錯誤"
 
 
-# ========== 發送郵件 ==========
-def send_email(to_email, subject, html_content):
+# ========== 使用 Resend API 發送郵件 ==========
+def send_email_via_resend(to_email, subject, html_content):
     """
-    發送 HTML 郵件
+    使用 Resend API 發送郵件（不受 Render 網絡限制）
     參數：
         to_email - 收件人郵箱
         subject - 郵件主題
         html_content - HTML 內容
     返回：(bool, str) - (是否成功, 錯誤信息)
     """
+    try:
+        import resend  # type: ignore
+        
+        if not email_config.RESEND_API_KEY:
+            return False, "RESEND_API_KEY 未設置"
+        
+        if not email_config.RESEND_FROM_EMAIL:
+            return False, "RESEND_FROM_EMAIL 未設置（需要在 Resend 驗證發送域名）"
+        
+        resend.api_key = email_config.RESEND_API_KEY
+        
+        print(f"[Resend API] 嘗試發送郵件到: {to_email}")
+        
+        r = resend.Emails.send({
+            "from": email_config.RESEND_FROM_EMAIL,
+            "to": to_email,
+            "subject": subject,
+            "html": html_content
+        })
+        
+        print(f"[Resend API] 郵件發送成功: {r}")
+        return True, ""
+        
+    except ImportError:
+        return False, "Resend 模組未安裝，請運行: pip install resend"
+    except Exception as e:
+        error_msg = str(e)
+        print(f"[Resend API] 發送失敗: {error_msg}")
+        return False, f"Resend API 發送失敗: {error_msg}"
+
+
+# ========== 發送郵件 ==========
+def send_email(to_email, subject, html_content):
+    """
+    發送 HTML 郵件
+    根據 EMAIL_PROVIDER 配置選擇服務：
+    - 'auto': 自動檢測，優先 SMTP，失敗後自動切換到 Resend API（並記住）
+    - 'smtp': 只使用 SMTP
+    - 'resend': 只使用 Resend API
+    參數：
+        to_email - 收件人郵箱
+        subject - 郵件主題
+        html_content - HTML 內容
+    返回：(bool, str) - (是否成功, 錯誤信息)
+    """
+    provider = email_config.EMAIL_PROVIDER.lower()
+    print(f"[Email] 郵件服務提供商: {provider}")
+    
+    # 如果是 'auto' 模式，先檢查緩存
+    if provider == 'auto':
+        smtp_failed = _load_smtp_cache()
+        if smtp_failed:
+            print("[Email] 檢測到 SMTP 已失敗（從緩存），直接使用 Resend API")
+            provider = 'resend'
+        else:
+            print("[Email] 自動模式：優先嘗試 SMTP")
+            provider = 'smtp'
+    
+    # 根據配置選擇服務
+    if provider == 'resend':
+        # 只使用 Resend API
+        if not email_config.RESEND_API_KEY or not email_config.RESEND_FROM_EMAIL:
+            return False, "Resend API 配置未設置（需要 RESEND_API_KEY 和 RESEND_FROM_EMAIL）"
+        
+        print("[Email] 使用 Resend API 發送郵件")
+        success, error = send_email_via_resend(to_email, subject, html_content)
+        if success:
+            # Resend 成功，清除 SMTP 失敗緩存（可能 SMTP 現在可用了）
+            _clear_smtp_cache()
+        return success, error
+    
+    elif provider == 'smtp':
+        # 只使用 SMTP
+        return _send_email_via_smtp(to_email, subject, html_content)
+    
+    else:
+        # 'auto' 模式：先嘗試 SMTP，失敗後切換到 Resend API
+        print("[Email] 自動模式：先嘗試 SMTP")
+        
+        # 檢查 SMTP 配置
+        if not email_config.SMTP_EMAIL or not email_config.SMTP_PASSWORD:
+            print("[Email] SMTP 配置未設置，切換到 Resend API")
+            if not email_config.RESEND_API_KEY or not email_config.RESEND_FROM_EMAIL:
+                return False, "SMTP 和 Resend API 都未配置"
+            return send_email_via_resend(to_email, subject, html_content)
+        
+        # 嘗試 SMTP
+        success, error = _send_email_via_smtp(to_email, subject, html_content)
+        if success:
+            # SMTP 成功，清除失敗緩存
+            _clear_smtp_cache()
+            return True, ""
+        
+        # SMTP 失敗，記錄並切換到 Resend API
+        print(f"[Email] SMTP 失敗: {error}")
+        print("[Email] 自動切換到 Resend API")
+        _save_smtp_cache(failed=True)
+        
+        if not email_config.RESEND_API_KEY or not email_config.RESEND_FROM_EMAIL:
+            return False, f"SMTP 失敗: {error}，且 Resend API 未配置"
+        
+        return send_email_via_resend(to_email, subject, html_content)
+
+
+def _send_email_via_smtp(to_email, subject, html_content):
+    """
+    通過 SMTP 發送郵件（內部函數）
+    參數：
+        to_email - 收件人郵箱
+        subject - 郵件主題
+        html_content - HTML 內容
+    返回：(bool, str) - (是否成功, 錯誤信息)
+    """
+    print("[Email] 使用 SMTP 發送郵件")
+    
     # 檢查 SMTP 配置
     if not email_config.SMTP_EMAIL or not email_config.SMTP_PASSWORD:
         return False, "SMTP 配置未設置"
@@ -236,27 +429,13 @@ def send_email(to_email, subject, html_content):
         error_str = str(e).lower()
         error_code = str(e)
         
-        if 'timeout' in error_str or 'timed out' in error_str:
-            return False, "SMTP 連接超時: 請檢查網絡連接或稍後再試"
-        elif 'network is unreachable' in error_str or '101' in error_code:
-            # 網絡不可達錯誤，可能是 DNS 解析或網絡配置問題
-            # 這是 Render 網絡環境的限制，Gmail SMTP 可能無法訪問
-            return False, (
-                f"SMTP 網絡不可達: {str(e)}\n\n"
-                f"⚠️ 這是 Render 網絡環境的限制，無法訪問 Gmail SMTP 服務器。\n\n"
-                f"💡 解決方案：\n"
-                f"1. 在 Render 環境變數中設置 SMTP_SERVER 和 SMTP_PORT，嘗試不同的配置\n"
-                f"2. 使用其他 SMTP 服務（推薦）：\n"
-                f"   - SendGrid（免費 100 封/天）: SMTP_SERVER=smtp.sendgrid.net, SMTP_PORT=587\n"
-                f"   - Mailgun（免費 5000 封/月）: SMTP_SERVER=smtp.mailgun.org, SMTP_PORT=587\n"
-                f"3. 或暫時禁用郵件功能，使用其他驗證方式\n\n"
-                f"當前配置：\n"
-                f"- SMTP 服務器: {email_config.SMTP_SERVER}\n"
-                f"- 端口: {email_config.SMTP_PORT}\n"
-                f"- 郵箱: {email_config.SMTP_EMAIL}"
-            )
+        # 判斷是否為網絡不可達錯誤（Render 上常見）
+        if 'network is unreachable' in error_str or '101' in error_code:
+            return False, f"SMTP 網絡不可達: {str(e)}"
+        elif 'timeout' in error_str or 'timed out' in error_str:
+            return False, f"SMTP 連接超時: {str(e)}"
         elif 'connection refused' in error_str or '111' in error_code:
-            return False, "SMTP 連接被拒絕: 請檢查 SMTP 服務器地址和端口是否正確"
+            return False, f"SMTP 連接被拒絕: {str(e)}"
         else:
             return False, f"SMTP 連接錯誤: {str(e)}"
     except smtplib.SMTPException as e:

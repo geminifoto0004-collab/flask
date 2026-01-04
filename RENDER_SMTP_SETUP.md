@@ -26,20 +26,7 @@ SMTP_PORT=587  # 使用 STARTTLS 端口（默认）
 
 ### 方案 2：使用其他 SMTP 服务（如果 Gmail 无法使用）
 
-#### 选项 A：SendGrid（推荐，免费 100 封/天）
-
-1. 注册 SendGrid：https://sendgrid.com
-2. 创建 API Key
-3. 在 Render 环境变量中设置：
-
-```bash
-SMTP_SERVER=smtp.sendgrid.net
-SMTP_PORT=587
-SMTP_EMAIL=apikey  # SendGrid 使用 'apikey' 作为用户名
-SMTP_PASSWORD=你的_SendGrid_API_Key  # 你的 SendGrid API Key
-```
-
-#### 选项 B：Mailgun（免费 5000 封/月）
+#### 选项 A：Mailgun（推荐，免费 5000 封/月，最宽松）
 
 1. 注册 Mailgun：https://www.mailgun.com
 2. 获取 SMTP 凭证
@@ -52,7 +39,33 @@ SMTP_EMAIL=你的_Mailgun_SMTP_用户名
 SMTP_PASSWORD=你的_Mailgun_SMTP_密码
 ```
 
-#### 选项 C：AWS SES（按使用量付费）
+#### 选项 B：Resend（免费 3000 封/月，简单易用）
+
+1. 注册 Resend：https://resend.com
+2. 创建 API Key
+3. 在 Render 环境变量中设置：
+
+```bash
+SMTP_SERVER=smtp.resend.com
+SMTP_PORT=587
+SMTP_EMAIL=resend  # Resend 使用 'resend' 作为用户名
+SMTP_PASSWORD=你的_Resend_API_Key  # 你的 Resend API Key
+```
+
+#### 选项 C：Brevo (原 Sendinblue)（免费 300 封/天）
+
+1. 注册 Brevo：https://www.brevo.com
+2. 获取 SMTP 凭证
+3. 在 Render 环境变量中设置：
+
+```bash
+SMTP_SERVER=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_EMAIL=你的_Brevo_邮箱
+SMTP_PASSWORD=你的_Brevo_SMTP_密码
+```
+
+#### 选项 D：AWS SES（按使用量付费，前 62,000 封免费）
 
 1. 设置 AWS SES
 2. 获取 SMTP 凭证
@@ -87,11 +100,23 @@ SMTP_PORT=587
 SMTP_EMAIL=geminifoto0004@gmail.com
 SMTP_PASSWORD=pczrwlzhuxxlozot  # 16 字符，去掉空格
 
-# 或者使用 SendGrid
-SMTP_SERVER=smtp.sendgrid.net
+# 或者使用 Mailgun（推荐）
+SMTP_SERVER=smtp.mailgun.org
 SMTP_PORT=587
-SMTP_EMAIL=apikey
-SMTP_PASSWORD=你的_SendGrid_API_Key
+SMTP_EMAIL=你的_Mailgun_SMTP_用户名
+SMTP_PASSWORD=你的_Mailgun_SMTP_密码
+
+# 或者使用 Resend
+SMTP_SERVER=smtp.resend.com
+SMTP_PORT=587
+SMTP_EMAIL=resend
+SMTP_PASSWORD=你的_Resend_API_Key
+
+# 或者使用 Brevo
+SMTP_SERVER=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_EMAIL=你的_Brevo_邮箱
+SMTP_PASSWORD=你的_Brevo_SMTP_密码
 ```
 
 ## ✅ 测试

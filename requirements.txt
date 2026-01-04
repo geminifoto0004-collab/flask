@@ -14,3 +14,4 @@ pandas==2.1.4
 beautifulsoup4==4.12.2
 PyMySQL==1.1.0
 python-dotenv==1.0.0
+resend==2.1.0
