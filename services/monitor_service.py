@@ -473,15 +473,23 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         
         unmatched_data = df_zofri[~matched_indices]
         
-        # 5. 轉換為字典列表
+        # 5. 轉換為字典列表（參考 iti.py 的邏輯）
         all_containers = []
         for idx, row in df_zofri.iterrows():
+            # 使用 matched_indices 來判斷是否匹配（與 iti.py 邏輯一致）
+            # matched_indices 的 index 與 df_zofri 的 index 一致，可以直接訪問
+            try:
+                is_matched = bool(matched_indices.loc[idx])
+            except (KeyError, IndexError):
+                # 如果索引不存在，默認為未匹配
+                is_matched = False
+            
             container = {
                 'codigo': row.get('codigo', ''),
                 'glosa_codigo': row.get('glosa_codigo', ''),
                 'glosa_descripcion': row.get('glosa_descripcion', ''),
                 'estado': row.get('nombre', ''),
-                'matched': idx in matched_data.index if not matched_data.empty else False
+                'matched': is_matched
             }
             # 如果是已匹配的，添加 ITI 信息
             if idx in iti_info_map:
@@ -489,6 +497,17 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                 container['vessel_name'] = iti_info_map[idx]['vessel_name']
                 container['fecha'] = iti_info_map[idx]['fecha']
             all_containers.append(container)
+        
+        # 調試：打印匹配統計（與 iti.py 的打印邏輯一致）
+        matched_count = int(matched_indices.sum())
+        unmatched_count = len(unmatched_data)  # 使用 unmatched_data 的長度（與 iti.py 一致）
+        print(f"[監控檢查] 容器統計: 總數={len(all_containers)}, 已匹配={matched_count}, 未匹配={unmatched_count}")
+        
+        # 額外調試：打印未匹配容器的詳細信息（與 iti.py 的打印邏輯一致）
+        if not unmatched_data.empty:
+            print(f"[監控檢查] 未匹配容器列表:")
+            for idx, row in unmatched_data.iterrows():
+                print(f"  - codigo: {row.get('codigo', 'N/A')}, glosa_codigo: {row.get('glosa_codigo', 'N/A')}")
         
         result = {
             'containers': all_containers,
