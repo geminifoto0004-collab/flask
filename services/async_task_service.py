@@ -5,10 +5,35 @@
 
 import threading
 import time
-from datetime import datetime
+import json
+from datetime import datetime, date
 from typing import Dict, Optional
 from database import get_db_connection, get_cursor
 from utils.time_utils import get_chile_time_naive
+
+
+# 自定義 JSON 編碼器，處理 datetime 和 date 對象
+class DateTimeEncoder(json.JSONEncoder):
+    """自定義 JSON 編碼器，處理 datetime 和 date 對象"""
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+def _serialize_for_json(obj):
+    """
+    序列化對象為 JSON 兼容格式
+    將 datetime 和 date 對象轉換為字符串
+    """
+    if isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_serialize_for_json(item) for item in obj]
+    elif isinstance(obj, (datetime, date)):
+        return obj.isoformat() if hasattr(obj, 'isoformat') else str(obj)
+    else:
+        return obj
 
 
 # 任務狀態
@@ -30,10 +55,13 @@ def create_async_task(task_type: str, task_config: Dict, task_data: Dict = None)
     status = TASK_STATUS_PENDING
     created_at = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
     
-    # 將任務配置和數據序列化為 JSON
-    import json
-    config_json = json.dumps(task_config) if task_config else '{}'
-    data_json = json.dumps(task_data) if task_data else '{}'
+    # 將任務配置和數據序列化為 JSON（處理 datetime 對象）
+    # 先清理 datetime 對象，轉換為字符串
+    clean_config = _serialize_for_json(task_config) if task_config else {}
+    clean_data = _serialize_for_json(task_data) if task_data else {}
+    
+    config_json = json.dumps(clean_config, cls=DateTimeEncoder) if clean_config else '{}'
+    data_json = json.dumps(clean_data, cls=DateTimeEncoder) if clean_data else '{}'
     
     try:
         cursor.execute('''
@@ -124,11 +152,12 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
             success, result, error = check_monitor_task(task_config)
             
             # 更新任務結果
-            import json
             updated_at = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
             
             if success:
-                result_json = json.dumps(result)
+                # 清理 result 中的 datetime 對象
+                clean_result = _serialize_for_json(result)
+                result_json = json.dumps(clean_result, cls=DateTimeEncoder)
                 
                 # 先獲取上次結果（在更新之前），用於判斷是否需要發送郵件
                 last_result = None
