@@ -17,3 +17,6 @@ secrets.py
 
 # SMTP 失敗緩存（避免提交到 Git）
 .smtp_failed_cache
+
+FLASKPYTHONANYWHERE20251025/
+

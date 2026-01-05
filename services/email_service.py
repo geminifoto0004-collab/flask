@@ -303,16 +303,98 @@ def validate_email_format(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
+def _send_email_via_pythonanywhere_api(api_url: str, to_email, subject: str, html_content: str, api_key: str = '') -> tuple[bool, str]:
+    """
+    通過 PythonAnywhere Email API 發送郵件
+    
+    參數:
+        api_url - PythonAnywhere Email API URL（例如：http://username.pythonanywhere.com/api/email）
+        to_email - 收件人郵箱（字符串或列表）
+        subject - 郵件主題
+        html_content - HTML 內容
+        api_key - API Key（可選，如果 PythonAnywhere 設置了 EMAIL_API_KEY）
+    
+    返回：(bool, str) - (是否成功, 錯誤信息)
+    """
+    try:
+        import requests
+        
+        # 準備請求
+        if isinstance(to_email, list):
+            # 批量發送
+            endpoint = f"{api_url}/send-batch"
+            payload = {
+                'to': to_email,
+                'subject': subject,
+                'html': html_content
+            }
+        else:
+            # 單封發送
+            endpoint = f"{api_url}/send"
+            payload = {
+                'to': to_email,
+                'subject': subject,
+                'html': html_content
+            }
+        
+        headers = {'Content-Type': 'application/json'}
+        if api_key:
+            headers['Authorization'] = f'Bearer {api_key}'
+        
+        print(f"[PythonAnywhere API] 發送請求到: {endpoint}")
+        print(f"[PythonAnywhere API] 收件人: {to_email}")
+        
+        response = requests.post(
+            endpoint,
+            json=payload,
+            headers=headers,
+            timeout=60 if isinstance(to_email, list) else 30
+        )
+        
+        if response.status_code in [200, 207]:  # 207 是批量發送的部分成功
+            result = response.json()
+            if result.get('success'):
+                print(f"[PythonAnywhere API] 郵件發送成功")
+                return True, ""
+            else:
+                error_msg = result.get('error', '未知錯誤')
+                print(f"[PythonAnywhere API] 郵件發送失敗: {error_msg}")
+                return False, f"PythonAnywhere API 返回錯誤: {error_msg}"
+        else:
+            error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+            print(f"[PythonAnywhere API] HTTP 錯誤: {error_msg}")
+            return False, error_msg
+            
+    except requests.exceptions.Timeout:
+        error_msg = "PythonAnywhere API 請求超時"
+        print(f"[PythonAnywhere API] {error_msg}")
+        return False, error_msg
+    except requests.exceptions.ConnectionError:
+        error_msg = "無法連接到 PythonAnywhere API"
+        print(f"[PythonAnywhere API] {error_msg}")
+        return False, error_msg
+    except ImportError:
+        return False, "requests 模組未安裝，請運行: pip install requests"
+    except Exception as e:
+        error_msg = f"PythonAnywhere API 請求失敗: {str(e)}"
+        print(f"[PythonAnywhere API] {error_msg}")
+        import traceback
+        traceback.print_exc()
+        return False, error_msg
+
+
 # ========== 發送郵件 ==========
 def send_email(to_email, subject, html_content):
     """
     發送 HTML 郵件
-    根據 EMAIL_PROVIDER 配置選擇服務：
-    - 'auto': 自動檢測，優先 SMTP，失敗後自動切換到 Resend API（並記住）
-    - 'smtp': 只使用 SMTP
-    - 'resend': 只使用 Resend API
     
-    如果設置了 PYANYWHERE_EMAIL_PROXY_URL，優先使用 PythonAnywhere 代理（臨時方案）
+    優先級順序：
+    1. 如果設置了 PYANYWHERE_EMAIL_API_URL，優先使用 PythonAnywhere Email API（推薦）
+    2. 如果設置了 PYANYWHERE_EMAIL_PROXY_URL，使用 PythonAnywhere 代理（舊方案）
+    3. 根據 EMAIL_PROVIDER 配置選擇服務：
+       - 'auto': 自動檢測，優先 SMTP，失敗後自動切換到 Resend API（並記住）
+       - 'smtp': 只使用 SMTP
+       - 'resend': 只使用 Resend API
     
     參數：
         to_email - 收件人郵箱（字符串或列表）
@@ -338,10 +420,27 @@ def send_email(to_email, subject, html_content):
             return False, "沒有有效的郵件地址"
         # Resend API 支持列表，SMTP 需要逐個發送
         to_email = cleaned_emails
-    # 優先檢查 PythonAnywhere 代理（如果設置了）
+    # 優先檢查 PythonAnywhere Email API（如果設置了，推薦使用）
+    if email_config.PYANYWHERE_EMAIL_API_URL:
+        print("[Email] 使用 PythonAnywhere Email API 發送郵件")
+        success, error = _send_email_via_pythonanywhere_api(
+            email_config.PYANYWHERE_EMAIL_API_URL,
+            to_email,
+            subject,
+            html_content,
+            email_config.PYANYWHERE_EMAIL_API_KEY
+        )
+        if success:
+            return True, ""
+        else:
+            # API 失敗，回退到原有邏輯
+            print(f"[Email] PythonAnywhere API 失敗，回退到原有邏輯: {error}")
+            # 繼續執行下面的邏輯
+    
+    # 其次檢查 PythonAnywhere 代理（舊方案，如果設置了）
     if email_config.PYANYWHERE_EMAIL_PROXY_URL:
         from services.email_proxy import send_email_via_proxy
-        print("[Email] 使用 PythonAnywhere 代理發送郵件")
+        print("[Email] 使用 PythonAnywhere 代理發送郵件（舊方案）")
         success, error = send_email_via_proxy(
             email_config.PYANYWHERE_EMAIL_PROXY_URL,
             to_email,

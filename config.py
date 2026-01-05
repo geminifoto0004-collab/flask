@@ -136,12 +136,21 @@ class EmailConfig:
     RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
     RESEND_FROM_EMAIL = os.environ.get('RESEND_FROM_EMAIL', '')  # 發送郵件的地址（需要在 Resend 驗證）
     
-    # PythonAnywhere 郵件代理配置（臨時方案，可選）
+    # PythonAnywhere 郵件 API 配置（推薦）
+    # 如果設置了 PYANYWHERE_EMAIL_API_URL，Render 會通過 PythonAnywhere 的 Email API 發送郵件
+    # 格式：http://yourusername.pythonanywhere.com/api/email
+    # 如果設置了，優先使用此 API，而不是 Resend 或 SMTP
+    PYANYWHERE_EMAIL_API_URL = os.environ.get('PYANYWHERE_EMAIL_API_URL', '')
+    
+    # PythonAnywhere 郵件代理配置（舊方案，可選，已棄用）
     # 如果設置了 PYANYWHERE_EMAIL_PROXY_URL，Render 會通過 PythonAnywhere 的 SMTP 發送郵件
     # 格式：https://yourusername.pythonanywhere.com/api/email/proxy
-    # 注意：這是一個臨時方案，方便在 Render 和 PythonAnywhere 之間共用
-    # 如果未設置，使用原有邏輯（Resend API 或 SMTP）
+    # 注意：這是舊的代理方案，建議使用 PYANYWHERE_EMAIL_API_URL
     PYANYWHERE_EMAIL_PROXY_URL = os.environ.get('PYANYWHERE_EMAIL_PROXY_URL', '')
+    
+    # PythonAnywhere Email API Key（可選）
+    # 如果 PythonAnywhere 設置了 EMAIL_API_KEY，這裡需要設置相同的值
+    PYANYWHERE_EMAIL_API_KEY = os.environ.get('PYANYWHERE_EMAIL_API_KEY', '')
     
     # 如果環境變數未設置，可以在這裡直接設置（僅用於本地開發）
     if not RESEND_API_KEY:
