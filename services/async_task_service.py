@@ -444,7 +444,10 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                         WHERE task_id = ?
                     ''', (TASK_STATUS_COMPLETED, result_json, updated_at, task_id))
                     conn.commit()
-                    print(f"[Async Task] ✅ 任務完成：PA 查詢成功且郵件已發送")
+                    if should_send:
+                        print(f"[Async Task] ✅ 任務完成：PA 查詢成功，郵件已發送")
+                    else:
+                        print(f"[Async Task] ✅ 任務完成：PA 查詢成功，無需發送郵件")
                     
                     # 🔥🔥🔥 只有在郵件成功時，才更新 last_check_result
                     # 這樣下次檢查時才能正確判斷是否有變化
