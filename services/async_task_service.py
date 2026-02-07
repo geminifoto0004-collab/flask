@@ -403,6 +403,7 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                 # 🔥 關鍵改動：先嘗試發送郵件，再根據結果決定任務狀態
                 email_sent_successfully = True  # 預設為成功
                 email_error_msg = None
+                need_to_send_email = False  # 是否需要發送郵件
                 
                 # 處理郵件通知
                 try:
@@ -411,6 +412,7 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                     # 檢查是否有數據變化
                     should_send = has_result_changed(last_result, result)
                     if should_send:
+                        need_to_send_email = True
                         # 有數據變化，發送通知郵件
                         send_success, send_message = send_notification_email(
                             task_config.get('notification_emails', []),
@@ -426,15 +428,16 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                         email_sent_successfully = True
                 except Exception as e:
                     # 郵件發送異常，記錄錯誤
-                    email_sent_successfully = False
-                    email_error_msg = str(e)
+                    if need_to_send_email:
+                        email_sent_successfully = False
+                        email_error_msg = str(e)
                     print(f"[Async Task] ❌ 郵件發送異常: {e}")
                     import traceback
                     traceback.print_exc()
                 
                 # 🔥 根據郵件發送結果決定最終狀態
                 if email_sent_successfully:
-                    # PA 成功 + 郵件成功 → COMPLETED
+                    # PA 成功 + 郵件成功（或不需要發送）→ COMPLETED
                     cursor.execute('''
                         UPDATE async_tasks 
                         SET status = ?, result = ?, updated_at = ?
@@ -442,6 +445,23 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                     ''', (TASK_STATUS_COMPLETED, result_json, updated_at, task_id))
                     conn.commit()
                     print(f"[Async Task] ✅ 任務完成：PA 查詢成功且郵件已發送")
+                    
+                    # 🔥🔥🔥 只有在郵件成功時，才更新 last_check_result
+                    # 這樣下次檢查時才能正確判斷是否有變化
+                    try:
+                        cursor.execute('''
+                            UPDATE user_monitor_configs
+                            SET last_check_time = ?, last_check_result = ?
+                            WHERE id = ?
+                        ''', (
+                            updated_at,
+                            result_json,
+                            task_config.get('id')
+                        ))
+                        conn.commit()
+                        print(f"[Async Task] ✅ 已更新 last_check_result（因為郵件發送成功）")
+                    except Exception as e:
+                        print(f"[Async Task] 更新監控任務配置失敗: {e}")
                 else:
                     # PA 成功 + 郵件失敗 → FAILED
                     error_msg = f"PA 查詢成功，但郵件發送失敗: {email_error_msg}"
@@ -452,21 +472,7 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                     ''', (TASK_STATUS_FAILED, error_msg, result_json, updated_at, task_id))
                     conn.commit()
                     print(f"[Async Task] ⚠️ 任務失敗：PA 成功但郵件發送失敗")
-                
-                # 更新監控任務配置中的上次檢查結果（無論郵件是否成功都要更新）
-                try:
-                    cursor.execute('''
-                        UPDATE user_monitor_configs
-                        SET last_check_time = ?, last_check_result = ?
-                        WHERE id = ?
-                    ''', (
-                        updated_at,
-                        result_json,
-                        task_config.get('id')
-                    ))
-                    conn.commit()
-                except Exception as e:
-                    print(f"[Async Task] 更新監控任務配置失敗: {e}")
+                    print(f"[Async Task] ⚠️ 不更新 last_check_result（保留舊值，下次可以重試）")
                     
             else:
                 # 任務失敗，更新狀態並發送異常通知郵件
