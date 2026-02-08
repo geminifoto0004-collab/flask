@@ -13,7 +13,8 @@ from utils.time_utils import get_chile_time_naive
 POSTGRESQL_AVAILABLE = None
 MYSQL_AVAILABLE = None
 
-# ?è©¦å°å¥ PostgreSQL æ¨¡ç?ï¼å??é?è¦ç?è©±ï?
+# ?è©¦å°å
+# ¥ PostgreSQL æ¨¡ç?ï¼å??é?è¦ç?è©±ï?
 try:
     import psycopg2  # type: ignore
     from psycopg2.extras import RealDictCursor  # type: ignore
@@ -25,7 +26,8 @@ except ImportError:
 if not POSTGRESQL_AVAILABLE and config.DATABASE_TYPE == 'postgresql':
     print("? ï?  PostgreSQL æ¨¡ç??ªå?è£ï?è«é?è¡? pip install psycopg2-binary")
 
-# ?è©¦å°å¥ MySQL/TiDB æ¨¡ç?ï¼å??é?è¦ç?è©±ï?
+# ?è©¦å°å
+# ¥ MySQL/TiDB æ¨¡ç?ï¼å??é?è¦ç?è©±ï?
 try:
     import pymysql  # noqa: F401
     pymysql.install_as_MySQLdb()  # ä½?pymysql ?¼å®¹ MySQLdb
@@ -111,7 +113,8 @@ def get_db_connection():
             conn = psycopg2.connect(config.DATABASE_URL)
             # è¨­ç½®?ªå??äº¤??Falseï¼è? SQLite è¡çºä¸?´ï?
             conn.autocommit = False
-            # ?è???¥ä»¥èª?é©??cursor
+            # ?
+# è???¥ä»¥èª?é©??cursor
             return AdaptedConnection(conn)
         elif config.DATABASE_TYPE in ('mysql', 'tidb'):
             if not MYSQL_AVAILABLE:
@@ -154,7 +157,8 @@ def get_db_connection():
                 }
             
             # TiDB Cloud è¦æ? SSL ??¥ï¼èª?å???SSL
-            # å¦æ? host ?å« tidbcloud.comï¼èª?å???SSL
+            # å¦æ? host ?
+# å« tidbcloud.comï¼èª?å???SSL
             if 'tidbcloud.com' in db_config.get('host', '').lower():
                 db_config['ssl'] = {'check_hostname': False}
             
@@ -162,17 +166,23 @@ def get_db_connection():
             import pymysql.cursors
             db_config['cursorclass'] = pymysql.cursors.DictCursor
             
-            # æ·»å?è¶æ?è¨­ç½®ï¼é¿?å¨ Render ä¸å¡ä½ï?
-            # connect_timeout: ??¥è¶æ?ï¼ç?ï¼?
+            # æ·»å?è¶
+# æ?è¨­ç½®ï¼é¿?å¨ Render ä¸å¡ä½ï?
+            # connect_timeout: ??¥è¶
+# æ?ï¼ç?ï¼?
             # read_timeout: è®?è??ï?ç§ï?
-            # write_timeout: å¯«å¥è¶æ?ï¼ç?ï¼?
-            db_config['connect_timeout'] = 10  # 10 ç§é?¥è¶æ?
+            # write_timeout: å¯«å
+# ¥è¶
+# æ?ï¼ç?ï¼?
+            db_config['connect_timeout'] = 10  # 10 ç§é?¥è¶
+# æ?
             db_config['read_timeout'] = 10     # 10 ç§è??è???
             db_config['write_timeout'] = 10    # 10 ç§å¯«?¥è???
             
             # MySQL/TiDB ??¥
             conn = pymysql.connect(**db_config)
-            # ?è???¥ä»¥èª?é©??cursor
+            # ?
+# è???¥ä»¥èª?é©??cursor
             return AdaptedConnection(conn)
         else:
             # SQLite ??¥
@@ -186,10 +196,12 @@ def get_db_connection():
             # check_same_thread: Falseï¼å?è¨±å?ç·ç?è¨ªå?ï¼Flask ?¯å?ç·ç??ï?
             conn = sqlite3.connect(
                 config.DATABASE_PATH,
-                timeout=20.0,  # 20 ç§è??ï??¿å??·æ??ç?å¾é?å®?
+                timeout=20.0,  # 20 ç§è??ï??¿å??·æ??ç?å¾
+# é?å®?
                 check_same_thread=False  # ?è¨±å¤ç?ç¨è¨ª??
             )
-            conn.row_factory = sqlite3.Row  # ä½¿æ¥è©¢ç??å¯ä»¥å?å­å¸ä¸æ¨?¨ª??
+            conn.row_factory = sqlite3.Row  # ä½¿æ¥è©¢ç??å¯ä»¥å?å­å
+# ¸ä¸æ¨?¨ª??
             
             # ?ç¨ WAL æ¨¡å?ï¼Write-Ahead Loggingï¼æ?é«ä¸¦?¼æ§è½
             # WAL æ¨¡å??è¨±å¤åè??å?ä¸?å¯«?¥å??é²è?ï¼æ?å°é?å®?
@@ -199,7 +211,8 @@ def get_db_connection():
                 # å¦æ??ç¨ WAL å¤±æ?ï¼ä?å¦æ?äºåªè®?ä»¶ç³»çµ±ï¼ï?å¿½ç¥?¯èª¤
                 pass
             
-            # ?è???¥ä»¥èª?é©??cursorï¼å³ä½?SQLite ä¸é?è¦è??ï?ä¹ä??ä??´æ§ï?
+            # ?
+# è???¥ä»¥èª?é©??cursorï¼å³ä½?SQLite ä¸é?è¦è??ï?ä¹ä??ä??´æ§ï?
             return AdaptedConnection(conn)
     except Exception as e:
         print(f"è³æ?åº«é?¥å¤±æ?: {e}")
@@ -228,7 +241,7 @@ def get_boolean_type():
 
 
 def get_text_type():
-    """?²å??æ¬é¡å?ï¼SQLite ??TEXTï¼PostgreSQL ??TEXTï¼MySQL/TiDB ??TEXTï¼?""
+    """?²å??æ¬é¡å?ï¼SQLite ??TEXTï¼PostgreSQL ??TEXTï¼MySQL/TiDB ??TEXTï¼?"""
     if config.DATABASE_TYPE == 'postgresql':
         return 'TEXT'
     else:
@@ -258,21 +271,23 @@ def get_text_type_unique():
 
 
 def get_timestamp_default():
-    """?²å??é??³é?èªå?""
+    """?²å??é??³é?èªå?"""
     # ??è??åº«?½æ¯??CURRENT_TIMESTAMP
     return "DEFAULT CURRENT_TIMESTAMP"
 
 
 class AdaptedCursor:
     """
-    ?è???Cursor é¡ï??ªå??ç? SQL ?æ¸? ä?ç¬¦è???
+    ?
+è???Cursor é¡ï??ªå??ç? SQL ?æ¸? ä?ç¬¦è???
     ?æ¨£å°±ä??è¦ä¿®?¹ç¾?ä»£ç¢¼ï????cursor.execute() ?½æ??ªå??©é?
     """
     def __init__(self, cursor):
         self._cursor = cursor
     
     def __getattr__(self, name):
-        # å°æ??å¶ä»å±¬?§å??¹æ?å§è?çµ¦å?å§?cursor
+        # å°æ??å
+# ¶ä»å±¬?§å??¹æ?å§è?çµ¦å?å§?cursor
         return getattr(self._cursor, name)
     
     def execute(self, sql, params=None):
@@ -291,14 +306,16 @@ class AdaptedCursor:
 
 class AdaptedConnection:
     """
-    ?è???Connection é¡ï??ªå??ç????cursor ??SQL ?æ¸? ä?ç¬¦è???
+    ?
+è???Connection é¡ï??ªå??ç????cursor ??SQL ?æ¸? ä?ç¬¦è???
     ?æ¨£å°±ä??è¦ä¿®?¹ç¾?ä»£ç¢¼ï????conn.cursor() ?½æ??ªå?è¿å??©é???cursor
     """
     def __init__(self, conn):
         self._conn = conn
     
     def __getattr__(self, name):
-        # å°æ??å¶ä»å±¬?§å??¹æ?å§è?çµ¦å?å§é?¥
+        # å°æ??å
+# ¶ä»å±¬?§å??¹æ?å§è?çµ¦å?å§é?¥
         return getattr(self._conn, name)
     
     def cursor(self, *args, **kwargs):
@@ -335,7 +352,8 @@ def get_cursor(conn, use_adapter=True):
     else:
         cursor = conn.cursor()
     
-    # å¦æ??ç¨?©é??¨ï??è? cursor ä»¥èª?è???SQL ? ä?ç¬¦è???
+    # å¦æ??ç¨?©é??¨ï??
+# è? cursor ä»¥èª?è???SQL ? ä?ç¬¦è???
     if use_adapter:
         return AdaptedCursor(cursor)
     else:
@@ -343,11 +361,13 @@ def get_cursor(conn, use_adapter=True):
 
 
 def get_row_dict(row, cursor):
-    """å°æ¥è©¢ç??è??çºå­å¸"""
+    """å°æ¥è©¢ç??è??çºå­å
+¸"""
     if config.DATABASE_TYPE == 'postgresql':
         return dict(row) if row else None
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-        # PyMySQL DictCursor å·²ç?è¿å?å­å¸
+        # PyMySQL DictCursor å·²ç?è¿å?å­å
+# ¸
         return dict(row) if row else None
     else:
         # SQLite Row ?è¦è???
@@ -385,7 +405,7 @@ def get_lastrowid(cursor, conn):
 
 
 def check_column_exists(cursor, table_name, column_name):
-    """æª¢æ¥?æ¯?¦å???""
+    """æª¢æ¥?æ¯?¦å???"""
     if config.DATABASE_TYPE == 'postgresql':
         cursor.execute("""
             SELECT column_name 
@@ -409,7 +429,7 @@ def check_column_exists(cursor, table_name, column_name):
 
 
 def get_table_names(cursor):
-    """?²å???è¡¨??""
+    """?²å???è¡¨??"""
     if config.DATABASE_TYPE == 'postgresql':
         cursor.execute("""
             SELECT table_name 
@@ -431,7 +451,7 @@ def get_table_names(cursor):
 
 
 def get_placeholder():
-    """?²å? SQL ?æ¸? ä?ç¬¦ï?SQLite ???ï¼PostgreSQL/MySQL/TiDB ??%sï¼?""
+    """?²å? SQL ?æ¸? ä?ç¬¦ï?SQLite ???ï¼PostgreSQL/MySQL/TiDB ??%sï¼?"""
     if config.DATABASE_TYPE in ('postgresql', 'mysql', 'tidb'):
         return '%s'
     else:
@@ -472,7 +492,7 @@ def init_database():
             cursor.execute('ALTER TABLE users ADD COLUMN company_name {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("å·²æ·»??company_name ?å° users è¡?)
+            print("Added company_name column to users")
         
         # ?µå»º services è¡¨ï??å??¢å?ï¼?
         cursor.execute('''
@@ -500,13 +520,13 @@ def init_database():
             cursor.execute('ALTER TABLE services ADD COLUMN version {text_type_with_default} DEFAULT \'FREE\''.format(
                 text_type_with_default=get_text_type_with_default()
             ))
-            print("å·²æ·»??version ?å° services è¡?)
+            print("Added version column to services")
         
         if not check_column_exists(cursor, 'services', 'config_json'):
             cursor.execute('ALTER TABLE services ADD COLUMN config_json {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("å·²æ·»??config_json ?å° services è¡?)
+            print("Added config_json column to services")
         
         # ?µå»º user_services è¡¨ï??¨æ¶è³¼è²·?æ??ï?
         cursor.execute('''
@@ -535,7 +555,7 @@ def init_database():
             cursor.execute('ALTER TABLE user_services ADD COLUMN config_json {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("å·²æ·»??config_json ?å° user_services è¡?)
+            print("Added config_json column to user_services")
         
         # ?µå»º?å??æ¬è¡?
         cursor.execute('''
@@ -577,16 +597,17 @@ def init_database():
         ))
         print("user_sessions è¡¨å·²å°±ç?")
         
-        # æª¢æ¥ä¸¦æ·»? æ°å­æ®µï¼å?å¾å¼å®¹ï?
+        # æª¢æ¥ä¸¦æ·»? æ°å­æ®µï¼å?å¾å
+# ¼å®¹ï?
         if not check_column_exists(cursor, 'user_sessions', 'session_token'):
             cursor.execute('ALTER TABLE user_sessions ADD COLUMN session_token VARCHAR(255)')
-            print("å·²æ·»??session_token ?å° user_sessions è¡?)
+            print("Added session_token column to user_sessions")
         
         if not check_column_exists(cursor, 'user_sessions', 'device_info'):
             cursor.execute('ALTER TABLE user_sessions ADD COLUMN device_info {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("å·²æ·»??device_info ?å° user_sessions è¡?)
+            print("Added device_info column to user_sessions")
             
         
         # ?µå»º verification_codes è¡¨ï??µä»¶é©è??¨ï?
@@ -642,13 +663,13 @@ def init_database():
             cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN company_name {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("å·²æ·»??company_name ?å° user_monitor_configs è¡?)
+            print("Added company_name column to user_monitor_configs")
         
         if not check_column_exists(cursor, 'user_monitor_configs', 'email_subject'):
             cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN email_subject {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("å·²æ·»??email_subject ?å° user_monitor_configs è¡?)
+            print("Added email_subject column to user_monitor_configs")
         
         # ?µå»º async_tasks è¡¨ï??¨æ¼?°æ­¥ä»»å?ï¼?
         cursor.execute('''
@@ -777,7 +798,8 @@ def init_database():
         # ?å??é?èªæ???
         init_default_services(cursor)
         
-        # ?ªå??µå»ºè¶ç?ç®¡ç??¡ï?å¦æ?ä¸å??¨ï?
+        # ?ªå??µå»ºè¶
+# ç?ç®¡ç??¡ï?å¦æ?ä¸å??¨ï?
         init_super_admin(cursor)
         
         conn.commit()
@@ -795,7 +817,7 @@ def init_database():
 
 
 def init_default_services(cursor):
-    """?å??é?èªæ???""
+    """?å??é?èªæ???"""
     # æª¢æ¥?¯å¦å·²æ??å?
     cursor.execute('SELECT COUNT(*) FROM services')
     result = cursor.fetchone()
@@ -805,7 +827,8 @@ def init_default_services(cursor):
     elif isinstance(result, (int, tuple)):
         count = result[0]
     elif isinstance(result, dict):
-        # PostgreSQL RealDictCursor è¿å?å­å¸
+        # PostgreSQL RealDictCursor è¿å?å­å
+# ¸
         count = result.get('count', result.get(list(result.keys())[0], 0))
     else:
         # SQLite Row ??PostgreSQL ?®é?cursor è¿å? tuple-like å°è±¡
@@ -814,13 +837,14 @@ def init_default_services(cursor):
     if count > 0:
         return
     
-    # ?å¥é»è??å?
+    # ?å
+# ¥é»è??å?
     default_services = [
-        ('?ºç??æ?', '?ºç?è»é??æ??å?', 100.00, 365),
-        ('å°æ¥­?æ?', 'å°æ¥­è»é??æ??å?', 300.00, 365),
-        ('ä¼æ¥­?æ?', 'ä¼æ¥­ç´è?é«æ?æ¬æ???, 800.00, 365),
-        ('?åº¦?æ?', '?åº¦è»é??æ??å?', 50.00, 30),
-        ('å¹´åº¦?æ?', 'å¹´åº¦è»é??æ??å?', 500.00, 365)
+        ("Basic Plan", "Basic service plan", 100.00, 365),
+        ("Pro Plan", "Professional service plan", 300.00, 365),
+        ("Enterprise Plan", "Enterprise service plan", 800.00, 365),
+        ("Monthly Plan", "Monthly service plan", 50.00, 30),
+        ("Annual Plan", "Annual service plan", 500.00, 365)
     ]
     
     # ?¹æ?è³æ?åº«é??ä½¿?¨ä??ç??æ¸? ä?ç¬?
@@ -835,7 +859,8 @@ def init_default_services(cursor):
 
 
 def init_super_admin(cursor):
-    """?ªå??µå»ºè¶ç?ç®¡ç??¡ç¨?¶ï?å¦æ?ä¸å??¨ï?"""
+    """?ªå??µå»ºè¶
+ç?ç®¡ç??¡ç¨?¶ï?å¦æ?ä¸å??¨ï?"""
     try:
         from config import admin_config
         from utils.time_utils import get_chile_time_naive
@@ -845,10 +870,12 @@ def init_super_admin(cursor):
         user_row = cursor.fetchone()
         
         if user_row:
-            # è¶ç?ç®¡ç??¡å·²å­å¨ï¼è·³??
+            # è¶
+# ç?ç®¡ç??¡å·²å­å¨ï¼è·³??
             return
         
-        # ?µå»ºè¶ç?ç®¡ç???
+        # ?µå»ºè¶
+# ç?ç®¡ç???
         from services.user_service import hash_password
         password_hash = hash_password(admin_config.SUPER_ADMIN_PASSWORD)
         created_at = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
@@ -860,14 +887,16 @@ def init_super_admin(cursor):
         ''', (admin_config.SUPER_ADMIN_USERNAME, admin_config.SUPER_ADMIN_EMAIL, 
               password_hash, admin_config.SUPER_ADMIN_ROLE, created_at))
         
-        print(f"??è¶ç?ç®¡ç??¡å·²?ªå??µå»º:")
+        print("Super admin user created:")
+
         print(f"   ?µç®±: {admin_config.SUPER_ADMIN_EMAIL}")
         print(f"   å¯ç¢¼: {admin_config.SUPER_ADMIN_PASSWORD}")
         print(f"   ?¨æ¶?? {admin_config.SUPER_ADMIN_USERNAME}")
         print(f"   è§è²: {admin_config.SUPER_ADMIN_ROLE}")
         
     except Exception as e:
-        print(f"? ï?  ?µå»ºè¶ç?ç®¡ç??¡å¤±?? {e}")
+        print(f"Super admin user creation failed: {e}")
+
         # ä¸æ??ºç°å¸¸ï??¿å??»æ­¢?¸æ?åº«å?å§å?
         import traceback
         traceback.print_exc()
@@ -916,7 +945,8 @@ def check_database():
 def get_database_stats():
     """
     ?²å?è³æ?åº«çµ±è¨ä¿¡??
-    è¿å?ï¼dict - ?å«?è¡¨?è??æ¸
+    è¿å?ï¼dict - ?
+å«?è¡¨?è??æ¸
     """
     try:
         conn = get_db_connection()
@@ -926,13 +956,14 @@ def get_database_stats():
         
         # è¼å©?½æ¸ï¼ç²??COUNT(*) ?¥è©¢çµæ?
         def get_count(result):
-            """å¾?COUNT(*) ?¥è©¢çµæ?ä¸­æ??è???""
+            """å¾?COUNT(*) ?¥è©¢çµæ?ä¸­æ??è???"""
             if result is None:
                 return 0
             elif isinstance(result, (int, tuple)):
                 return result[0]
             elif isinstance(result, dict):
-                # PostgreSQL RealDictCursor è¿å?å­å¸
+                # PostgreSQL RealDictCursor è¿å?å­å
+# ¸
                 return result.get('count', result.get(list(result.keys())[0], 0))
             else:
                 # SQLite Row ??PostgreSQL ?®é?cursor è¿å? tuple-like å°è±¡
@@ -975,7 +1006,7 @@ def get_database_stats():
 # ========== æ¸¬è©¦ç¨å? ==========
 if __name__ == '__main__':
     print("=" * 50)
-    print("è³æ?åº«ç®¡?å·¥??)
+    print("Database Management Tool")
     print("=" * 50)
     
     print(f"\nè³æ?åº«é??? {config.DATABASE_TYPE}")
@@ -987,7 +1018,7 @@ if __name__ == '__main__':
             print(f"? ï?  ?µå»ºè³æ?åº«ç®?? {db_dir}")
             os.makedirs(db_dir, exist_ok=True)
     else:
-        print(f"è³æ?åº?URL: {config.DATABASE_URL[:20]}..." if config.DATABASE_URL else "?ªè¨­ç½?)
+        print(f"Database URL: {config.DATABASE_URL[:20]}..." if config.DATABASE_URL else "Database URL: (not set)")
     
     # ?å??è??åº«
     print("\n[1] ?å??è??åº«...")
