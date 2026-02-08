@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Container Token Manager</title>
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f8fafc;
+            color: #0f172a;
+            margin: 0;
+            padding: 24px;
+        }
+        .wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            margin: 0 0 16px;
+            font-size: 22px;
+        }
+        .panel {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+        }
+        .row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        input, select {
+            padding: 8px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 8px;
+            background: #2563eb;
+            color: #ffffff;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        button.secondary { background: #0f172a; }
+        button.warn { background: #ef4444; }
+        button.light { background: #e2e8f0; color: #0f172a; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        th, td {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 8px;
+            vertical-align: top;
+        }
+        th {
+            text-align: left;
+            background: #f1f5f9;
+            position: sticky;
+            top: 0;
+        }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .muted { color: #64748b; }
+        .actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .note-input { width: 160px; }
+        .date-input { width: 140px; }
+        .num-input { width: 80px; }
+        .url-box {
+            background: #f8fafc;
+            border: 1px dashed #cbd5f5;
+            padding: 6px 8px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        .top-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="top-actions">
+            <h1>Container Token Manager</h1>
+            <form method="post" action="/container/access-admin/logout">
+                <button class="secondary" type="submit">Logout</button>
+            </form>
+        </div>
+
+        <div class="panel">
+            <div class="row">
+                <input id="new-note" class="note-input" placeholder="Note (optional)">
+                <input id="new-expires" class="date-input" type="date">
+                <input id="new-max" class="num-input" type="number" min="1" placeholder="Max">
+                <button onclick="createToken()">Create Token</button>
+            </div>
+            <div class="muted" style="margin-top:8px;">
+                Leave Max empty for unlimited sessions. Expiry uses end of day.
+            </div>
+        </div>
+
+        <div class="panel">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Token</th>
+                        <th>Access URL</th>
+                        <th>Note</th>
+                        <th>Status</th>
+                        <th>Expires</th>
+                        <th>Max</th>
+                        <th>Active</th>
+                        <th>Last Used</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="token-rows"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function api(url, options) {
+            const res = await fetch(url, options || {});
+            const data = await res.json();
+            if (!data.ok) {
+                throw new Error(data.msg || 'Request failed');
+            }
+            return data;
+        }
+
+        function formatDate(value) {
+            if (!value) return '';
+            return value.slice(0, 10);
+        }
+
+        function buildAccessUrl(token) {
+            return `${window.location.origin}/gate/${token}`;
+        }
+
+        async function loadTokens() {
+            const data = await api('/container/access-admin/tokens');
+            const tbody = document.getElementById('token-rows');
+            tbody.innerHTML = '';
+            data.tokens.forEach(token => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="mono">${token.token}</td>
+                    <td>
+                        <span class="url-box mono">${buildAccessUrl(token.token)}</span>
+                    </td>
+                    <td><input class="note-input" value="${token.note || ''}"></td>
+                    <td>
+                        <select>
+                            <option value="active" ${token.status === 'active' ? 'selected' : ''}>active</option>
+                            <option value="disabled" ${token.status === 'disabled' ? 'selected' : ''}>disabled</option>
+                        </select>
+                    </td>
+                    <td><input class="date-input" type="date" value="${formatDate(token.expires_at)}"></td>
+                    <td><input class="num-input" type="number" min="1" value="${token.max_concurrent || ''}"></td>
+                    <td>${token.active_sessions || 0}</td>
+                    <td class="muted">${token.last_used_at || ''}</td>
+                    <td>
+                        <div class="actions">
+                            <button class="light" onclick="saveToken(${token.id}, this)">Save</button>
+                            <button class="light" onclick="copyUrl('${token.token}')">Copy URL</button>
+                            <button class="light" onclick="clearSessions(${token.id})">Clear Sessions</button>
+                            <button class="warn" onclick="deleteToken(${token.id})">Delete</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function createToken() {
+            const note = document.getElementById('new-note').value.trim();
+            const expires_at = document.getElementById('new-expires').value;
+            const max_concurrent = document.getElementById('new-max').value;
+            await api('/container/access-admin/tokens', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note, expires_at, max_concurrent })
+            });
+            document.getElementById('new-note').value = '';
+            document.getElementById('new-expires').value = '';
+            document.getElementById('new-max').value = '';
+            await loadTokens();
+        }
+
+        async function saveToken(id, btn) {
+            const row = btn.closest('tr');
+            const note = row.querySelector('input.note-input').value.trim();
+            const status = row.querySelector('select').value;
+            const expires_at = row.querySelector('input.date-input').value;
+            const max_concurrent = row.querySelector('input.num-input').value;
+            await api(`/container/access-admin/tokens/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note, status, expires_at, max_concurrent })
+            });
+            await loadTokens();
+        }
+
+        async function deleteToken(id) {
+            if (!confirm('Delete this token?')) return;
+            await api(`/container/access-admin/tokens/${id}`, { method: 'DELETE' });
+            await loadTokens();
+        }
+
+        async function clearSessions(id) {
+            await api(`/container/access-admin/tokens/${id}/clear-sessions`, { method: 'POST' });
+            await loadTokens();
+        }
+
+        async function copyUrl(token) {
+            const url = buildAccessUrl(token);
+            try {
+                await navigator.clipboard.writeText(url);
+                alert('Copied');
+            } catch (e) {
+                prompt('Copy URL:', url);
+            }
+        }
+
+        loadTokens();
+        setInterval(loadTokens, 60000);
+    </script>
+</body>
+</html>

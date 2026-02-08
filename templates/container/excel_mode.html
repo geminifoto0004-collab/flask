@@ -1,0 +1,1779 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Contenedores - Modo Excel</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Handsontable -->
+    <link href="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/handsontable/dist/handsontable.full.min.js"></script>
+    <!-- SheetJS for real .xlsx export -->
+    <script src="/static/js/xlsx.full.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #f6f7fb;
+            --panel: #ffffff;
+            --ink: #0b1220;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+            --shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.06);
+            --ring: 0 0 0 1px rgba(15, 23, 42, 0.05), 0 0 0 4px rgba(37, 99, 235, 0.08);
+            --primary: #2563eb;
+            --primary-700: #1d4ed8;
+            --success: #16a34a;
+            --success-700: #15803d;
+            --warning: #f59e0b;
+            --warning-700: #d97706;
+            --danger: #ef4444;
+            --danger-700: #dc2626;
+            --info: #0ea5e9;
+            --info-700: #0284c7;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Manrope', 'Sora', sans-serif;
+            background:
+                radial-gradient(900px 520px at 15% -10%, rgba(37, 99, 235, 0.14), transparent 60%),
+                radial-gradient(800px 520px at 90% 0%, rgba(14, 165, 233, 0.12), transparent 55%),
+                linear-gradient(180deg, #f8fafc, #eef2f7);
+            min-height: 100vh;
+            padding: 28px;
+            color: var(--ink);
+        }
+
+        .container {
+            max-width: 1320px;
+            margin: 0 auto;
+            background: var(--panel);
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+            padding: 32px 34px 40px;
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+            animation: rise 0.6s ease forwards;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #2563eb, #22c55e, #0ea5e9);
+            opacity: 0.85;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            align-items: flex-end;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 30px;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            color: var(--muted);
+            font-size: 14px;
+            margin-top: 6px;
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin: 24px 0 28px;
+        }
+
+        .stat-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px 20px;
+            text-align: left;
+            box-shadow: var(--shadow-soft);
+            position: relative;
+            overflow: hidden;
+            animation: fadeUp 0.6s ease forwards;
+        }
+
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(120deg, rgba(37, 99, 235, 0.06), transparent 40%);
+            pointer-events: none;
+        }
+
+        .stat-number {
+            font-size: 30px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .stat-number.total { color: var(--primary); }
+        .stat-number.waiting { color: var(--warning); }
+        .stat-number.found { color: var(--success); }
+        .stat-number.disappeared { color: var(--muted); }
+
+        .stat-label {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .table-section {
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            background: var(--panel);
+        }
+
+        .table-header {
+            background: #f1f5f9;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .table-tools {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .table-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .countdown {
+            font-size: 12px;
+            color: var(--primary);
+            font-weight: 600;
+            background: rgba(37, 99, 235, 0.12);
+            border-radius: 999px;
+            padding: 6px 12px;
+            white-space: nowrap;
+        }
+
+        .dup-alert {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #b91c1c;
+            background: #fee2e2;
+            border: 1px solid #fecaca;
+            padding: 6px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+        }
+
+        .dup-alert.show {
+            display: inline-flex;
+        }
+
+        #hot-container {
+            border-radius: 0 0 16px 16px;
+            overflow: hidden;
+        }
+
+        button {
+            border: 1px solid rgba(15, 23, 42, 0.1);
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: #ffffff;
+            color: var(--ink);
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-soft);
+        }
+
+        button:focus-visible {
+            outline: none;
+            box-shadow: var(--ring);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: #ffffff;
+        }
+
+        .btn-success:hover { background: var(--success-700); }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #ffffff;
+        }
+
+        .btn-primary:hover { background: var(--primary-700); }
+
+        .btn-info {
+            background: var(--info);
+            color: #ffffff;
+        }
+
+        .btn-info:hover { background: var(--info-700); }
+
+        .btn-warning {
+            background: var(--warning);
+            color: #ffffff;
+        }
+
+        .btn-warning:hover { background: var(--warning-700); }
+
+        .btn-danger {
+            background: var(--danger);
+            color: #ffffff;
+        }
+
+        .btn-danger:hover { background: var(--danger-700); }
+
+        .icon-btn {
+            width: 40px;
+            height: 40px;
+            padding: 8px;
+        }
+
+        .icon-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: #0f172a;
+            color: #ffffff;
+            padding: 14px 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s;
+            z-index: 1000;
+            max-width: 420px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--danger); }
+        .toast.info { background: var(--primary); }
+
+        .handsontable th {
+            background: #0f172a !important;
+            color: #f8fafc !important;
+            font-weight: 600;
+        }
+
+        .handsontable td {
+            font-size: 13px;
+            color: #0f172a;
+        }
+
+        .handsontable .htCore {
+            background: #ffffff;
+        }
+
+        .group-summary-cell {
+            font-weight: 700;
+            color: #b45309;
+        }
+
+        .group-child-cell {
+            color: #475569;
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.4);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1200;
+        }
+
+        .modal-backdrop.show {
+            display: flex;
+        }
+
+        .modal {
+            width: min(720px, 92vw);
+            background: #ffffff;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            padding: 20px;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .modal-close {
+            border: 1px solid rgba(15, 23, 42, 0.12);
+            border-radius: 10px;
+            background: #f8fafc;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .modal-list {
+            max-height: 360px;
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .modal-row {
+            display: grid;
+            grid-template-columns: 120px 90px 1fr;
+            gap: 12px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .modal-row:last-child {
+            border-bottom: none;
+        }
+
+        .modal-muted {
+            color: var(--muted);
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+        }
+
+        @keyframes rise {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 900px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .table-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .table-tools {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+    
+        /* Tabla estilo neutro (sin azul) */
+        .handsontable th {
+            background: #f8fafc !important;
+            color: #475569 !important;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 11px;
+        }
+
+        .handsontable .htRowHeader {
+            background: #f1f5f9 !important;
+            color: #64748b !important;
+        }
+
+        .handsontable td {
+            color: #111827 !important;
+        }
+
+        .handsontable tbody tr td {
+            border-color: #e2e8f0 !important;
+        }
+
+        .handsontable .ht__highlight,
+        .handsontable .area {
+            background: rgba(148, 163, 184, 0.2) !important;
+        }
+
+        .handsontable .wtBorder {
+            border-color: #94a3b8 !important;
+        }
+
+        .handsontable .htCore {
+            background: #ffffff;
+        }
+
+</style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Control de Contenedores</h1>
+            <p class="subtitle">Pegado tipo Excel</p>
+        </div>
+
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-number total" id="stat-total">0</div>
+                <div class="stat-label">Total</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number waiting" id="stat-waiting">0</div>
+                <div class="stat-label">Sin datos</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number found" id="stat-found">0</div>
+                <div class="stat-label">Con datos</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number disappeared" id="stat-disappeared">0</div>
+                <div class="stat-label">Vacíos</div>
+            </div>
+        </div>
+
+        <div class="table-section">
+            <div class="table-header">
+                <h2>Gestión de Contenedores</h2>
+                <div class="table-tools">
+                    <button id="dup-alert" class="dup-alert" type="button" onclick="openDupModal()">
+                        Duplicados: 0
+                    </button>
+                    <div class="countdown" id="iti-countdown">Actualización ITI en 05:00</div>
+                    <div class="table-actions">
+                    <button class="btn-success icon-btn" onclick="saveToDatabase()" title="Guardar">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM6 5h9v4H6V5z"/>
+                        </svg>
+                        <span class="sr-only">Guardar</span>
+                    </button>
+                    <button class="btn-primary icon-btn" onclick="loadFromDatabase()" title="Cargar">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 6V3l-4 4 4 4V8c2.76 0 5 2.24 5 5a5 5 0 0 1-8.9 3h-2.2a7 7 0 0 0 12.1-3A7 7 0 0 0 12 6z"/>
+                        </svg>
+                        <span class="sr-only">Cargar</span>
+                    </button>
+                    <button class="btn-info icon-btn" onclick="exportToExcel()" title="Exportar">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm0 2.5L18.5 9H14V4.5zM8 13h8v2H8v-2zm0 4h8v2H8v-2z"/>
+                        </svg>
+                        <span class="sr-only">Exportar</span>
+                    </button>
+                    <button class="btn-warning icon-btn" onclick="deleteDisappeared()" title="Eliminar">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z"/>
+                        </svg>
+                        <span class="sr-only">Eliminar sin datos</span>
+                    </button>
+                    <button class="btn-danger icon-btn" onclick="clearAll()" title="Vaciar">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 6h18v2H3V6zm2 4h14l-1.5 10h-11L5 10zM9 4h6l1 2H8l1-2z"/>
+                        </svg>
+                        <span class="sr-only">Vaciar</span>
+                    </button>
+                    </div>
+                </div>
+            </div>
+            <div id="hot-container"></div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <div id="dup-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Duplicados en ITI (NUMERO)</div>
+                <button class="modal-close" type="button" onclick="closeDupModal()">Cerrar</button>
+            </div>
+            <div id="dup-modal-list" class="modal-list"></div>
+        </div>
+    </div>
+
+    <script>
+        const DEV_DUPLICATE_MODE = false;
+
+        let hot;
+        let pendingDeleteRows = [];
+        let isDirty = false;
+        let autoRefreshTimer = null;
+        let countdownTimer = null;
+        let nextRefreshAt = null;
+        let lookupTimer = null;
+        let pendingLookup = new Set();
+        let pendingLookupMap = new Map();
+        const AUTO_REFRESH_MS = 5 * 60 * 1000;
+        const groupStore = new Map();
+        const groupKeyIndex = new Map();
+        let groupActionLock = false;
+        let duplicateItems = [];
+
+        function normalizeContainer(value) {
+            if (!value) return '';
+            return String(value).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        }
+
+        function isSixDigitInput(value) {
+            if (!value) return false;
+            return /^\d{6}$/.test(String(value).trim());
+        }
+
+        function isFullContainer(value) {
+            const normalized = normalizeContainer(value);
+            return /^[A-Z]{4}\d{6,7}$/.test(normalized);
+        }
+
+        function buildGroupId() {
+            return `g_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        }
+
+        function getGroupMeta(row, instance) {
+            const inst = instance || hot;
+            if (!inst) return null;
+            return inst.getCellMeta(row, 1);
+        }
+
+        function getRowMetaValue(row, key) {
+            const meta = getGroupMeta(row);
+            return meta ? meta[key] : null;
+        }
+
+        function setRowMetaValues(row, values) {
+            const meta = getGroupMeta(row);
+            if (!meta) return;
+            Object.keys(values).forEach((key) => {
+                meta[key] = values[key];
+            });
+        }
+
+        function getRowKey(row) {
+            const groupKey = getRowMetaValue(row, 'groupKey');
+            if (groupKey) {
+                return groupKey;
+            }
+            const raw = hot.getDataAtCell(row, 1);
+            if (!raw) return '';
+            if (isFullContainer(raw)) {
+                return normalizeContainer(raw);
+            }
+            if (isSixDigitInput(raw)) {
+                return String(raw).trim();
+            }
+            const match = String(raw).match(/(\d{6})/);
+            if (match && !/[A-Z]{4}/i.test(raw)) {
+                return match[1];
+            }
+            return normalizeContainer(raw);
+        }
+
+        function clearGroupMeta(row) {
+            setRowMetaValues(row, {
+                groupId: null,
+                groupRole: null,
+                groupKey: null,
+                groupExpanded: null,
+                groupIndex: null
+            });
+            hot.setCellMeta(row, 1, 'className', null);
+            hot.setCellMeta(row, 4, 'className', null);
+        }
+
+        function countChildRows(row, groupId) {
+            let count = 0;
+            for (let r = row + 1; r < hot.countRows(); r++) {
+                const meta = getGroupMeta(r);
+                if (meta.groupRole === 'child' && meta.groupId === groupId) {
+                    count += 1;
+                } else {
+                    break;
+                }
+            }
+            return count;
+        }
+
+        function collapseGroup(row) {
+            const meta = getGroupMeta(row);
+            if (!meta || meta.groupRole !== 'summary') return;
+            const groupId = meta.groupId;
+            const count = countChildRows(row, groupId);
+            if (count > 0) {
+                hot.alter('remove_row', row + 1, count);
+            }
+            meta.groupExpanded = false;
+            const key = meta.groupKey || getRowKey(row);
+            setRowMetaValues(row, {
+                groupRole: 'summary',
+                groupId: groupId,
+                groupKey: key,
+                groupExpanded: false
+            });
+            hot.setDataAtCell(row, 1, key, 'groupSummary');
+            const group = groupStore.get(groupId);
+            if (group) {
+                group.expanded = false;
+            }
+        }
+
+        function expandGroup(row) {
+            const meta = getGroupMeta(row);
+            if (!meta || meta.groupRole !== 'summary') return;
+            const group = groupStore.get(meta.groupId);
+            if (!group || !group.items || group.items.length === 0) return;
+            const items = group.items;
+            hot.alter('insert_row_below', row, items.length);
+
+            const changes = [];
+            items.forEach((item, idx) => {
+                const childRow = row + 1 + idx;
+                const fullContainer = `${item.sigla || ''}${item.numero || ''}${item.digito || ''}`;
+                const values = [
+                    '',
+                    fullContainer,
+                    item.vessel || '',
+                    item.folio || '',
+                    item.sigla || '',
+                    item.numero || '',
+                    item.digito || '',
+                    item.fecha_entrega || '',
+                    item.pies || ''
+                ];
+                for (let c = 0; c <= 8; c++) {
+                    changes.push([childRow, c, values[c]]);
+                    hot.setCellMeta(childRow, c, 'readOnly', true);
+                }
+                setRowMetaValues(childRow, {
+                    groupRole: 'child',
+                    groupId: meta.groupId,
+                    groupIndex: idx
+                });
+                hot.setCellMeta(childRow, 1, 'className', 'group-child-cell');
+            });
+
+            if (changes.length > 0) {
+                hot.setDataAtCell(changes, 'groupExpand');
+            }
+            meta.groupExpanded = true;
+            const key = meta.groupKey || getRowKey(row);
+            setRowMetaValues(row, {
+                groupRole: 'summary',
+                groupId: meta.groupId,
+                groupKey: key,
+                groupExpanded: true
+            });
+            hot.setDataAtCell(row, 1, key, 'groupSummary');
+            group.expanded = true;
+        }
+
+        function findSummaryRow(startRow, groupId) {
+            for (let r = startRow; r >= 0; r--) {
+                const meta = getGroupMeta(r);
+                if (meta.groupRole === 'summary' && meta.groupId === groupId) return r;
+            }
+            for (let r = 0; r < hot.countRows(); r++) {
+                const meta = getGroupMeta(r);
+                if (meta.groupRole === 'summary' && meta.groupId === groupId) return r;
+            }
+            return null;
+        }
+
+        function clearGroupAtRow(row) {
+            const meta = getGroupMeta(row);
+            if (!meta || !meta.groupId) return;
+            if (meta.groupRole === 'summary') {
+                collapseGroup(row);
+                clearGroupMeta(row);
+            } else if (meta.groupRole === 'child') {
+                const summaryRow = findSummaryRow(row, meta.groupId);
+                if (summaryRow != null) {
+                    collapseGroup(summaryRow);
+                    clearGroupMeta(summaryRow);
+                }
+            }
+            const stored = groupStore.get(meta.groupId);
+            groupStore.delete(meta.groupId);
+            const key = meta.groupKey || (stored ? stored.key : null);
+            if (key) {
+                groupKeyIndex.delete(key);
+            }
+        }
+
+        function applyAmbiguousGroup(row, key, candidates) {
+            clearGroupAtRow(row);
+            const groupId = buildGroupId();
+            groupStore.set(groupId, { key, items: candidates, expanded: false });
+            groupKeyIndex.set(key, groupId);
+
+            setRowMetaValues(row, {
+                groupRole: 'summary',
+                groupId: groupId,
+                groupKey: key,
+                groupExpanded: false
+            });
+            hot.setCellMeta(row, 1, 'className', 'group-summary-cell');
+            hot.setCellMeta(row, 4, 'className', 'group-summary-cell');
+
+            const changes = [
+                [row, 1, key],
+                [row, 4, `${candidates.length} opciones`],
+                [row, 2, ''],
+                [row, 3, ''],
+                [row, 5, ''],
+                [row, 6, ''],
+                [row, 7, ''],
+                [row, 8, '']
+            ];
+            hot.setDataAtCell(changes, 'groupSummary');
+        }
+
+        function selectGroupCandidate(row) {
+            const meta = getGroupMeta(row);
+            if (!meta || meta.groupRole !== 'child') return;
+            const groupId = meta.groupId;
+            const group = groupStore.get(groupId);
+            if (!group) return;
+
+            const summaryRow = findSummaryRow(row, groupId);
+            if (summaryRow == null) return;
+            const item = group.items[meta.groupIndex];
+            if (!item) return;
+
+            collapseGroup(summaryRow);
+
+            const fullContainer = `${item.sigla || ''}${item.numero || ''}${item.digito || ''}`;
+            const changes = [
+                [summaryRow, 1, fullContainer],
+                [summaryRow, 2, item.vessel || ''],
+                [summaryRow, 3, item.folio || ''],
+                [summaryRow, 4, item.sigla || ''],
+                [summaryRow, 5, item.numero || ''],
+                [summaryRow, 6, item.digito || ''],
+                [summaryRow, 7, item.fecha_entrega || ''],
+                [summaryRow, 8, item.pies || '']
+            ];
+            hot.setDataAtCell(changes, 'groupSelect');
+            clearGroupMeta(summaryRow);
+            const key = group.key;
+            groupStore.delete(groupId);
+            if (key) {
+                groupKeyIndex.delete(key);
+            }
+        }
+
+        function recoverSummaryMeta(row) {
+            const value = hot.getDataAtCell(row, 1);
+            if (!value) return false;
+            const key = String(value).trim();
+            const groupId = groupKeyIndex.get(key);
+            if (!groupId) return false;
+            const expanded = countChildRows(row, groupId) > 0;
+            setRowMetaValues(row, {
+                groupRole: 'summary',
+                groupId: groupId,
+                groupKey: key,
+                groupExpanded: expanded
+            });
+            return true;
+        }
+
+        function handleGroupAction(row) {
+            if (groupActionLock) return;
+            let meta = getGroupMeta(row);
+            if (!meta || !meta.groupRole) {
+                const recovered = recoverSummaryMeta(row);
+                if (recovered) {
+                    meta = getGroupMeta(row);
+                }
+            }
+            if (!meta || !meta.groupRole) return;
+            if (meta.groupRole === 'summary') {
+                groupActionLock = true;
+                if (meta.groupExpanded) {
+                    collapseGroup(row);
+                } else {
+                    expandGroup(row);
+                }
+                groupActionLock = false;
+            } else if (meta.groupRole === 'child') {
+                groupActionLock = true;
+                selectGroupCandidate(row);
+                groupActionLock = false;
+            }
+        }
+
+        function groupSummaryRenderer(instance, td, row, col, prop, value, cellProperties) {
+            Handsontable.renderers.TextRenderer.apply(this, arguments);
+            const key = value == null ? '' : String(value).trim();
+            if (!key) return;
+            const groupId = groupKeyIndex.get(key);
+            if (!groupId) return;
+            const group = groupStore.get(groupId);
+            const expanded = group && group.expanded;
+            const icon = expanded ? '▼' : '▶';
+            td.textContent = `${icon} ${key}`;
+            td.classList.add('group-summary-cell');
+        }
+
+        function buildDevBaseItem(key) {
+            return {
+                key: key,
+                vessel: 'Buque DEV',
+                folio: 'DEV',
+                sigla: 'DEMO',
+                numero: key,
+                digito: '0',
+                fecha_entrega: '01/01/2026 00:00',
+                pies: '40'
+            };
+        }
+
+        function injectDevBaseItems(items, keys) {
+            if (!DEV_DUPLICATE_MODE || !Array.isArray(items)) return items;
+            const existing = new Set(items.map(item => item && item.key).filter(Boolean));
+            const result = items.slice();
+            keys.forEach(key => {
+                if (isSixDigitInput(key) && !existing.has(key)) {
+                    result.push(buildDevBaseItem(key));
+                }
+            });
+            return result;
+        }
+
+        function mutateSigla(sigla, seed) {
+            const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const base = (sigla || 'TEST').padEnd(4, 'X').slice(0, 4).toUpperCase();
+            const chars = base.split('');
+            const shift = (seed + 3) % letters.length;
+            const idx = letters.indexOf(chars[0]);
+            chars[0] = letters[(idx >= 0 ? idx : 0 + shift) % letters.length];
+            return chars.join('');
+        }
+
+        function mutateDigito(digito, seed) {
+            if (!digito || !/^\d$/.test(String(digito))) {
+                return String((seed + 7) % 10);
+            }
+            return String((parseInt(digito, 10) + seed + 1) % 10);
+        }
+
+        function mutateVessel(vessel, seed) {
+            const base = vessel || 'Buque';
+            return `${base} ${seed === 0 ? 'II' : 'III'}`;
+        }
+
+        function injectDevDuplicates(items) {
+            if (!DEV_DUPLICATE_MODE || !Array.isArray(items)) return items;
+            const result = items.slice();
+            const candidates = items.filter(item => item && isSixDigitInput(item.key));
+            if (candidates.length === 0) return items;
+            const copies = Math.min(2, candidates.length);
+            for (let i = 0; i < copies; i++) {
+                const base = candidates[i];
+                const clone = { ...base };
+                clone.sigla = mutateSigla(base.sigla, i);
+                clone.digito = mutateDigito(base.digito, i);
+                clone.vessel = mutateVessel(base.vessel, i);
+                result.push(clone);
+            }
+            return result;
+        }
+
+
+        function buildTableData(rows) {
+            const tableData = rows.map(r => [
+                r.company || '',
+                r.container_no || '',
+                r.vessel || '',
+                r.folio || '',
+                r.sigla || '',
+                r.numero || '',
+                r.digito || '',
+                r.fecha_entrega || '',
+                r.pies || ''
+            ]);
+
+            const targetRows = 200;
+            while (tableData.length < targetRows) {
+                tableData.push(['', '', '', '', '', '', '', '', '']);
+            }
+
+            return tableData;
+        }
+
+        function setCountdown(text) {
+            const el = document.getElementById('iti-countdown');
+            if (el) {
+                el.textContent = text;
+            }
+        }
+
+        function updateCountdown() {
+            if (!nextRefreshAt) {
+                setCountdown('Actualización ITI en --:--');
+                return;
+            }
+            const diff = Math.max(0, nextRefreshAt - Date.now());
+            const totalSeconds = Math.ceil(diff / 1000);
+            const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+            const seconds = String(totalSeconds % 60).padStart(2, '0');
+            setCountdown(`Actualización ITI en ${minutes}:${seconds}`);
+        }
+
+        function queueLookup(containers) {
+            containers.forEach((item) => {
+                const value = item && item.value != null ? item.value : item;
+                const row = item && item.row != null ? item.row : null;
+                const key = normalizeContainer(value);
+                if (!key) {
+                    return;
+                }
+                pendingLookup.add(key);
+                if (row != null) {
+                    if (!pendingLookupMap.has(key)) {
+                        pendingLookupMap.set(key, new Set());
+                    }
+                    pendingLookupMap.get(key).add(row);
+                }
+            });
+
+            if (lookupTimer) {
+                clearTimeout(lookupTimer);
+            }
+            lookupTimer = setTimeout(() => {
+                lookupTimer = null;
+                runLookup();
+            }, 400);
+        }
+
+        async function runLookup() {
+            if (pendingLookup.size === 0) {
+                return;
+            }
+            const keys = Array.from(pendingLookup);
+            const keyToRows = new Map(pendingLookupMap);
+            pendingLookup.clear();
+            pendingLookupMap.clear();
+
+            let res;
+            try {
+                res = await fetch('/api/containers/lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ containers: keys })
+                });
+            } catch (e) {
+                showToast('Fallo al consultar ITI', 'error');
+                return;
+            }
+
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (e) {
+                payload = null;
+            }
+
+            if (!res.ok || !payload || !payload.ok) {
+                showToast((payload && payload.msg) ? payload.msg : 'Fallo al consultar ITI', 'error');
+                return;
+            }
+
+            let items = payload.items || [];
+            items = injectDevBaseItems(items, keys);
+            items = injectDevDuplicates(items);
+            const foundKeys = new Set(items.map(item => item.key));
+            applyLookup(items);
+
+            const clearChanges = [];
+            keys.forEach((key) => {
+                if (foundKeys.has(key)) {
+                    return;
+                }
+                const rows = keyToRows.get(key);
+                if (!rows) {
+                    return;
+                }
+                rows.forEach((row) => {
+                    const currentKey = normalizeContainer(hot.getDataAtCell(row, 1));
+                    if (currentKey !== key) {
+                        return;
+                    }
+                    for (let c = 2; c <= 8; c++) {
+                        if (hot.getDataAtCell(row, c) !== '') {
+                            clearChanges.push([row, c, '']);
+                        }
+                    }
+                });
+            });
+
+            if (clearChanges.length > 0) {
+                hot.setDataAtCell(clearChanges, 'autoClear');
+            }
+            updateStats();
+        }
+
+        function applyLookup(items) {
+            if (!items || items.length === 0) {
+                return;
+            }
+
+            const grouped = new Map();
+            items.forEach(item => {
+                if (item && item.key) {
+                    if (!grouped.has(item.key)) {
+                        grouped.set(item.key, []);
+                    }
+                    grouped.get(item.key).push(item);
+                }
+            });
+
+            if (grouped.size === 0) {
+                return;
+            }
+
+            const data = hot.getData();
+            const changes = [];
+
+            for (let i = 0; i < data.length; i++) {
+                const rawValue = data[i][1];
+                const key = getRowKey(i);
+                if (!key) {
+                    continue;
+                }
+                const groupItems = grouped.get(key);
+                if (!groupItems || groupItems.length === 0) {
+                    continue;
+                }
+
+                const isSixKey = /^\d{6}$/.test(String(key));
+                const isSixInput = isSixDigitInput(rawValue) || getRowMetaValue(i, 'groupRole') === 'summary';
+                if (isSixKey && isSixInput && groupItems.length > 1) {
+                    applyAmbiguousGroup(i, key, groupItems);
+                    continue;
+                }
+
+                clearGroupAtRow(i);
+
+                const item = groupItems[0];
+                const values = [
+                    item.vessel || '',
+                    item.folio || '',
+                    item.sigla || '',
+                    item.numero || '',
+                    item.digito || '',
+                    item.fecha_entrega || '',
+                    item.pies || ''
+                ];
+
+                for (let col = 2; col <= 8; col++) {
+                    const nextVal = values[col - 2];
+                    if (data[i][col] !== nextVal) {
+                        changes.push([i, col, nextVal]);
+                    }
+                }
+            }
+
+            if (changes.length > 0) {
+                hot.setDataAtCell(changes, 'autoLookup');
+            }
+            updateStats();
+        }
+
+        function initTable() {
+            const container = document.getElementById('hot-container');
+
+            const sampleData = Array.from({ length: 200 }, () => ['', '', '', '', '', '', '', '', '']);
+
+            hot = new Handsontable(container, {
+                data: sampleData,
+                colHeaders: ['Empresa', 'Contenedor', 'Buque', 'Folio', 'Sigla', 'Número', 'Dígito', 'Fecha Entrega', 'Pies'],
+                columns: [
+                    { data: 0, type: 'text', width: 150 },
+                    { data: 1, type: 'text', width: 150 },
+                    { data: 2, type: 'text', readOnly: true, className: 'htCenter', width: 140 },
+                    { data: 3, type: 'text', readOnly: true, className: 'htCenter', width: 90 },
+                    { data: 4, type: 'text', readOnly: true, className: 'htCenter', width: 90 },
+                    { data: 5, type: 'text', readOnly: true, className: 'htCenter', width: 90 },
+                    { data: 6, type: 'text', readOnly: true, className: 'htCenter', width: 80 },
+                    { data: 7, type: 'text', readOnly: true, className: 'htCenter', width: 160 },
+                    { data: 8, type: 'text', readOnly: true, className: 'htCenter', width: 80 }
+                ],
+                rowHeaders: true,
+                contextMenu: ['row_above', 'row_below', 'remove_row', 'undo', 'redo'],
+                minSpareRows: 3,
+                minRows: 200,
+                stretchH: 'all',
+                height: 500,
+                licenseKey: 'non-commercial-and-evaluation',
+                copyPaste: true,
+                filters: true,
+                dropdownMenu: [
+                    'filter_by_condition',
+                    'filter_by_value',
+                    'filter_action_bar'
+                ],
+                columnSorting: {
+                    indicator: true,
+                    headerAction: true
+                },
+                cells: function(row, col) {
+                    const cellProperties = {};
+                    if (col === 1) {
+                        const value = this.instance.getDataAtCell(row, col);
+                        const key = value == null ? '' : String(value).trim();
+                        if (key && groupKeyIndex.has(key)) {
+                            cellProperties.renderer = groupSummaryRenderer;
+                        }
+                    }
+                    return cellProperties;
+                },
+                beforeRemoveRow: function(index, amount, physicalRows) {
+                    pendingDeleteRows = [];
+                    if (!physicalRows || physicalRows.length === 0) {
+                        return;
+                    }
+
+                    physicalRows.forEach((physicalRow) => {
+                        const row = hot.getSourceDataAtRow(physicalRow) || [];
+                        const company = row[0] || '';
+                        const containerNo = row[1] ? String(row[1]).trim() : '';
+                        if (containerNo) {
+                            pendingDeleteRows.push({
+                                company: company,
+                                container_no: containerNo
+                            });
+                        }
+                    });
+                },
+                afterRemoveRow: async function() {
+                    if (pendingDeleteRows.length === 0) {
+                        return;
+                    }
+                    await deleteRowsFromDatabase(pendingDeleteRows, false);
+                    pendingDeleteRows = [];
+                },
+                afterChange: function(changes, source) {
+                    if (!changes) {
+                        return;
+                    }
+
+                    const ignoreSources = new Set([
+                        'loadData',
+                        'autoRefresh',
+                        'autoLookup',
+                        'autoTrim',
+                        'autoClear',
+                        'groupSummary',
+                        'groupExpand',
+                        'groupSelect'
+                    ]);
+
+                    if (!ignoreSources.has(source)) {
+                        isDirty = true;
+                    }
+
+                    if (!ignoreSources.has(source)) {
+                        const containers = [];
+                        const clearChanges = [];
+
+                        changes.forEach(change => {
+                            const row = change[0];
+                            const prop = change[1];
+                            const oldValue = change[2];
+                            const newValue = change[3];
+                            const col = typeof prop === 'number' ? prop : hot.propToCol(prop);
+
+                            if (col !== 1) {
+                                return;
+                            }
+
+                            clearGroupAtRow(row);
+
+                            const raw = newValue == null ? '' : String(newValue);
+                            const trimmed = raw.trim();
+                            const oldRaw = oldValue == null ? '' : String(oldValue);
+                            const oldTrimmed = oldRaw.trim();
+
+                            if (trimmed !== raw) {
+                                hot.setDataAtCell(row, col, trimmed, 'autoTrim');
+                            }
+
+                            if (trimmed === '') {
+                                for (let c = 2; c <= 8; c++) {
+                                    if (hot.getDataAtCell(row, c) !== '') {
+                                        clearChanges.push([row, c, '']);
+                                    }
+                                }
+                                return;
+                            }
+
+                            if (normalizeContainer(trimmed) !== normalizeContainer(oldTrimmed)) {
+                                for (let c = 2; c <= 8; c++) {
+                                    if (hot.getDataAtCell(row, c) !== '') {
+                                        clearChanges.push([row, c, '']);
+                                    }
+                                }
+                            }
+
+                            containers.push({ row, value: trimmed });
+                        });
+
+                        if (clearChanges.length > 0) {
+                            hot.setDataAtCell(clearChanges, 'autoClear');
+                        }
+
+                        if (containers.length > 0) {
+                            queueLookup(containers);
+                        }
+                    }
+
+                    updateStats();
+                },
+                afterOnCellMouseDown: function(event, coords) {
+                    if (!coords || coords.row == null || coords.row < 0) {
+                        return;
+                    }
+                    handleGroupAction(coords.row);
+                }
+            });
+
+            updateStats();
+        }
+
+        function updateStats() {
+            const data = hot.getData();
+            const validRows = data.filter(row => row[1] && String(row[1]).trim() !== '');
+
+            const matched = validRows.filter(row => row[3] && String(row[3]).trim() !== '').length;
+            const unmatched = validRows.length - matched;
+            const emptyRows = data.length - validRows.length;
+
+            document.getElementById('stat-total').textContent = validRows.length;
+            document.getElementById('stat-waiting').textContent = unmatched;
+            document.getElementById('stat-found').textContent = matched;
+            document.getElementById('stat-disappeared').textContent = emptyRows;
+        }
+
+        async function saveToDatabase() {
+            const data = hot.getData();
+            const validRows = data
+                .map(row => ({
+                    company: row[0] || '',
+                    container_no: row[1] ? String(row[1]).trim() : ''
+                }))
+                .filter(row => row.container_no !== '');
+
+            if (validRows.length === 0) {
+                if (!confirm('La tabla está vacía. ¿Vaciar la base de datos?')) {
+                    return;
+                }
+            }
+
+            showToast('Guardando y consultando ITI...', 'info');
+
+            let res;
+            try {
+                res = await fetch('/api/containers/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rows: validRows })
+                });
+            } catch (e) {
+                showToast('Fallo de conexión con la API', 'error');
+                nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
+                updateCountdown();
+                return;
+            }
+
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (e) {
+                payload = null;
+            }
+
+            if (!res.ok || !payload || !payload.ok) {
+                showToast((payload && payload.msg) ? payload.msg : 'Error al guardar', 'error');
+                return;
+            }
+
+            await loadFromDatabase(false);
+            if (validRows.length === 0) {
+                showToast('Base de datos vaciada', 'success');
+            } else if (payload.iti_ok === false) {
+                showToast('Guardado, pero falló la consulta ITI (solo se guardó el contenedor)', 'info');
+            } else {
+                showToast(`Guardado ${payload.rows.length} registros y consultado ITI`, 'success');
+            }
+        }
+
+        async function loadFromDatabase(showMessage = true) {
+            if (showMessage) {
+                showToast('Cargando datos...', 'info');
+            }
+
+            let res;
+            try {
+                res = await fetch('/api/containers/list');
+            } catch (e) {
+                showToast('Fallo de conexión con la API', 'error');
+                return;
+            }
+
+            if (!res.ok) {
+                showToast('Error al cargar', 'error');
+                return;
+            }
+
+            const rows = await res.json();
+            hot.loadData(buildTableData(rows));
+            isDirty = false;
+            updateStats();
+
+            if (showMessage) {
+                showToast('Datos cargados', 'success');
+            }
+        }
+
+        function mergeItiIntoTable(rows) {
+            const map = new Map();
+            rows.forEach(r => {
+                const key = normalizeContainer(r.container_no);
+                if (key && !map.has(key)) {
+                    map.set(key, r);
+                }
+            });
+
+            const data = hot.getData();
+            const changes = [];
+
+            for (let i = 0; i < data.length; i++) {
+                const key = normalizeContainer(data[i][1]);
+                if (!key) continue;
+                const r = map.get(key);
+                if (!r) continue;
+
+                const values = [
+                    r.vessel || '',
+                    r.folio || '',
+                    r.sigla || '',
+                    r.numero || '',
+                    r.digito || '',
+                    r.fecha_entrega || '',
+                    r.pies || ''
+                ];
+
+                for (let col = 2; col <= 8; col++) {
+                    const nextVal = values[col - 2];
+                    if (data[i][col] !== nextVal) {
+                        changes.push([i, col, nextVal]);
+                    }
+                }
+            }
+
+            if (changes.length > 0) {
+                hot.setDataAtCell(changes, 'autoRefresh');
+            }
+            updateStats();
+        }
+
+        async function refreshFromITI(showMessage = true) {
+            if (showMessage) {
+                showToast('Actualizando datos desde ITI...', 'info');
+            }
+            setCountdown('Actualizando ITI...');
+
+            let res;
+            try {
+                res = await fetch('/api/containers/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force: true })
+                });
+            } catch (e) {
+                showToast('Fallo de conexión con la API', 'error');
+                return;
+            }
+
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (e) {
+                payload = null;
+            }
+
+            if (!res.ok || !payload || !payload.ok) {
+                showToast((payload && payload.msg) ? payload.msg : 'Error al actualizar', 'error');
+                nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
+                updateCountdown();
+                return;
+            }
+
+            let rows = [];
+            try {
+                const listRes = await fetch('/api/containers/list');
+                if (listRes.ok) {
+                    rows = await listRes.json();
+                }
+            } catch (e) {
+                rows = [];
+            }
+
+            if (!isDirty) {
+                hot.loadData(buildTableData(rows));
+                isDirty = false;
+                updateStats();
+            } else {
+                mergeItiIntoTable(rows);
+            }
+
+            if (showMessage) {
+                showToast(`Actualizados ${payload.updated} registros`, 'success');
+            }
+            await fetchDuplicateInfo(false);
+            nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
+            updateCountdown();
+        }
+
+        function exportToExcel() {
+            const data = hot.getData();
+            const headers = [];
+            for (let i = 0; i < 9; i++) {
+                headers.push(hot.getColHeader(i));
+            }
+
+            const rows = data.filter(row => row[1] && String(row[1]).trim() !== '');
+            if (rows.length === 0) {
+                showToast('No hay datos para exportar', 'error');
+                return;
+            }
+
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const filename = `contenedores_${yyyy}${mm}${dd}.xlsx`;
+
+            if (window.XLSX) {
+                const aoa = [headers, ...rows];
+                const ws = XLSX.utils.aoa_to_sheet(aoa);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Contenedores');
+                XLSX.writeFile(wb, filename);
+                showToast('Archivo Excel exportado', 'success');
+                return;
+            }
+
+            showToast('No se pudo exportar a XLSX (biblioteca faltante)', 'error');
+        }
+
+        async function deleteDisappeared() {
+            if (!confirm('¿Eliminar todos los contenedores sin datos?')) {
+                return;
+            }
+
+            let res;
+            try {
+                res = await fetch('/api/containers/delete_disappeared', {
+                    method: 'POST'
+                });
+            } catch (e) {
+                showToast('Fallo de conexión con la API', 'error');
+                return;
+            }
+
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (e) {
+                payload = null;
+            }
+
+            if (!res.ok || !payload || !payload.ok) {
+                showToast('Error al eliminar', 'error');
+                return;
+            }
+
+            await loadFromDatabase(false);
+            showToast(`Eliminados ${payload.deleted} contenedores sin datos`, 'success');
+        }
+
+        async function clearAll() {
+            if (!confirm('¿Vaciar todos los datos?')) {
+                return;
+            }
+
+            let res;
+            try {
+                res = await fetch('/api/containers/clear', {
+                    method: 'POST'
+                });
+            } catch (e) {
+                showToast('Fallo de conexión con la API', 'error');
+                return;
+            }
+
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (e) {
+                payload = null;
+            }
+
+            if (!res.ok || !payload || !payload.ok) {
+                showToast('Error al vaciar', 'error');
+                return;
+            }
+
+            hot.loadData(Array.from({ length: 200 }, () => ['', '', '', '', '', '', '', '', '']));
+            isDirty = false;
+            showToast('Tabla vaciada', 'success');
+            updateStats();
+        }
+
+        async function deleteRowsFromDatabase(rows, showMessage = true) {
+            if (!rows || rows.length === 0) {
+                return true;
+            }
+
+            let res;
+            try {
+                res = await fetch('/api/containers/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rows: rows })
+                });
+            } catch (e) {
+                showToast('Fallo de conexión con la API', 'error');
+                return false;
+            }
+
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (e) {
+                payload = null;
+            }
+
+            if (!res.ok || !payload || !payload.ok) {
+                showToast('Error al eliminar', 'error');
+                return false;
+            }
+
+            if (showMessage) {
+                showToast(`Eliminados ${payload.deleted} registros`, 'success');
+            }
+
+            return true;
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        function updateDuplicateIndicator(dups) {
+            duplicateItems = Array.isArray(dups) ? dups : [];
+            const btn = document.getElementById('dup-alert');
+            if (!btn) return;
+            if (duplicateItems.length > 0) {
+                btn.classList.add('show');
+                btn.textContent = `Duplicados: ${duplicateItems.length}`;
+            } else {
+                btn.classList.remove('show');
+                btn.textContent = 'Duplicados: 0';
+            }
+        }
+
+        async function fetchDuplicateInfo(force = false) {
+            let res;
+            try {
+                res = await fetch(`/api/iti/duplicates?force=${force ? 1 : 0}`);
+            } catch (e) {
+                updateDuplicateIndicator([]);
+                return;
+            }
+            if (!res.ok) {
+                updateDuplicateIndicator([]);
+                return;
+            }
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (e) {
+                payload = null;
+            }
+            if (!payload || !payload.ok) {
+                updateDuplicateIndicator([]);
+                return;
+            }
+            updateDuplicateIndicator(payload.duplicates || []);
+        }
+
+        function openDupModal() {
+            if (!duplicateItems || duplicateItems.length === 0) {
+                return;
+            }
+            const modal = document.getElementById('dup-modal');
+            const list = document.getElementById('dup-modal-list');
+            if (!modal || !list) return;
+            while (list.firstChild) {
+                list.removeChild(list.firstChild);
+            }
+            duplicateItems.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'modal-row';
+
+                const numero = document.createElement('div');
+                numero.textContent = item.numero || '';
+
+                const count = document.createElement('div');
+                count.textContent = item.count != null ? String(item.count) : '';
+                count.className = 'modal-muted';
+
+                const siglas = document.createElement('div');
+                siglas.textContent = (item.siglas && item.siglas.length > 0) ? item.siglas.join(', ') : '-';
+
+                row.appendChild(numero);
+                row.appendChild(count);
+                row.appendChild(siglas);
+                list.appendChild(row);
+            });
+
+            modal.classList.add('show');
+            modal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeDupModal() {
+            const modal = document.getElementById('dup-modal');
+            if (!modal) return;
+            modal.classList.remove('show');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+
+        function startAutoRefresh() {
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+            }
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+            }
+            autoRefreshTimer = setInterval(() => {
+                refreshFromITI(false);
+            }, AUTO_REFRESH_MS);
+            nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
+            updateCountdown();
+            countdownTimer = setInterval(updateCountdown, 1000);
+        }
+
+        window.onload = async function() {
+            initTable();
+            await loadFromDatabase(false);
+            await refreshFromITI(false);
+            await fetchDuplicateInfo(false);
+            startAutoRefresh();
+
+            const modal = document.getElementById('dup-modal');
+            if (modal) {
+                modal.addEventListener('click', function(event) {
+                    if (event.target === modal) {
+                        closeDupModal();
+                    }
+                });
+            }
+        };
+    </script>
+    <script>
+        async function sendHeartbeat() {
+            try {
+                await fetch('/container/access/heartbeat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        window.addEventListener('load', () => {
+            sendHeartbeat();
+            setInterval(sendHeartbeat, 60000);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Required</title>
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f8fafc;
+            color: #0f172a;
+            margin: 0;
+            padding: 40px 16px;
+        }
+        .card {
+            max-width: 520px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            padding: 24px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+        }
+        h1 {
+            font-size: 20px;
+            margin: 0 0 12px;
+        }
+        p {
+            margin: 6px 0;
+            color: #475569;
+        }
+        .reason {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            color: #9a3412;
+            padding: 8px 10px;
+            border-radius: 8px;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Access Required</h1>
+        <p>This page needs a valid access key.</p>
+        {% if reason %}
+        <div class="reason">Reason: {{ reason }}</div>
+        {% endif %}
+    </div>
+</body>
+</html>

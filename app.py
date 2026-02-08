@@ -18,6 +18,7 @@ from database import get_db_connection, init_database, get_lastrowid, get_cursor
 from blueprints.user_auth_bp import user_auth_bp
 from blueprints.api_auth_bp import api_auth_bp
 from blueprints.monitor_bp import monitor_bp
+from blueprints.container_bp import container_bp
 from services.config_service import config_service
 
 # 導入郵件代理 Blueprint（PythonAnywhere 端使用，可選）
@@ -34,6 +35,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = config.PERMANENT_SESSION_LIFETIME
 app.register_blueprint(user_auth_bp)
 app.register_blueprint(api_auth_bp)
 app.register_blueprint(monitor_bp)
+app.register_blueprint(container_bp)
 
 # 註冊郵件代理 Blueprint（PythonAnywhere 端使用，可選）
 # 如果要在 PythonAnywhere 上使用代理功能，取消下面的註釋
