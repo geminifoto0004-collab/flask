@@ -292,10 +292,6 @@
             border: 1px solid var(--border);
         }
 
-        .table-container.dropdown-open {
-            padding-bottom: 220px;
-        }
-
         table {
             width: 100%;
             border-collapse: collapse;
@@ -337,6 +333,25 @@
 
         tbody tr:last-child td {
             border-bottom: none;
+        }
+
+        /* Keep actions visible even when table scrolls horizontally */
+        th.sticky-actions,
+        td.sticky-actions {
+            position: sticky;
+            right: 0;
+            background: var(--surface);
+            z-index: 5;
+        }
+
+        thead th.sticky-actions {
+            background: var(--bg-tertiary);
+            z-index: 11;
+        }
+
+        td.sticky-actions {
+            box-shadow: -8px 0 12px -10px rgba(15, 23, 42, 0.35);
+            min-width: 200px;
         }
 
         /* Code/Token display */
@@ -396,146 +411,7 @@
             display: flex;
             gap: 6px;
             align-items: center;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-
-        tr:hover .action-group {
             opacity: 1;
-        }
-
-        /* Dropdown menu */
-        .dropdown {
-            position: relative;
-            display: inline-block;
-        }
-
-        .dropdown-toggle {
-            padding: 6px 8px;
-            min-width: 32px;
-            height: 32px;
-            background: var(--surface-elevated);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-        }
-
-        .dropdown-toggle:hover {
-            background: var(--bg-tertiary);
-            border-color: var(--border-hover);
-        }
-
-        .dropdown-toggle svg {
-            width: 16px;
-            height: 16px;
-        }
-
-        .dropdown-menu {
-            position: fixed;
-            left: 0;
-            top: 0;
-            right: auto;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            box-shadow: var(--shadow-lg);
-            min-width: 160px;
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
-            transform: translateY(-4px);
-            transition: all 0.2s ease;
-        }
-
-        /* Show dropdown upward for last rows */
-        .dropdown-upward .dropdown-menu {
-            top: 0;
-            bottom: auto;
-        }
-
-        .dropdown.active .dropdown-menu {
-            opacity: 1;
-            visibility: visible;
-            transform: translateY(0);
-        }
-
-        .dropdown-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 14px;
-            font-size: 13px;
-            color: var(--text-primary);
-            cursor: pointer;
-            border: none;
-            background: none;
-            width: 100%;
-            text-align: left;
-            transition: background 0.15s ease;
-            font-family: "Inter", sans-serif;
-        }
-
-        .dropdown-item:first-child {
-            border-radius: 8px 8px 0 0;
-        }
-
-        .dropdown-item:last-child {
-            border-radius: 0 0 8px 8px;
-        }
-
-        .dropdown-item:hover {
-            background: var(--bg-tertiary);
-        }
-
-        .dropdown-item svg {
-            width: 16px;
-            height: 16px;
-            flex-shrink: 0;
-        }
-
-        .dropdown-item.danger {
-            color: var(--warn);
-        }
-
-        .dropdown-item.danger:hover {
-            background: var(--warn-soft);
-        }
-
-        .dropdown-divider {
-            height: 1px;
-            background: var(--border);
-            margin: 4px 0;
-        }
-
-        /* Quick action button (Copy) */
-        .quick-action {
-            padding: 6px 10px;
-            height: 32px;
-            background: var(--surface-elevated);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--text-primary);
-            transition: all 0.2s ease;
-        }
-
-        .quick-action:hover {
-            background: var(--bg-tertiary);
-            border-color: var(--border-hover);
-        }
-
-        .quick-action svg {
-            width: 14px;
-            height: 14px;
         }
 
         /* Helper text */
@@ -892,35 +768,21 @@
                     <td style="color: var(--text-muted); font-size: 12px;">${token.last_used_at || 'Never'}</td>
                     <td class="sticky-actions">
                         <div class="action-group">
-                            <div class="dropdown">
-                                <button class="dropdown-toggle" onclick="toggleDropdown(this)">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
-                                </button>
-                                <div class="dropdown-menu">
-                                    <button class="dropdown-item" onclick="saveToken(${token.id}, this); closeDropdown(this);">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                                        Save Changes
-                                    </button>
-                                    <button class="dropdown-item" onclick="copyUrl('${token.token}'); closeDropdown(this);">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                        Copy URL
-                                    </button>
-                                    <div class="dropdown-divider"></div>
-                                    <button class="dropdown-item" onclick="clearSessions(${token.id}); closeDropdown(this);">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                                        Clear Sessions
-                                    </button>
-                                    <button class="dropdown-item" onclick="kickToken(${token.id}); closeDropdown(this);">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                                        Kick Users
-                                    </button>
-                                    <div class="dropdown-divider"></div>
-                                    <button class="dropdown-item danger" onclick="deleteToken(${token.id}); closeDropdown(this);">
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                        Delete Token
-                                    </button>
-                                </div>
-                            </div>
+                            <button class="btn btn-secondary btn-sm btn-icon" data-tooltip="Save" onclick="saveToken(${token.id}, this)">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                            </button>
+                            <button class="btn btn-secondary btn-sm btn-icon" data-tooltip="Copy URL" onclick="copyUrl('${token.token}')">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            </button>
+                            <button class="btn btn-secondary btn-sm btn-icon" data-tooltip="Clear Sessions" onclick="clearSessions(${token.id})">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            </button>
+                            <button class="btn btn-secondary btn-sm btn-icon" data-tooltip="Kick Users" onclick="kickToken(${token.id})">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                            </button>
+                            <button class="btn btn-danger btn-sm btn-icon" data-tooltip="Delete" onclick="deleteToken(${token.id})">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
                         </div>
                     </td>
                 `;
@@ -1007,104 +869,6 @@
                 prompt('Copy this URL:', url);
             }
         }
-
-        // Dropdown functions
-        function toggleDropdown(btn) {
-            const dropdown = btn.closest('.dropdown');
-            const wasActive = dropdown.classList.contains('active');
-            const tableContainer = btn.closest('.table-container');
-            
-            // Close all dropdowns
-            document.querySelectorAll('.dropdown.active').forEach(d => {
-                d.classList.remove('active');
-                d.classList.remove('dropdown-upward');
-                const menu = d.querySelector('.dropdown-menu');
-                if (menu) {
-                    menu.style.left = '';
-                    menu.style.top = '';
-                }
-            });
-            document.querySelectorAll('.table-container.dropdown-open').forEach(tc => {
-                tc.classList.remove('dropdown-open');
-            });
-            
-            // Toggle current dropdown
-            if (!wasActive) {
-                dropdown.classList.add('active');
-                if (tableContainer) {
-                    tableContainer.classList.add('dropdown-open');
-                }
-                requestAnimationFrame(() => positionDropdown(dropdown, btn));
-            }
-        }
-
-        function closeDropdown(element) {
-            const dropdown = element.closest('.dropdown');
-            if (dropdown) {
-                dropdown.classList.remove('active');
-                dropdown.classList.remove('dropdown-upward');
-                const menu = dropdown.querySelector('.dropdown-menu');
-                if (menu) {
-                    menu.style.left = '';
-                    menu.style.top = '';
-                }
-            }
-            const tableContainer = element.closest('.table-container');
-            if (tableContainer) {
-                tableContainer.classList.remove('dropdown-open');
-            }
-        }
-
-        function positionDropdown(dropdown, btn) {
-            const menu = dropdown.querySelector('.dropdown-menu');
-            if (!menu) return;
-
-            const btnRect = btn.getBoundingClientRect();
-            const menuRect = menu.getBoundingClientRect();
-            const margin = 8;
-            let left = btnRect.right - menuRect.width;
-            if (left < margin) left = margin;
-            if (left + menuRect.width > window.innerWidth - margin) {
-                left = Math.max(margin, window.innerWidth - margin - menuRect.width);
-            }
-
-            let top = btnRect.bottom + 6;
-            let openUp = false;
-            if (top + menuRect.height > window.innerHeight - margin) {
-                const altTop = btnRect.top - menuRect.height - 6;
-                if (altTop >= margin) {
-                    top = altTop;
-                    openUp = true;
-                }
-            }
-
-            if (openUp) {
-                dropdown.classList.add('dropdown-upward');
-            } else {
-                dropdown.classList.remove('dropdown-upward');
-            }
-
-            menu.style.left = `${Math.round(left)}px`;
-            menu.style.top = `${Math.round(top)}px`;
-        }
-
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.dropdown')) {
-                document.querySelectorAll('.dropdown.active').forEach(d => {
-                    d.classList.remove('active');
-                    d.classList.remove('dropdown-upward');
-                    const menu = d.querySelector('.dropdown-menu');
-                    if (menu) {
-                        menu.style.left = '';
-                        menu.style.top = '';
-                    }
-                });
-                document.querySelectorAll('.table-container.dropdown-open').forEach(tc => {
-                    tc.classList.remove('dropdown-open');
-                });
-            }
-        });
 
         // Initialize
         loadTokens();
