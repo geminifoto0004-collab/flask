@@ -280,12 +280,12 @@
         }
 
         /* First row tooltips show downward */
-        .btn-icon.tooltip-down::before {
+        tbody tr:first-child .btn-icon::before {
             top: calc(100% + 8px);
             bottom: auto;
         }
 
-        .btn-icon.tooltip-down::after {
+        tbody tr:first-child .btn-icon::after {
             top: calc(100% + 2px);
             bottom: auto;
             border-top-color: transparent;
@@ -800,9 +800,6 @@
                     </td>
                 `;
                 tbody.appendChild(tr);
-                if (index === 0) {
-                    tr.querySelectorAll('.btn-icon').forEach(btn => btn.classList.add('tooltip-down'));
-                }
             });
         }
 
