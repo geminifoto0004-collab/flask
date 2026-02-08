@@ -1494,8 +1494,6 @@
                     'info'
                 );
             }
-            setCountdown(force ? 'Actualizando ITI...' : 'Consultando ITI...');
-
             let res;
             try {
                 res = await fetch('/api/containers/refresh', {
