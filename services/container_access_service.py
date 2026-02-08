@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from database import get_db_connection, get_cursor, get_row_dict
 from utils.time_utils import get_chile_time_naive
 
-DEFAULT_SESSION_TIMEOUT_MINUTES = 20
+DEFAULT_SESSION_TIMEOUT_MINUTES = 2
 
 
 def _coerce_int(value: Optional[str]) -> Optional[int]:
