@@ -285,26 +285,36 @@ def _select_container_rows(cursor, access_key: str) -> List[Dict[str, Any]]:
 @container_bp.route("/api/containers/save", methods=["POST"])
 @container_access_required
 def save_containers():
+    t0 = time.time()
     data = request.get_json(force=True) or {}
     rows = data.get("rows", [])
     access_key, error = _require_access_key()
     if error:
         return error
 
+    t_conn0 = time.time()
     conn = get_db_connection()
+    t_conn1 = time.time()
     cursor = get_cursor(conn)
 
     iti_index = {}
     iti_ok = True
+    t_iti0 = time.time()
     try:
         iti_index = get_iti_index()
     except Exception:
         iti_ok = False
+    t_iti1 = time.time()
 
     if not rows:
         cursor.execute("DELETE FROM container_items WHERE access_token = ?", (access_key,))
         conn.commit()
         conn.close()
+        t_end = time.time()
+        print(
+            "[perf] /api/containers/save rows=0 "
+            f"total={t_end - t0:.3f}s conn={t_conn1 - t_conn0:.3f}s iti={t_iti1 - t_iti0:.3f}s"
+        )
         return jsonify({"ok": True, "rows": [], "iti_ok": iti_ok, "deleted": cursor.rowcount or 0})
 
     cursor.execute("DELETE FROM container_items WHERE access_token = ?", (access_key,))
@@ -392,13 +402,20 @@ def save_containers():
 
     conn.commit()
     conn.close()
+    t_end = time.time()
+    print(
+        f"[perf] /api/containers/save rows={len(results)} "
+        f"total={t_end - t0:.3f}s conn={t_conn1 - t_conn0:.3f}s iti={t_iti1 - t_iti0:.3f}s"
+    )
     return jsonify({"ok": True, "rows": results, "iti_ok": iti_ok})
 
 
 @container_bp.route("/api/containers/list")
 @container_access_required
 def list_containers():
+    t0 = time.time()
     conn = get_db_connection()
+    t_conn1 = time.time()
     cursor = get_cursor(conn)
     access_key, error = _require_access_key()
     if error:
@@ -406,6 +423,11 @@ def list_containers():
         return error
     rows = _select_container_rows(cursor, access_key)
     conn.close()
+    t_end = time.time()
+    print(
+        f"[perf] /api/containers/list rows={len(rows)} "
+        f"total={t_end - t0:.3f}s conn={t_conn1 - t0:.3f}s"
+    )
     return jsonify(rows)
 
 
@@ -580,6 +602,7 @@ def refresh_containers():
 @container_bp.route("/api/containers/delete", methods=["POST"])
 @container_access_required
 def delete_containers():
+    t0 = time.time()
     data = request.get_json(force=True) or {}
     rows = data.get("rows", [])
     access_key, error = _require_access_key()
@@ -590,6 +613,7 @@ def delete_containers():
         return jsonify({"ok": False, "msg": "no data"}), 400
 
     conn = get_db_connection()
+    t_conn1 = time.time()
     cursor = get_cursor(conn)
     deleted = 0
 
@@ -611,6 +635,11 @@ def delete_containers():
 
     conn.commit()
     conn.close()
+    t_end = time.time()
+    print(
+        f"[perf] /api/containers/delete deleted={deleted} "
+        f"total={t_end - t0:.3f}s conn={t_conn1 - t0:.3f}s"
+    )
     return jsonify({"ok": True, "deleted": deleted})
 
 
