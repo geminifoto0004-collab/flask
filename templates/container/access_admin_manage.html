@@ -664,9 +664,22 @@
             }
         }
 
+        const AUTO_REFRESH_MS = 15000;
+        let autoRefreshTimer = null;
+
+        function startAutoRefresh() {
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+            }
+            autoRefreshTimer = setInterval(() => {
+                if (document.hidden) return;
+                loadTokens();
+            }, AUTO_REFRESH_MS);
+        }
+
         // Initialize
         loadTokens();
-        setInterval(loadTokens, 60000);
+        startAutoRefresh();
     </script>
 </body>
 </html>
