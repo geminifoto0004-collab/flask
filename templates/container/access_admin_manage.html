@@ -292,6 +292,10 @@
             border: 1px solid var(--border);
         }
 
+        .table-container.dropdown-open {
+            padding-bottom: 220px;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -431,9 +435,10 @@
         }
 
         .dropdown-menu {
-            position: absolute;
-            right: 0;
-            top: calc(100% + 4px);
+            position: fixed;
+            left: 0;
+            top: 0;
+            right: auto;
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -448,8 +453,8 @@
 
         /* Show dropdown upward for last rows */
         .dropdown-upward .dropdown-menu {
-            top: auto;
-            bottom: calc(100% + 4px);
+            top: 0;
+            bottom: auto;
         }
 
         .dropdown.active .dropdown-menu {
@@ -1007,26 +1012,29 @@
         function toggleDropdown(btn) {
             const dropdown = btn.closest('.dropdown');
             const wasActive = dropdown.classList.contains('active');
+            const tableContainer = btn.closest('.table-container');
             
             // Close all dropdowns
             document.querySelectorAll('.dropdown.active').forEach(d => {
                 d.classList.remove('active');
                 d.classList.remove('dropdown-upward');
+                const menu = d.querySelector('.dropdown-menu');
+                if (menu) {
+                    menu.style.left = '';
+                    menu.style.top = '';
+                }
+            });
+            document.querySelectorAll('.table-container.dropdown-open').forEach(tc => {
+                tc.classList.remove('dropdown-open');
             });
             
             // Toggle current dropdown
             if (!wasActive) {
                 dropdown.classList.add('active');
-                
-                // Check if dropdown needs to open upward
-                const rect = dropdown.getBoundingClientRect();
-                const spaceBelow = window.innerHeight - rect.bottom;
-                const spaceAbove = rect.top;
-                
-                // If less than 300px below and more space above, open upward
-                if (spaceBelow < 300 && spaceAbove > spaceBelow) {
-                    dropdown.classList.add('dropdown-upward');
+                if (tableContainer) {
+                    tableContainer.classList.add('dropdown-open');
                 }
+                requestAnimationFrame(() => positionDropdown(dropdown, btn));
             }
         }
 
@@ -1035,7 +1043,49 @@
             if (dropdown) {
                 dropdown.classList.remove('active');
                 dropdown.classList.remove('dropdown-upward');
+                const menu = dropdown.querySelector('.dropdown-menu');
+                if (menu) {
+                    menu.style.left = '';
+                    menu.style.top = '';
+                }
             }
+            const tableContainer = element.closest('.table-container');
+            if (tableContainer) {
+                tableContainer.classList.remove('dropdown-open');
+            }
+        }
+
+        function positionDropdown(dropdown, btn) {
+            const menu = dropdown.querySelector('.dropdown-menu');
+            if (!menu) return;
+
+            const btnRect = btn.getBoundingClientRect();
+            const menuRect = menu.getBoundingClientRect();
+            const margin = 8;
+            let left = btnRect.right - menuRect.width;
+            if (left < margin) left = margin;
+            if (left + menuRect.width > window.innerWidth - margin) {
+                left = Math.max(margin, window.innerWidth - margin - menuRect.width);
+            }
+
+            let top = btnRect.bottom + 6;
+            let openUp = false;
+            if (top + menuRect.height > window.innerHeight - margin) {
+                const altTop = btnRect.top - menuRect.height - 6;
+                if (altTop >= margin) {
+                    top = altTop;
+                    openUp = true;
+                }
+            }
+
+            if (openUp) {
+                dropdown.classList.add('dropdown-upward');
+            } else {
+                dropdown.classList.remove('dropdown-upward');
+            }
+
+            menu.style.left = `${Math.round(left)}px`;
+            menu.style.top = `${Math.round(top)}px`;
         }
 
         // Close dropdowns when clicking outside
@@ -1044,6 +1094,14 @@
                 document.querySelectorAll('.dropdown.active').forEach(d => {
                     d.classList.remove('active');
                     d.classList.remove('dropdown-upward');
+                    const menu = d.querySelector('.dropdown-menu');
+                    if (menu) {
+                        menu.style.left = '';
+                        menu.style.top = '';
+                    }
+                });
+                document.querySelectorAll('.table-container.dropdown-open').forEach(tc => {
+                    tc.classList.remove('dropdown-open');
                 });
             }
         });
