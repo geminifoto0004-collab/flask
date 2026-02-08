@@ -294,7 +294,7 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 13px;
-            min-width: 1000px;
+            min-width: 760px;
         }
 
         thead {
@@ -313,12 +313,14 @@
             letter-spacing: 0.5px;
             color: var(--text-muted);
             border-bottom: 1px solid var(--border);
+            background: var(--bg-tertiary);
         }
 
         td {
             padding: 14px 12px;
             border-bottom: 1px solid var(--border);
             vertical-align: middle;
+            background: var(--surface);
         }
 
         tbody tr {
@@ -375,12 +377,20 @@
             display: flex;
             gap: 6px;
             align-items: center;
-            opacity: 0;
-            transition: opacity 0.2s ease;
+            opacity: 1;
         }
 
-        tr:hover .action-group {
-            opacity: 1;
+        .sticky-actions {
+            position: sticky;
+            right: 0;
+            background: var(--surface);
+            box-shadow: -8px 0 12px rgba(15, 23, 42, 0.08);
+            z-index: 3;
+        }
+
+        th.sticky-actions {
+            background: var(--bg-tertiary);
+            z-index: 4;
         }
 
         /* Dropdown menu */
@@ -606,6 +616,29 @@
             gap: 10px;
         }
 
+        /* Toast */
+        .toast {
+            position: fixed;
+            right: 20px;
+            bottom: 24px;
+            background: var(--text-primary);
+            color: #ffffff;
+            padding: 10px 14px;
+            border-radius: 10px;
+            box-shadow: var(--shadow-lg);
+            font-size: 13px;
+            opacity: 0;
+            transform: translateY(10px);
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 3000;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
         /* Responsive */
         @media (max-width: 1024px) {
             .form-row {
@@ -728,7 +761,6 @@
                     <thead>
                         <tr>
                             <th>Token</th>
-                            <th>Access</th>
                             <th>Note</th>
                             <th>Status</th>
                             <th>Blocked Until</th>
@@ -736,7 +768,7 @@
                             <th>Max</th>
                             <th>Active</th>
                             <th>Last Used</th>
-                            <th>Actions</th>
+                            <th class="sticky-actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="token-rows"></tbody>
@@ -759,6 +791,7 @@
             </div>
         </div>
     </div>
+    <div class="toast" id="toast"></div>
 
     <script>
         async function api(url, options) {
@@ -778,8 +811,10 @@
         const modalInput = document.getElementById('modal-input');
         const modalCancel = document.getElementById('modal-cancel');
         const modalConfirm = document.getElementById('modal-confirm');
+        const toastEl = document.getElementById('toast');
         let modalResolver = null;
         let modalAutoCloseTimer = null;
+        let toastTimer = null;
 
         function closeModal(result) {
             if (modalAutoCloseTimer) {
@@ -828,6 +863,7 @@
                 modalInput.readOnly = false;
                 modalCancel.style.display = hideCancel ? 'none' : 'inline-flex';
             }
+            modalConfirm.style.display = 'inline-flex';
 
             modalOverlay.classList.add('show');
             modalOverlay.setAttribute('aria-hidden', 'false');
@@ -842,6 +878,7 @@
             }, 0);
 
             if (autoCloseMs && mode === 'alert') {
+                modalConfirm.style.display = 'none';
                 modalAutoCloseTimer = setTimeout(() => {
                     closeModal({ ok: true });
                 }, autoCloseMs);
@@ -877,6 +914,18 @@
             }
         });
 
+        function showToast(message) {
+            if (!toastEl) return;
+            toastEl.textContent = message;
+            toastEl.classList.add('show');
+            if (toastTimer) {
+                clearTimeout(toastTimer);
+            }
+            toastTimer = setTimeout(() => {
+                toastEl.classList.remove('show');
+            }, 1400);
+        }
+
         function formatDate(value) {
             if (!value) return '';
             return value.slice(0, 10);
@@ -895,11 +944,8 @@
                 loadErrorShown = false;
             } catch (e) {
                 if (!loadErrorShown) {
-                    await showModal({
-                        title: 'Load Failed',
-                        message: `Failed to load tokens. ${e.message || ''}`.trim(),
-                        mode: 'alert'
-                    });
+                    const msg = `Failed to load tokens. ${e.message || ''}`.trim();
+                    showToast(msg);
                     loadErrorShown = true;
                 }
                 return;
@@ -911,7 +957,7 @@
             if (data.tokens.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="10" class="empty-state">
+                        <td colspan="9" class="empty-state">
                             <div>No tokens created yet. Create your first token above to get started.</div>
                         </td>
                     </tr>
@@ -923,12 +969,6 @@
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><span class="mono">${token.token}</span></td>
-                    <td>
-                        <button class="quick-action" onclick="copyUrl('${token.token}')">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                            Copy
-                        </button>
-                    </td>
                     <td><input class="input-note" value="${token.note || ''}" placeholder="Add note..."></td>
                     <td>
                         <select class="input-sm">
@@ -941,12 +981,8 @@
                     <td><input class="input-sm" type="number" min="1" value="${token.max_concurrent || ''}" placeholder="Unlimited"></td>
                     <td><strong>${token.active_sessions || 0}</strong></td>
                     <td style="color: var(--text-muted); font-size: 12px;">${token.last_used_at || 'Never'}</td>
-                    <td>
+                    <td class="sticky-actions">
                         <div class="action-group">
-                            <button class="quick-action" onclick="copyUrl('${token.token}')">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                Copy
-                            </button>
                             <div class="dropdown">
                                 <button class="dropdown-toggle" onclick="toggleDropdown(this)">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
@@ -999,11 +1035,7 @@
                 document.getElementById('new-max').value = '';
                 await loadTokens();
             } catch (e) {
-                await showModal({
-                    title: 'Create Failed',
-                    message: `Error creating token: ${e.message}`,
-                    mode: 'alert'
-                });
+                showToast(`Error creating token: ${e.message}`);
             }
         }
 
@@ -1022,11 +1054,7 @@
                 });
                 await loadTokens();
             } catch (e) {
-                await showModal({
-                    title: 'Save Failed',
-                    message: `Error saving token: ${e.message}`,
-                    mode: 'alert'
-                });
+                showToast(`Error saving token: ${e.message}`);
             }
         }
 
@@ -1044,11 +1072,7 @@
                 await api(`/container/access-admin/tokens/${id}`, { method: 'DELETE' });
                 await loadTokens();
             } catch (e) {
-                await showModal({
-                    title: 'Delete Failed',
-                    message: `Error deleting token: ${e.message}`,
-                    mode: 'alert'
-                });
+                showToast(`Error deleting token: ${e.message}`);
             }
         }
 
@@ -1057,11 +1081,7 @@
                 await api(`/container/access-admin/tokens/${id}/clear-sessions`, { method: 'POST' });
                 await loadTokens();
             } catch (e) {
-                await showModal({
-                    title: 'Clear Failed',
-                    message: `Error clearing sessions: ${e.message}`,
-                    mode: 'alert'
-                });
+                showToast(`Error clearing sessions: ${e.message}`);
             }
         }
 
@@ -1079,11 +1099,7 @@
             if (!result.ok) return;
             const minutes = parseInt(result.value || '0', 10);
             if (Number.isNaN(minutes) || minutes < 0) {
-                await showModal({
-                    title: 'Invalid Value',
-                    message: 'Please enter a valid number of minutes.',
-                    mode: 'alert'
-                });
+                showToast('Please enter a valid number of minutes.');
                 return;
             }
             
@@ -1095,11 +1111,7 @@
                 });
                 await loadTokens();
             } catch (e) {
-                await showModal({
-                    title: 'Kick Failed',
-                    message: `Error kicking users: ${e.message}`,
-                    mode: 'alert'
-                });
+                showToast(`Error kicking users: ${e.message}`);
             }
         }
 
@@ -1107,12 +1119,7 @@
             const url = buildAccessUrl(token);
             try {
                 await navigator.clipboard.writeText(url);
-                await showModal({
-                    title: 'Copied',
-                    message: 'URL copied to clipboard.',
-                    mode: 'alert',
-                    autoCloseMs: 1200
-                });
+                showToast('URL copied');
             } catch (e) {
                 await showModal({
                     title: 'Copy URL',
