@@ -270,6 +270,26 @@ def update_token(
 def delete_token(token_id: int) -> None:
     conn = get_db_connection()
     cursor = get_cursor(conn)
+    cursor.execute("SELECT token FROM container_access_tokens WHERE id = ?", (token_id,))
+    row = cursor.fetchone()
+    token_value = None
+    if row:
+        data = get_row_dict(row, cursor)
+        if data:
+            token_value = data.get("token")
+        elif isinstance(row, (list, tuple)):
+            token_value = row[0]
+
+    if token_value:
+        cursor.execute(
+            "DELETE FROM container_items WHERE access_token = ?",
+            (token_value,),
+        )
+        cursor.execute(
+            "DELETE FROM container_access_sessions WHERE token = ?",
+            (token_value,),
+        )
+
     cursor.execute("DELETE FROM container_access_tokens WHERE id = ?", (token_id,))
     conn.commit()
     conn.close()

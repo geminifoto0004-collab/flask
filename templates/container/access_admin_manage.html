@@ -501,6 +501,32 @@
             margin-bottom: 18px;
         }
 
+        .modal-field {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 18px;
+        }
+
+        .modal-field label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .modal-field input {
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .modal-hint {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
         .modal-actions {
             display: flex;
             justify-content: flex-end;
@@ -685,6 +711,11 @@
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
             <h3 id="confirm-title">Confirm Action</h3>
             <p id="confirm-message">Are you sure?</p>
+            <div class="modal-field" id="confirm-minutes-row">
+                <label for="confirm-minutes">Block minutes (optional)</label>
+                <input id="confirm-minutes" type="number" min="0" placeholder="Leave empty to just kick">
+                <div class="modal-hint">Use 0 to clear block.</div>
+            </div>
             <div class="modal-actions">
                 <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
                 <button class="btn btn-danger" id="confirm-ok">Delete</button>
@@ -968,14 +999,14 @@
         }
 
         async function kickToken(id) {
-            const ok = await showConfirm('Kick all active users from this token?', 'Kick Users');
-            if (!ok) return;
+            const result = await showKickPrompt();
+            if (!result.ok) return;
             
             try {
                 await api(`/container/access-admin/tokens/${id}/kick`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ minutes: null })
+                    body: JSON.stringify({ minutes: result.minutes })
                 });
                 await loadTokens();
             } catch (e) {
@@ -1035,15 +1066,38 @@
         }
 
         let confirmResolver = null;
+        let confirmMode = 'basic';
         const confirmModal = document.getElementById('confirm-modal');
         const confirmMessage = document.getElementById('confirm-message');
         const confirmOk = document.getElementById('confirm-ok');
         const confirmCancel = document.getElementById('confirm-cancel');
+        const confirmMinutesRow = document.getElementById('confirm-minutes-row');
+        const confirmMinutes = document.getElementById('confirm-minutes');
 
         function showConfirm(message, okText) {
             if (!confirmModal) return Promise.resolve(false);
+            confirmMode = 'basic';
+            if (confirmMinutesRow) {
+                confirmMinutesRow.style.display = 'none';
+            }
             confirmMessage.textContent = message || 'Are you sure?';
             confirmOk.textContent = okText || 'Confirm';
+            confirmModal.classList.add('show');
+            return new Promise(resolve => {
+                confirmResolver = resolve;
+            });
+        }
+
+        function showKickPrompt() {
+            if (!confirmModal) return Promise.resolve({ ok: false, minutes: null });
+            confirmMode = 'kick';
+            confirmMessage.textContent = 'Kick all active users from this token?';
+            confirmOk.textContent = 'Kick Users';
+            if (confirmMinutesRow && confirmMinutes) {
+                confirmMinutesRow.style.display = 'flex';
+                confirmMinutes.value = '';
+                confirmMinutes.focus();
+            }
             confirmModal.classList.add('show');
             return new Promise(resolve => {
                 confirmResolver = resolve;
@@ -1053,6 +1107,9 @@
         function closeConfirm(result) {
             if (!confirmModal) return;
             confirmModal.classList.remove('show');
+            if (confirmMinutesRow) {
+                confirmMinutesRow.style.display = 'none';
+            }
             if (confirmResolver) {
                 confirmResolver(result);
                 confirmResolver = null;
@@ -1060,10 +1117,36 @@
         }
 
         if (confirmOk && confirmCancel && confirmModal) {
-            confirmOk.addEventListener('click', () => closeConfirm(true));
-            confirmCancel.addEventListener('click', () => closeConfirm(false));
+            confirmOk.addEventListener('click', () => {
+                if (confirmMode === 'kick') {
+                    let minutes = null;
+                    if (confirmMinutes) {
+                        const raw = confirmMinutes.value.trim();
+                        if (raw !== '') {
+                            const parsed = Number(raw);
+                            minutes = Number.isFinite(parsed) ? parsed : null;
+                        }
+                    }
+                    closeConfirm({ ok: true, minutes });
+                    return;
+                }
+                closeConfirm(true);
+            });
+            confirmCancel.addEventListener('click', () => {
+                if (confirmMode === 'kick') {
+                    closeConfirm({ ok: false, minutes: null });
+                    return;
+                }
+                closeConfirm(false);
+            });
             confirmModal.addEventListener('click', (e) => {
-                if (e.target === confirmModal) closeConfirm(false);
+                if (e.target === confirmModal) {
+                    if (confirmMode === 'kick') {
+                        closeConfirm({ ok: false, minutes: null });
+                        return;
+                    }
+                    closeConfirm(false);
+                }
             });
         }
 
