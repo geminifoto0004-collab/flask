@@ -1,7 +1,7 @@
 """
-Flask ?��?管�?系統 - 資�?庫管??
-?�能：�?始�?表、�?供�?��?�數?�遷�?
-?��?：SQLite (PythonAnywhere)?�PostgreSQL (Render) ??MySQL/TiDB (TiDB Cloud)
+Flask ?æ?ç®¡ç?ç³»çµ± - è³æ?åº«ç®¡??
+?è½ï¼å?å§å?è¡¨ãæ?ä¾é?¥?æ¸?é·ç§?
+?¯æ?ï¼SQLite (PythonAnywhere)?PostgreSQL (Render) ??MySQL/TiDB (TiDB Cloud)
 """
 
 import os
@@ -9,11 +9,11 @@ from datetime import datetime
 from config import config
 from utils.time_utils import get_chile_time_naive
 
-# ?��?資�?庫�??��??�相?�模�?
+# ?¹æ?è³æ?åº«é??å??¥ç¸?æ¨¡çµ?
 POSTGRESQL_AVAILABLE = None
 MYSQL_AVAILABLE = None
 
-# ?�試導入 PostgreSQL 模�?（�??��?要�?話�?
+# ?è©¦å°å¥ PostgreSQL æ¨¡ç?ï¼å??é?è¦ç?è©±ï?
 try:
     import psycopg2  # type: ignore
     from psycopg2.extras import RealDictCursor  # type: ignore
@@ -21,37 +21,37 @@ try:
 except ImportError:
     POSTGRESQL_AVAILABLE = False
 
-# ?�在?�要�??�顯示警??
+# ?ªå¨?è¦æ??é¡¯ç¤ºè­¦??
 if not POSTGRESQL_AVAILABLE and config.DATABASE_TYPE == 'postgresql':
-    print("?��?  PostgreSQL 模�??��?裝�?請�?�? pip install psycopg2-binary")
+    print("? ï?  PostgreSQL æ¨¡ç??ªå?è£ï?è«é?è¡? pip install psycopg2-binary")
 
-# ?�試導入 MySQL/TiDB 模�?（�??��?要�?話�?
+# ?è©¦å°å¥ MySQL/TiDB æ¨¡ç?ï¼å??é?è¦ç?è©±ï?
 try:
     import pymysql  # noqa: F401
-    pymysql.install_as_MySQLdb()  # �?pymysql ?�容 MySQLdb
+    pymysql.install_as_MySQLdb()  # ä½?pymysql ?¼å®¹ MySQLdb
     MYSQL_AVAILABLE = True
 except ImportError:
     MYSQL_AVAILABLE = False
 
-# ?�在?�要�??�顯示警??
+# ?ªå¨?è¦æ??é¡¯ç¤ºè­¦??
 if not MYSQL_AVAILABLE and config.DATABASE_TYPE in ('mysql', 'tidb'):
-    print("?��?  MySQL/TiDB 模�??��?裝�?請�?�? pip install PyMySQL")
+    print("? ï?  MySQL/TiDB æ¨¡ç??ªå?è£ï?è«é?è¡? pip install PyMySQL")
 
-# SQLite ??Python 標�?庫�?總是?�用
+# SQLite ??Python æ¨æ?åº«ï?ç¸½æ¯?¯ç¨
 import sqlite3  # noqa: F401
 
 
-# ========== SQL ?�數?��?符適??==========
+# ========== SQL ?æ¸? ä?ç¬¦é©??==========
 def adapt_sql(sql):
     """
-    ?��? SQL 語句?��??��?位符
-    SQLite 使用 ?，PostgreSQL/MySQL/TiDB 使用 %s
-    ?��??�容?��??�??SQL 語句?�使???，此?�數?�自?��??�為 %s（PostgreSQL/MySQL/TiDB�?
+    ?©é? SQL èªå¥?å??¸å?ä½ç¬¦
+    SQLite ä½¿ç¨ ?ï¼PostgreSQL/MySQL/TiDB ä½¿ç¨ %s
+    ?ºä??¼å®¹?§ï????SQL èªå¥?½ä½¿???ï¼æ­¤?½æ¸?èª?è??çº %sï¼PostgreSQL/MySQL/TiDBï¼?
     """
     if config.DATABASE_TYPE in ('postgresql', 'mysql', 'tidb'):
-        # �?? 轉�???%s（�?要注?��?要替?��?符串中�? ?�?
-        # 簡單?�替?��?將�???? ?��???%s
-        # 注�?：這可?�在?��?複�? SQL 中出?��?，�?對於大�??��?況都?�用
+        # å°?? è½æ???%sï¼ä?è¦æ³¨?ä?è¦æ¿?å?ç¬¦ä¸²ä¸­ç? ?ï¼?
+        # ç°¡å®?æ¿?ï?å°æ???? ?¿æ???%s
+        # æ³¨æ?ï¼éå¯?½å¨?ä?è¤é? SQL ä¸­åº?é?ï¼ä?å°æ¼å¤§å??¸æ?æ³é½?©ç¨
         return sql.replace('?', '%s')
     else:
         return sql
@@ -59,16 +59,16 @@ def adapt_sql(sql):
 
 def execute_sql(cursor, sql, params=None):
     """
-    ?��? SQL 語句?�統一?�口，自?��??��??��?位符轉�?
-    ?�數�?
-        cursor - 資�?庫游�?
-        sql - SQL 語句（可以使??? ?��?符�??�自?��??�為 %s 如�???PostgreSQL�?
-        params - ?�數?��??��?表�??�選�?
-    返�?：cursor.execute() ?��???
-    使用範�?�?
+    ?·è? SQL èªå¥?çµ±ä¸?¥å£ï¼èª?è??å??¸å?ä½ç¬¦è½æ?
+    ?æ¸ï¼?
+        cursor - è³æ?åº«æ¸¸æ¨?
+        sql - SQL èªå¥ï¼å¯ä»¥ä½¿??? ? ä?ç¬¦ï??èª?è??çº %s å¦æ???PostgreSQLï¼?
+        params - ?æ¸?ç??å?è¡¨ï??¯é¸ï¼?
+    è¿å?ï¼cursor.execute() ?ç???
+    ä½¿ç¨ç¯ä?ï¼?
         execute_sql(cursor, 'SELECT * FROM users WHERE id = ?', (user_id,))
     """
-    # 如�???PostgreSQL，自?��???? ??%s
+    # å¦æ???PostgreSQLï¼èª?è???? ??%s
     adapted_sql = adapt_sql(sql)
     
     if params:
@@ -79,50 +79,50 @@ def execute_sql(cursor, sql, params=None):
 
 def executemany_sql(cursor, sql, params_list):
     """
-    ?��??��? SQL 語句?�統一?�口，自?��??��??��?位符轉�?
-    ?�數�?
-        cursor - 資�?庫游�?
-        sql - SQL 語句（可以使??? ?��?符�??�自?��??�為 %s 如�???PostgreSQL�?
-        params_list - ?�數?�表
-    返�?：cursor.executemany() ?��???
-    使用範�?�?
+    ?¹é??·è? SQL èªå¥?çµ±ä¸?¥å£ï¼èª?è??å??¸å?ä½ç¬¦è½æ?
+    ?æ¸ï¼?
+        cursor - è³æ?åº«æ¸¸æ¨?
+        sql - SQL èªå¥ï¼å¯ä»¥ä½¿??? ? ä?ç¬¦ï??èª?è??çº %s å¦æ???PostgreSQLï¼?
+        params_list - ?æ¸?è¡¨
+    è¿å?ï¼cursor.executemany() ?ç???
+    ä½¿ç¨ç¯ä?ï¼?
         executemany_sql(cursor, 'INSERT INTO users (name) VALUES (?)', [('Alice',), ('Bob',)])
     """
-    # 如�???PostgreSQL，自?��???? ??%s
+    # å¦æ???PostgreSQLï¼èª?è???? ??%s
     adapted_sql = adapt_sql(sql)
     return cursor.executemany(adapted_sql, params_list)
 
 
-# ========== 資�?庫�?�� ==========
+# ========== è³æ?åº«é?¥ ==========
 def get_db_connection():
     """
-    ?��?資�?庫�?��
-    返�?：�??�庫??��對象（SQLite?�PostgreSQL ??MySQL/TiDB�?
+    ?²å?è³æ?åº«é?¥
+    è¿å?ï¼è??åº«??¥å°è±¡ï¼SQLite?PostgreSQL ??MySQL/TiDBï¼?
     """
     try:
         if config.DATABASE_TYPE == 'postgresql':
             if not POSTGRESQL_AVAILABLE:
-                raise ImportError("PostgreSQL 模�??��?裝�?請�?�? pip install psycopg2-binary")
+                raise ImportError("PostgreSQL æ¨¡ç??ªå?è£ï?è«é?è¡? pip install psycopg2-binary")
             
             if not config.DATABASE_URL:
-                raise ValueError("DATABASE_URL ?��?變數?�設置�?Render ?�自?��?供�?")
+                raise ValueError("DATABASE_URL ?°å?è®æ¸?ªè¨­ç½®ï?Render ?èª?æ?ä¾ï?")
             
-            # PostgreSQL ??��
+            # PostgreSQL ??¥
             conn = psycopg2.connect(config.DATABASE_URL)
-            # 設置?��??�交??False（�? SQLite 行為一?��?
+            # è¨­ç½®?ªå??äº¤??Falseï¼è? SQLite è¡çºä¸?´ï?
             conn.autocommit = False
-            # ?��???��以自?�適??cursor
+            # ?è???¥ä»¥èª?é©??cursor
             return AdaptedConnection(conn)
         elif config.DATABASE_TYPE in ('mysql', 'tidb'):
             if not MYSQL_AVAILABLE:
-                raise ImportError("MySQL/TiDB 模�??��?裝�?請�?�? pip install PyMySQL")
+                raise ImportError("MySQL/TiDB æ¨¡ç??ªå?è£ï?è«é?è¡? pip install PyMySQL")
             
             import pymysql
             
-            # ?��?使用 DATABASE_URL，�??��??��?使用?�獨?��?�?
+            # ?ªå?ä½¿ç¨ DATABASE_URLï¼å??æ??å?ä½¿ç¨?®ç¨?é?ç½?
             if config.DATABASE_URL:
-                # �?? MySQL URL ?��?：mysql://user:password@host:port/database
-                # ?��?TiDB URL ?��?類似
+                # è§?? MySQL URL ?¼å?ï¼mysql://user:password@host:port/database
+                # ?è?TiDB URL ?¼å?é¡ä¼¼
                 import urllib.parse
                 parsed = urllib.parse.urlparse(config.DATABASE_URL)
                 db_config = {
@@ -134,15 +134,15 @@ def get_db_connection():
                     'charset': 'utf8mb4',
                     'autocommit': False
                 }
-                # 檢查 URL ?�數中是?��? SSL 設置
+                # æª¢æ¥ URL ?æ¸ä¸­æ¯?¦æ? SSL è¨­ç½®
                 if parsed.query:
                     query_params = urllib.parse.parse_qs(parsed.query)
                     if query_params.get('ssl_mode') == ['REQUIRED']:
-                        # TiDB Cloud 要�? SSL ??��
+                        # TiDB Cloud è¦æ? SSL ??¥
                         db_config['ssl'] = {'check_hostname': False}
             else:
                 if not config.MYSQL_HOST or not config.MYSQL_USER or not config.MYSQL_DATABASE:
-                    raise ValueError("MySQL/TiDB ??��?�置?�設置�?請設�?DATABASE_URL ??MYSQL_HOST/MYSQL_USER/MYSQL_DATABASE")
+                    raise ValueError("MySQL/TiDB ??¥?ç½®?ªè¨­ç½®ï?è«è¨­ç½?DATABASE_URL ??MYSQL_HOST/MYSQL_USER/MYSQL_DATABASE")
                 db_config = {
                     'host': config.MYSQL_HOST,
                     'port': config.MYSQL_PORT,
@@ -153,62 +153,62 @@ def get_db_connection():
                     'autocommit': False
                 }
             
-            # TiDB Cloud 要�? SSL ??��，自?��???SSL
-            # 如�? host ?�含 tidbcloud.com，自?��???SSL
+            # TiDB Cloud è¦æ? SSL ??¥ï¼èª?å???SSL
+            # å¦æ? host ?å« tidbcloud.comï¼èª?å???SSL
             if 'tidbcloud.com' in db_config.get('host', '').lower():
                 db_config['ssl'] = {'check_hostname': False}
             
-            # 設置默�?使用 DictCursor（�??��??�格式�?
+            # è¨­ç½®é»è?ä½¿ç¨ DictCursorï¼è??å??¸æ ¼å¼ï?
             import pymysql.cursors
             db_config['cursorclass'] = pymysql.cursors.DictCursor
             
-            # 添�?超�?設置（避?�在 Render 上卡住�?
-            # connect_timeout: ??��超�?（�?�?
-            # read_timeout: 讀?��??��?秒�?
-            # write_timeout: 寫入超�?（�?�?
-            db_config['connect_timeout'] = 10  # 10 秒�?��超�?
-            db_config['read_timeout'] = 10     # 10 秒�??��???
-            db_config['write_timeout'] = 10    # 10 秒寫?��???
+            # æ·»å?è¶æ?è¨­ç½®ï¼é¿?å¨ Render ä¸å¡ä½ï?
+            # connect_timeout: ??¥è¶æ?ï¼ç?ï¼?
+            # read_timeout: è®?è??ï?ç§ï?
+            # write_timeout: å¯«å¥è¶æ?ï¼ç?ï¼?
+            db_config['connect_timeout'] = 10  # 10 ç§é?¥è¶æ?
+            db_config['read_timeout'] = 10     # 10 ç§è??è???
+            db_config['write_timeout'] = 10    # 10 ç§å¯«?¥è???
             
-            # MySQL/TiDB ??��
+            # MySQL/TiDB ??¥
             conn = pymysql.connect(**db_config)
-            # ?��???��以自?�適??cursor
+            # ?è???¥ä»¥èª?é©??cursor
             return AdaptedConnection(conn)
         else:
-            # SQLite ??��
-            # 確�?資�?庫目?��???
+            # SQLite ??¥
+            # ç¢ºä?è³æ?åº«ç®?å???
             db_dir = os.path.dirname(config.DATABASE_PATH)
             if db_dir and not os.path.exists(db_dir):
                 os.makedirs(db_dir, exist_ok=True)
             
-            # SQLite ??��?�置（優?�並?�性能，避?�在 Render 上卡住�?
-            # timeout: 20 秒�?等�??��??��??��??��??��??�死�?
-            # check_same_thread: False（�?許�?線�?訪�?，Flask ?��?線�??��?
+            # SQLite ??¥?ç½®ï¼åª?ä¸¦?¼æ§è½ï¼é¿?å¨ Render ä¸å¡ä½ï?
+            # timeout: 20 ç§ï?ç­å??å??è??æ??ï??¿å??¡æ­»ï¼?
+            # check_same_thread: Falseï¼å?è¨±å?ç·ç?è¨ªå?ï¼Flask ?¯å?ç·ç??ï?
             conn = sqlite3.connect(
                 config.DATABASE_PATH,
-                timeout=20.0,  # 20 秒�??��??��??��??��?待�?�?
-                check_same_thread=False  # ?�許多�?程訪??
+                timeout=20.0,  # 20 ç§è??ï??¿å??·æ??ç?å¾é?å®?
+                check_same_thread=False  # ?è¨±å¤ç?ç¨è¨ª??
             )
-            conn.row_factory = sqlite3.Row  # 使查詢�??�可以�?字典一�?��??
+            conn.row_factory = sqlite3.Row  # ä½¿æ¥è©¢ç??å¯ä»¥å?å­å¸ä¸æ¨?¨ª??
             
-            # ?�用 WAL 模�?（Write-Ahead Logging）�?高並?�性能
-            # WAL 模�??�許多個�??��?一?�寫?��??�進�?，�?少�?�?
+            # ?ç¨ WAL æ¨¡å?ï¼Write-Ahead Loggingï¼æ?é«ä¸¦?¼æ§è½
+            # WAL æ¨¡å??è¨±å¤åè??å?ä¸?å¯«?¥å??é²è?ï¼æ?å°é?å®?
             try:
                 conn.execute('PRAGMA journal_mode=WAL')
             except Exception:
-                # 如�??�用 WAL 失�?（�?如�?些只讀?�件系統）�?忽略?�誤
+                # å¦æ??ç¨ WAL å¤±æ?ï¼ä?å¦æ?äºåªè®?ä»¶ç³»çµ±ï¼ï?å¿½ç¥?¯èª¤
                 pass
             
-            # ?��???��以自?�適??cursor（即�?SQLite 不�?要�??��?也�??��??�性�?
+            # ?è???¥ä»¥èª?é©??cursorï¼å³ä½?SQLite ä¸é?è¦è??ï?ä¹ä??ä??´æ§ï?
             return AdaptedConnection(conn)
     except Exception as e:
-        print(f"資�?庫�?��失�?: {e}")
+        print(f"è³æ?åº«é?¥å¤±æ?: {e}")
         raise
 
 
-# ========== 資�?庫特定�? SQL 語�? ==========
+# ========== è³æ?åº«ç¹å®ç? SQL èªæ? ==========
 def get_id_type():
-    """?��?主鍵 ID 類�?"""
+    """?²å?ä¸»éµ ID é¡å?"""
     if config.DATABASE_TYPE == 'postgresql':
         return 'SERIAL PRIMARY KEY'
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
@@ -218,17 +218,17 @@ def get_id_type():
 
 
 def get_boolean_type():
-    """?��?布�?類�?"""
+    """?²å?å¸æ?é¡å?"""
     if config.DATABASE_TYPE == 'postgresql':
         return 'BOOLEAN'
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-        return 'BOOLEAN'  # MySQL 5.7.8+ ??TiDB ?��? BOOLEAN
+        return 'BOOLEAN'  # MySQL 5.7.8+ ??TiDB ?¯æ? BOOLEAN
     else:
         return 'INTEGER'
 
 
 def get_text_type():
-    """?��??�本類�?（SQLite ??TEXT，PostgreSQL ??TEXT，MySQL/TiDB ??TEXT�?""
+    """?²å??æ¬é¡å?ï¼SQLite ??TEXTï¼PostgreSQL ??TEXTï¼MySQL/TiDB ??TEXTï¼?""
     if config.DATABASE_TYPE == 'postgresql':
         return 'TEXT'
     else:
@@ -236,47 +236,47 @@ def get_text_type():
 
 def get_text_type_with_default():
     """
-    ?��?帶�?認值�??�本類�?
-    MySQL/TiDB ??TEXT 類�?不支??DEFAULT，�?以使??VARCHAR(255)
-    SQLite ??PostgreSQL 使用 TEXT
+    ?²å?å¸¶é?èªå¼ç??æ¬é¡å?
+    MySQL/TiDB ??TEXT é¡å?ä¸æ¯??DEFAULTï¼æ?ä»¥ä½¿??VARCHAR(255)
+    SQLite ??PostgreSQL ä½¿ç¨ TEXT
     """
     if config.DATABASE_TYPE in ('mysql', 'tidb'):
-        return 'VARCHAR(255)'  # MySQL/TiDB 使用 VARCHAR 以支??DEFAULT
+        return 'VARCHAR(255)'  # MySQL/TiDB ä½¿ç¨ VARCHAR ä»¥æ¯??DEFAULT
     else:
-        return 'TEXT'  # SQLite ??PostgreSQL 使用 TEXT
+        return 'TEXT'  # SQLite ??PostgreSQL ä½¿ç¨ TEXT
 
 def get_text_type_unique():
     """
-    ?��??�於 UNIQUE 約�??��??��???
-    MySQL/TiDB ??TEXT 類�?不能?�接?�於 UNIQUE 約�?，�?以使??VARCHAR(255)
-    SQLite ??PostgreSQL 使用 TEXT
+    ?²å??¨æ¼ UNIQUE ç´æ??æ??¬é???
+    MySQL/TiDB ??TEXT é¡å?ä¸è½?´æ¥?¨æ¼ UNIQUE ç´æ?ï¼æ?ä»¥ä½¿??VARCHAR(255)
+    SQLite ??PostgreSQL ä½¿ç¨ TEXT
     """
     if config.DATABASE_TYPE in ('mysql', 'tidb'):
-        return 'VARCHAR(255)'  # MySQL/TiDB 使用 VARCHAR 以支??UNIQUE 約�?
+        return 'VARCHAR(255)'  # MySQL/TiDB ä½¿ç¨ VARCHAR ä»¥æ¯??UNIQUE ç´æ?
     else:
-        return 'TEXT'  # SQLite ??PostgreSQL 使用 TEXT
+        return 'TEXT'  # SQLite ??PostgreSQL ä½¿ç¨ TEXT
 
 
 def get_timestamp_default():
-    """?��??��??��?認�?""
-    # ?�?��??�庫?�支??CURRENT_TIMESTAMP
+    """?²å??é??³é?èªå?""
+    # ??è??åº«?½æ¯??CURRENT_TIMESTAMP
     return "DEFAULT CURRENT_TIMESTAMP"
 
 
 class AdaptedCursor:
     """
-    ?��???Cursor 類�??��??��? SQL ?�數?��?符�???
-    ?�樣就�??�要修?�現?�代碼�??�??cursor.execute() ?��??��??��?
+    ?è???Cursor é¡ï??ªå??ç? SQL ?æ¸? ä?ç¬¦è???
+    ?æ¨£å°±ä??è¦ä¿®?¹ç¾?ä»£ç¢¼ï????cursor.execute() ?½æ??ªå??©é?
     """
     def __init__(self, cursor):
         self._cursor = cursor
     
     def __getattr__(self, name):
-        # 將�??�其他屬?��??��?委�?給�?�?cursor
+        # å°æ??å¶ä»å±¬?§å??¹æ?å§è?çµ¦å?å§?cursor
         return getattr(self._cursor, name)
     
     def execute(self, sql, params=None):
-        """?��? SQL，自?�適?��??��?位符"""
+        """?·è? SQLï¼èª?é©?å??¸å?ä½ç¬¦"""
         adapted_sql = adapt_sql(sql)
         if params:
             return self._cursor.execute(adapted_sql, params)
@@ -284,32 +284,32 @@ class AdaptedCursor:
             return self._cursor.execute(adapted_sql)
     
     def executemany(self, sql, params_list):
-        """?��??��? SQL，自?�適?��??��?位符"""
+        """?¹é??·è? SQLï¼èª?é©?å??¸å?ä½ç¬¦"""
         adapted_sql = adapt_sql(sql)
         return self._cursor.executemany(adapted_sql, params_list)
 
 
 class AdaptedConnection:
     """
-    ?��???Connection 類�??��??��??�??cursor ??SQL ?�數?��?符�???
-    ?�樣就�??�要修?�現?�代碼�??�??conn.cursor() ?��??��?返�??��???cursor
+    ?è???Connection é¡ï??ªå??ç????cursor ??SQL ?æ¸? ä?ç¬¦è???
+    ?æ¨£å°±ä??è¦ä¿®?¹ç¾?ä»£ç¢¼ï????conn.cursor() ?½æ??ªå?è¿å??©é???cursor
     """
     def __init__(self, conn):
         self._conn = conn
     
     def __getattr__(self, name):
-        # 將�??�其他屬?��??��?委�?給�?始�?��
+        # å°æ??å¶ä»å±¬?§å??¹æ?å§è?çµ¦å?å§é?¥
         return getattr(self._conn, name)
     
     def cursor(self, *args, **kwargs):
-        """?�建 cursor，自?��?裝為 AdaptedCursor"""
+        """?µå»º cursorï¼èª?å?è£çº AdaptedCursor"""
         if config.DATABASE_TYPE == 'postgresql':
             from psycopg2.extras import RealDictCursor  # type: ignore
             cursor = self._conn.cursor(cursor_factory=RealDictCursor, *args, **kwargs)
         elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-            # PyMySQL ??��?�已經設置�? cursorclass=DictCursor
-            # ?�接?�建 cursor ?�可，�??��?使用 DictCursor
-            # 移除任�??�能?��???cursorclass ??cursor ?�數（PyMySQL 不接?��?
+            # PyMySQL ??¥?å·²ç¶è¨­ç½®ä? cursorclass=DictCursor
+            # ?´æ¥?µå»º cursor ?³å¯ï¼æ??ªå?ä½¿ç¨ DictCursor
+            # ç§»é¤ä»»ä??¯è½?³é???cursorclass ??cursor ?æ¸ï¼PyMySQL ä¸æ¥?ï?
             kwargs_clean = {k: v for k, v in kwargs.items() if k not in ('cursorclass', 'cursor', 'cursor_factory')}
             cursor = self._conn.cursor(*args, **kwargs_clean)
         else:
@@ -319,23 +319,23 @@ class AdaptedConnection:
 
 def get_cursor(conn, use_adapter=True):
     """
-    ?��?游�?（PostgreSQL 使用 RealDictCursor，MySQL/TiDB 使用 DictCursor，SQLite 使用?�通游標�?
-    ?�數�?
-        conn - 資�?庫�?��
-        use_adapter - ?�否使用?��??��?默�? True，自?��???SQL ?��?符�??��?
-    返�?：cursor 對象（�???use_adapter=True，�???AdaptedCursor�?
+    ?²å?æ¸¸æ?ï¼PostgreSQL ä½¿ç¨ RealDictCursorï¼MySQL/TiDB ä½¿ç¨ DictCursorï¼SQLite ä½¿ç¨?®éæ¸¸æ¨ï?
+    ?æ¸ï¼?
+        conn - è³æ?åº«é?¥
+        use_adapter - ?¯å¦ä½¿ç¨?©é??¨ï?é»è? Trueï¼èª?è???SQL ? ä?ç¬¦è??ï?
+    è¿å?ï¼cursor å°è±¡ï¼å???use_adapter=Trueï¼è???AdaptedCursorï¼?
     """
     if config.DATABASE_TYPE == 'postgresql':
         from psycopg2.extras import RealDictCursor  # type: ignore
         cursor = conn.cursor(cursor_factory=RealDictCursor)
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-        # PyMySQL ??��?�已經設置�? cursorclass=DictCursor
-        # ?�接?�建 cursor ?�可，�??��?使用 DictCursor
+        # PyMySQL ??¥?å·²ç¶è¨­ç½®ä? cursorclass=DictCursor
+        # ?´æ¥?µå»º cursor ?³å¯ï¼æ??ªå?ä½¿ç¨ DictCursor
         cursor = conn.cursor()
     else:
         cursor = conn.cursor()
     
-    # 如�??�用?��??��??��? cursor 以自?��???SQL ?��?符�???
+    # å¦æ??ç¨?©é??¨ï??è? cursor ä»¥èª?è???SQL ? ä?ç¬¦è???
     if use_adapter:
         return AdaptedCursor(cursor)
     else:
@@ -343,26 +343,26 @@ def get_cursor(conn, use_adapter=True):
 
 
 def get_row_dict(row, cursor):
-    """將查詢�??��??�為字典"""
+    """å°æ¥è©¢ç??è??çºå­å¸"""
     if config.DATABASE_TYPE == 'postgresql':
         return dict(row) if row else None
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-        # PyMySQL DictCursor 已�?返�?字典
+        # PyMySQL DictCursor å·²ç?è¿å?å­å¸
         return dict(row) if row else None
     else:
-        # SQLite Row ?�要�???
+        # SQLite Row ?è¦è???
         if row:
             return {key: row[key] for key in row.keys()}
         return None
 
 
 def get_lastrowid(cursor, conn):
-    """?��??�後�??��? ID"""
+    """?²å??å¾æ??¥ç? ID"""
     if config.DATABASE_TYPE == 'postgresql':
-        # PostgreSQL 使用 LASTVAL()
+        # PostgreSQL ä½¿ç¨ LASTVAL()
         cursor.execute("SELECT LASTVAL()")
         result = cursor.fetchone()
-        # ?��?不�??��??�格�?
+        # ?ç?ä¸å??è??æ ¼å¼?
         if isinstance(result, (list, tuple)):
             return result[0]
         elif isinstance(result, dict):
@@ -370,7 +370,7 @@ def get_lastrowid(cursor, conn):
         else:
             return result
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-        # MySQL/TiDB 使用 LAST_INSERT_ID()
+        # MySQL/TiDB ä½¿ç¨ LAST_INSERT_ID()
         cursor.execute("SELECT LAST_INSERT_ID()")
         result = cursor.fetchone()
         if isinstance(result, (list, tuple)):
@@ -380,12 +380,12 @@ def get_lastrowid(cursor, conn):
         else:
             return result
     else:
-        # SQLite 使用 cursor.lastrowid
+        # SQLite ä½¿ç¨ cursor.lastrowid
         return cursor.lastrowid
 
 
 def check_column_exists(cursor, table_name, column_name):
-    """檢查?�是?��???""
+    """æª¢æ¥?æ¯?¦å???""
     if config.DATABASE_TYPE == 'postgresql':
         cursor.execute("""
             SELECT column_name 
@@ -394,7 +394,7 @@ def check_column_exists(cursor, table_name, column_name):
         """, (table_name, column_name))
         return cursor.fetchone() is not None
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-        # MySQL/TiDB 使用 information_schema（�?�?PostgreSQL�?
+        # MySQL/TiDB ä½¿ç¨ information_schemaï¼é?ä¼?PostgreSQLï¼?
         cursor.execute("""
             SELECT column_name 
             FROM information_schema.columns 
@@ -402,14 +402,14 @@ def check_column_exists(cursor, table_name, column_name):
         """, (table_name, column_name))
         return cursor.fetchone() is not None
     else:
-        # SQLite 使用 PRAGMA
+        # SQLite ä½¿ç¨ PRAGMA
         cursor.execute("PRAGMA table_info({})".format(table_name))
         columns = [column[1] for column in cursor.fetchall()]
         return column_name in columns
 
 
 def get_table_names(cursor):
-    """?��??�?�表??""
+    """?²å???è¡¨??""
     if config.DATABASE_TYPE == 'postgresql':
         cursor.execute("""
             SELECT table_name 
@@ -418,7 +418,7 @@ def get_table_names(cursor):
         """)
         return [row[0] if isinstance(row, tuple) else row['table_name'] for row in cursor.fetchall()]
     elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-        # MySQL/TiDB 使用 information_schema（�?�?PostgreSQL，�?使用 database() ?�數�?
+        # MySQL/TiDB ä½¿ç¨ information_schemaï¼é?ä¼?PostgreSQLï¼ä?ä½¿ç¨ database() ?½æ¸ï¼?
         cursor.execute("""
             SELECT table_name 
             FROM information_schema.tables 
@@ -431,24 +431,24 @@ def get_table_names(cursor):
 
 
 def get_placeholder():
-    """?��? SQL ?�數?��?符�?SQLite ???，PostgreSQL/MySQL/TiDB ??%s�?""
+    """?²å? SQL ?æ¸? ä?ç¬¦ï?SQLite ???ï¼PostgreSQL/MySQL/TiDB ??%sï¼?""
     if config.DATABASE_TYPE in ('postgresql', 'mysql', 'tidb'):
         return '%s'
     else:
         return '?'
 
 
-# ========== 資�?庫�?始�? ==========
+# ========== è³æ?åº«å?å§å? ==========
 def init_database():
     """
-    ?��??��??��??�庫�?
-    如�?表已存在?�跳??
+    ?å??æ??è??åº«è¡?
+    å¦æ?è¡¨å·²å­å¨?è·³??
     """
     conn = get_db_connection()
     cursor = get_cursor(conn)
     
     try:
-        # ?�建 users �?
+        # ?µå»º users è¡?
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id {id_type},
@@ -465,16 +465,16 @@ def init_database():
             text_type_with_default=get_text_type_with_default(),
             timestamp_default=get_timestamp_default()
         ))
-        print("users 表已就�?")
+        print("users è¡¨å·²å°±ç?")
         
-        # 檢查?�否?�要添??company_name ?��??��??�容�?
+        # æª¢æ¥?¯å¦?è¦æ·»??company_name ?ï??å??¼å®¹ï¼?
         if not check_column_exists(cursor, 'users', 'company_name'):
             cursor.execute('ALTER TABLE users ADD COLUMN company_name {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("已添??company_name ?�到 users �?)
+            print("å·²æ·»??company_name ?å° users è¡?)
         
-        # ?�建 services 表�??��??��?�?
+        # ?µå»º services è¡¨ï??å??¢å?ï¼?
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS services (
                 id {id_type},
@@ -493,22 +493,22 @@ def init_database():
             text_type_with_default=get_text_type_with_default(),
             timestamp_default=get_timestamp_default()
         ))
-        print("services 表已就�?")
+        print("services è¡¨å·²å°±ç?")
         
-        # 檢查?�否?�要添?�新?��??��??�容�?
+        # æª¢æ¥?¯å¦?è¦æ·»? æ°?ï??å??¼å®¹ï¼?
         if not check_column_exists(cursor, 'services', 'version'):
             cursor.execute('ALTER TABLE services ADD COLUMN version {text_type_with_default} DEFAULT \'FREE\''.format(
                 text_type_with_default=get_text_type_with_default()
             ))
-            print("已添??version ?�到 services �?)
+            print("å·²æ·»??version ?å° services è¡?)
         
         if not check_column_exists(cursor, 'services', 'config_json'):
             cursor.execute('ALTER TABLE services ADD COLUMN config_json {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("已添??config_json ?�到 services �?)
+            print("å·²æ·»??config_json ?å° services è¡?)
         
-        # ?�建 user_services 表�??�戶購買?��??��?
+        # ?µå»º user_services è¡¨ï??¨æ¶è³¼è²·?æ??ï?
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_services (
                 id {id_type},
@@ -528,16 +528,16 @@ def init_database():
             text_type_with_default=get_text_type_with_default(),
             timestamp_default=get_timestamp_default()
         ))
-        print("user_services 表已就�?")
+        print("user_services è¡¨å·²å°±ç?")
         
-        # 檢查?�否?�要添??config_json ?��??��??�容�?
+        # æª¢æ¥?¯å¦?è¦æ·»??config_json ?ï??å??¼å®¹ï¼?
         if not check_column_exists(cursor, 'user_services', 'config_json'):
             cursor.execute('ALTER TABLE user_services ADD COLUMN config_json {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("已添??config_json ?�到 user_services �?)
+            print("å·²æ·»??config_json ?å° user_services è¡?)
         
-        # ?�建?��??�本�?
+        # ?µå»º?å??æ¬è¡?
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS service_versions (
                 id {id_type},
@@ -552,9 +552,9 @@ def init_database():
             text_type=get_text_type(),
             timestamp_default=get_timestamp_default()
         ))
-        print("service_versions 表已就�?")
+        print("service_versions è¡¨å·²å°±ç?")
         
-        # ?�建?�戶?�話表�??�於記�??�戶上�??�?��?
+        # ?µå»º?¨æ¶?è©±è¡¨ï??¨æ¼è¨é??¨æ¶ä¸ç???ï?
         boolean_type = get_boolean_type()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_sessions (
@@ -575,21 +575,21 @@ def init_database():
             boolean_type=boolean_type,
             timestamp_default=get_timestamp_default()
         ))
-        print("user_sessions 表已就�?")
+        print("user_sessions è¡¨å·²å°±ç?")
         
-        # 檢查並添?�新字段（�?後兼容�?
+        # æª¢æ¥ä¸¦æ·»? æ°å­æ®µï¼å?å¾å¼å®¹ï?
         if not check_column_exists(cursor, 'user_sessions', 'session_token'):
             cursor.execute('ALTER TABLE user_sessions ADD COLUMN session_token VARCHAR(255)')
-            print("已添??session_token ?�到 user_sessions �?)
+            print("å·²æ·»??session_token ?å° user_sessions è¡?)
         
         if not check_column_exists(cursor, 'user_sessions', 'device_info'):
             cursor.execute('ALTER TABLE user_sessions ADD COLUMN device_info {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("已添??device_info ?�到 user_sessions �?)
+            print("å·²æ·»??device_info ?å° user_sessions è¡?)
             
         
-        # ?�建 verification_codes 表�??�件驗�??��?
+        # ?µå»º verification_codes è¡¨ï??µä»¶é©è??¨ï?
         boolean_type = get_boolean_type()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS verification_codes (
@@ -607,9 +607,9 @@ def init_database():
             boolean_type=boolean_type,
             timestamp_default=get_timestamp_default()
         ))
-        print("verification_codes 表已就�?")
+        print("verification_codes è¡¨å·²å°±ç?")
         
-        # ?�建 user_monitor_configs 表�??�戶??��任�??�置�?
+        # ?µå»º user_monitor_configs è¡¨ï??¨æ¶??§ä»»å??ç½®ï¼?
         boolean_type = get_boolean_type()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_monitor_configs (
@@ -635,22 +635,22 @@ def init_database():
             boolean_type=boolean_type,
             timestamp_default=get_timestamp_default()
         ))
-        print("user_monitor_configs 表已就�?")
+        print("user_monitor_configs è¡¨å·²å°±ç?")
         
-        # 檢查?�否?�要添?�新?��??��??�容�?
+        # æª¢æ¥?¯å¦?è¦æ·»? æ°?ï??å??¼å®¹ï¼?
         if not check_column_exists(cursor, 'user_monitor_configs', 'company_name'):
             cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN company_name {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("已添??company_name ?�到 user_monitor_configs �?)
+            print("å·²æ·»??company_name ?å° user_monitor_configs è¡?)
         
         if not check_column_exists(cursor, 'user_monitor_configs', 'email_subject'):
             cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN email_subject {text_type}'.format(
                 text_type=get_text_type()
             ))
-            print("已添??email_subject ?�到 user_monitor_configs �?)
+            print("å·²æ·»??email_subject ?å° user_monitor_configs è¡?)
         
-        # ?�建 async_tasks 表�??�於?�步任�?�?
+        # ?µå»º async_tasks è¡¨ï??¨æ¼?°æ­¥ä»»å?ï¼?
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS async_tasks (
                 id {id_type},
@@ -671,7 +671,7 @@ def init_database():
             text_type_with_default=get_text_type_with_default(),
             timestamp_default=get_timestamp_default()
         ))
-        print("async_tasks 表已就�?")
+        print("async_tasks è¡¨å·²å°±ç?")
 
         # container access admin
         cursor.execute('''
@@ -774,17 +774,17 @@ def init_database():
         ))
         print("container_iti_cache table ready")
         
-        # ?��??��?認�???
+        # ?å??é?èªæ???
         init_default_services(cursor)
         
-        # ?��??�建超�?管�??��?如�?不�??��?
+        # ?ªå??µå»ºè¶ç?ç®¡ç??¡ï?å¦æ?ä¸å??¨ï?
         init_super_admin(cursor)
         
         conn.commit()
-        print("資�?庫�?始�?完�?")
+        print("è³æ?åº«å?å§å?å®æ?")
         
     except Exception as e:
-        print(f"資�?庫�?始�?失�?: {e}")
+        print(f"è³æ?åº«å?å§å?å¤±æ?: {e}")
         import traceback
         traceback.print_exc()
         conn.rollback()
@@ -795,35 +795,35 @@ def init_database():
 
 
 def init_default_services(cursor):
-    """?��??��?認�???""
-    # 檢查?�否已�??��?
+    """?å??é?èªæ???""
+    # æª¢æ¥?¯å¦å·²æ??å?
     cursor.execute('SELECT COUNT(*) FROM services')
     result = cursor.fetchone()
-    # ?��?不�?資�?庫�??��?返�?結�?
+    # ?ç?ä¸å?è³æ?åº«é??ç?è¿å?çµæ?
     if result is None:
         count = 0
     elif isinstance(result, (int, tuple)):
         count = result[0]
     elif isinstance(result, dict):
-        # PostgreSQL RealDictCursor 返�?字典
+        # PostgreSQL RealDictCursor è¿å?å­å¸
         count = result.get('count', result.get(list(result.keys())[0], 0))
     else:
-        # SQLite Row ??PostgreSQL ?��?cursor 返�? tuple-like 對象
+        # SQLite Row ??PostgreSQL ?®é?cursor è¿å? tuple-like å°è±¡
         count = result[0]
     
     if count > 0:
         return
     
-    # ?�入默�??��?
+    # ?å¥é»è??å?
     default_services = [
-        ('?��??��?', '?��?軟�??��??��?', 100.00, 365),
-        ('專業?��?', '專業軟�??��??��?', 300.00, 365),
-        ('企業?��?', '企業級�?體�?權�???, 800.00, 365),
-        ('?�度?��?', '?�度軟�??��??��?', 50.00, 30),
-        ('年度?��?', '年度軟�??��??��?', 500.00, 365)
+        ('?ºç??æ?', '?ºç?è»é??æ??å?', 100.00, 365),
+        ('å°æ¥­?æ?', 'å°æ¥­è»é??æ??å?', 300.00, 365),
+        ('ä¼æ¥­?æ?', 'ä¼æ¥­ç´è?é«æ?æ¬æ???, 800.00, 365),
+        ('?åº¦?æ?', '?åº¦è»é??æ??å?', 50.00, 30),
+        ('å¹´åº¦?æ?', 'å¹´åº¦è»é??æ??å?', 500.00, 365)
     ]
     
-    # ?��?資�?庫�??�使?��??��??�數?��?�?
+    # ?¹æ?è³æ?åº«é??ä½¿?¨ä??ç??æ¸? ä?ç¬?
     placeholder = get_placeholder()
     
     cursor.executemany('''
@@ -831,24 +831,24 @@ def init_default_services(cursor):
         VALUES ({}, {}, {}, {})
     '''.format(placeholder, placeholder, placeholder, placeholder), default_services)
     
-    print("默�??��?已�?始�?")
+    print("é»è??å?å·²å?å§å?")
 
 
 def init_super_admin(cursor):
-    """?��??�建超�?管�??�用?��?如�?不�??��?"""
+    """?ªå??µå»ºè¶ç?ç®¡ç??¡ç¨?¶ï?å¦æ?ä¸å??¨ï?"""
     try:
         from config import admin_config
         from utils.time_utils import get_chile_time_naive
         
-        # 檢查?�否已�???
+        # æª¢æ¥?¯å¦å·²å???
         cursor.execute('SELECT id FROM users WHERE email = ?', (admin_config.SUPER_ADMIN_EMAIL,))
         user_row = cursor.fetchone()
         
         if user_row:
-            # 超�?管�??�已存在，跳??
+            # è¶ç?ç®¡ç??¡å·²å­å¨ï¼è·³??
             return
         
-        # ?�建超�?管�???
+        # ?µå»ºè¶ç?ç®¡ç???
         from services.user_service import hash_password
         password_hash = hash_password(admin_config.SUPER_ADMIN_PASSWORD)
         created_at = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
@@ -860,51 +860,51 @@ def init_super_admin(cursor):
         ''', (admin_config.SUPER_ADMIN_USERNAME, admin_config.SUPER_ADMIN_EMAIL, 
               password_hash, admin_config.SUPER_ADMIN_ROLE, created_at))
         
-        print(f"??超�?管�??�已?��??�建:")
-        print(f"   ?�箱: {admin_config.SUPER_ADMIN_EMAIL}")
-        print(f"   密碼: {admin_config.SUPER_ADMIN_PASSWORD}")
-        print(f"   ?�戶?? {admin_config.SUPER_ADMIN_USERNAME}")
-        print(f"   角色: {admin_config.SUPER_ADMIN_ROLE}")
+        print(f"??è¶ç?ç®¡ç??¡å·²?ªå??µå»º:")
+        print(f"   ?µç®±: {admin_config.SUPER_ADMIN_EMAIL}")
+        print(f"   å¯ç¢¼: {admin_config.SUPER_ADMIN_PASSWORD}")
+        print(f"   ?¨æ¶?? {admin_config.SUPER_ADMIN_USERNAME}")
+        print(f"   è§è²: {admin_config.SUPER_ADMIN_ROLE}")
         
     except Exception as e:
-        print(f"?��?  ?�建超�?管�??�失?? {e}")
-        # 不�??�異常�??��??�止?��?庫�?始�?
+        print(f"? ï?  ?µå»ºè¶ç?ç®¡ç??¡å¤±?? {e}")
+        # ä¸æ??ºç°å¸¸ï??¿å??»æ­¢?¸æ?åº«å?å§å?
         import traceback
         traceback.print_exc()
 
 
-# ========== 資�?庫檢??==========
+# ========== è³æ?åº«æª¢??==========
 def check_database():
     """
-    檢查資�?庫�?表是?��???
-    返�?�?bool, list) - (?�否�?��, ?�誤信息?�表)
+    æª¢æ¥è³æ?åº«å?è¡¨æ¯?¦å???
+    è¿å?ï¼?bool, list) - (?¯å¦æ­?¸¸, ?¯èª¤ä¿¡æ¯?è¡¨)
     """
     errors = []
     
-    # 檢查資�?庫�?��
+    # æª¢æ¥è³æ?åº«é?¥
     try:
         conn = get_db_connection()
         cursor = get_cursor(conn)
     except Exception as e:
-        errors.append(f"資�?庫�?��失�?: {e}")
+        errors.append(f"è³æ?åº«é?¥å¤±æ?: {e}")
         return False, errors
     
-    # 檢查表是?��???
+    # æª¢æ¥è¡¨æ¯?¦å???
     try:
-        # ?��??�?�表??
+        # ?²å???è¡¨??
         tables = get_table_names(cursor)
         
         required_tables = ['users', 'verification_codes', 'services', 'user_services']
         missing_tables = [t for t in required_tables if t not in tables]
         
         if missing_tables:
-            errors.append(f"缺�?�? {', '.join(missing_tables)}")
+            errors.append(f"ç¼ºå?è¡? {', '.join(missing_tables)}")
         
         cursor.close()
         conn.close()
         
     except Exception as e:
-        errors.append(f"資�?庫檢?�失?? {e}")
+        errors.append(f"è³æ?åº«æª¢?¥å¤±?? {e}")
         return False, errors
     
     if errors:
@@ -912,11 +912,11 @@ def check_database():
     return True, []
 
 
-# ========== 資�?庫統�?==========
+# ========== è³æ?åº«çµ±è¨?==========
 def get_database_stats():
     """
-    ?��?資�?庫統計信??
-    返�?：dict - ?�含?�表?��??�數
+    ?²å?è³æ?åº«çµ±è¨ä¿¡??
+    è¿å?ï¼dict - ?å«?è¡¨?è??æ¸
     """
     try:
         conn = get_db_connection()
@@ -924,41 +924,41 @@ def get_database_stats():
         
         stats = {}
         
-        # 輔助?�數：獲??COUNT(*) ?�詢結�?
+        # è¼å©?½æ¸ï¼ç²??COUNT(*) ?¥è©¢çµæ?
         def get_count(result):
-            """�?COUNT(*) ?�詢結�?中�??��???""
+            """å¾?COUNT(*) ?¥è©¢çµæ?ä¸­æ??è???""
             if result is None:
                 return 0
             elif isinstance(result, (int, tuple)):
                 return result[0]
             elif isinstance(result, dict):
-                # PostgreSQL RealDictCursor 返�?字典
+                # PostgreSQL RealDictCursor è¿å?å­å¸
                 return result.get('count', result.get(list(result.keys())[0], 0))
             else:
-                # SQLite Row ??PostgreSQL ?��?cursor 返�? tuple-like 對象
+                # SQLite Row ??PostgreSQL ?®é?cursor è¿å? tuple-like å°è±¡
                 return result[0]
         
-        # 統�? users
+        # çµ±è? users
         cursor.execute("SELECT COUNT(*) FROM users")
         result = cursor.fetchone()
         stats['users'] = get_count(result)
         
-        # 統�? services
+        # çµ±è? services
         cursor.execute("SELECT COUNT(*) FROM services")
         result = cursor.fetchone()
         stats['services'] = get_count(result)
         
-        # 統�? user_services
+        # çµ±è? user_services
         cursor.execute("SELECT COUNT(*) FROM user_services")
         result = cursor.fetchone()
         stats['user_services'] = get_count(result)
         
-        # 統�? active user_services
+        # çµ±è? active user_services
         cursor.execute("SELECT COUNT(*) FROM user_services WHERE status='active'")
         result = cursor.fetchone()
         stats['active_user_services'] = get_count(result)
         
-        # 統�? verification_codes
+        # çµ±è? verification_codes
         cursor.execute("SELECT COUNT(*) FROM verification_codes")
         result = cursor.fetchone()
         stats['verification_codes'] = get_count(result)
@@ -968,43 +968,43 @@ def get_database_stats():
         return stats
         
     except Exception as e:
-        print(f"??統�?失�?: {e}")
+        print(f"??çµ±è?å¤±æ?: {e}")
         return {}
 
 
-# ========== 測試程�? ==========
+# ========== æ¸¬è©¦ç¨å? ==========
 if __name__ == '__main__':
     print("=" * 50)
-    print("資�?庫管?�工??)
+    print("è³æ?åº«ç®¡?å·¥??)
     print("=" * 50)
     
-    print(f"\n資�?庫�??? {config.DATABASE_TYPE}")
+    print(f"\nè³æ?åº«é??? {config.DATABASE_TYPE}")
     if config.DATABASE_TYPE == 'sqlite':
-        print(f"資�?庫路�? {config.DATABASE_PATH}")
-        # 檢查資�?庫目??
+        print(f"è³æ?åº«è·¯å¾? {config.DATABASE_PATH}")
+        # æª¢æ¥è³æ?åº«ç®??
         db_dir = os.path.dirname(config.DATABASE_PATH)
         if not os.path.exists(db_dir):
-            print(f"?��?  ?�建資�?庫目?? {db_dir}")
+            print(f"? ï?  ?µå»ºè³æ?åº«ç®?? {db_dir}")
             os.makedirs(db_dir, exist_ok=True)
     else:
-        print(f"資�?�?URL: {config.DATABASE_URL[:20]}..." if config.DATABASE_URL else "?�設�?)
+        print(f"è³æ?åº?URL: {config.DATABASE_URL[:20]}..." if config.DATABASE_URL else "?ªè¨­ç½?)
     
-    # ?��??��??�庫
-    print("\n[1] ?��??��??�庫...")
+    # ?å??è??åº«
+    print("\n[1] ?å??è??åº«...")
     init_database()
     
-    # 檢查資�?�?
-    print("\n[2] 檢查資�?�?..")
+    # æª¢æ¥è³æ?åº?
+    print("\n[2] æª¢æ¥è³æ?åº?..")
     ok, errors = check_database()
     if ok:
-        print("??資�?庫檢?�通�?")
+        print("??è³æ?åº«æª¢?¥éé?")
     else:
-        print("??資�?庫檢?�失??")
+        print("??è³æ?åº«æª¢?¥å¤±??")
         for error in errors:
             print(f"  - {error}")
     
-    # 顯示統�?
-    print("\n[3] 資�?庫統�?")
+    # é¡¯ç¤ºçµ±è?
+    print("\n[3] è³æ?åº«çµ±è¨?")
     stats = get_database_stats()
     for key, value in stats.items():
         print(f"  {key}: {value}")
