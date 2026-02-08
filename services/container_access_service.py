@@ -147,7 +147,7 @@ def list_tokens() -> List[Dict]:
     cursor = get_cursor(conn)
     cursor.execute(
         """
-        SELECT id, token, note, status, expires_at, max_concurrent, created_at, last_used_at
+        SELECT id, token, note, status, expires_at, blocked_until, max_concurrent, created_at, last_used_at
         FROM container_access_tokens
         ORDER BY id DESC
         """
@@ -170,6 +170,7 @@ def list_tokens() -> List[Dict]:
         count_row = cursor.fetchone()
         data["active_sessions"] = _extract_count(count_row)
         data["expires_at"] = _format_dt(data.get("expires_at"))
+        data["blocked_until"] = _format_dt(data.get("blocked_until"))
         data["created_at"] = _format_dt(data.get("created_at"))
         data["last_used_at"] = _format_dt(data.get("last_used_at"))
         results.append(data)
@@ -188,8 +189,8 @@ def create_token(note: Optional[str], expires_at: Optional[str], max_concurrent:
     cursor.execute(
         """
         INSERT INTO container_access_tokens
-            (token, note, status, expires_at, max_concurrent, created_at, last_used_at)
-        VALUES (?, ?, 'active', ?, ?, ?, NULL)
+            (token, note, status, expires_at, blocked_until, max_concurrent, created_at, last_used_at)
+        VALUES (?, ?, 'active', ?, NULL, ?, ?, NULL)
         """,
         (token, note, expires_dt, max_concurrent_value, now),
     )
@@ -200,6 +201,7 @@ def create_token(note: Optional[str], expires_at: Optional[str], max_concurrent:
         "note": note,
         "status": "active",
         "expires_at": _format_dt(expires_dt),
+        "blocked_until": None,
         "max_concurrent": max_concurrent_value,
         "created_at": _format_dt(now),
     }
@@ -233,9 +235,20 @@ def update_token(
     if not updates:
         return False
 
-    params.append(token_id)
+    token_value = None
     conn = get_db_connection()
     cursor = get_cursor(conn)
+    if status == "disabled":
+        cursor.execute(
+            "SELECT token FROM container_access_tokens WHERE id = ?",
+            (token_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            data = get_row_dict(row, cursor)
+            token_value = data.get("token") if data else row[0]
+
+    params.append(token_id)
     cursor.execute(
         f"""
         UPDATE container_access_tokens
@@ -244,6 +257,11 @@ def update_token(
         """,
         params,
     )
+    if token_value:
+        cursor.execute(
+            "DELETE FROM container_access_sessions WHERE token = ?",
+            (token_value,),
+        )
     conn.commit()
     conn.close()
     return True
@@ -270,6 +288,43 @@ def clear_sessions_for_token(token_id: int) -> None:
     conn.close()
 
 
+def kick_token(token_id: int, minutes: Optional[int]) -> bool:
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    cursor.execute("SELECT token FROM container_access_tokens WHERE id = ?", (token_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+
+    data = get_row_dict(row, cursor)
+    token = data.get("token") if data else row[0]
+
+    block_minutes = 0
+    if minutes is not None:
+        try:
+            block_minutes = int(minutes)
+        except (TypeError, ValueError):
+            block_minutes = 0
+
+    if block_minutes > 0:
+        blocked_until = get_chile_time_naive() + timedelta(minutes=block_minutes)
+        cursor.execute(
+            "UPDATE container_access_tokens SET blocked_until = ? WHERE id = ?",
+            (blocked_until, token_id),
+        )
+    else:
+        cursor.execute(
+            "UPDATE container_access_tokens SET blocked_until = NULL WHERE id = ?",
+            (token_id,),
+        )
+
+    cursor.execute("DELETE FROM container_access_sessions WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()
+    return True
+
+
 def _purge_expired_sessions(conn, token: Optional[str] = None) -> None:
     cutoff = get_chile_time_naive() - timedelta(minutes=_session_timeout_minutes(conn))
     cursor = get_cursor(conn)
@@ -294,7 +349,7 @@ def validate_access_key(access_key: str) -> Tuple[bool, str, Optional[Dict]]:
     cursor = get_cursor(conn)
     cursor.execute(
         """
-        SELECT id, token, status, expires_at, max_concurrent
+        SELECT id, token, status, expires_at, blocked_until, max_concurrent
         FROM container_access_tokens
         WHERE token = ?
         """,
@@ -325,6 +380,17 @@ def validate_access_key(access_key: str) -> Tuple[bool, str, Optional[Dict]]:
             conn.close()
             return False, "access expired", None
 
+    blocked_until = data.get("blocked_until")
+    if blocked_until:
+        if isinstance(blocked_until, str):
+            try:
+                blocked_until = datetime.strptime(blocked_until, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                blocked_until = None
+        if blocked_until and get_chile_time_naive() < blocked_until:
+            conn.close()
+            return False, "access blocked", None
+
     _purge_expired_sessions(conn, data.get("token"))
 
     max_concurrent = data.get("max_concurrent")
@@ -345,6 +411,55 @@ def validate_access_key(access_key: str) -> Tuple[bool, str, Optional[Dict]]:
 
     conn.close()
     return True, "ok", data
+
+
+def validate_access_key_status(access_key: str) -> Tuple[bool, str]:
+    if not access_key:
+        return False, "missing access key"
+
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    cursor.execute(
+        """
+        SELECT status, expires_at, blocked_until
+        FROM container_access_tokens
+        WHERE token = ?
+        """,
+        (access_key,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False, "invalid access key"
+
+    data = get_row_dict(row, cursor) or {}
+    status = data.get("status")
+    expires_at = data.get("expires_at")
+    blocked_until = data.get("blocked_until")
+    conn.close()
+
+    if status != "active":
+        return False, "access disabled"
+
+    if expires_at:
+        if isinstance(expires_at, str):
+            try:
+                expires_at = datetime.strptime(expires_at, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                expires_at = None
+        if expires_at and get_chile_time_naive() > expires_at:
+            return False, "access expired"
+
+    if blocked_until:
+        if isinstance(blocked_until, str):
+            try:
+                blocked_until = datetime.strptime(blocked_until, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                blocked_until = None
+        if blocked_until and get_chile_time_naive() < blocked_until:
+            return False, "access blocked"
+
+    return True, "ok"
 
 
 def create_access_session(access_key: str, ip: str, user_agent: str) -> str:

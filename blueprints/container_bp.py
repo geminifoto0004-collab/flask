@@ -1,4 +1,5 @@
 from functools import wraps
+import time
 from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session
@@ -12,11 +13,13 @@ from services.container_access_service import (
     ensure_admin_from_env,
     admin_initialized,
     is_session_active,
+    kick_token,
     list_tokens,
     mark_token_used,
     touch_session,
     update_token,
     validate_access_key,
+    validate_access_key_status,
     verify_admin_password,
 )
 from services.container_iti_service import (
@@ -74,7 +77,23 @@ def container_access_required(fn):
                 return jsonify({"ok": False, "msg": "access required"}), 401
             return render_template("container/access_denied.html"), 403
 
-        touch_session(session_id)
+        access_key = session.get("container_access_token", "")
+        ok, msg = validate_access_key_status(access_key)
+        if not ok:
+            session.pop("container_access_session_id", None)
+            session.pop("container_access_token", None)
+            if request.path.startswith("/api/"):
+                return jsonify({"ok": False, "msg": msg}), 401
+            return render_template("container/access_denied.html", reason=msg), 403
+
+        if not request.path.startswith("/api/"):
+            touch_session(session_id)
+        else:
+            last_touch = session.get("container_access_last_touch_ts", 0)
+            now_ts = time.time()
+            if now_ts - float(last_touch or 0) >= 60:
+                touch_session(session_id)
+                session["container_access_last_touch_ts"] = now_ts
         return fn(*args, **kwargs)
 
     return wrapper
@@ -205,6 +224,16 @@ def container_tokens_delete(token_id: int):
 @container_admin_required
 def container_tokens_clear_sessions(token_id: int):
     clear_sessions_for_token(token_id)
+    return jsonify({"ok": True})
+
+
+@container_bp.route("/container/access-admin/tokens/<int:token_id>/kick", methods=["POST"])
+@container_admin_required
+def container_tokens_kick(token_id: int):
+    data = request.get_json(force=True) or {}
+    minutes = data.get("minutes")
+    if not kick_token(token_id, minutes):
+        return jsonify({"ok": False, "msg": "token not found"}), 404
     return jsonify({"ok": True})
 
 

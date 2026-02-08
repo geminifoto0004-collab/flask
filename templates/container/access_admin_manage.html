@@ -327,6 +327,12 @@
             color: var(--warn);
         }
 
+        .blocked-text {
+            font-size: 12px;
+            color: var(--warn);
+            font-weight: 600;
+        }
+
         /* Action buttons group */
         .action-group {
             display: flex;
@@ -514,6 +520,7 @@
                             <th>Access URL</th>
                             <th>Note</th>
                             <th>Status</th>
+                            <th>Blocked</th>
                             <th>Expires</th>
                             <th>Max</th>
                             <th>Active</th>
@@ -554,7 +561,7 @@
             if (data.tokens.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="9" class="empty-state">
+                        <td colspan="10" class="empty-state">
                             <div>No tokens created yet. Create your first token above to get started.</div>
                         </td>
                     </tr>
@@ -578,6 +585,7 @@
                             <option value="disabled" ${token.status === 'disabled' ? 'selected' : ''}>disabled</option>
                         </select>
                     </td>
+                    <td class="blocked-text">${token.blocked_until || ''}</td>
                     <td><input class="input-md" type="date" value="${formatDate(token.expires_at)}"></td>
                     <td><input class="input-sm" type="number" min="1" value="${token.max_concurrent || ''}" placeholder=""></td>
                     <td><strong>${token.active_sessions || 0}</strong></td>
@@ -587,6 +595,7 @@
                             <button class="btn btn-secondary btn-sm" onclick="saveToken(${token.id}, this)">Save</button>
                             <button class="btn btn-secondary btn-sm" onclick="copyUrl('${token.token}')">Copy URL</button>
                             <button class="btn btn-secondary btn-sm" onclick="clearSessions(${token.id})">Clear</button>
+                            <button class="btn btn-secondary btn-sm" onclick="kickToken(${token.id})">Kick</button>
                             <button class="btn btn-danger btn-sm" onclick="deleteToken(${token.id})">Delete</button>
                         </div>
                     </td>
@@ -654,11 +663,31 @@
             }
         }
 
+        async function kickToken(id) {
+            const raw = prompt('Kick for how many minutes? Use 0 to clear block.', '5');
+            if (raw === null) return;
+            const minutes = parseInt(raw, 10);
+            if (Number.isNaN(minutes) || minutes < 0) {
+                alert('Please enter a valid number of minutes.');
+                return;
+            }
+            try {
+                await api(`/container/access-admin/tokens/${id}/kick`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ minutes })
+                });
+                await loadTokens();
+            } catch (e) {
+                alert('Error kicking token: ' + e.message);
+            }
+        }
+
         async function copyUrl(token) {
             const url = buildAccessUrl(token);
             try {
                 await navigator.clipboard.writeText(url);
-                alert(' URL copied to clipboard!');
+                alert('URL copied to clipboard!');
             } catch (e) {
                 prompt('Copy this URL:', url);
             }

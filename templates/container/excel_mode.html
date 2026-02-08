@@ -1800,12 +1800,17 @@
         };
     </script>
     <script>
+        const HEARTBEAT_MS = 15000;
+
         async function sendHeartbeat() {
             try {
-                await fetch('/container/access/heartbeat', {
+                const res = await fetch('/container/access/heartbeat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
+                if (!res.ok) {
+                    window.location.href = '/container';
+                }
             } catch (e) {
                 // ignore
             }
@@ -1813,7 +1818,7 @@
 
         window.addEventListener('load', () => {
             sendHeartbeat();
-            setInterval(sendHeartbeat, 60000);
+            setInterval(sendHeartbeat, HEARTBEAT_MS);
         });
     </script>
 </body>

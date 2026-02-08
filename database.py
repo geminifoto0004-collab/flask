@@ -717,6 +717,7 @@ def init_database():
                 note {text_type},
                 status {text_type_with_default} DEFAULT 'active',
                 expires_at TIMESTAMP,
+                blocked_until TIMESTAMP,
                 max_concurrent INTEGER,
                 created_at TIMESTAMP {timestamp_default},
                 last_used_at TIMESTAMP
@@ -729,6 +730,9 @@ def init_database():
             timestamp_default=get_timestamp_default()
         ))
         print("container_access_tokens table ready")
+        if not check_column_exists(cursor, 'container_access_tokens', 'blocked_until'):
+            cursor.execute("ALTER TABLE container_access_tokens ADD COLUMN blocked_until TIMESTAMP")
+            print("Added blocked_until column to container_access_tokens")
 
         # container access sessions
         cursor.execute('''
