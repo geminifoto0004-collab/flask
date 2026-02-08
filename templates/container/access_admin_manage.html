@@ -239,6 +239,7 @@
             height: 32px;
             justify-content: center;
             position: relative;
+            z-index: 20;
         }
 
         .btn-icon svg {
@@ -263,7 +264,7 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
-            z-index: 100;
+            z-index: 30;
         }
 
         .btn-icon::after {
@@ -277,19 +278,7 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
-        }
-
-        /* First row tooltips show downward */
-        tbody tr:first-child .btn-icon::before {
-            top: calc(100% + 8px);
-            bottom: auto;
-        }
-
-        tbody tr:first-child .btn-icon::after {
-            top: calc(100% + 2px);
-            bottom: auto;
-            border-top-color: transparent;
-            border-bottom-color: var(--text-primary);
+            z-index: 30;
         }
 
         .btn-icon:hover::before,
@@ -338,6 +327,8 @@
 
         tbody tr {
             transition: background 0.2s ease;
+            position: relative;
+            z-index: 1;
         }
 
         tbody tr:hover {
