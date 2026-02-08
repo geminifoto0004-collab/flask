@@ -231,6 +231,58 @@
             font-size: 12px;
         }
 
+        /* Icon-only button */
+        .btn-icon {
+            padding: 7px;
+            min-width: 32px;
+            height: 32px;
+            justify-content: center;
+            position: relative;
+        }
+
+        .btn-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Tooltip */
+        .btn-icon::before {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--text-primary);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 100;
+        }
+
+        .btn-icon::after {
+            content: '';
+            position: absolute;
+            bottom: calc(100% + 2px);
+            left: 50%;
+            transform: translateX(-50%);
+            border: 4px solid transparent;
+            border-top-color: var(--text-primary);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .btn-icon:hover::before,
+        .btn-icon:hover::after {
+            opacity: 1;
+        }
+
         /* Table */
         .table-container {
             overflow-x: auto;
@@ -333,17 +385,144 @@
             font-weight: 600;
         }
 
-        /* Action buttons group */
+        /* Action buttons group - IMPROVED */
         .action-group {
             display: flex;
             gap: 6px;
-            flex-wrap: wrap;
+            align-items: center;
             opacity: 0;
             transition: opacity 0.2s ease;
         }
 
         tr:hover .action-group {
             opacity: 1;
+        }
+
+        /* Dropdown menu */
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-toggle {
+            padding: 6px 8px;
+            min-width: 32px;
+            height: 32px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .dropdown-toggle:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--border-hover);
+        }
+
+        .dropdown-toggle svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 4px);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            min-width: 160px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            transition: all 0.2s ease;
+        }
+
+        .dropdown.active .dropdown-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            font-size: 13px;
+            color: var(--text-primary);
+            cursor: pointer;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+            transition: background 0.15s ease;
+            font-family: "Inter", sans-serif;
+        }
+
+        .dropdown-item:first-child {
+            border-radius: 8px 8px 0 0;
+        }
+
+        .dropdown-item:last-child {
+            border-radius: 0 0 8px 8px;
+        }
+
+        .dropdown-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .dropdown-item svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .dropdown-item.danger {
+            color: var(--warn);
+        }
+
+        .dropdown-item.danger:hover {
+            background: var(--warn-soft);
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 4px 0;
+        }
+
+        /* Quick action button (Copy) */
+        .quick-action {
+            padding: 6px 10px;
+            height: 32px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-primary);
+            transition: all 0.2s ease;
+        }
+
+        .quick-action:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--border-hover);
+        }
+
+        .quick-action svg {
+            width: 14px;
+            height: 14px;
         }
 
         /* Helper text */
@@ -364,7 +543,7 @@
         }
 
         .input-sm {
-            width: 100px;
+            width: 80px;
         }
 
         .input-md {
@@ -388,11 +567,58 @@
             color: var(--text-muted);
         }
 
-        .empty-state svg {
-            width: 64px;
-            height: 64px;
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.4);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            z-index: 2000;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            width: 100%;
+            max-width: 420px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal h3 {
+            margin-bottom: 8px;
+            font-size: 18px;
+        }
+
+        .modal p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 14px;
+        }
+
+        .modal-input {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
             margin-bottom: 16px;
-            opacity: 0.3;
+        }
+
+        .modal-input.show {
+            display: flex;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
         }
 
         /* Responsive */
@@ -431,11 +657,11 @@
 
             .action-group {
                 flex-direction: column;
+                width: 100%;
             }
 
             .action-group .btn {
                 width: 100%;
-                justify-content: center;
             }
         }
 
@@ -520,7 +746,7 @@
                             <th>Access URL</th>
                             <th>Note</th>
                             <th>Status</th>
-                            <th>Blocked</th>
+                            <th>Blocked Until</th>
                             <th>Expires</th>
                             <th>Max</th>
                             <th>Active</th>
@@ -534,6 +760,21 @@
         </section>
     </div>
 
+    <div class="modal-overlay" id="modal-overlay" aria-hidden="true">
+        <div class="modal">
+            <h3 id="modal-title">Notice</h3>
+            <p id="modal-message"></p>
+            <div class="modal-input" id="modal-input-wrap">
+                <label for="modal-input" id="modal-input-label">Value</label>
+                <input id="modal-input" type="text" placeholder="">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" type="button" id="modal-cancel">Cancel</button>
+                <button class="btn btn-primary" type="button" id="modal-confirm">OK</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         async function api(url, options) {
             const res = await fetch(url, options || {});
@@ -544,6 +785,113 @@
             return data;
         }
 
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const modalInputWrap = document.getElementById('modal-input-wrap');
+        const modalInputLabel = document.getElementById('modal-input-label');
+        const modalInput = document.getElementById('modal-input');
+        const modalCancel = document.getElementById('modal-cancel');
+        const modalConfirm = document.getElementById('modal-confirm');
+        let modalResolver = null;
+        let modalAutoCloseTimer = null;
+
+        function closeModal(result) {
+            if (modalAutoCloseTimer) {
+                clearTimeout(modalAutoCloseTimer);
+                modalAutoCloseTimer = null;
+            }
+            modalOverlay.classList.remove('show');
+            modalOverlay.setAttribute('aria-hidden', 'true');
+            if (modalResolver) {
+                modalResolver(result);
+                modalResolver = null;
+            }
+        }
+
+        function showModal(options) {
+            const {
+                title = 'Notice',
+                message = '',
+                mode = 'alert',
+                confirmText = 'OK',
+                cancelText = 'Cancel',
+                inputLabel = 'Value',
+                inputValue = '',
+                inputPlaceholder = '',
+                readOnly = false,
+                autoCloseMs = 0
+            } = options || {};
+
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalConfirm.textContent = confirmText;
+            modalCancel.textContent = cancelText;
+
+            const hideCancel = mode === 'alert' || cancelText === '';
+
+            if (mode === 'prompt') {
+                modalInputWrap.classList.add('show');
+                modalInputLabel.textContent = inputLabel;
+                modalInput.value = inputValue || '';
+                modalInput.placeholder = inputPlaceholder || '';
+                modalInput.readOnly = !!readOnly;
+                modalCancel.style.display = hideCancel ? 'none' : 'inline-flex';
+            } else {
+                modalInputWrap.classList.remove('show');
+                modalInput.value = '';
+                modalInput.readOnly = false;
+                modalCancel.style.display = hideCancel ? 'none' : 'inline-flex';
+            }
+
+            modalOverlay.classList.add('show');
+            modalOverlay.setAttribute('aria-hidden', 'false');
+
+            setTimeout(() => {
+                if (modalInputWrap.classList.contains('show')) {
+                    modalInput.focus();
+                    modalInput.select();
+                } else {
+                    modalConfirm.focus();
+                }
+            }, 0);
+
+            if (autoCloseMs && mode === 'alert') {
+                modalAutoCloseTimer = setTimeout(() => {
+                    closeModal({ ok: true });
+                }, autoCloseMs);
+            }
+
+            return new Promise((resolve) => {
+                modalResolver = resolve;
+            });
+        }
+
+        modalCancel.addEventListener('click', () => closeModal({ ok: false }));
+        modalConfirm.addEventListener('click', () => {
+            if (modalInputWrap.classList.contains('show')) {
+                closeModal({ ok: true, value: modalInput.value });
+            } else {
+                closeModal({ ok: true });
+            }
+        });
+
+        modalOverlay.addEventListener('click', (event) => {
+            if (event.target === modalOverlay && modalCancel.style.display !== 'none') {
+                closeModal({ ok: false });
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (!modalOverlay.classList.contains('show')) return;
+            if (event.key === 'Escape' && modalCancel.style.display !== 'none') {
+                closeModal({ ok: false });
+            }
+            if (event.key === 'Enter' && modalInputWrap.classList.contains('show')) {
+                closeModal({ ok: true, value: modalInput.value });
+            }
+        });
+
         function formatDate(value) {
             if (!value) return '';
             return value.slice(0, 10);
@@ -553,8 +901,25 @@
             return `${window.location.origin}/gate/${token}`;
         }
 
+        let loadErrorShown = false;
+
         async function loadTokens() {
-            const data = await api('/container/access-admin/tokens');
+            let data;
+            try {
+                data = await api('/container/access-admin/tokens');
+                loadErrorShown = false;
+            } catch (e) {
+                if (!loadErrorShown) {
+                    await showModal({
+                        title: 'Load Failed',
+                        message: `Failed to load tokens. ${e.message || ''}`.trim(),
+                        mode: 'alert'
+                    });
+                    loadErrorShown = true;
+                }
+                return;
+            }
+            
             const tbody = document.getElementById('token-rows');
             tbody.innerHTML = '';
             
@@ -587,16 +952,44 @@
                     </td>
                     <td class="blocked-text">${token.blocked_until || ''}</td>
                     <td><input class="input-md" type="date" value="${formatDate(token.expires_at)}"></td>
-                    <td><input class="input-sm" type="number" min="1" value="${token.max_concurrent || ''}" placeholder=""></td>
+                    <td><input class="input-sm" type="number" min="1" value="${token.max_concurrent || ''}" placeholder="Unlimited"></td>
                     <td><strong>${token.active_sessions || 0}</strong></td>
                     <td style="color: var(--text-muted); font-size: 12px;">${token.last_used_at || 'Never'}</td>
                     <td>
                         <div class="action-group">
-                            <button class="btn btn-secondary btn-sm" onclick="saveToken(${token.id}, this)">Save</button>
-                            <button class="btn btn-secondary btn-sm" onclick="copyUrl('${token.token}')">Copy URL</button>
-                            <button class="btn btn-secondary btn-sm" onclick="clearSessions(${token.id})">Clear</button>
-                            <button class="btn btn-secondary btn-sm" onclick="kickToken(${token.id})">Kick</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteToken(${token.id})">Delete</button>
+                            <button class="quick-action" onclick="copyUrl('${token.token}')">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                Copy
+                            </button>
+                            <div class="dropdown">
+                                <button class="dropdown-toggle" onclick="toggleDropdown(this)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+                                </button>
+                                <div class="dropdown-menu">
+                                    <button class="dropdown-item" onclick="saveToken(${token.id}, this); closeDropdown(this);">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                                        Save Changes
+                                    </button>
+                                    <button class="dropdown-item" onclick="copyUrl('${token.token}'); closeDropdown(this);">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                        Copy URL
+                                    </button>
+                                    <div class="dropdown-divider"></div>
+                                    <button class="dropdown-item" onclick="clearSessions(${token.id}); closeDropdown(this);">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                        Clear Sessions
+                                    </button>
+                                    <button class="dropdown-item" onclick="kickToken(${token.id}); closeDropdown(this);">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                                        Kick Users
+                                    </button>
+                                    <div class="dropdown-divider"></div>
+                                    <button class="dropdown-item danger" onclick="deleteToken(${token.id}); closeDropdown(this);">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                        Delete Token
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </td>
                 `;
@@ -620,7 +1013,11 @@
                 document.getElementById('new-max').value = '';
                 await loadTokens();
             } catch (e) {
-                alert('Error creating token: ' + e.message);
+                await showModal({
+                    title: 'Create Failed',
+                    message: `Error creating token: ${e.message}`,
+                    mode: 'alert'
+                });
             }
         }
 
@@ -639,18 +1036,33 @@
                 });
                 await loadTokens();
             } catch (e) {
-                alert('Error saving token: ' + e.message);
+                await showModal({
+                    title: 'Save Failed',
+                    message: `Error saving token: ${e.message}`,
+                    mode: 'alert'
+                });
             }
         }
 
         async function deleteToken(id) {
-            if (!confirm('Are you sure you want to delete this token? This action cannot be undone.')) return;
+            const result = await showModal({
+                title: 'Delete Token',
+                message: 'Are you sure you want to delete this token? This action cannot be undone.',
+                mode: 'confirm',
+                confirmText: 'Delete',
+                cancelText: 'Cancel'
+            });
+            if (!result.ok) return;
             
             try {
                 await api(`/container/access-admin/tokens/${id}`, { method: 'DELETE' });
                 await loadTokens();
             } catch (e) {
-                alert('Error deleting token: ' + e.message);
+                await showModal({
+                    title: 'Delete Failed',
+                    message: `Error deleting token: ${e.message}`,
+                    mode: 'alert'
+                });
             }
         }
 
@@ -659,18 +1071,36 @@
                 await api(`/container/access-admin/tokens/${id}/clear-sessions`, { method: 'POST' });
                 await loadTokens();
             } catch (e) {
-                alert('Error clearing sessions: ' + e.message);
+                await showModal({
+                    title: 'Clear Failed',
+                    message: `Error clearing sessions: ${e.message}`,
+                    mode: 'alert'
+                });
             }
         }
 
         async function kickToken(id) {
-            const raw = prompt('Kick for how many minutes? Use 0 to clear block.', '5');
-            if (raw === null) return;
-            const minutes = parseInt(raw, 10);
+            const result = await showModal({
+                title: 'Kick Users',
+                message: 'Enter how many minutes to block. Use 0 for no block.',
+                mode: 'prompt',
+                confirmText: 'Kick',
+                cancelText: 'Cancel',
+                inputLabel: 'Minutes',
+                inputValue: '5',
+                inputPlaceholder: 'Minutes'
+            });
+            if (!result.ok) return;
+            const minutes = parseInt(result.value || '0', 10);
             if (Number.isNaN(minutes) || minutes < 0) {
-                alert('Please enter a valid number of minutes.');
+                await showModal({
+                    title: 'Invalid Value',
+                    message: 'Please enter a valid number of minutes.',
+                    mode: 'alert'
+                });
                 return;
             }
+            
             try {
                 await api(`/container/access-admin/tokens/${id}/kick`, {
                     method: 'POST',
@@ -679,7 +1109,11 @@
                 });
                 await loadTokens();
             } catch (e) {
-                alert('Error kicking token: ' + e.message);
+                await showModal({
+                    title: 'Kick Failed',
+                    message: `Error kicking users: ${e.message}`,
+                    mode: 'alert'
+                });
             }
         }
 
@@ -687,28 +1121,61 @@
             const url = buildAccessUrl(token);
             try {
                 await navigator.clipboard.writeText(url);
-                alert('URL copied to clipboard!');
+                await showModal({
+                    title: 'Copied',
+                    message: 'URL copied to clipboard.',
+                    mode: 'alert',
+                    autoCloseMs: 1200
+                });
             } catch (e) {
-                prompt('Copy this URL:', url);
+                await showModal({
+                    title: 'Copy URL',
+                    message: 'Copy the URL below.',
+                    mode: 'prompt',
+                    confirmText: 'Close',
+                    cancelText: '',
+                    inputLabel: 'URL',
+                    inputValue: url,
+                    readOnly: true
+                });
             }
         }
 
-        const AUTO_REFRESH_MS = 15000;
-        let autoRefreshTimer = null;
-
-        function startAutoRefresh() {
-            if (autoRefreshTimer) {
-                clearInterval(autoRefreshTimer);
+        // Dropdown functions
+        function toggleDropdown(btn) {
+            const dropdown = btn.closest('.dropdown');
+            const wasActive = dropdown.classList.contains('active');
+            
+            // Close all dropdowns
+            document.querySelectorAll('.dropdown.active').forEach(d => {
+                d.classList.remove('active');
+            });
+            
+            // Toggle current dropdown
+            if (!wasActive) {
+                dropdown.classList.add('active');
             }
-            autoRefreshTimer = setInterval(() => {
-                if (document.hidden) return;
-                loadTokens();
-            }, AUTO_REFRESH_MS);
         }
+
+        function closeDropdown(element) {
+            const dropdown = element.closest('.dropdown');
+            if (dropdown) {
+                dropdown.classList.remove('active');
+            }
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown')) {
+                document.querySelectorAll('.dropdown.active').forEach(d => {
+                    d.classList.remove('active');
+                });
+            }
+        });
 
         // Initialize
         loadTokens();
-        startAutoRefresh();
+        setInterval(loadTokens, 60000);
     </script>
 </body>
 </html>
