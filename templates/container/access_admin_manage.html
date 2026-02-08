@@ -344,21 +344,6 @@
             display: inline-block;
         }
 
-        .url-badge {
-            display: inline-flex;
-            align-items: center;
-            background: var(--accent-soft);
-            color: var(--accent);
-            padding: 6px 10px;
-            border-radius: 8px;
-            font-size: 11px;
-            font-family: 'SF Mono', Monaco, Consolas, monospace;
-            max-width: 300px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
         /* Status badge */
         .status-badge {
             display: inline-block;
@@ -743,7 +728,7 @@
                     <thead>
                         <tr>
                             <th>Token</th>
-                            <th>Access URL</th>
+                            <th>Access</th>
                             <th>Note</th>
                             <th>Status</th>
                             <th>Blocked Until</th>
@@ -939,9 +924,10 @@
                 tr.innerHTML = `
                     <td><span class="mono">${token.token}</span></td>
                     <td>
-                        <span class="url-badge" title="${buildAccessUrl(token.token)}">
-                            ${buildAccessUrl(token.token)}
-                        </span>
+                        <button class="quick-action" onclick="copyUrl('${token.token}')">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            Copy
+                        </button>
                     </td>
                     <td><input class="input-note" value="${token.note || ''}" placeholder="Add note..."></td>
                     <td>
