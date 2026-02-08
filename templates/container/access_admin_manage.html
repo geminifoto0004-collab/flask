@@ -279,6 +279,19 @@
             transition: opacity 0.2s ease;
         }
 
+        /* First row tooltips show downward */
+        .btn-icon.tooltip-down::before {
+            top: calc(100% + 8px);
+            bottom: auto;
+        }
+
+        .btn-icon.tooltip-down::after {
+            top: calc(100% + 2px);
+            bottom: auto;
+            border-top-color: transparent;
+            border-bottom-color: var(--text-primary);
+        }
+
         .btn-icon:hover::before,
         .btn-icon:hover::after {
             opacity: 1;
@@ -750,7 +763,7 @@
                 return;
             }
             
-            data.tokens.forEach(token => {
+            data.tokens.forEach((token, index) => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><span class="mono">${token.token}</span></td>
@@ -787,6 +800,9 @@
                     </td>
                 `;
                 tbody.appendChild(tr);
+                if (index === 0) {
+                    tr.querySelectorAll('.btn-icon').forEach(btn => btn.classList.add('tooltip-down'));
+                }
             });
         }
 
