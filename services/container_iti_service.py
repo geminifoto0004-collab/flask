@@ -233,6 +233,38 @@ def _read_cache_payload(conn) -> Tuple[Optional[Dict], Optional[Dict], Optional[
     return parsed, parsed, updated_at
 
 
+def get_iti_cache_info() -> Dict[str, Optional[object]]:
+    ttl_seconds = _get_cache_ttl_seconds()
+    updated_at = None
+    age_seconds = None
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        _ensure_cache_row(conn)
+        _, _, updated_at = _read_cache_payload(conn)
+    except Exception:
+        updated_at = None
+    finally:
+        if conn:
+            conn.close()
+
+    if updated_at:
+        age_seconds = max(
+            0.0, (get_chile_time_naive() - updated_at).total_seconds()
+        )
+
+    updated_at_str = None
+    if updated_at:
+        updated_at_str = updated_at.strftime("%Y-%m-%d %H:%M:%S")
+
+    return {
+        "ttl_seconds": ttl_seconds,
+        "updated_at": updated_at_str,
+        "age_seconds": age_seconds,
+    }
+
+
 def _acquire_lock(conn) -> bool:
     now = get_chile_time_naive()
     lock_until = now + timedelta(seconds=LOCK_SECONDS)

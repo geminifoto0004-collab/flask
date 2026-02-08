@@ -3,136 +3,322 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Container Token Manager</title>
+    <title>Container Token Control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: "Segoe UI", Arial, sans-serif;
-            background: #f8fafc;
-            color: #0f172a;
-            margin: 0;
-            padding: 24px;
+        :root {
+            --bg: #f4efe8;
+            --bg-2: #eef5f4;
+            --ink: #111827;
+            --muted: #57606a;
+            --panel: #ffffff;
+            --line: #e5e7eb;
+            --accent: #0f766e;
+            --accent-dark: #0b5e57;
+            --accent-soft: #d6f0ec;
+            --warn: #dc2626;
+            --warn-soft: #fee2e2;
+            --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
         }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 32px 18px 60px;
+            font-family: "Source Sans 3", "Segoe UI", sans-serif;
+            background:
+                radial-gradient(1200px 600px at 10% -10%, #e9f4f1 0%, transparent 60%),
+                radial-gradient(900px 500px at 90% 10%, #f8efe2 0%, transparent 60%),
+                linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+            color: var(--ink);
+        }
+
         .wrap {
             max-width: 1200px;
             margin: 0 auto;
         }
-        h1 {
-            margin: 0 0 16px;
-            font-size: 22px;
-        }
-        .panel {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
-        }
-        .row {
+
+        .hero {
             display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
             align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
         }
+
+        .eyebrow {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: var(--muted);
+        }
+
+        h1 {
+            font-family: "Space Grotesk", "Source Sans 3", sans-serif;
+            font-size: 28px;
+            margin: 6px 0 6px;
+        }
+
+        .hero p {
+            margin: 0;
+            color: var(--muted);
+            max-width: 520px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 20px 22px;
+            margin-bottom: 18px;
+            box-shadow: var(--shadow);
+            animation: rise 0.45s ease both;
+        }
+
+        .panel:nth-of-type(2) {
+            animation-delay: 0.05s;
+        }
+
+        .panel:nth-of-type(3) {
+            animation-delay: 0.1s;
+        }
+
+        @keyframes rise {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .panel-title {
+            font-family: "Space Grotesk", "Source Sans 3", sans-serif;
+            font-size: 16px;
+            margin: 0 0 14px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            align-items: end;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
         input, select {
-            padding: 8px 10px;
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
-            font-size: 13px;
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: "Source Sans 3", sans-serif;
+            background: #fff;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
-        button {
-            padding: 8px 12px;
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 10px 14px;
             border: none;
-            border-radius: 8px;
-            background: #2563eb;
-            color: #ffffff;
+            border-radius: 10px;
             font-weight: 600;
-            cursor: pointer;
             font-size: 13px;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
         }
-        button.secondary { background: #0f172a; }
-        button.warn { background: #ef4444; }
-        button.light { background: #e2e8f0; color: #0f172a; }
+
+        .btn.primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn.primary:hover {
+            background: var(--accent-dark);
+            transform: translateY(-1px);
+        }
+
+        .btn.ghost {
+            background: transparent;
+            border: 1px solid var(--line);
+            color: var(--ink);
+        }
+
+        .btn.light {
+            background: #f3f4f6;
+            color: #111827;
+        }
+
+        .btn.warn {
+            background: var(--warn-soft);
+            color: var(--warn);
+        }
+
+        .helper {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
             font-size: 12px;
+            min-width: 860px;
         }
+
         th, td {
-            border-bottom: 1px solid #e5e7eb;
-            padding: 8px;
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--line);
             vertical-align: top;
         }
+
         th {
             text-align: left;
-            background: #f1f5f9;
+            background: #f8fafc;
             position: sticky;
             top: 0;
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--muted);
         }
-        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-        .muted { color: #64748b; }
-        .actions {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
+
+        tr:hover td {
+            background: #fafafa;
         }
-        .note-input { width: 160px; }
-        .date-input { width: 140px; }
-        .num-input { width: 80px; }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        }
+
         .url-box {
-            background: #f8fafc;
-            border: 1px dashed #cbd5f5;
+            background: var(--accent-soft);
+            color: var(--accent);
             padding: 6px 8px;
             border-radius: 8px;
             display: inline-block;
+            font-size: 11px;
         }
-        .top-actions {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
+
+        .note-input {
+            width: 180px;
+        }
+
+        .date-input {
+            width: 150px;
+        }
+
+        .num-input {
+            width: 90px;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 24px 12px 50px;
+            }
+            h1 {
+                font-size: 24px;
+            }
+            .panel {
+                padding: 16px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="wrap">
-        <div class="top-actions">
-            <h1>Container Token Manager</h1>
+        <header class="hero">
+            <div>
+                <div class="eyebrow">Container Access</div>
+                <h1>Token Control Room</h1>
+                <p>Create and manage shareable tokens, session limits, and expirations in one place.</p>
+            </div>
             <form method="post" action="/container/access-admin/logout">
-                <button class="secondary" type="submit">Logout</button>
+                <button class="btn ghost" type="submit">Logout</button>
             </form>
-        </div>
+        </header>
 
-        <div class="panel">
-            <div class="row">
-                <input id="new-note" class="note-input" placeholder="Note (optional)">
-                <input id="new-expires" class="date-input" type="date">
-                <input id="new-max" class="num-input" type="number" min="1" placeholder="Max">
-                <button onclick="createToken()">Create Token</button>
+        <section class="panel">
+            <div class="panel-title">Create a New Token</div>
+            <div class="form-grid">
+                <div>
+                    <label for="new-note">Note</label>
+                    <input id="new-note" class="note-input" placeholder="Optional tag or client name">
+                </div>
+                <div>
+                    <label for="new-expires">Expires</label>
+                    <input id="new-expires" class="date-input" type="date">
+                </div>
+                <div>
+                    <label for="new-max">Max Sessions</label>
+                    <input id="new-max" class="num-input" type="number" min="1" placeholder="Unlimited">
+                </div>
+                <div>
+                    <button class="btn primary" onclick="createToken()">Create Token</button>
+                </div>
             </div>
-            <div class="muted" style="margin-top:8px;">
-                Leave Max empty for unlimited sessions. Expiry uses end of day.
+            <div class="helper">
+                Leave "Max Sessions" empty for unlimited. Expiry uses end of day.
             </div>
-        </div>
+        </section>
 
-        <div class="panel">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Token</th>
-                        <th>Access URL</th>
-                        <th>Note</th>
-                        <th>Status</th>
-                        <th>Expires</th>
-                        <th>Max</th>
-                        <th>Active</th>
-                        <th>Last Used</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="token-rows"></tbody>
-            </table>
-        </div>
+        <section class="panel">
+            <div class="panel-title">Active Tokens</div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Token</th>
+                            <th>Access URL</th>
+                            <th>Note</th>
+                            <th>Status</th>
+                            <th>Expires</th>
+                            <th>Max</th>
+                            <th>Active</th>
+                            <th>Last Used</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="token-rows"></tbody>
+                </table>
+            </div>
+        </section>
     </div>
 
     <script>
@@ -178,10 +364,10 @@
                     <td class="muted">${token.last_used_at || ''}</td>
                     <td>
                         <div class="actions">
-                            <button class="light" onclick="saveToken(${token.id}, this)">Save</button>
-                            <button class="light" onclick="copyUrl('${token.token}')">Copy URL</button>
-                            <button class="light" onclick="clearSessions(${token.id})">Clear Sessions</button>
-                            <button class="warn" onclick="deleteToken(${token.id})">Delete</button>
+                            <button class="btn light" onclick="saveToken(${token.id}, this)">Save</button>
+                            <button class="btn light" onclick="copyUrl('${token.token}')">Copy URL</button>
+                            <button class="btn light" onclick="clearSessions(${token.id})">Clear Sessions</button>
+                            <button class="btn warn" onclick="deleteToken(${token.id})">Delete</button>
                         </div>
                     </td>
                 `;

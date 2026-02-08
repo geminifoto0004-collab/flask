@@ -20,6 +20,7 @@ from services.container_access_service import (
     verify_admin_password,
 )
 from services.container_iti_service import (
+    get_iti_cache_info,
     get_iti_duplicate_numeros,
     get_iti_index,
     get_iti_matches,
@@ -412,10 +413,21 @@ def refresh_containers():
     if error:
         return error
 
+    cache_before = get_iti_cache_info()
+
     try:
         iti_index = get_iti_index(force_refresh=force_refresh)
     except Exception:
         return jsonify({"ok": False, "msg": "iti fetch failed"}), 502
+
+    cache_after = get_iti_cache_info()
+    refreshed = False
+    if force_refresh:
+        refreshed = True
+    if cache_after.get("updated_at") and (
+        cache_before.get("updated_at") != cache_after.get("updated_at")
+    ):
+        refreshed = True
 
     conn = get_db_connection()
     cursor = get_cursor(conn)
@@ -477,7 +489,16 @@ def refresh_containers():
 
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "updated": updated})
+    return jsonify(
+        {
+            "ok": True,
+            "updated": updated,
+            "refreshed": refreshed,
+            "cache_updated_at": cache_after.get("updated_at"),
+            "cache_age_seconds": cache_after.get("age_seconds"),
+            "cache_ttl_seconds": cache_after.get("ttl_seconds"),
+        }
+    )
 
 
 @container_bp.route("/api/containers/delete", methods=["POST"])

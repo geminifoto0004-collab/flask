@@ -4,57 +4,119 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Container Access Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: "Segoe UI", Arial, sans-serif;
-            background: #f3f4f6;
-            color: #111827;
-            margin: 0;
-            padding: 40px 16px;
+        :root {
+            --bg: #f4efe8;
+            --bg-2: #eef5f4;
+            --ink: #111827;
+            --muted: #57606a;
+            --panel: #ffffff;
+            --line: #e5e7eb;
+            --accent: #0f766e;
+            --accent-dark: #0b5e57;
+            --error: #dc2626;
+            --error-soft: #fee2e2;
+            --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
         }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 60px 16px;
+            font-family: "Source Sans 3", "Segoe UI", sans-serif;
+            background:
+                radial-gradient(900px 500px at 15% 0%, #e9f4f1 0%, transparent 60%),
+                radial-gradient(900px 520px at 85% 10%, #f8efe2 0%, transparent 60%),
+                linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+            color: var(--ink);
+        }
+
         .card {
             max-width: 420px;
             margin: 0 auto;
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
-            padding: 24px;
-            border: 1px solid #e5e7eb;
+            background: var(--panel);
+            border-radius: 18px;
+            box-shadow: var(--shadow);
+            padding: 28px;
+            border: 1px solid var(--line);
+            animation: rise 0.45s ease both;
         }
+
+        @keyframes rise {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         h1 {
-            font-size: 20px;
-            margin: 0 0 12px;
+            font-family: "Space Grotesk", "Source Sans 3", sans-serif;
+            font-size: 22px;
+            margin: 0 0 6px;
         }
+
+        p {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
         label {
             display: block;
             font-size: 12px;
             margin-bottom: 6px;
-            color: #4b5563;
+            color: var(--muted);
         }
+
         input {
             width: 100%;
             padding: 10px 12px;
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
             font-size: 14px;
             margin-bottom: 14px;
+            font-family: "Source Sans 3", sans-serif;
         }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+        }
+
         button {
             width: 100%;
             padding: 10px 12px;
             border: none;
-            background: #2563eb;
+            background: var(--accent);
             color: #ffffff;
             font-weight: 600;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
+            transition: transform 0.15s ease, background 0.15s ease;
         }
+
+        button:hover {
+            background: var(--accent-dark);
+            transform: translateY(-1px);
+        }
+
         .error {
-            background: #fee2e2;
-            color: #b91c1c;
+            background: var(--error-soft);
+            color: var(--error);
             border: 1px solid #fecaca;
             padding: 8px 10px;
-            border-radius: 8px;
+            border-radius: 10px;
             margin-bottom: 12px;
             font-size: 13px;
         }
@@ -63,6 +125,7 @@
 <body>
     <div class="card">
         <h1>Container Access Admin</h1>
+        <p>Enter the admin password to manage access tokens.</p>
         {% if error %}
         <div class="error">{{ error }}</div>
         {% endif %}

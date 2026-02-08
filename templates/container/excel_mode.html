@@ -573,7 +573,7 @@
         let lookupTimer = null;
         let pendingLookup = new Set();
         let pendingLookupMap = new Map();
-        const AUTO_REFRESH_MS = 5 * 60 * 1000;
+        let autoRefreshMs = 5 * 60 * 1000;
         const groupStore = new Map();
         const groupKeyIndex = new Map();
         let groupActionLock = false;
@@ -989,6 +989,47 @@
             setCountdown(`Actualización ITI en ${minutes}:${seconds}`);
         }
 
+        function scheduleNextRefresh(delayMs) {
+            if (autoRefreshTimer) {
+                clearTimeout(autoRefreshTimer);
+            }
+            const safeDelay = Math.max(5000, delayMs || autoRefreshMs);
+            autoRefreshTimer = setTimeout(() => {
+                refreshFromITI(false, false);
+            }, safeDelay);
+        }
+
+        function applyCacheInfo(payload) {
+            if (!payload) {
+                nextRefreshAt = Date.now() + autoRefreshMs;
+                scheduleNextRefresh(autoRefreshMs);
+                updateCountdown();
+                return;
+            }
+
+            if (payload.cache_ttl_seconds) {
+                autoRefreshMs = Math.max(30000, payload.cache_ttl_seconds * 1000);
+            }
+
+            if (
+                payload.cache_age_seconds != null &&
+                payload.cache_ttl_seconds != null
+            ) {
+                const remainingSeconds = Math.max(
+                    0,
+                    payload.cache_ttl_seconds - payload.cache_age_seconds
+                );
+                nextRefreshAt = Date.now() + remainingSeconds * 1000;
+                scheduleNextRefresh(remainingSeconds * 1000);
+                updateCountdown();
+                return;
+            }
+
+            nextRefreshAt = Date.now() + autoRefreshMs;
+            scheduleNextRefresh(autoRefreshMs);
+            updateCountdown();
+        }
+
         function queueLookup(containers) {
             containers.forEach((item) => {
                 const value = item && item.value != null ? item.value : item;
@@ -1350,8 +1391,7 @@
                 });
             } catch (e) {
                 showToast('Fallo de conexión con la API', 'error');
-                nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
-                updateCountdown();
+                applyCacheInfo(null);
                 return;
             }
 
@@ -1447,21 +1487,25 @@
             updateStats();
         }
 
-        async function refreshFromITI(showMessage = true) {
+        async function refreshFromITI(showMessage = true, force = false) {
             if (showMessage) {
-                showToast('Actualizando datos desde ITI...', 'info');
+                showToast(
+                    force ? 'Actualizando datos desde ITI...' : 'Consultando ITI...',
+                    'info'
+                );
             }
-            setCountdown('Actualizando ITI...');
+            setCountdown(force ? 'Actualizando ITI...' : 'Consultando ITI...');
 
             let res;
             try {
                 res = await fetch('/api/containers/refresh', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ force: true })
+                    body: JSON.stringify({ force: !!force })
                 });
             } catch (e) {
                 showToast('Fallo de conexión con la API', 'error');
+                applyCacheInfo(null);
                 return;
             }
 
@@ -1474,10 +1518,10 @@
 
             if (!res.ok || !payload || !payload.ok) {
                 showToast((payload && payload.msg) ? payload.msg : 'Error al actualizar', 'error');
-                nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
-                updateCountdown();
+                applyCacheInfo(null);
                 return;
             }
+            applyCacheInfo(payload);
 
             let rows = [];
             try {
@@ -1501,8 +1545,6 @@
                 showToast(`Actualizados ${payload.updated} registros`, 'success');
             }
             await fetchDuplicateInfo(false);
-            nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
-            updateCountdown();
         }
 
         function exportToExcel() {
@@ -1728,15 +1770,16 @@
 
         function startAutoRefresh() {
             if (autoRefreshTimer) {
-                clearInterval(autoRefreshTimer);
+                clearTimeout(autoRefreshTimer);
             }
             if (countdownTimer) {
                 clearInterval(countdownTimer);
             }
-            autoRefreshTimer = setInterval(() => {
-                refreshFromITI(false);
-            }, AUTO_REFRESH_MS);
-            nextRefreshAt = Date.now() + AUTO_REFRESH_MS;
+            if (!nextRefreshAt) {
+                nextRefreshAt = Date.now() + autoRefreshMs;
+            }
+            const remaining = Math.max(0, nextRefreshAt - Date.now());
+            scheduleNextRefresh(remaining || autoRefreshMs);
             updateCountdown();
             countdownTimer = setInterval(updateCountdown, 1000);
         }
@@ -1744,7 +1787,7 @@
         window.onload = async function() {
             initTable();
             await loadFromDatabase(false);
-            await refreshFromITI(false);
+            await refreshFromITI(false, false);
             await fetchDuplicateInfo(false);
             startAutoRefresh();
 
