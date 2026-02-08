@@ -339,6 +339,11 @@
             border-bottom: none;
         }
 
+        /* Give first row extra top space so tooltips aren't covered by header */
+        tbody tr:first-child td {
+            padding-top: 26px;
+        }
+
         /* Keep actions visible even when table scrolls horizontally */
         th.sticky-actions,
         td.sticky-actions {
