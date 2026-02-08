@@ -574,6 +574,11 @@
         let pendingLookup = new Set();
         let pendingLookupMap = new Map();
         let autoRefreshMs = 5 * 60 * 1000;
+        let itiCacheReady = false;
+        let itiCacheItems = [];
+        let itiCacheIndex = new Map();
+        let itiCachePrefixIndex = new Map();
+        let itiCacheNumeroIndex = new Map();
         const groupStore = new Map();
         const groupKeyIndex = new Map();
         let groupActionLock = false;
@@ -592,6 +597,159 @@
         function isFullContainer(value) {
             const normalized = normalizeContainer(value);
             return /^[A-Z]{4}\d{6,7}$/.test(normalized);
+        }
+
+        function buildItiCacheIndexes(items) {
+            const normalizedItems = [];
+            itiCacheIndex = new Map();
+            itiCachePrefixIndex = new Map();
+            itiCacheNumeroIndex = new Map();
+
+            (items || []).forEach((item) => {
+                const containerNo = normalizeContainer(item && item.container_no);
+                if (!containerNo) {
+                    return;
+                }
+
+                const normalizedItem = {
+                    container_no: containerNo,
+                    vessel: (item && item.vessel) || '',
+                    folio: (item && item.folio) || '',
+                    sigla: (item && item.sigla) || '',
+                    numero: (item && item.numero) || '',
+                    digito: (item && item.digito) || '',
+                    fecha_entrega: (item && item.fecha_entrega) || '',
+                    pies: (item && item.pies) || ''
+                };
+
+                normalizedItems.push(normalizedItem);
+                itiCacheIndex.set(containerNo, normalizedItem);
+
+                if (containerNo.length >= 10) {
+                    const base = containerNo.slice(0, 10);
+                    if (!itiCachePrefixIndex.has(base)) {
+                        itiCachePrefixIndex.set(base, normalizedItem);
+                    }
+                }
+
+                if (normalizedItem.numero) {
+                    const list = itiCacheNumeroIndex.get(normalizedItem.numero) || [];
+                    list.push(normalizedItem);
+                    itiCacheNumeroIndex.set(normalizedItem.numero, list);
+                }
+            });
+
+            itiCacheItems = normalizedItems;
+        }
+
+        function matchItiFromCache(value) {
+            const key = normalizeContainer(value);
+            if (!key) {
+                return null;
+            }
+
+            if (itiCacheIndex.has(key)) {
+                return itiCacheIndex.get(key);
+            }
+
+            if (/^\d{6}$/.test(key)) {
+                const list = itiCacheNumeroIndex.get(key) || [];
+                if (list.length === 1) {
+                    return list[0];
+                }
+                return null;
+            }
+
+            if (key.length >= 10) {
+                const base = key.slice(0, 10);
+                if (itiCachePrefixIndex.has(base)) {
+                    return itiCachePrefixIndex.get(base);
+                }
+                for (const [containerKey, item] of itiCacheIndex.entries()) {
+                    if (containerKey.startsWith(base)) {
+                        return item;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        function getItiMatchesCached(value) {
+            if (!itiCacheReady) {
+                return [];
+            }
+            const key = normalizeContainer(value);
+            if (!key) {
+                return [];
+            }
+
+            const matches = [];
+            const item = matchItiFromCache(value);
+            if (item) {
+                matches.push(item);
+            }
+
+            const numero = item && item.numero ? String(item.numero) : '';
+            if (numero && itiCacheNumeroIndex.has(numero)) {
+                itiCacheNumeroIndex.get(numero).forEach((entry) => {
+                    if (!matches.includes(entry)) {
+                        matches.push(entry);
+                    }
+                });
+            }
+
+            return matches;
+        }
+
+        async function loadItiCache() {
+            itiCacheReady = false;
+            const handleCacheFailure = () => {
+                buildItiCacheIndexes([]);
+                itiCacheReady = true;
+                if (pendingLookup.size > 0) {
+                    if (lookupTimer) {
+                        clearTimeout(lookupTimer);
+                        lookupTimer = null;
+                    }
+                    runLookup();
+                }
+            };
+            let res;
+            try {
+                res = await fetch('/api/containers/iti-cache');
+            } catch (e) {
+                handleCacheFailure();
+                return;
+            }
+
+            if (!res.ok) {
+                handleCacheFailure();
+                return;
+            }
+
+            let payload = null;
+            try {
+                payload = await res.json();
+            } catch (e) {
+                payload = null;
+            }
+
+            if (!payload || !payload.ok) {
+                handleCacheFailure();
+                return;
+            }
+
+            buildItiCacheIndexes(Array.isArray(payload.items) ? payload.items : []);
+            itiCacheReady = true;
+
+            if (pendingLookup.size > 0) {
+                if (lookupTimer) {
+                    clearTimeout(lookupTimer);
+                    lookupTimer = null;
+                }
+                runLookup();
+            }
         }
 
         function buildGroupId() {
@@ -1057,6 +1215,9 @@
         }
 
         async function runLookup() {
+            if (!itiCacheReady) {
+                return;
+            }
             if (pendingLookup.size === 0) {
                 return;
             }
@@ -1065,31 +1226,29 @@
             pendingLookup.clear();
             pendingLookupMap.clear();
 
-            let res;
-            try {
-                res = await fetch('/api/containers/lookup', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ containers: keys })
+            let items = [];
+            keys.forEach((value) => {
+                const key = normalizeContainer(value);
+                if (!key) {
+                    return;
+                }
+                const matches = getItiMatchesCached(value);
+                if (!matches || matches.length === 0) {
+                    return;
+                }
+                matches.forEach((iti) => {
+                    items.push({
+                        key: key,
+                        vessel: iti.vessel || '',
+                        folio: iti.folio || '',
+                        sigla: iti.sigla || '',
+                        numero: iti.numero || '',
+                        digito: iti.digito || '',
+                        fecha_entrega: iti.fecha_entrega || '',
+                        pies: iti.pies || ''
+                    });
                 });
-            } catch (e) {
-                showToast('Fallo al consultar ITI', 'error');
-                return;
-            }
-
-            let payload = null;
-            try {
-                payload = await res.json();
-            } catch (e) {
-                payload = null;
-            }
-
-            if (!res.ok || !payload || !payload.ok) {
-                showToast((payload && payload.msg) ? payload.msg : 'Fallo al consultar ITI', 'error');
-                return;
-            }
-
-            let items = payload.items || [];
+            });
             items = injectDevBaseItems(items, keys);
             items = injectDevDuplicates(items);
             const foundKeys = new Set(items.map(item => item.key));
@@ -1520,6 +1679,7 @@
                 return;
             }
             applyCacheInfo(payload);
+            await loadItiCache();
 
             let rows = [];
             try {
@@ -1785,6 +1945,7 @@
         window.onload = async function() {
             initTable();
             await loadFromDatabase(false);
+            await loadItiCache();
             await refreshFromITI(false, false);
             await fetchDuplicateInfo(false);
             startAutoRefresh();

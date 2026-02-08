@@ -443,6 +443,36 @@ def lookup_containers():
     return jsonify({"ok": True, "items": items})
 
 
+@container_bp.route("/api/containers/iti-cache")
+@container_access_required
+def iti_cache():
+    access_key, error = _require_access_key()
+    if error:
+        return error
+
+    try:
+        iti_index = get_iti_index(force_refresh=False)
+    except Exception:
+        return jsonify({"ok": False, "msg": "iti fetch failed"}), 502
+
+    items = []
+    for container_no, iti in (iti_index or {}).items():
+        items.append(
+            {
+                "container_no": container_no,
+                "vessel": iti.get("vessel") or "",
+                "folio": iti.get("folio") or "",
+                "sigla": iti.get("sigla") or "",
+                "numero": iti.get("numero") or "",
+                "digito": iti.get("digito") or "",
+                "fecha_entrega": iti.get("fecha_entrega") or "",
+                "pies": iti.get("pies") or "",
+            }
+        )
+
+    return jsonify({"ok": True, "items": items})
+
+
 @container_bp.route("/api/containers/refresh", methods=["POST"])
 @container_access_required
 def refresh_containers():
