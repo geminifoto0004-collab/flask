@@ -562,8 +562,6 @@
     </div>
 
     <script>
-        const DEV_DUPLICATE_MODE = false;
-
         let hot;
         let pendingDeleteRows = [];
         let isDirty = false;
@@ -1042,71 +1040,6 @@
             td.classList.add('group-summary-cell');
         }
 
-        function buildDevBaseItem(key) {
-            return {
-                key: key,
-                vessel: 'Buque DEV',
-                folio: 'DEV',
-                sigla: 'DEMO',
-                numero: key,
-                digito: '0',
-                fecha_entrega: '01/01/2026 00:00',
-                pies: '40'
-            };
-        }
-
-        function injectDevBaseItems(items, keys) {
-            if (!DEV_DUPLICATE_MODE || !Array.isArray(items)) return items;
-            const existing = new Set(items.map(item => item && item.key).filter(Boolean));
-            const result = items.slice();
-            keys.forEach(key => {
-                if (isSixDigitInput(key) && !existing.has(key)) {
-                    result.push(buildDevBaseItem(key));
-                }
-            });
-            return result;
-        }
-
-        function mutateSigla(sigla, seed) {
-            const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-            const base = (sigla || 'TEST').padEnd(4, 'X').slice(0, 4).toUpperCase();
-            const chars = base.split('');
-            const shift = (seed + 3) % letters.length;
-            const idx = letters.indexOf(chars[0]);
-            chars[0] = letters[(idx >= 0 ? idx : 0 + shift) % letters.length];
-            return chars.join('');
-        }
-
-        function mutateDigito(digito, seed) {
-            if (!digito || !/^\d$/.test(String(digito))) {
-                return String((seed + 7) % 10);
-            }
-            return String((parseInt(digito, 10) + seed + 1) % 10);
-        }
-
-        function mutateVessel(vessel, seed) {
-            const base = vessel || 'Buque';
-            return `${base} ${seed === 0 ? 'II' : 'III'}`;
-        }
-
-        function injectDevDuplicates(items) {
-            if (!DEV_DUPLICATE_MODE || !Array.isArray(items)) return items;
-            const result = items.slice();
-            const candidates = items.filter(item => item && isSixDigitInput(item.key));
-            if (candidates.length === 0) return items;
-            const copies = Math.min(2, candidates.length);
-            for (let i = 0; i < copies; i++) {
-                const base = candidates[i];
-                const clone = { ...base };
-                clone.sigla = mutateSigla(base.sigla, i);
-                clone.digito = mutateDigito(base.digito, i);
-                clone.vessel = mutateVessel(base.vessel, i);
-                result.push(clone);
-            }
-            return result;
-        }
-
-
         function buildTableData(rows) {
             const tableData = rows.map(r => [
                 r.company || '',
@@ -1137,8 +1070,16 @@
 
         function updateCountdown() {
             if (!nextRefreshAt) {
-                setCountdown('Actualización ITI en --:--');
+                setCountdown('');
+                const el = document.getElementById('iti-countdown');
+                if (el) {
+                    el.style.visibility = 'hidden';
+                }
                 return;
+            }
+            const el = document.getElementById('iti-countdown');
+            if (el) {
+                el.style.visibility = 'visible';
             }
             const diff = Math.max(0, nextRefreshAt - Date.now());
             const totalSeconds = Math.ceil(diff / 1000);
@@ -1249,8 +1190,6 @@
                     });
                 });
             });
-            items = injectDevBaseItems(items, keys);
-            items = injectDevDuplicates(items);
             const foundKeys = new Set(items.map(item => item.key));
             applyLookup(items);
 
