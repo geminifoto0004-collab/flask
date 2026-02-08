@@ -465,6 +465,84 @@
             color: var(--text-muted);
         }
 
+        /* Modal */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.4);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 2000;
+        }
+
+        .modal-backdrop.show {
+            display: flex;
+        }
+
+        .modal {
+            width: min(420px, 90vw);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .modal p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 18px;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 2100;
+        }
+
+        .toast {
+            background: var(--text-primary);
+            color: white;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            box-shadow: var(--shadow-md);
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.success {
+            background: var(--success);
+        }
+
+        .toast.error {
+            background: var(--warn);
+        }
+
         /* Responsive */
         @media (max-width: 1024px) {
             .form-row {
@@ -603,10 +681,29 @@
         </section>
     </div>
 
+    <div class="modal-backdrop" id="confirm-modal" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+            <h3 id="confirm-title">Confirm Action</h3>
+            <p id="confirm-message">Are you sure?</p>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+                <button class="btn btn-danger" id="confirm-ok">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
     <script>
         async function api(url, options) {
             const res = await fetch(url, options || {});
-            const data = await res.json();
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(`Non-JSON response (${res.status})`);
+            }
             if (!data.ok) {
                 throw new Error(data.msg || 'Request failed');
             }
@@ -759,8 +856,9 @@
                 return;
             }
             
-            data.tokens.forEach((token, index) => {
+            data.tokens.forEach(token => {
                 const tr = document.createElement('tr');
+                tr.dataset.tokenId = token.id;
                 tr.innerHTML = `
                     <td><span class="mono">${token.token}</span></td>
                     <td><input class="input-note" value="${token.note || ''}" placeholder="Add note..."></td>
@@ -777,9 +875,6 @@
                     <td style="color: var(--text-muted); font-size: 12px;">${token.last_used_at || 'Never'}</td>
                     <td class="sticky-actions">
                         <div class="action-group">
-                            <button class="btn btn-secondary btn-sm btn-icon" data-tooltip="Save" onclick="saveToken(${token.id}, this)">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                            </button>
                             <button class="btn btn-secondary btn-sm btn-icon" data-tooltip="Copy URL" onclick="copyUrl('${token.token}')">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                             </button>
@@ -796,6 +891,7 @@
                     </td>
                 `;
                 tbody.appendChild(tr);
+                wireRowAutoSave(tr);
             });
         }
 
@@ -815,37 +911,50 @@
                 document.getElementById('new-max').value = '';
                 await loadTokens();
             } catch (e) {
-                alert('Error creating token: ' + e.message);
+                showToast('Error creating token: ' + e.message, 'error');
             }
         }
 
-        async function saveToken(id, btn) {
-            const row = btn.closest('tr');
-            const note = row.querySelector('input.input-note').value.trim();
-            const status = row.querySelector('select').value;
-            const expires_at = row.querySelector('input[type="date"]').value;
-            const max_concurrent = row.querySelector('input[type="number"]').value;
-            
+        function getRowPayload(row) {
+            const noteInput = row.querySelector('input.input-note');
+            const statusSelect = row.querySelector('select');
+            const dateInput = row.querySelector('input[type="date"]');
+            const numInput = row.querySelector('input[type="number"]');
+
+            const note = (noteInput?.value || '').trim();
+            const status = statusSelect?.value || 'active';
+            const expires_at = (dateInput?.value || '').trim() || null;
+            const maxValue = (numInput?.value || '').trim();
+            const max_concurrent = maxValue === '' ? null : Number(maxValue);
+
+            return { note: note || null, status, expires_at, max_concurrent };
+        }
+
+        async function updateTokenFromRow(row) {
+            const id = row.dataset.tokenId;
+            if (!id) return;
+            const payload = getRowPayload(row);
+
             try {
                 await api(`/container/access-admin/tokens/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ note, status, expires_at, max_concurrent })
+                    body: JSON.stringify(payload)
                 });
-                await loadTokens();
             } catch (e) {
-                alert('Error saving token: ' + e.message);
+                showToast('Error saving token: ' + e.message, 'error');
             }
         }
 
         async function deleteToken(id) {
-            if (!confirm('Are you sure you want to delete this token? This action cannot be undone.')) return;
+            const ok = await showConfirm('Delete this token? This action cannot be undone.', 'Delete');
+            if (!ok) return;
             
             try {
                 await api(`/container/access-admin/tokens/${id}`, { method: 'DELETE' });
                 await loadTokens();
             } catch (e) {
-                alert('Error deleting token: ' + e.message);
+                showToast('Error deleting token: ' + e.message, 'error');
             }
         }
 
@@ -854,18 +963,23 @@
                 await api(`/container/access-admin/tokens/${id}/clear-sessions`, { method: 'POST' });
                 await loadTokens();
             } catch (e) {
-                alert('Error clearing sessions: ' + e.message);
+                showToast('Error clearing sessions: ' + e.message, 'error');
             }
         }
 
         async function kickToken(id) {
-            if (!confirm('Kick all active users from this token?')) return;
+            const ok = await showConfirm('Kick all active users from this token?', 'Kick Users');
+            if (!ok) return;
             
             try {
-                await api(`/container/access-admin/tokens/${id}/kick`, { method: 'POST' });
+                await api(`/container/access-admin/tokens/${id}/kick`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ minutes: null })
+                });
                 await loadTokens();
             } catch (e) {
-                alert('Error kicking users: ' + e.message);
+                showToast('Error kicking users: ' + e.message, 'error');
             }
         }
 
@@ -873,10 +987,84 @@
             const url = buildAccessUrl(token);
             try {
                 await navigator.clipboard.writeText(url);
-                alert('✓ URL copied to clipboard!');
+                showToast('URL copied to clipboard!', 'success');
             } catch (e) {
-                prompt('Copy this URL:', url);
+                showToast('Copy failed. Please try again.', 'error');
             }
+        }
+
+        function wireRowAutoSave(row) {
+            const noteInput = row.querySelector('input.input-note');
+            const statusSelect = row.querySelector('select');
+            const dateInput = row.querySelector('input[type="date"]');
+            const numInput = row.querySelector('input[type="number"]');
+
+            const scheduleSave = () => {
+                clearTimeout(row._saveTimer);
+                row._saveTimer = setTimeout(() => updateTokenFromRow(row), 500);
+            };
+
+            if (noteInput) {
+                noteInput.addEventListener('input', scheduleSave);
+                noteInput.addEventListener('blur', () => updateTokenFromRow(row));
+            }
+            if (statusSelect) {
+                statusSelect.addEventListener('change', () => updateTokenFromRow(row));
+            }
+            if (dateInput) {
+                dateInput.addEventListener('change', () => updateTokenFromRow(row));
+            }
+            if (numInput) {
+                numInput.addEventListener('change', () => updateTokenFromRow(row));
+                numInput.addEventListener('blur', () => updateTokenFromRow(row));
+            }
+        }
+
+        function showToast(message, type) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast ${type || ''}`.trim();
+            toast.textContent = message;
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.add('show'));
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 250);
+            }, 2500);
+        }
+
+        let confirmResolver = null;
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmMessage = document.getElementById('confirm-message');
+        const confirmOk = document.getElementById('confirm-ok');
+        const confirmCancel = document.getElementById('confirm-cancel');
+
+        function showConfirm(message, okText) {
+            if (!confirmModal) return Promise.resolve(false);
+            confirmMessage.textContent = message || 'Are you sure?';
+            confirmOk.textContent = okText || 'Confirm';
+            confirmModal.classList.add('show');
+            return new Promise(resolve => {
+                confirmResolver = resolve;
+            });
+        }
+
+        function closeConfirm(result) {
+            if (!confirmModal) return;
+            confirmModal.classList.remove('show');
+            if (confirmResolver) {
+                confirmResolver(result);
+                confirmResolver = null;
+            }
+        }
+
+        if (confirmOk && confirmCancel && confirmModal) {
+            confirmOk.addEventListener('click', () => closeConfirm(true));
+            confirmCancel.addEventListener('click', () => closeConfirm(false));
+            confirmModal.addEventListener('click', (e) => {
+                if (e.target === confirmModal) closeConfirm(false);
+            });
         }
 
         // Initialize
