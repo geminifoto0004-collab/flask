@@ -143,6 +143,13 @@ def container_page():
     return render_template("container/excel_mode.html")
 
 
+@container_bp.route("/container/access-denied")
+def container_access_denied_page():
+    session.pop("container_access_session_id", None)
+    session.pop("container_access_token", None)
+    return render_template("container/access_denied.html"), 403
+
+
 @container_bp.route("/container/access/heartbeat", methods=["POST"])
 @container_access_required
 def container_heartbeat():

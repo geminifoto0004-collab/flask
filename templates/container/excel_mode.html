@@ -1900,7 +1900,7 @@
         };
     </script>
     <script>
-        const HEARTBEAT_MS = 15000;
+        const HEARTBEAT_MS = 5000;
 
         async function sendHeartbeat() {
             try {
@@ -1909,7 +1909,7 @@
                     headers: { 'Content-Type': 'application/json' }
                 });
                 if (!res.ok) {
-                    window.location.href = '/container';
+                    window.location.href = '/container/access-denied';
                 }
             } catch (e) {
                 // ignore
