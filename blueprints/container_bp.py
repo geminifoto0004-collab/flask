@@ -23,6 +23,7 @@ from services.container_iti_service import (
     get_iti_cache_info,
     get_iti_duplicate_numeros,
     get_iti_index,
+    get_iti_matches_cached,
     get_iti_matches,
     match_iti,
     normalize_container,
@@ -91,6 +92,20 @@ def container_admin_required(fn):
 
 @container_bp.route("/gate/<access_key>")
 def gate(access_key: str):
+    existing_session = session.get("container_access_session_id")
+    existing_token = session.get("container_access_token")
+    if (
+        existing_session
+        and existing_token == access_key
+        and is_session_active(existing_session)
+    ):
+        ok, msg, _token = validate_access_key(access_key)
+        if ok or msg == "max concurrent reached":
+            touch_session(existing_session)
+            return redirect("/container")
+        session.pop("container_access_session_id", None)
+        session.pop("container_access_token", None)
+
     ok, msg, _token = validate_access_key(access_key)
     if not ok:
         return render_template("container/access_denied.html", reason=msg), 403
@@ -374,17 +389,12 @@ def lookup_containers():
     if not containers:
         return jsonify({"ok": True, "items": []})
 
-    try:
-        get_iti_index(force_refresh=force_refresh)
-    except Exception:
-        return jsonify({"ok": False, "msg": "iti fetch failed"}), 502
-
     items = []
     for value in containers:
         key = normalize_container(value)
         if not key:
             continue
-        matches = get_iti_matches(value, force_refresh=force_refresh)
+        matches = get_iti_matches_cached(value)
         if not matches:
             continue
         for iti in matches:

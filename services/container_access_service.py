@@ -353,6 +353,39 @@ def create_access_session(access_key: str, ip: str, user_agent: str) -> str:
 
     conn = get_db_connection()
     cursor = get_cursor(conn)
+    _purge_expired_sessions(conn, access_key)
+    cutoff = get_chile_time_naive() - timedelta(minutes=_session_timeout_minutes(conn))
+    cursor.execute(
+        """
+        SELECT session_id
+        FROM container_access_sessions
+        WHERE token = ? AND ip = ? AND user_agent = ? AND last_heartbeat >= ?
+        ORDER BY last_heartbeat DESC
+        LIMIT 1
+        """,
+        (access_key, ip, user_agent, cutoff),
+    )
+    row = cursor.fetchone()
+    if row:
+        existing_id = None
+        if isinstance(row, (list, tuple)):
+            existing_id = row[0]
+        else:
+            data = get_row_dict(row, cursor)
+            existing_id = data.get("session_id") if data else None
+        if existing_id:
+            cursor.execute(
+                "UPDATE container_access_sessions SET last_heartbeat = ? WHERE session_id = ?",
+                (now, existing_id),
+            )
+            cursor.execute(
+                "UPDATE container_access_tokens SET last_used_at = ? WHERE token = ?",
+                (now, access_key),
+            )
+            conn.commit()
+            conn.close()
+            return existing_id
+
     cursor.execute(
         """
         INSERT INTO container_access_sessions (token, session_id, last_heartbeat, ip, user_agent, created_at)

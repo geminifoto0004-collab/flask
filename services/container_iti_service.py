@@ -265,6 +265,56 @@ def get_iti_cache_info() -> Dict[str, Optional[object]]:
     }
 
 
+def get_iti_index_cached(allow_stale: bool = True) -> Dict[str, Dict]:
+    ttl_seconds = _get_cache_ttl_seconds()
+    now_ts = time.time()
+
+    if _cache["index"] is not None:
+        if allow_stale or (now_ts - _cache["ts"] <= ttl_seconds):
+            return _cache["index"] or {}
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        _ensure_cache_row(conn)
+        cached_index, _stale_index, _updated_at = _read_cache_payload(conn)
+        if cached_index:
+            _set_cache(cached_index, ttl_seconds)
+            return cached_index
+    except Exception:
+        if conn:
+            conn.close()
+        conn = None
+    finally:
+        if conn:
+            conn.close()
+
+    return {}
+
+
+def get_iti_matches_cached(container_no: str) -> List[Dict]:
+    idx = get_iti_index_cached(allow_stale=True)
+    if not idx:
+        return []
+
+    numero_idx = _cache.get("numero") or {}
+    container_key = normalize_container(container_no)
+    if not container_key:
+        return []
+
+    matches = []
+    item = match_iti(idx, container_no)
+    if item:
+        matches.append(item)
+
+    numero = item.get("numero") if item else None
+    if numero and numero in numero_idx:
+        for value in numero_idx[numero]:
+            if value not in matches:
+                matches.append(value)
+    return matches
+
+
 def _acquire_lock(conn) -> bool:
     now = get_chile_time_naive()
     lock_until = now + timedelta(seconds=LOCK_SECONDS)
