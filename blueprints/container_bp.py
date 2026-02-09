@@ -299,9 +299,13 @@ def save_containers():
     cursor = get_cursor(conn)
 
     iti_index = {}
-    iti_ok = False
+    iti_ok = True
     t_iti0 = time.time()
-    t_iti1 = t_iti0
+    try:
+        iti_index = get_iti_index()
+    except Exception:
+        iti_ok = False
+    t_iti1 = time.time()
 
     if not rows:
         cursor.execute("DELETE FROM container_items WHERE access_token = ?", (access_key,))
@@ -323,15 +327,27 @@ def save_containers():
         if not container_no:
             continue
 
-        vessel = None
-        status = "Sin datos"
-        folio = ""
-        sigla = ""
-        numero = ""
-        digito = ""
-        fecha_entrega = ""
-        pies = ""
-        has_data = 0
+        iti = match_iti(iti_index, container_no)
+        if iti:
+            vessel = iti.get("vessel")
+            status = "Con datos"
+            folio = iti.get("folio") or ""
+            sigla = iti.get("sigla") or ""
+            numero = iti.get("numero") or ""
+            digito = iti.get("digito") or ""
+            fecha_entrega = iti.get("fecha_entrega") or ""
+            pies = iti.get("pies") or ""
+            has_data = 1
+        else:
+            vessel = None
+            status = "Sin datos"
+            folio = ""
+            sigla = ""
+            numero = ""
+            digito = ""
+            fecha_entrega = ""
+            pies = ""
+            has_data = 0
 
         cursor.execute(
             """
