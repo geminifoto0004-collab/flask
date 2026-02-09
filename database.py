@@ -40,6 +40,15 @@ if not MYSQL_AVAILABLE and config.DATABASE_TYPE in ('mysql', 'tidb'):
     print("? ï?  MySQL/TiDB æ¨¡ç??ªå?è£ï?è«é?è¡? pip install PyMySQL")
 
 # SQLite ??Python æ¨æ?åº«ï?ç¸½æ¯?¯ç¨
+# DBUtils connection pool (for MySQL/TiDB)
+try:
+    from DBUtils.PooledDB import PooledDB  # type: ignore
+    POOLEDDB_AVAILABLE = True
+except ImportError:
+    POOLEDDB_AVAILABLE = False
+
+_MYSQL_POOL = None
+
 import sqlite3  # noqa: F401
 
 
@@ -180,7 +189,21 @@ def get_db_connection():
             db_config['write_timeout'] = 10    # 10 ç§å¯«?¥è???
             
             # MySQL/TiDB ??¥
-            conn = pymysql.connect(**db_config)
+            global _MYSQL_POOL
+            if POOLEDDB_AVAILABLE:
+                if _MYSQL_POOL is None:
+                    _MYSQL_POOL = PooledDB(
+                        creator=pymysql,
+                        mincached=1,
+                        maxcached=5,
+                        maxconnections=10,
+                        blocking=True,
+                        ping=1,
+                        **db_config,
+                    )
+                conn = _MYSQL_POOL.connection()
+            else:
+                conn = pymysql.connect(**db_config)
             # ?
 # è???¥ä»¥èª?é©??cursor
             return AdaptedConnection(conn)
