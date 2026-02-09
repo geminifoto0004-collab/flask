@@ -23,6 +23,7 @@ from services.container_access_service import (
     verify_admin_password,
 )
 from services.container_iti_service import (
+    build_iti_index,
     get_iti_cache_info,
     get_iti_duplicate_numeros,
     get_iti_index,
@@ -472,6 +473,39 @@ def lookup_containers():
     return jsonify({"ok": True, "items": items})
 
 
+@container_bp.route("/api/containers/iti-test")
+def iti_test():
+    t0 = time.time()
+    try:
+        iti_index = build_iti_index()
+    except Exception as e:
+        return jsonify({"ok": False, "msg": "iti fetch failed", "error": str(e)}), 502
+
+    items = []
+    for container_no, iti in (iti_index or {}).items():
+        items.append(
+            {
+                "container_no": container_no,
+                "vessel": iti.get("vessel") or "",
+                "folio": iti.get("folio") or "",
+                "sigla": iti.get("sigla") or "",
+                "numero": iti.get("numero") or "",
+                "digito": iti.get("digito") or "",
+                "fecha_entrega": iti.get("fecha_entrega") or "",
+                "pies": iti.get("pies") or "",
+            }
+        )
+
+    return jsonify(
+        {
+            "ok": True,
+            "count": len(items),
+            "items": items,
+            "elapsed": round(time.time() - t0, 3),
+        }
+    )
+
+
 @container_bp.route("/api/containers/iti-cache")
 @container_access_required
 def iti_cache():
@@ -499,7 +533,16 @@ def iti_cache():
             }
         )
 
-    return jsonify({"ok": True, "items": items})
+    cache_info = get_iti_cache_info()
+    return jsonify(
+        {
+            "ok": True,
+            "items": items,
+            "cache_updated_at": cache_info.get("updated_at"),
+            "cache_age_seconds": cache_info.get("age_seconds"),
+            "cache_ttl_seconds": cache_info.get("ttl_seconds"),
+        }
+    )
 
 
 @container_bp.route("/api/containers/refresh", methods=["POST"])
