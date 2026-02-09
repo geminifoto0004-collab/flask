@@ -321,6 +321,7 @@ def save_containers():
     cursor.execute("DELETE FROM container_items WHERE access_token = ?", (access_key,))
 
     results = []
+    insert_rows = []
     for r in rows:
         company = (r.get("company") or "").strip()
         container_no = (r.get("container_no") or "").strip()
@@ -349,7 +350,42 @@ def save_containers():
             pies = ""
             has_data = 0
 
-        cursor.execute(
+        insert_rows.append(
+            (
+                access_key,
+                company,
+                container_no,
+                vessel,
+                None,
+                status,
+                folio,
+                sigla,
+                numero,
+                digito,
+                fecha_entrega,
+                pies,
+                has_data,
+            )
+        )
+
+        results.append(
+            {
+                "company": company,
+                "container_no": container_no,
+                "vessel": vessel or "",
+                "eta": "",
+                "status": status,
+                "folio": folio,
+                "sigla": sigla,
+                "numero": numero,
+                "digito": digito,
+                "fecha_entrega": fecha_entrega,
+                "pies": pies,
+            }
+        )
+
+    if insert_rows:
+        cursor.executemany(
             """
             INSERT INTO container_items (
                 access_token,
@@ -368,37 +404,7 @@ def save_containers():
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                access_key,
-                company,
-                container_no,
-                vessel,
-                None,
-                status,
-                folio,
-                sigla,
-                numero,
-                digito,
-                fecha_entrega,
-                pies,
-                has_data,
-            ),
-        )
-
-        results.append(
-            {
-                "company": company,
-                "container_no": container_no,
-                "vessel": vessel or "",
-                "eta": "",
-                "status": status,
-                "folio": folio,
-                "sigla": sigla,
-                "numero": numero,
-                "digito": digito,
-                "fecha_entrega": fecha_entrega,
-                "pies": pies,
-            }
+            insert_rows,
         )
 
     conn.commit()
