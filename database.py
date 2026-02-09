@@ -856,7 +856,6 @@ def init_database():
             id_type=get_id_type(),
             text_type=get_text_type(),
             save_id_type=get_text_type_uuid(),
-            save_id_type=get_text_type_uuid(),
             boolean_type=boolean_type
         ))
         print("container_items table ready")
