@@ -293,6 +293,14 @@ def get_text_type_unique():
         return 'TEXT'  # SQLite ??PostgreSQL ä½¿ç¨ TEXT
 
 
+def get_text_type_uuid():
+    """UUID 欄位型別（MySQL/TiDB 用 VARCHAR 方便索引）"""
+    if config.DATABASE_TYPE in ('mysql', 'tidb'):
+        return 'VARCHAR(36)'
+    else:
+        return 'TEXT'
+
+
 def get_timestamp_default():
     """?²å??é??³é?èªå?"""
     # ??è??åº«?½æ¯??CURRENT_TIMESTAMP
@@ -449,6 +457,44 @@ def check_column_exists(cursor, table_name, column_name):
         cursor.execute("PRAGMA table_info({})".format(table_name))
         columns = [column[1] for column in cursor.fetchall()]
         return column_name in columns
+
+
+def check_index_exists(cursor, table_name, index_name):
+    """檢查索引是否存在"""
+    if config.DATABASE_TYPE == 'postgresql':
+        cursor.execute(
+            """
+            SELECT 1
+            FROM pg_indexes
+            WHERE tablename = %s AND indexname = %s
+            """,
+            (table_name, index_name),
+        )
+        return cursor.fetchone() is not None
+    elif config.DATABASE_TYPE in ('mysql', 'tidb'):
+        cursor.execute(
+            """
+            SELECT 1
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = %s
+              AND index_name = %s
+            """,
+            (table_name, index_name),
+        )
+        return cursor.fetchone() is not None
+    else:
+        cursor.execute("PRAGMA index_list({})".format(table_name))
+        rows = cursor.fetchall()
+        names = []
+        for row in rows:
+            if isinstance(row, dict):
+                names.append(row.get('name'))
+            elif hasattr(row, 'keys'):
+                names.append(row['name'])
+            elif isinstance(row, (list, tuple)) and len(row) > 1:
+                names.append(row[1])
+        return index_name in names
 
 
 def get_table_names(cursor):
@@ -737,6 +783,7 @@ def init_database():
             CREATE TABLE IF NOT EXISTS container_access_tokens (
                 id {id_type},
                 token {text_type_unique} UNIQUE NOT NULL,
+                latest_save_id {save_id_type},
                 note {text_type},
                 status {text_type_with_default} DEFAULT 'active',
                 expires_at TIMESTAMP,
@@ -756,6 +803,13 @@ def init_database():
         if not check_column_exists(cursor, 'container_access_tokens', 'blocked_until'):
             cursor.execute("ALTER TABLE container_access_tokens ADD COLUMN blocked_until TIMESTAMP")
             print("Added blocked_until column to container_access_tokens")
+        if not check_column_exists(cursor, 'container_access_tokens', 'latest_save_id'):
+            cursor.execute(
+                'ALTER TABLE container_access_tokens ADD COLUMN latest_save_id {text_type}'.format(
+                    text_type=get_text_type_uuid()
+                )
+            )
+            print("Added latest_save_id column to container_access_tokens")
 
         # container access sessions
         cursor.execute('''
@@ -793,12 +847,16 @@ def init_database():
                 digito {text_type},
                 fecha_entrega {text_type},
                 pies {text_type},
+                save_id {save_id_type},
+                saved_at TIMESTAMP,
                 has_data {boolean_type} DEFAULT 0,
                 last_notified_at TIMESTAMP
             )
         '''.format(
             id_type=get_id_type(),
             text_type=get_text_type(),
+            save_id_type=get_text_type_uuid(),
+            save_id_type=get_text_type_uuid(),
             boolean_type=boolean_type
         ))
         print("container_items table ready")
@@ -808,6 +866,41 @@ def init_database():
                 text_type=get_text_type()
             ))
             print("container_items access_token column added")
+        if not check_column_exists(cursor, 'container_items', 'save_id'):
+            cursor.execute('ALTER TABLE container_items ADD COLUMN save_id {text_type}'.format(
+                text_type=get_text_type_uuid()
+            ))
+            print("container_items save_id column added")
+        if not check_column_exists(cursor, 'container_items', 'saved_at'):
+            cursor.execute("ALTER TABLE container_items ADD COLUMN saved_at TIMESTAMP")
+            print("container_items saved_at column added")
+
+        # container_items indexes for latest-save lookups
+        if not check_index_exists(cursor, 'container_items', 'idx_container_items_token_save'):
+            if config.DATABASE_TYPE in ('mysql', 'tidb'):
+                cursor.execute(
+                    "CREATE INDEX idx_container_items_token_save "
+                    "ON container_items (access_token(128), save_id)"
+                )
+            else:
+                cursor.execute(
+                    "CREATE INDEX idx_container_items_token_save "
+                    "ON container_items (access_token, save_id)"
+                )
+            print("container_items idx_container_items_token_save index added")
+
+        if not check_index_exists(cursor, 'container_items', 'idx_container_items_token_savedat'):
+            if config.DATABASE_TYPE in ('mysql', 'tidb'):
+                cursor.execute(
+                    "CREATE INDEX idx_container_items_token_savedat "
+                    "ON container_items (access_token(128), saved_at)"
+                )
+            else:
+                cursor.execute(
+                    "CREATE INDEX idx_container_items_token_savedat "
+                    "ON container_items (access_token, saved_at)"
+                )
+            print("container_items idx_container_items_token_savedat index added")
         # container ITI cache
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS container_iti_cache (

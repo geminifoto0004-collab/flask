@@ -1,5 +1,6 @@
 from functools import wraps
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session
@@ -46,6 +47,69 @@ def _require_access_key():
     if not key:
         return None, (jsonify({"ok": False, "msg": "access key required"}), 401)
     return key, None
+
+
+def _get_latest_save_id(cursor, access_key: str) -> Optional[str]:
+    cursor.execute(
+        "SELECT latest_save_id FROM container_access_tokens WHERE token = ?",
+        (access_key,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    data = get_row_dict(row, cursor)
+    if data:
+        return data.get("latest_save_id") or None
+    if isinstance(row, (list, tuple)):
+        return row[0] or None
+    return None
+
+
+def _ensure_latest_save_id(conn, cursor, access_key: str) -> Optional[str]:
+    latest = _get_latest_save_id(cursor, access_key)
+    if latest:
+        return latest
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM container_items
+        WHERE access_token = ?
+          AND (save_id IS NULL OR save_id = '')
+        """,
+        (access_key,),
+    )
+    row = cursor.fetchone()
+    count = 0
+    data = get_row_dict(row, cursor)
+    if data:
+        count = list(data.values())[0]
+    elif isinstance(row, (list, tuple)):
+        count = row[0]
+    elif isinstance(row, int):
+        count = row
+
+    if count:
+        new_save_id = str(uuid.uuid4())
+        saved_at = get_chile_time_naive()
+        cursor.execute(
+            """
+            UPDATE container_items
+            SET save_id = ?,
+                saved_at = ?
+            WHERE access_token = ?
+              AND (save_id IS NULL OR save_id = '')
+            """,
+            (new_save_id, saved_at, access_key),
+        )
+        cursor.execute(
+            "UPDATE container_access_tokens SET latest_save_id = ? WHERE token = ?",
+            (new_save_id, access_key),
+        )
+        conn.commit()
+        return new_save_id
+
+    return None
 
 
 def _client_ip() -> str:
@@ -267,17 +331,20 @@ def _row_to_dict(row, cursor) -> Dict[str, Any]:
     return {}
 
 
-def _select_container_rows(cursor, access_key: str) -> List[Dict[str, Any]]:
+def _select_container_rows(
+    cursor, access_key: str, save_id: str
+) -> List[Dict[str, Any]]:
     cursor.execute(
         """
         SELECT company, container_no, vessel, eta, status,
                folio, sigla, numero, digito, fecha_entrega, pies
         FROM container_items
         WHERE access_token = ?
+          AND save_id = ?
         ORDER BY id DESC
         """
         ,
-        (access_key,),
+        (access_key, save_id),
     )
     rows = cursor.fetchall()
     return [get_row_dict(r, cursor) or _row_to_dict(r, cursor) for r in rows]
@@ -308,7 +375,10 @@ def save_containers():
     t_iti1 = time.time()
 
     if not rows:
-        cursor.execute("DELETE FROM container_items WHERE access_token = ?", (access_key,))
+        cursor.execute(
+            "UPDATE container_access_tokens SET latest_save_id = NULL WHERE token = ?",
+            (access_key,),
+        )
         conn.commit()
         conn.close()
         t_end = time.time()
@@ -316,9 +386,10 @@ def save_containers():
             "[perf] /api/containers/save rows=0 "
             f"total={t_end - t0:.3f}s conn={t_conn1 - t_conn0:.3f}s iti={t_iti1 - t_iti0:.3f}s"
         )
-        return jsonify({"ok": True, "rows": [], "iti_ok": iti_ok, "deleted": cursor.rowcount or 0})
+        return jsonify({"ok": True, "rows": [], "iti_ok": iti_ok, "deleted": 0})
 
-    cursor.execute("DELETE FROM container_items WHERE access_token = ?", (access_key,))
+    save_id = str(uuid.uuid4())
+    saved_at = get_chile_time_naive()
 
     results = []
     insert_rows = []
@@ -365,6 +436,8 @@ def save_containers():
                 fecha_entrega,
                 pies,
                 has_data,
+                save_id,
+                saved_at,
             )
         )
 
@@ -400,11 +473,22 @@ def save_containers():
                 digito,
                 fecha_entrega,
                 pies,
-                has_data
+                has_data,
+                save_id,
+                saved_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             insert_rows,
+        )
+        cursor.execute(
+            "UPDATE container_access_tokens SET latest_save_id = ? WHERE token = ?",
+            (save_id, access_key),
+        )
+    else:
+        cursor.execute(
+            "UPDATE container_access_tokens SET latest_save_id = NULL WHERE token = ?",
+            (access_key,),
         )
 
     conn.commit()
@@ -428,7 +512,16 @@ def list_containers():
     if error:
         conn.close()
         return error
-    rows = _select_container_rows(cursor, access_key)
+    save_id = _ensure_latest_save_id(conn, cursor, access_key)
+    if not save_id:
+        conn.close()
+        t_end = time.time()
+        print(
+            f"[perf] /api/containers/list rows=0 "
+            f"total={t_end - t0:.3f}s conn={t_conn1 - t0:.3f}s"
+        )
+        return jsonify([])
+    rows = _select_container_rows(cursor, access_key, save_id)
     conn.close()
     t_end = time.time()
     print(
@@ -578,9 +671,22 @@ def refresh_containers():
 
     conn = get_db_connection()
     cursor = get_cursor(conn)
+    save_id = _ensure_latest_save_id(conn, cursor, access_key)
+    if not save_id:
+        conn.close()
+        return jsonify(
+            {
+                "ok": True,
+                "updated": 0,
+                "refreshed": refreshed,
+                "cache_updated_at": cache_after.get("updated_at"),
+                "cache_age_seconds": cache_after.get("age_seconds"),
+                "cache_ttl_seconds": cache_after.get("ttl_seconds"),
+            }
+        )
     cursor.execute(
-        "SELECT id, container_no FROM container_items WHERE access_token = ?",
-        (access_key,),
+        "SELECT id, container_no FROM container_items WHERE access_token = ? AND save_id = ?",
+        (access_key, save_id),
     )
     rows = cursor.fetchall()
 
@@ -665,6 +771,15 @@ def delete_containers():
     t_conn1 = time.time()
     cursor = get_cursor(conn)
     deleted = 0
+    save_id = _ensure_latest_save_id(conn, cursor, access_key)
+    if not save_id:
+        conn.close()
+        t_end = time.time()
+        print(
+            f"[perf] /api/containers/delete deleted=0 "
+            f"total={t_end - t0:.3f}s conn={t_conn1 - t0:.3f}s"
+        )
+        return jsonify({"ok": True, "deleted": 0})
 
     for r in rows:
         container_no = (r.get("container_no") or "").strip()
@@ -677,8 +792,9 @@ def delete_containers():
             WHERE container_no = ?
               AND COALESCE(company, '') = ?
               AND access_token = ?
+              AND save_id = ?
             """,
-            (container_no, company, access_key),
+            (container_no, company, access_key, save_id),
         )
         deleted += cursor.rowcount or 0
 
@@ -700,14 +816,19 @@ def delete_disappeared():
         return error
     conn = get_db_connection()
     cursor = get_cursor(conn)
+    save_id = _ensure_latest_save_id(conn, cursor, access_key)
+    if not save_id:
+        conn.close()
+        return jsonify({"ok": True, "deleted": 0})
     cursor.execute(
         """
         DELETE FROM container_items
         WHERE COALESCE(folio, '') = ''
           AND access_token = ?
+          AND save_id = ?
         """
         ,
-        (access_key,),
+        (access_key, save_id),
     )
     conn.commit()
     deleted = cursor.rowcount or 0
@@ -723,9 +844,68 @@ def clear_containers():
         return error
     conn = get_db_connection()
     cursor = get_cursor(conn)
-    cursor.execute("DELETE FROM container_items WHERE access_token = ?", (access_key,))
+    cursor.execute(
+        "UPDATE container_access_tokens SET latest_save_id = NULL WHERE token = ?",
+        (access_key,),
+    )
     conn.commit()
-    deleted = cursor.rowcount or 0
+    conn.close()
+    return jsonify({"ok": True, "deleted": 0})
+
+
+@container_bp.route("/api/containers/cleanup", methods=["POST"])
+@container_access_required
+def cleanup_containers():
+    data = request.get_json(silent=True) or {}
+    limit = data.get("limit", 500)
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 500
+    if limit <= 0:
+        limit = 500
+
+    access_key, error = _require_access_key()
+    if error:
+        return error
+
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    save_id = _ensure_latest_save_id(conn, cursor, access_key)
+    if not save_id:
+        conn.close()
+        return jsonify({"ok": True, "deleted": 0})
+
+    cursor.execute(
+        """
+        SELECT id
+        FROM container_items
+        WHERE access_token = ?
+          AND (save_id IS NULL OR save_id != ?)
+        ORDER BY saved_at ASC
+        LIMIT ?
+        """,
+        (access_key, save_id, limit),
+    )
+    rows = cursor.fetchall()
+    ids = []
+    for row in rows:
+        data = get_row_dict(row, cursor)
+        if data and data.get("id") is not None:
+            ids.append(data["id"])
+        elif isinstance(row, (list, tuple)) and row:
+            ids.append(row[0])
+
+    deleted = 0
+    if ids:
+        placeholders = ", ".join(["?"] * len(ids))
+        cursor.execute(
+            f"DELETE FROM container_items WHERE id IN ({placeholders})",
+            ids,
+        )
+        deleted = cursor.rowcount or 0
+        conn.commit()
+
     conn.close()
     return jsonify({"ok": True, "deleted": deleted})
 
