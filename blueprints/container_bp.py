@@ -5,7 +5,15 @@ from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session
 
-from database import get_db_connection, get_cursor, get_row_dict
+import config
+from database import (
+    MYSQL_AVAILABLE,
+    POOLEDDB_AVAILABLE,
+    _MYSQL_POOL,
+    get_db_connection,
+    get_cursor,
+    get_row_dict,
+)
 from services.container_access_service import (
     clear_sessions_for_token,
     create_access_session,
@@ -529,6 +537,20 @@ def list_containers():
         f"total={t_end - t0:.3f}s conn={t_conn1 - t0:.3f}s"
     )
     return jsonify(rows)
+
+
+@container_bp.route("/api/containers/debug/db-pool")
+@container_access_required
+def debug_db_pool():
+    return jsonify(
+        {
+            "ok": True,
+            "db_type": config.DATABASE_TYPE,
+            "mysql_available": bool(MYSQL_AVAILABLE),
+            "pooleddb_available": bool(POOLEDDB_AVAILABLE),
+            "pool_initialized": _MYSQL_POOL is not None,
+        }
+    )
 
 
 @container_bp.route("/api/containers/lookup", methods=["POST"])
