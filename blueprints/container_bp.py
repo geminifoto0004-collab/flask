@@ -636,9 +636,9 @@ def iti_cache():
         return error
 
     try:
-        iti_index = get_iti_index(force_refresh=False)
+        iti_index = get_iti_index_cached(allow_stale=True)
     except Exception:
-        return jsonify({"ok": False, "msg": "iti fetch failed"}), 502
+        iti_index = {}
 
     items = []
     for container_no, iti in (iti_index or {}).items():
