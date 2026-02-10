@@ -36,6 +36,7 @@ from services.container_iti_service import (
     get_iti_cache_info,
     get_iti_duplicate_numeros,
     get_iti_index,
+    get_iti_index_cached,
     get_iti_matches_cached,
     get_iti_matches,
     match_iti,
@@ -377,7 +378,7 @@ def save_containers():
     iti_ok = True
     t_iti0 = time.time()
     try:
-        iti_index = get_iti_index()
+        iti_index = get_iti_index_cached(allow_stale=True)
     except Exception:
         iti_ok = False
     t_iti1 = time.time()

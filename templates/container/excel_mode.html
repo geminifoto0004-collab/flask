@@ -572,6 +572,7 @@
         let pendingLookup = new Set();
         let pendingLookupMap = new Map();
         let autoRefreshMs = 5 * 60 * 1000;
+        let refreshInFlight = false;
         let itiCacheReady = false;
         let itiCacheItems = [];
         let itiCacheIndex = new Map();
@@ -740,6 +741,26 @@
 
             buildItiCacheIndexes(Array.isArray(payload.items) ? payload.items : []);
             itiCacheReady = true;
+            if (payload.cache_ttl_seconds != null || payload.cache_age_seconds != null) {
+                applyCacheInfo({
+                    cache_ttl_seconds: payload.cache_ttl_seconds,
+                    cache_age_seconds: payload.cache_age_seconds,
+                    cache_updated_at: payload.cache_updated_at
+                });
+            }
+
+            if (payload.cache_age_seconds && payload.cache_age_seconds > 300) {
+                console.log('Cache is stale, triggering refresh...');
+                fetch('/api/containers/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force: false })
+                }).then(() => {
+                    console.log('ITI cache refreshed in background');
+                }).catch((err) => {
+                    console.error('Background refresh failed:', err);
+                });
+            }
 
             if (pendingLookup.size > 0) {
                 if (lookupTimer) {
@@ -1069,6 +1090,14 @@
         }
 
         function updateCountdown() {
+            if (refreshInFlight) {
+                const el = document.getElementById('iti-countdown');
+                if (el) {
+                    el.style.visibility = 'visible';
+                }
+                setCountdown('Actualizando ITI...');
+                return;
+            }
             if (!nextRefreshAt) {
                 setCountdown('');
                 const el = document.getElementById('iti-countdown');
@@ -1586,6 +1615,8 @@
         }
 
         async function refreshFromITI(showMessage = true, force = false) {
+            refreshInFlight = true;
+            updateCountdown();
             if (showMessage) {
                 showToast(
                     force ? 'Actualizando datos desde ITI...' : 'Consultando ITI...',
@@ -1602,6 +1633,8 @@
             } catch (e) {
                 showToast('Fallo de conexión con la API', 'error');
                 applyCacheInfo(null);
+                refreshInFlight = false;
+                updateCountdown();
                 return;
             }
 
@@ -1615,6 +1648,8 @@
             if (!res.ok || !payload || !payload.ok) {
                 showToast((payload && payload.msg) ? payload.msg : 'Error al actualizar', 'error');
                 applyCacheInfo(null);
+                refreshInFlight = false;
+                updateCountdown();
                 return;
             }
             applyCacheInfo(payload);
@@ -1642,6 +1677,8 @@
                 showToast(`Actualizados ${payload.updated} registros`, 'success');
             }
             await fetchDuplicateInfo(false);
+            refreshInFlight = false;
+            updateCountdown();
         }
 
         function exportToExcel() {
