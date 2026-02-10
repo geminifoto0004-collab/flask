@@ -799,6 +799,7 @@ def init_database():
             text_type=get_text_type(),
             text_type_unique=get_text_type_unique(),
             text_type_with_default=get_text_type_with_default(),
+            save_id_type=get_text_type_uuid(),
             timestamp_default=get_timestamp_default()
         ))
         print("container_access_tokens table ready")
