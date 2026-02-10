@@ -383,10 +383,13 @@ def save_containers():
         iti_ok = False
     t_iti1 = time.time()
 
+    save_id = str(uuid.uuid4())
+    saved_at = get_chile_time_naive()
+
     if not rows:
         cursor.execute(
-            "UPDATE container_access_tokens SET latest_save_id = NULL WHERE token = ?",
-            (access_key,),
+            "UPDATE container_access_tokens SET latest_save_id = ? WHERE token = ?",
+            (save_id, access_key),
         )
         conn.commit()
         conn.close()
@@ -396,9 +399,6 @@ def save_containers():
             f"total={t_end - t0:.3f}s conn={t_conn1 - t_conn0:.3f}s iti={t_iti1 - t_iti0:.3f}s"
         )
         return jsonify({"ok": True, "rows": [], "iti_ok": iti_ok, "deleted": 0})
-
-    save_id = str(uuid.uuid4())
-    saved_at = get_chile_time_naive()
 
     results = []
     insert_rows = []
@@ -931,6 +931,49 @@ def cleanup_containers():
 
     conn.close()
     return jsonify({"ok": True, "deleted": deleted})
+
+
+@container_bp.route("/api/containers/restore-previous", methods=["POST"])
+@container_access_required
+def restore_previous_snapshot():
+    access_key, error = _require_access_key()
+    if error:
+        return error
+
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    current = _get_latest_save_id(cursor, access_key)
+    cursor.execute(
+        """
+        SELECT save_id, MAX(saved_at) AS saved_at, MAX(id) AS max_id
+        FROM container_items
+        WHERE access_token = ?
+          AND save_id IS NOT NULL
+          AND save_id != ?
+        GROUP BY save_id
+        ORDER BY saved_at DESC, max_id DESC
+        LIMIT 1
+        """,
+        (access_key, current or ""),
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "msg": "no previous snapshot"})
+
+    data = get_row_dict(row, cursor)
+    save_id = data.get("save_id") if data else (row[0] if isinstance(row, (list, tuple)) else None)
+    if not save_id:
+        conn.close()
+        return jsonify({"ok": False, "msg": "no previous snapshot"})
+
+    cursor.execute(
+        "UPDATE container_access_tokens SET latest_save_id = ? WHERE token = ?",
+        (save_id, access_key),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "save_id": save_id})
 
 
 @container_bp.route("/api/iti/duplicates")

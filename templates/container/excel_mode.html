@@ -1387,8 +1387,8 @@
                     if (pendingDeleteRows.length === 0) {
                         return;
                     }
-                    await deleteRowsFromDatabase(pendingDeleteRows, false);
                     pendingDeleteRows = [];
+                    await saveToDatabase(true);
                 },
                 afterChange: function(changes, source) {
                     if (!changes) {
@@ -1492,7 +1492,7 @@
             document.getElementById('stat-disappeared').textContent = emptyRows;
         }
 
-        async function saveToDatabase() {
+        async function saveToDatabase(skipConfirm = false) {
             const data = hot.getData();
             const validRows = data
                 .map(row => ({
@@ -1501,7 +1501,7 @@
                 }))
                 .filter(row => row.container_no !== '');
 
-            if (validRows.length === 0) {
+            if (validRows.length === 0 && !skipConfirm) {
                 if (!confirm('La tabla está vacía. ¿Vaciar la base de datos?')) {
                     return;
                 }
@@ -1749,30 +1749,9 @@
                 return;
             }
 
-            let res;
-            try {
-                res = await fetch('/api/containers/clear', {
-                    method: 'POST'
-                });
-            } catch (e) {
-                showToast('Fallo de conexión con la API', 'error');
-                return;
-            }
-
-            let payload = null;
-            try {
-                payload = await res.json();
-            } catch (e) {
-                payload = null;
-            }
-
-            if (!res.ok || !payload || !payload.ok) {
-                showToast('Error al vaciar', 'error');
-                return;
-            }
-
             hot.loadData(Array.from({ length: 200 }, () => ['', '', '', '', '', '', '', '', '']));
             isDirty = false;
+            await saveToDatabase(true);
             showToast('Tabla vaciada', 'success');
             updateStats();
         }
@@ -1781,35 +1760,10 @@
             if (!rows || rows.length === 0) {
                 return true;
             }
-
-            let res;
-            try {
-                res = await fetch('/api/containers/delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rows: rows })
-                });
-            } catch (e) {
-                showToast('Fallo de conexión con la API', 'error');
-                return false;
-            }
-
-            let payload = null;
-            try {
-                payload = await res.json();
-            } catch (e) {
-                payload = null;
-            }
-
-            if (!res.ok || !payload || !payload.ok) {
-                showToast('Error al eliminar', 'error');
-                return false;
-            }
-
+            await saveToDatabase(true);
             if (showMessage) {
-                showToast(`Eliminados ${payload.deleted} registros`, 'success');
+                showToast('Eliminados registros', 'success');
             }
-
             return true;
         }
 
