@@ -1,6 +1,6 @@
-"""
-Flask ?��?管�?系統 - 主�??�入??
-?�能：管?�員?�入?��?權管?�、API ?�詢
+﻿"""
+Flask ??蝞∠?蝟餌絞 - 銝餅??典??
+?嚗恣??餃??甈恣?PI ?亥岷
 """
 
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
@@ -10,63 +10,63 @@ from datetime import datetime
 from functools import wraps
 from utils.time_utils import get_chile_time_naive
 
-# 導入?�置?��??�庫
+# 撠?蔭???澈
 from config import config, admin_config, license_config, feature_flags
 from database import get_db_connection, init_database, get_lastrowid, get_cursor, get_row_dict
 from services import container_iti_service
 
-# 導入 Blueprint
+# 撠 Blueprint
 from blueprints.user_auth_bp import user_auth_bp
 from blueprints.api_auth_bp import api_auth_bp
 from blueprints.monitor_bp import monitor_bp
 from blueprints.container_bp import container_bp
 from services.config_service import config_service
 
-# 導入?�件�?? Blueprint（PythonAnywhere 端使?��??�選�?
-# 如�?要在 PythonAnywhere 上使?�代?��??��??��?下面?�註??
+# 撠?萎辣隞?? Blueprint嚗ythonAnywhere 蝡臭蝙?剁??舫嚗?
+# 憒?閬 PythonAnywhere 銝蝙?其誨???踝???銝?酉??
 from services.email_proxy import email_proxy_bp
 
 
-# ========== Flask ?�用?��???==========
+# ========== Flask ?????==========
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config['PERMANENT_SESSION_LIFETIME'] = config.PERMANENT_SESSION_LIFETIME
 
-# 註�? Blueprint
+# 閮餃? Blueprint
 app.register_blueprint(user_auth_bp)
 app.register_blueprint(api_auth_bp)
 app.register_blueprint(monitor_bp)
 app.register_blueprint(container_bp)
 
-# 註�??�件�?? Blueprint（PythonAnywhere 端使?��??�選�?
-# 如�?要在 PythonAnywhere 上使?�代?��??��??��?下面?�註??
+# 閮餃??萎辣隞?? Blueprint嚗ythonAnywhere 蝡臭蝙?剁??舫嚗?
+# 憒?閬 PythonAnywhere 銝蝙?其誨???踝???銝?酉??
 app.register_blueprint(email_proxy_bp)
 
-# ========== ?��??��??��??�庫 ==========
-# ?��??��??��??��??��??��??�庫（適?�於 Render 等�??�環境�?
-# 使用 before_request 但只?��?一�?
+# ========== ?芸??????澈 ==========
+# ?冽??典????芸??????澈嚗?冽 Render 蝑??Ｙ憓?
+# 雿輻 before_request 雿?瑁?銝甈?
 _database_initialized = False
 
 @app.before_request
 def initialize_database():
-    """?��?次�?求�??��??��??�庫"""
+    """?券?甈∟?瘙??????澈"""
     global _database_initialized
     if not _database_initialized:
         try:
             init_database()
-            print("??資�?庫自?��?始�?完�?")
+            print("??鞈?摨怨??憪?摰?")
             _database_initialized = True
         except Exception as e:
             import traceback
-            print(f"?��?  資�?庫�?始�?失�?: {e}")
-            print(f"   詳細?�誤: {traceback.format_exc()}")
-            # 不阻止�??��??��?讓用?�可以訪?�錯誤�???
-            _database_initialized = True  # 標�??�已?�試，避?��?複�?�?
+            print(f"??  鞈?摨怠?憪?憭望?: {e}")
+            print(f"   閰喟敦?航炊: {traceback.format_exc()}")
+            # 銝甇Ｘ??典???霈?嗅隞亥赤?隤日???
+            _database_initialized = True  # 璅??箏歇?岫嚗??銴?閰?
 
 
-# ========== ?�入驗�?裝飾??==========
+# ========== ?餃撽?鋆ˇ??==========
 def login_required(f):
-    """?�入驗�?裝飾??""
+    """?餃撽?鋆ˇ??""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('logged_in'):
@@ -168,45 +168,45 @@ def debug_metrics():
 
 
 
-# ========== API 端�?：�?權檢??==========
+# ========== API 蝡舫?嚗?甈炎??==========
 @app.route('/api/check-license', methods=['POST'])
 def api_check_license():
-    """API端�?：檢?�用?��?權�???""
+    """API蝡舫?嚗炎?亦?嗆?甈???""
     try:
         data = request.get_json()
         email = data.get('email', '').strip()
         password = data.get('password', '')
         
         if not email or not password:
-            return jsonify({'success': False, 'error': '請�?供郵箱�?密碼'})
+            return jsonify({'success': False, 'error': '隢?靘蝞勗?撖Ⅳ'})
         
-        # 驗�??�戶?�入
+        # 撽??冽?餃
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?��?檢查超�?管�??�帳??
+        # ?芸?瑼Ｘ頞?蝞∠??∪董??
         if email == admin_config.SUPER_ADMIN_EMAIL:
             if password == admin_config.SUPER_ADMIN_PASSWORD:
                 conn.close()
                 return jsonify({
                     'success': True, 
-                    'message': '超�?管�??��?權�?證�???,
+                    'message': '頞?蝞∠??⊥?甈?霅???,
                     'user_type': admin_config.SUPER_ADMIN_ROLE,
-                    'services': [{'name': '超�?管�??��???, 'status': 'active', 'end_date': '2099-12-31'}]
+                    'services': [{'name': '頞?蝞∠??⊥???, 'status': 'active', 'end_date': '2099-12-31'}]
                 })
             else:
                 conn.close()
-                return jsonify({'success': False, 'error': '超�?管�??��?碼錯�?})
+                return jsonify({'success': False, 'error': '頞?蝞∠??∪?蝣潮隤?})
         
-        # 檢查?�通用??
+        # 瑼Ｘ?桅??
         cursor.execute('SELECT id, password_hash, role FROM users WHERE email = ?', (email,))
         user = cursor.fetchone()
         
         if not user:
             conn.close()
-            return jsonify({'success': False, 'error': '?�戶不�???})
+            return jsonify({'success': False, 'error': '?冽銝???})
         
-        # ?��?返�??��?（可?�是字典?��?組�?
+        # ??餈??澆?嚗?賣摮??蝯?
         if isinstance(user, dict):
             user_id = user['id']
             stored_password_hash = user['password_hash']
@@ -216,13 +216,13 @@ def api_check_license():
             stored_password_hash = user[1]
             user_role = user[2]
         
-        # 驗�?密碼
+        # 撽?撖Ⅳ
         password_hash = hashlib.sha256(password.encode()).hexdigest()
         if stored_password_hash != password_hash:
             conn.close()
-            return jsonify({'success': False, 'error': '密碼?�誤'})
+            return jsonify({'success': False, 'error': '撖Ⅳ?航炊'})
         
-        # ?��??�戶?��?
+        # ?脣??冽??
         cursor.execute('''
             SELECT us.*, s.name as service_name, s.description
             FROM user_services us
@@ -231,12 +231,12 @@ def api_check_license():
         ''', (user_id,))
         services = cursor.fetchall()
         
-        # 檢查?��??�否?��?
+        # 瑼Ｘ???臬??
         valid_services = []
         current_date = get_chile_time_naive().date()
         
         for service in services:
-            # ?��?返�??��?（可?�是字典?��?組�?
+            # ??餈??澆?嚗?賣摮??蝯?
             if isinstance(service, dict):
                 end_date_str = service.get('end_date') or service.get('end_date')
                 start_date_str = service.get('start_date') or service.get('start_date')
@@ -264,54 +264,54 @@ def api_check_license():
         if valid_services:
             return jsonify({
                 'success': True,
-                'message': '?��?驗�??��?',
+                'message': '??撽???',
                 'user_type': 'user',
                 'services': valid_services
             })
         else:
             return jsonify({
                 'success': False, 
-                'error': '沒�??��??��??��?權�??��?已�???
+                'error': '瘝???????甈???撌脤???
             })
             
     except Exception as e:
-        return jsonify({'success': False, 'error': f'系統?�誤: {str(e)}'})
+        return jsonify({'success': False, 'error': f'蝟餌絞?航炊: {str(e)}'})
 
-# ========== 路由：統一?�入/?�出 ==========
+# ========== 頝舐嚗絞銝?餃/?餃 ==========
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """統�??�入?�口"""
+    """蝯曹??餃?亙"""
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
         
         if not email or not password:
-            return render_template('user/login.html', error='請填寫�??�信??)
+            return render_template('user/login.html', error='隢‵撖怠??港縑??)
         
-        # ?��?檢查超�?管�??�帳??
+        # ?芸?瑼Ｘ頞?蝞∠??∪董??
         from config import admin_config
-        print(f"?�入?�試: ?�箱='{email}', 密碼='{password}'")
-        print(f"Super Admin?�置: ?�箱='{admin_config.SUPER_ADMIN_EMAIL}', 密碼='{admin_config.SUPER_ADMIN_PASSWORD}'")
+        print(f"?餃?岫: ?萇拳='{email}', 撖Ⅳ='{password}'")
+        print(f"Super Admin?蔭: ?萇拳='{admin_config.SUPER_ADMIN_EMAIL}', 撖Ⅳ='{admin_config.SUPER_ADMIN_PASSWORD}'")
         
         if email == admin_config.SUPER_ADMIN_EMAIL and password == admin_config.SUPER_ADMIN_PASSWORD:
-            print("Super Admin?�入?��?�?)
+            print("Super Admin?餃??嚗?)
             session['logged_in'] = True
-            # 從數?�庫?��?超�?管�??��?實�? user_id，�??��?存在?�創�?
+            # 敺?澈?脣?頞?蝞∠??∠?撖阡? user_id嚗???摮?撱?
             conn = None
             try:
                 conn = get_db_connection()
-                cursor = get_cursor(conn)  # 使用 get_cursor 以支?��??�數?�庫類�?
+                cursor = get_cursor(conn)  # 雿輻 get_cursor 隞交????澈憿?
                 cursor.execute('SELECT id, company_name FROM users WHERE email = ?', (admin_config.SUPER_ADMIN_EMAIL,))
                 user_row = cursor.fetchone()
                 
                 if user_row:
-                    # 如�??��?庫中已�?，使?�數?�庫?�ID?�公?��?�?
-                    # ?��?不�??��?庫�??�格式�?SQLite 返�??��?，MySQL/TiDB 返�?字典
+                    # 憒??豢?摨思葉撌脫?嚗蝙?冽?澈?D??詨?蝔?
+                    # ??銝??豢?摨怨??撘?SQLite 餈???嚗ySQL/TiDB 餈?摮
                     if isinstance(user_row, dict):
                         session['user_id'] = user_row['id']
                         session['company_name'] = user_row.get('company_name')
                     else:
-                        # ?��?返�??��?（可?�是字典?��?組�?
+                        # ??餈??澆?嚗?賣摮??蝯?
                         if isinstance(user_row, dict):
                             session['user_id'] = user_row['id']
                             session['company_name'] = user_row.get('company_name')
@@ -319,8 +319,8 @@ def login():
                             session['user_id'] = user_row[0]
                             session['company_name'] = user_row[1] if len(user_row) > 1 and user_row[1] else None
                 else:
-                    # 如�??��?庫中沒�?，自?�創建�?級管?�員?�戶
-                    print("?��? ?��?庫中沒�?超�?管�??��?�?��?�建...")
+                    # 憒??豢?摨思葉瘝?嚗?撱箄?蝝恣??冽
+                    print("?? ?豢?摨思葉瘝?頞?蝞∠??∴?甇??萄遣...")
                     from services.user_service import hash_password
                     password_hash = hash_password(admin_config.SUPER_ADMIN_PASSWORD)
                     cursor.execute('''
@@ -330,50 +330,50 @@ def login():
                           password_hash, admin_config.SUPER_ADMIN_ROLE, get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')))
                     session['user_id'] = get_lastrowid(cursor, conn)
                     conn.commit()
-                    print(f"??超�?管�??�創建�??��?user_id={session['user_id']}")
-                    session['company_name'] = None  # ?�創建�??�戶沒�??�司?�稱
+                    print(f"??頞?蝞∠??∪撱箸???user_id={session['user_id']}")
+                    session['company_name'] = None  # ?啣撱箇??冽瘝??砍?迂
                 
                 if conn:
                     conn.close()
             except Exception as e:
                 import traceback
-                print(f"???��?庫�?作失?? {e}")
-                print(f"   詳細?�誤: {traceback.format_exc()}")
-                # 如�??��?庫�?作失?��?仍然?�許?�入（使?��?認值�?
+                print(f"???豢?摨急?雿仃?? {e}")
+                print(f"   閰喟敦?航炊: {traceback.format_exc()}")
+                # 憒??豢?摨急?雿仃??隞?迂?餃嚗蝙?券?隤潘?
                 if 'user_id' not in session:
-                    session['user_id'] = None  # ?��?設置，�?續可?��?要�???
+                    session['user_id'] = None  # ?冽?閮剔蔭嚗?蝥?賡?閬???
                 if conn:
                     try:
                         conn.close()
                     except:
                         pass
-                # 繼�??��?，�??�止?�入
+                # 蝜潛??瑁?嚗??餅迫?餃
             session['username'] = admin_config.SUPER_ADMIN_USERNAME
             session['email'] = admin_config.SUPER_ADMIN_EMAIL
             session['role'] = admin_config.SUPER_ADMIN_ROLE
             
-            # ?�建?�話記�?（用?��?話監?��?
+            # ?萄遣?店閮?嚗?潭?閰梁?改?
             try:
                 from blueprints.api_auth_bp import create_session, generate_session_token, get_device_info
                 session_token = generate_session_token()
                 device_info = get_device_info(request)
                 success = create_session(session['user_id'], session_token, device_info, service_name="Web_Login")
                 if success:
-                    print(f"???�建超�?管�??�網?�登?��?話�??��???- ?�戶 {session['user_id']}, service_name=Web_Login")
+                    print(f"???萄遣頞?蝞∠??∠雯??交?閰梯?????- ?冽 {session['user_id']}, service_name=Web_Login")
                 else:
-                    print(f"???�建超�?管�??�網?�登?��?話�??�失??- ?�戶 {session['user_id']}, create_session返�?False")
+                    print(f"???萄遣頞?蝞∠??∠雯??交?閰梯??仃??- ?冽 {session['user_id']}, create_session餈?False")
             except ImportError as e:
-                print(f"??導入?�話管�??�數失�?: {e}")
+                print(f"??撠?店蝞∠??賣憭望?: {e}")
             except Exception as e:
                 import traceback
-                print(f"???�建?�話記�?失�?（�?影響?�入�? {e}")
-                print(f"   詳細?�誤: {traceback.format_exc()}")
+                print(f"???萄遣?店閮?憭望?嚗?敶梢?餃嚗? {e}")
+                print(f"   閰喟敦?航炊: {traceback.format_exc()}")
             
             return redirect(url_for('admin_dashboard'))
         else:
-            print("Super Admin?�入失�?，�?試普?�用?��?�?)
+            print("Super Admin?餃憭望?嚗?閰行??園?霅?)
         
-        # 使用?�戶?��?驗�??�通用??
+        # 雿輻?冽??撽??桅??
         from services.user_service import verify_password
         success, result = verify_password(email, password)
         
@@ -384,46 +384,46 @@ def login():
             session['email'] = result['email']
             session['role'] = result['role']
             
-            # ?�建?�話記�?（用?��?話監?��?
+            # ?萄遣?店閮?嚗?潭?閰梁?改?
             try:
                 from blueprints.api_auth_bp import create_session, generate_session_token, get_device_info
                 session_token = generate_session_token()
                 device_info = get_device_info(request)
                 success = create_session(result['id'], session_token, device_info, service_name="Web_Login")
                 if success:
-                    print(f"???�建網�??�入?�話記�??��? - ?�戶 {result['id']}, service_name=Web_Login")
+                    print(f"???萄遣蝬脤??餃?店閮??? - ?冽 {result['id']}, service_name=Web_Login")
                 else:
-                    print(f"???�建網�??�入?�話記�?失�? - ?�戶 {result['id']}, create_session返�?False")
+                    print(f"???萄遣蝬脤??餃?店閮?憭望? - ?冽 {result['id']}, create_session餈?False")
             except ImportError as e:
-                print(f"??導入?�話管�??�數失�?: {e}")
+                print(f"??撠?店蝞∠??賣憭望?: {e}")
             except Exception as e:
                 import traceback
-                print(f"???�建?�話記�?失�?（�?影響?�入�? {e}")
-                print(f"   詳細?�誤: {traceback.format_exc()}")
+                print(f"???萄遣?店閮?憭望?嚗?敶梢?餃嚗? {e}")
+                print(f"   閰喟敦?航炊: {traceback.format_exc()}")
             
-            # ?��?角色?��??�到不�??�面
+            # ?寞?閫???銝??
             if result['role'] == 'admin':
                 return redirect(url_for('admin_dashboard'))
             else:
                 return redirect(url_for('user_auth.user_portal'))
         else:
-            return render_template('user/login.html', error='Correo electrónico o contraseña incorrectos')
+            return render_template('user/login.html', error='Correo electr籀nico o contrase簽a incorrectos')
     
     return render_template('user/login.html')
 
 
 @app.route('/logout')
 def logout():
-    """?�出"""
+    """?餃"""
     session.clear()
     return redirect(url_for('login'))
 
 
-# ========== 路由：管?�員?�表板 ==========
+# ========== 頝舐嚗恣??銵冽 ==========
 @app.route('/admin')
 @login_required
 def admin_dashboard():
-    """管�??��?表板"""
+    """蝞∠??∪?銵冽"""
     if session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
         return redirect(url_for('login'))
     
@@ -431,11 +431,11 @@ def admin_dashboard():
         from database import get_db_connection, get_cursor
         conn = get_db_connection()
         
-        # ?��??�戶統�?（使??get_cursor 以支?��??�數?�庫類�?�?
+        # ?脣??冽蝯梯?嚗蝙??get_cursor 隞交????澈憿?嚗?
         cursor = get_cursor(conn)
         cursor.execute('SELECT COUNT(*) as total FROM users')
         result = cursor.fetchone()
-        # ?��?不�??��?庫�??�格�?
+        # ??銝??豢?摨怨??撘?
         db_total_users = result['total'] if isinstance(result, dict) else result[0]
         
         cursor.execute('SELECT COUNT(*) as total FROM users WHERE role = ?', ('admin',))
@@ -446,7 +446,7 @@ def admin_dashboard():
         result = cursor.fetchone()
         db_regular_users = result['total'] if isinstance(result, dict) else result[0]
         
-        # ?�含超�?管�??��?統�?
+        # ?頞?蝞∠??∠?蝯梯?
         total_users = db_total_users + 1  # +1 for super admin
         admin_users = db_admin_users + 1  # +1 for super admin
         regular_users = db_regular_users
@@ -459,37 +459,37 @@ def admin_dashboard():
                              regular_users=regular_users)
     except Exception as e:
         import traceback
-        print(f"??管�??��?表板?�誤: {e}")
-        print(f"   詳細?�誤: {traceback.format_exc()}")
-        # 返�??�誤?�面?��?定�??�登??
+        print(f"??蝞∠??∪?銵冽?航炊: {e}")
+        print(f"   閰喟敦?航炊: {traceback.format_exc()}")
+        # 餈??航炊???摰??啁??
         return render_template('admin/dashboard.html', 
                              total_users=0,
                              admin_users=0,
                              regular_users=0,
-                             error=f"資�?庫錯�? {str(e)}")
+                             error=f"鞈?摨恍隤? {str(e)}")
 
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard_redirect():
-    """?��??�到admin主�?"""
+    """???admin銝駁?"""
     return redirect(url_for('admin_dashboard'))
 
 
-# ========== ?��??��?系統已移?��??�用 services ??user_services 系統 ==========
+# ========== ????蝟餌絞撌脩宏?歹??寧 services ??user_services 蝟餌絞 ==========
 
 
-# ========== API：�?權查詢�?桌面程�??��?==========
+# ========== API嚗?甈閰ｇ?獢蝔??剁?==========
 @app.route('/licenses/check_license', methods=['GET'])
 def check_license():
     """
-    ?��??�詢 API
-    ?�數: rut (�? 76315010-0)
-    返�?: JSON {rut, empresa, estado, fecha_expiracion}
+    ???亥岷 API
+    ?: rut (靘? 76315010-0)
+    餈?: JSON {rut, empresa, estado, fecha_expiracion}
     """
     rut = request.args.get('rut')
     
     if not rut:
-        return jsonify({'error': '缺�? RUT ?�數'}), 400
+        return jsonify({'error': '蝻箏? RUT ?'}), 400
     
     try:
         conn = get_db_connection()
@@ -500,7 +500,7 @@ def check_license():
         conn.close()
         
         if license:
-            # 檢查?�否?��?
+            # 瑼Ｘ?臬??
             if license['expire_date']:
                 expire_date = datetime.strptime(license['expire_date'], '%Y-%m-%d')
                 is_expired = expire_date < get_chile_time_naive()
@@ -515,16 +515,16 @@ def check_license():
                 'fecha_expiracion': license['expire_date']
             })
         else:
-            return jsonify({'error': '?��?不�???}), 404
+            return jsonify({'error': '??銝???}), 404
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-# ========== ?�戶管�? ==========
+# ========== ?冽蝞∠? ==========
 @app.route('/admin/users')
 def admin_users():
-    """管�??�查?��??�用??""
+    """蝞∠??⊥?????""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
         return redirect(url_for('login'))
     
@@ -533,16 +533,16 @@ def admin_users():
     cursor = conn.cursor()
     cursor.execute('SELECT id, username, email, role, created_at FROM users ORDER BY created_at DESC')
     users_rows = cursor.fetchall()
-    # 將Row對象轉�??��??��?�?
+    # 撠ow撠情頧??箏??詨?銵?
     users = [dict(row) for row in users_rows]
     
-    # 添�?超�?管�??�到?�表?�部（�??�置?�件?��?，�?從�??�庫�?
+    # 瘛餃?頞?蝞∠??∪?”?嚗??蔭?辣?脣?嚗?敺??澈嚗?
     super_admin = {
         'id': admin_config.SUPER_ADMIN_USERNAME,
         'username': admin_config.SUPER_ADMIN_USERNAME,
         'email': admin_config.SUPER_ADMIN_EMAIL,
         'role': admin_config.SUPER_ADMIN_ROLE,
-        'created_at': '系統?�建'
+        'created_at': '蝟餌絞?萄遣'
     }
     users.insert(0, super_admin)
     
@@ -552,56 +552,56 @@ def admin_users():
 
 @app.route('/admin/users/<int:user_id>/role', methods=['POST'])
 def update_user_role(user_id):
-    """?�新?�戶角色"""
+    """?湔?冽閫"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'error': '權�?不足'}), 403
+        return jsonify({'error': '甈?銝雲'}), 403
     new_role = request.form.get('role')
     
     if not user_id or not new_role:
-        return jsonify({'error': '?�數不�???}), 400
+        return jsonify({'error': '?銝???}), 400
     
     if new_role not in ['user', 'admin']:
-        return jsonify({'error': '?��??��???}), 400
+        return jsonify({'error': '?⊥?????}), 400
     
-    # 檢查?�否?��?級管?�員（�?級管?�員不能被修?��?
+    # 瑼Ｘ?臬?箄?蝝恣?嚗?蝝恣?銝鋡思耨?對?
     if str(user_id) == admin_config.SUPER_ADMIN_USERNAME:
-        return jsonify({'error': '超�?管�??��?角色?��?修改'}), 400
+        return jsonify({'error': '頞?蝞∠??∠?閫?⊥?靽格'}), 400
     
     from database import get_db_connection
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 檢查?�戶?�否存在
+    # 瑼Ｘ?冽?臬摮
     cursor.execute('SELECT id, role FROM users WHERE id=?', (user_id,))
     user = cursor.fetchone()
     if not user:
         conn.close()
-        return jsonify({'error': '?�戶不�???}), 404
+        return jsonify({'error': '?冽銝???}), 404
     
-    # 檢查權�?：只?��?級管?�員?�以?��?管�???
+    # 瑼Ｘ甈?嚗??蝝恣??臭誑??蝞∠???
     current_user_role = session.get('role')
     
-    # 如�??��?將管?�員?��??�普?�用??
+    # 憒??航?撠恣????箸???
     if user['role'] == 'admin' and new_role == 'user':
-        # ?��?超�?管�??�可以�?級管?�員
+        # ?芣?頞?蝞∠??∪隞仿?蝝恣?
         if current_user_role != admin_config.SUPER_ADMIN_ROLE:
             conn.close()
             return jsonify({
-                'error': '權�?不足：只?��?級管?�員?�以將管?�員?��??�普?�用??
+                'error': '甈?銝雲嚗??蝝恣??臭誑撠恣????箸???
             }), 403
         
-        # 超�?管�??�可以隨?��?級管?�員，�??��?級管?�員永�?存在
+        # 頞?蝞∠??∪隞仿??蝝恣?嚗??箄?蝝恣?瘞賊?摮
     
-    # ?�新角色
+    # ?湔閫
     cursor.execute('UPDATE users SET role=? WHERE id=?', (new_role, user_id))
     conn.commit()
     conn.close()
     
-    return jsonify({'success': True, 'message': '角色?�新?��?'})
+    return jsonify({'success': True, 'message': '閫?湔??'})
 
 @app.route('/admin/services')
 def admin_services():
-    """?��?管�??�面"""
+    """??蝞∠??"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
         return redirect(url_for('login'))
     
@@ -610,7 +610,7 @@ def admin_services():
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM services ORDER BY created_at DESC')
     services_rows = cursor.fetchall()
-    # 將Row對象轉�??��??��?�?
+    # 撠ow撠情頧??箏??詨?銵?
     services = [dict(row) for row in services_rows]
     conn.close()
     
@@ -618,9 +618,9 @@ def admin_services():
 
 @app.route('/admin/services', methods=['POST'])
 def create_service():
-    """?�建?��???""
+    """?萄遣?唳???""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     name = request.form.get('name')
     description = request.form.get('description', '')
@@ -629,20 +629,20 @@ def create_service():
     status = request.form.get('status', 'active')
     
     if not all([name, price, duration_days]):
-        return jsonify({'success': False, 'error': '請填寫�??��?填�?�?})
+        return jsonify({'success': False, 'error': '隢‵撖急???憛急?雿?})
     
     try:
         price = float(price)
         duration_days = int(duration_days)
     except ValueError:
-        return jsonify({'success': False, 'error': '?�格?��??��?必�??�數�?})
+        return jsonify({'success': False, 'error': '?寞????敹??箸摮?})
     
     from database import get_db_connection
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # ?��??�置 JSON（�??��??�話�?
+        # ?脣??蔭 JSON嚗????店嚗?
         config_json = request.form.get('config_json', '')
         
         cursor.execute('''
@@ -653,18 +653,18 @@ def create_service():
         conn.commit()
         conn.close()
         
-        return jsonify({'success': True, 'message': '?��??�建?��?'})
+        return jsonify({'success': True, 'message': '???萄遣??'})
         
     except Exception as e:
         conn.rollback()
         conn.close()
-        return jsonify({'success': False, 'error': f'?�建失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?萄遣憭望?: {str(e)}'})
 
 @app.route('/admin/services/<int:service_id>', methods=['GET'])
 def get_service(service_id):
-    """?��??�個�??�信??""
+    """?脣??桀??縑??""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     from database import get_db_connection
     conn = get_db_connection()
@@ -677,13 +677,13 @@ def get_service(service_id):
     if service:
         return jsonify({'success': True, 'service': dict(service)})
     else:
-        return jsonify({'success': False, 'error': '?��?不�???})
+        return jsonify({'success': False, 'error': '??銝???})
 
 @app.route('/admin/services/<int:service_id>', methods=['PUT'])
 def update_service(service_id):
-    """?�新?��?"""
+    """?湔??"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     name = request.form.get('name')
     description = request.form.get('description', '')
@@ -692,23 +692,23 @@ def update_service(service_id):
     status = request.form.get('status', 'active')
     
     if not all([name, price, duration_days]):
-        return jsonify({'success': False, 'error': '請填寫�??��?填�?�?})
+        return jsonify({'success': False, 'error': '隢‵撖急???憛急?雿?})
     
     try:
         price = float(price)
         duration_days = int(duration_days)
     except ValueError:
-        return jsonify({'success': False, 'error': '?�格?��??��?必�??�數�?})
+        return jsonify({'success': False, 'error': '?寞????敹??箸摮?})
     
     from database import get_db_connection
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # 檢查?��??�否存在
+        # 瑼Ｘ???臬摮
         cursor.execute('SELECT id FROM services WHERE id = ?', (service_id,))
         if not cursor.fetchone():
-            return jsonify({'success': False, 'error': '?��?不�???})
+            return jsonify({'success': False, 'error': '??銝???})
         
         cursor.execute('''
             UPDATE services 
@@ -719,55 +719,55 @@ def update_service(service_id):
         conn.commit()
         conn.close()
         
-        return jsonify({'success': True, 'message': '?��??�新?��?'})
+        return jsonify({'success': True, 'message': '???湔??'})
         
     except Exception as e:
         conn.rollback()
         conn.close()
-        return jsonify({'success': False, 'error': f'?�新失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?湔憭望?: {str(e)}'})
 
 @app.route('/admin/services/<int:service_id>', methods=['DELETE'])
 def delete_service(service_id):
-    """?�除?��?"""
+    """?芷??"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     from database import get_db_connection
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # 檢查?��??�否存在
+        # 瑼Ｘ???臬摮
         cursor.execute('SELECT name FROM services WHERE id = ?', (service_id,))
         service = cursor.fetchone()
         
         if not service:
-            return jsonify({'success': False, 'error': '?��?不�???})
+            return jsonify({'success': False, 'error': '??銝???})
         
-        # 檢查?�否?�用?�正?�使?�此?��?
+        # 瑼Ｘ?臬??嗆迤?其蝙?冽迨??
         cursor.execute('SELECT COUNT(*) FROM user_services WHERE service_id = ?', (service_id,))
         user_count_result = cursor.fetchone()
         user_count = user_count_result[0] if isinstance(user_count_result, tuple) else (user_count_result.get('COUNT(*)') or user_count_result.get(list(user_count_result.keys())[0]) if user_count_result else 0)
         
         if user_count > 0:
-            return jsonify({'success': False, 'error': f'?��??�除：�? {user_count} ?�用?�正?�使?�此?��?'})
+            return jsonify({'success': False, 'error': f'?⊥??芷嚗? {user_count} ??嗆迤?其蝙?冽迨??'})
         
-        # ?�除?��?
+        # ?芷??
         cursor.execute('DELETE FROM services WHERE id = ?', (service_id,))
         
         conn.commit()
         conn.close()
         
-        return jsonify({'success': True, 'message': f'?��? {service["name"]} 已刪??})
+        return jsonify({'success': True, 'message': f'?? {service["name"]} 撌脣??})
         
     except Exception as e:
         conn.rollback()
         conn.close()
-        return jsonify({'success': False, 'error': f'?�除失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?芷憭望?: {str(e)}'})
 
 @app.route('/admin/user-services')
 def admin_user_services():
-    """?�戶?��?管�??�面"""
+    """?冽??蝞∠??"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
         return redirect(url_for('login'))
     
@@ -782,7 +782,7 @@ def admin_user_services():
         ORDER BY us.created_at DESC
     ''')
     user_services_rows = cursor.fetchall()
-    # 將Row對象轉�??��??��?�?
+    # 撠ow撠情頧??箏??詨?銵?
     user_services = [dict(row) for row in user_services_rows]
     conn.close()
     
@@ -790,9 +790,9 @@ def admin_user_services():
 
 @app.route('/admin/user-services/by-email/<email>')
 def get_user_services_by_email(email):
-    """?��?email?�詢?�戶?��?（API�?""
+    """?寞?email?亥岷?冽??嚗PI嚗?""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     from database import get_db_connection
     conn = get_db_connection()
@@ -815,15 +815,15 @@ def get_user_services_by_email(email):
 
 @app.route('/admin/users/<int:user_id>/password')
 def get_user_password(user_id):
-    """?��??�戶密碼信息"""
+    """?脣??冽撖Ⅳ靽⊥"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     from database import get_db_connection
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # ?��??�戶信息
+    # ?脣??冽靽⊥
     cursor.execute('SELECT username, password_hash FROM users WHERE id = ?', (user_id,))
     user = cursor.fetchone()
     conn.close()
@@ -832,18 +832,18 @@ def get_user_password(user_id):
         return jsonify({
             'success': True,
             'username': user['username'],
-            'password': '密碼已�?密�???,
-            'password_hash': user['password_hash'][:16] + '...',  # 顯示?��?hash
-            'note': '系統使用SHA256?��?存儲密碼，無法查?��???
+            'password': '撖Ⅳ撌脣?撖???,
+            'password_hash': user['password_hash'][:16] + '...',  # 憿舐內?典?hash
+            'note': '蝟餌絞雿輻SHA256??摮撖Ⅳ嚗瘜????
         })
     else:
-        return jsonify({'success': False, 'error': '?�戶不�???})
+        return jsonify({'success': False, 'error': '?冽銝???})
 
 @app.route('/admin/users/<int:user_id>/services')
 def get_user_services(user_id):
-    """?��??�戶?��??��?�?""
+    """?脣??冽????銵?""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     from database import get_db_connection
     conn = get_db_connection()
@@ -865,9 +865,9 @@ def get_user_services(user_id):
 
 @app.route('/admin/user-services/assign', methods=['POST'])
 def assign_user_service():
-    """?�用?��??��???""
+    """?箇?嗅?????""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     user_id = request.form.get('user_id')
     service_id = request.form.get('service_id')
@@ -876,7 +876,7 @@ def assign_user_service():
     auto_calculate = request.form.get('auto_calculate', 'true') == 'true'
     
     if not all([user_id, service_id, start_date]):
-        return jsonify({'success': False, 'error': '請填寫用?�、�??��??��??��?'})
+        return jsonify({'success': False, 'error': '隢‵撖怎?嗚??????交?'})
     
     from database import get_db_connection
     from datetime import datetime, timedelta
@@ -884,41 +884,41 @@ def assign_user_service():
     cursor = conn.cursor()
     
     try:
-        # 檢查?�戶?��??�是?��???
+        # 瑼Ｘ?冽????血???
         cursor.execute('SELECT id FROM users WHERE id = ?', (user_id,))
         if not cursor.fetchone():
-            return jsonify({'success': False, 'error': '?�戶不�???})
+            return jsonify({'success': False, 'error': '?冽銝???})
         
         cursor.execute('SELECT id, duration_days FROM services WHERE id = ?', (service_id,))
         service = cursor.fetchone()
         if not service:
-            return jsonify({'success': False, 'error': '?��?不�???})
+            return jsonify({'success': False, 'error': '??銝???})
         
-        # ?��?結�??��?
+        # ??蝯??交?
         if auto_calculate and not end_date:
-            # ?��?計�?結�??��?
+            # ?芸?閮?蝯??交?
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = start_dt + timedelta(days=service['duration_days'])
             end_date = end_dt.strftime('%Y-%m-%d')
         elif not end_date:
-            return jsonify({'success': False, 'error': '請填寫�??�日?��??��??��?計�?'})
+            return jsonify({'success': False, 'error': '隢‵撖怎?????豢??芸?閮?'})
         
-        # 驗�??��??��???
+        # 撽??交?????
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
         end_dt = datetime.strptime(end_date, '%Y-%m-%d')
         
         if end_dt <= start_dt:
-            return jsonify({'success': False, 'error': '結�??��?必�??�於?��??��?'})
+            return jsonify({'success': False, 'error': '蝯??交?敹?????交?'})
         
-        # 檢查?�否超�??��?標�??��?
+        # 瑼Ｘ?臬頞???璅???
         actual_days = (end_dt - start_dt).days
         if actual_days > service['duration_days']:
             return jsonify({
                 'success': False, 
-                'error': f'?��??��?不能超�?標�??��? {service["duration_days"]} �?
+                'error': f'????銝頞?璅??? {service["duration_days"]} 憭?
             })
         
-        # ?�入?�戶?��?記�?
+        # ??冽??閮?
         cursor.execute('''
             INSERT INTO user_services (user_id, service_id, start_date, end_date, status)
             VALUES (?, ?, ?, ?, 'active')
@@ -929,7 +929,7 @@ def assign_user_service():
         
         return jsonify({
             'success': True, 
-            'message': f'?��??��??��?！�??��?：{start_date} ??{end_date}（{actual_days}天�?'
+            'message': f'??????嚗???嚗start_date} ??{end_date}嚗actual_days}憭抬?'
         })
         
     except ValueError as e:
@@ -938,20 +938,20 @@ def assign_user_service():
     except Exception as e:
         conn.rollback()
         conn.close()
-        return jsonify({'success': False, 'error': f'?��?失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'??憭望?: {str(e)}'})
 
 @app.route('/admin/user-services/<int:user_service_id>', methods=['DELETE'])
 def delete_user_service(user_service_id):
-    """?�除?�戶?��?"""
+    """?芷?冽??"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     from database import get_db_connection
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # 檢查?�戶?��??�否存在
+        # 瑼Ｘ?冽???臬摮
         cursor.execute('''
             SELECT us.*, u.username, s.name as service_name
             FROM user_services us
@@ -965,7 +965,7 @@ def delete_user_service(user_service_id):
         if not user_service:
             return jsonify({'success': False, 'error': 'El servicio de usuario no existe'})
         
-        # ?�除?�戶?��?記�?
+        # ?芷?冽??閮?
         cursor.execute('DELETE FROM user_services WHERE id = ?', (user_service_id,))
         
         conn.commit()
@@ -973,19 +973,19 @@ def delete_user_service(user_service_id):
         
         return jsonify({
             'success': True, 
-            'message': f'?�戶 {user_service["username"]} ?��???{user_service["service_name"]} 已刪??
+            'message': f'?冽 {user_service["username"]} ????{user_service["service_name"]} 撌脣??
         })
         
     except Exception as e:
         conn.rollback()
         conn.close()
-        return jsonify({'success': False, 'error': f'?�除失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?芷憭望?: {str(e)}'})
 
 @app.route('/admin/user-services/<int:user_service_id>', methods=['GET'])
 def get_user_service(user_service_id):
-    """?��??�個用?��??�信??""
+    """?脣??桀?嗆??縑??""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     from database import get_db_connection
     conn = get_db_connection()
@@ -1002,10 +1002,10 @@ def get_user_service(user_service_id):
     user_service = cursor.fetchone()
     
     if user_service:
-        # 轉�??��???
+        # 頧??箏???
         user_service_dict = dict(user_service)
         
-        # 如�??��?置�??�試?�到對�??��??��?置�?�?
+        # 憒???蝵殷??岫?曉撠????賊?蝵桀?蝔?
         if user_service_dict.get('config_json'):
             cursor.execute('''
                 SELECT param_name FROM service_versions 
@@ -1014,7 +1014,7 @@ def get_user_service(user_service_id):
             
             param_result = cursor.fetchone()
             if param_result:
-                # ?��?返�??��?（可?�是字典?��?組�?
+                # ??餈??澆?嚗?賣摮??蝯?
                 if isinstance(param_result, dict):
                     user_service_dict['param_config'] = param_result.get('param_content') or param_result.get(list(param_result.keys())[0])
                 else:
@@ -1032,11 +1032,11 @@ def get_user_service(user_service_id):
 
 @app.route('/admin/user-services/<int:user_service_id>', methods=['PUT'])
 def update_user_service(user_service_id):
-    """?�新?�戶?��?"""
+    """?湔?冽??"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
-    # ?��? JSON ??form ?��?
+    # ?舀? JSON ??form ?豢?
     if request.is_json:
         data = request.get_json()
         start_date = data.get('start_date')
@@ -1050,7 +1050,7 @@ def update_user_service(user_service_id):
         param_config = None
     
     if not all([start_date, end_date]):
-        return jsonify({'success': False, 'error': '請填寫�?始日?��?結�??��?'})
+        return jsonify({'success': False, 'error': '隢‵撖恍?憪??蝯??交?'})
     
     from database import get_db_connection
     from datetime import datetime
@@ -1058,31 +1058,31 @@ def update_user_service(user_service_id):
     cursor = conn.cursor()
     
     try:
-        # 檢查?�戶?��??�否存在
+        # 瑼Ｘ?冽???臬摮
         cursor.execute('SELECT id FROM user_services WHERE id = ?', (user_service_id,))
         if not cursor.fetchone():
-            return jsonify({'success': False, 'error': '?�戶?��?不�???})
+            return jsonify({'success': False, 'error': '?冽??銝???})
         
-        # 驗�??��??��??��??��?
+        # 撽??交??澆?????
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
         end_dt = datetime.strptime(end_date, '%Y-%m-%d')
         
         if end_dt <= start_dt:
-            return jsonify({'success': False, 'error': '結�??��?必�??�於?��??��?'})
+            return jsonify({'success': False, 'error': '蝯??交?敹?????交?'})
         
-        # 如�??��?了�??��?置�??��??�置?�容
+        # 憒???鈭??賊?蝵殷??脣??蔭?批捆
         config_json = None
         if param_config:
             cursor.execute('SELECT param_content FROM service_versions WHERE service_name = "Zofri_Compra_Venta" AND param_name = ?', (param_config,))
             config_result = cursor.fetchone()
             if config_result:
-                # ?��?返�??��?（可?�是字典?��?組�?
+                # ??餈??澆?嚗?賣摮??蝯?
                 if isinstance(config_result, dict):
                     config_json = config_result.get('param_content') or config_result.get(list(config_result.keys())[0])
                 else:
-                    config_json = config_result[0]  # ?�裡保�??�是?��??�數�?��
+                    config_json = config_result[0]  # ?ㄐ靽?????隞?Ⅳ
         
-        # ?�新?�戶?��?
+        # ?湔?冽??
         if config_json:
             cursor.execute('''
                 UPDATE user_services 
@@ -1102,54 +1102,54 @@ def update_user_service(user_service_id):
         actual_days = (end_dt - start_dt).days
         return jsonify({
             'success': True, 
-            'message': f'?�戶?��??�新?��?！�??��?: {start_date} ??{end_date} ({actual_days} �?'
+            'message': f'?冽???湔??嚗???: {start_date} ??{end_date} ({actual_days} 憭?'
         })
         
     except ValueError as e:
         conn.close()
-        return jsonify({'success': False, 'error': '?��??��?不正確�?請使??YYYY-MM-DD ?��?'})
+        return jsonify({'success': False, 'error': '?交??澆?銝迤蝣綽?隢蝙??YYYY-MM-DD ?澆?'})
     except Exception as e:
         conn.rollback()
         conn.close()
-        return jsonify({'success': False, 'error': f'?�新失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?湔憭望?: {str(e)}'})
 
 @app.route('/admin/users/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
-    """?�除?�戶"""
+    """?芷?冽"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
-    # 檢查?�否?��?級管?�員（�?級管?�員不能被刪?��?
+    # 瑼Ｘ?臬?箄?蝝恣?嚗?蝝恣?銝鋡怠?歹?
     if str(user_id) == admin_config.SUPER_ADMIN_USERNAME:
-        return jsonify({'success': False, 'error': '超�?管�??�無法被?�除'})
+        return jsonify({'success': False, 'error': '頞?蝞∠??∠瘜◤?芷'})
     
     from database import get_db_connection
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # 檢查?�戶?�否存在
+        # 瑼Ｘ?冽?臬摮
         cursor.execute('SELECT username, role FROM users WHERE id = ?', (user_id,))
         user = cursor.fetchone()
         
         if not user:
-            return jsonify({'success': False, 'error': '?�戶不�???})
+            return jsonify({'success': False, 'error': '?冽銝???})
         
-        # 如�?要刪?��??�管?�員，檢?�是?��?導致沒�?管�???
+        # 憒?閬?斤??舐恣?嚗炎?交?行?撠瘝?蝞∠???
         if user['role'] == 'admin':
-            # 檢查?��?管�??�總?��?不�??��?級管?�員�?
+            # 瑼Ｘ?嗅?蝞∠??∠蜇?賂?銝??祈?蝝恣?嚗?
             cursor.execute('SELECT COUNT(*) as admin_count FROM users WHERE role="admin"')
             admin_count = cursor.fetchone()['admin_count']
             
-            # 如�??��?一?�管?�員，�??�許?�除（�?級管?�員永�?存在�?
+            # 憒??芣?銝?恣?嚗??迂?芷嚗?蝝恣?瘞賊?摮嚗?
             if admin_count <= 1:
                 conn.close()
                 return jsonify({
                     'success': False, 
-                    'error': '?��??�除：系統�??�至少�??��??�普?�管?�員?��?級管?�員永�?存在，�?建議保�??��?一?�普?�管?�員??
+                    'error': '?⊥??芷嚗頂蝯勗??撠?????恣???蝝恣?瘞賊?摮嚗?撱箄降靽??喳?銝??恣???
                 })
         
-        # ?�除?�戶?��??�相?�數??
+        # ?芷?冽??????
         cursor.execute('DELETE FROM user_services WHERE user_id = ?', (user_id,))
         cursor.execute('DELETE FROM verification_codes WHERE email = (SELECT email FROM users WHERE id = ?)', (user_id,))
         cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
@@ -1157,22 +1157,22 @@ def delete_user(user_id):
         conn.commit()
         conn.close()
         
-        return jsonify({'success': True, 'message': f'?�戶 {user["username"]} 已刪??})
+        return jsonify({'success': True, 'message': f'?冽 {user["username"]} 撌脣??})
         
     except Exception as e:
         conn.rollback()
         conn.close()
-        return jsonify({'success': False, 'error': f'?�除失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?芷憭望?: {str(e)}'})
 
 @app.route('/admin/users/<int:user_id>/reset-password', methods=['POST'])
 def reset_user_password(user_id):
-    """?�置?�戶密碼"""
+    """?蔭?冽撖Ⅳ"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     new_password = request.form.get('new_password')
     if not new_password:
-        return jsonify({'success': False, 'error': '請輸?�新密碼'})
+        return jsonify({'success': False, 'error': '隢撓?交撖Ⅳ'})
     
     from utils.validators import validate_password
     valid, msg = validate_password(new_password)
@@ -1186,14 +1186,14 @@ def reset_user_password(user_id):
     cursor = conn.cursor()
     
     try:
-        # 檢查?�戶?�否存在
+        # 瑼Ｘ?冽?臬摮
         cursor.execute('SELECT username FROM users WHERE id = ?', (user_id,))
         user = cursor.fetchone()
         
         if not user:
-            return jsonify({'success': False, 'error': '?�戶不�???})
+            return jsonify({'success': False, 'error': '?冽銝???})
         
-        # ?�新密碼
+        # ?湔撖Ⅳ
         password_hash = hash_password(new_password)
         cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, user_id))
         
@@ -1202,44 +1202,44 @@ def reset_user_password(user_id):
         
         return jsonify({
             'success': True, 
-            'message': f'?�戶 {user["username"]} ?��?碼已?�置',
-            'new_password': new_password  # 返�??��?碼�?管�??��??�用??
+            'message': f'?冽 {user["username"]} ??蝣澆歇?蔭',
+            'new_password': new_password  # 餈??啣?蝣潔?蝞∠??∪??亦??
         })
         
     except Exception as e:
         conn.rollback()
         conn.close()
-        return jsonify({'success': False, 'error': f'?�置失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?蔭憭望?: {str(e)}'})
 
 @app.route('/admin/database')
 def admin_database():
-    """管�??��??�庫?�覽"""
+    """蝞∠??∟??澈?汗"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
         return redirect(url_for('login'))
     
     try:
         from database import get_db_connection, get_cursor, get_table_names
         conn = get_db_connection()
-        cursor = get_cursor(conn)  # 使用 get_cursor 以支?��??�數?�庫類�?
+        cursor = get_cursor(conn)  # 雿輻 get_cursor 隞交????澈憿?
         
-        # ?��??�?�表?��?使用統�??�函?��?
+        # ?脣???”??雿輻蝯曹???賂?
         table_names = get_table_names(cursor)
         tables = [{'name': name} for name in table_names]
         
-        # ?��?每個表?�數??
+        # ?脣?瘥”???
         table_data = {}
         for table_name in table_names:
             try:
                 cursor.execute(f"SELECT * FROM {table_name}")
                 rows = cursor.fetchall()
-                # ?��?不�??��?庫�??�格�?
+                # ??銝??豢?摨怨??撘?
                 if rows and isinstance(rows[0], dict):
                     table_data[table_name] = rows
                 else:
-                    # SQLite 返�? Row 對象，�?要�???
+                    # SQLite 餈? Row 撠情嚗?閬???
                     table_data[table_name] = [dict(row) for row in rows]
             except Exception as e:
-                print(f"?��?�?{table_name} ?��?失�?: {e}")
+                print(f"?脣?銵?{table_name} ?豢?憭望?: {e}")
                 table_data[table_name] = []
         
         conn.close()
@@ -1248,18 +1248,18 @@ def admin_database():
         
     except Exception as e:
         import traceback
-        print(f"資�?庫瀏覽?�誤: {e}")
-        print(f"   詳細?�誤: {traceback.format_exc()}")
+        print(f"鞈?摨怎汗?航炊: {e}")
+        print(f"   閰喟敦?航炊: {traceback.format_exc()}")
         return render_template('admin/database.html', tables=[], table_data={}, error=str(e))
 
 
-# ?��??��??�除API已移?��??�用?��??��?系統
+# ?????芷API撌脩宏?歹??寧?啁???蝟餌絞
 
 
-# ========== 首�??��???==========
+# ========== 擐?????==========
 @app.route('/')
 def index():
-    """首�??��??�到管�??�登??""
+    """擐????蝞∠??∠??""
     if session.get('logged_in'):
         if session.get('role') in ['admin', admin_config.SUPER_ADMIN_ROLE]:
             return redirect(url_for('admin_dashboard'))
@@ -1268,10 +1268,10 @@ def index():
     return redirect(url_for('login'))
 
 
-# ========== ?�戶?��??��?路由 ==========
+# ========== ?冽???賊?頝舐 ==========
 @app.route('/user/services')
 def user_services():
-    """?�戶?��??�面"""
+    """?冽???"""
     if not session.get('logged_in'):
         return redirect(url_for('login'))
     
@@ -1279,9 +1279,9 @@ def user_services():
 
 @app.route('/user/services/api')
 def user_services_api():
-    """?��??��??�戶?��??��?表�?API�?""
+    """?脣??嗅??冽????銵剁?API嚗?""
     if not session.get('logged_in'):
-        return jsonify({'success': False, 'error': '請�??�入'})
+        return jsonify({'success': False, 'error': '隢??餃'})
     
     try:
         from database import get_db_connection
@@ -1289,7 +1289,7 @@ def user_services_api():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?��??�戶ID?�詢?��?
+        # ?寞??冽ID?亥岷??
         cursor.execute('''
             SELECT us.*, s.name as service_name, s.description
             FROM user_services us
@@ -1304,11 +1304,11 @@ def user_services_api():
         
         for row in services_rows:
             service = dict(row)
-            # 檢查?��??�否?��?激活�?status ??active �?end_date ?��??��?
+            # 瑼Ｘ???臬??瞈瘣鳴?status ??active 銝?end_date ?芷???
             if service.get('status') == 'active' and service.get('end_date'):
-                # 比�??��?字符串�??��?：YYYY-MM-DD�?
+                # 瘥??交?摮泵銝莎??澆?嚗YYY-MM-DD嚗?
                 if service['end_date'] < current_date:
-                    # 如�??��?了�?將�??�改??inactive
+                    # 憒???鈭?撠????inactive
                     service['status'] = 'inactive'
                     service['is_expired'] = True
             services.append(service)
@@ -1323,15 +1323,15 @@ def user_services_api():
 
 @app.route('/admin/user-services/<int:user_service_id>/config', methods=['GET'])
 def get_user_service_config(user_service_id):
-    """?��??�戶?��??�置"""
+    """?脣??冽???蔭"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?��??�戶?��??�置
+        # ?脣??冽???蔭
         cursor.execute("""
             SELECT us.config_json 
             FROM user_services us
@@ -1341,7 +1341,7 @@ def get_user_service_config(user_service_id):
         result = cursor.fetchone()
         conn.close()
         
-        # ?��?返�??��?（可?�是字典?��?組�?
+        # ??餈??澆?嚗?賣摮??蝯?
         config_str = None
         if result:
             if isinstance(result, dict):
@@ -1354,7 +1354,7 @@ def get_user_service_config(user_service_id):
             config = json.loads(config_str)
             return jsonify({'success': True, 'config': config})
         else:
-            # 返�?默�??�置
+            # 餈?暺??蔭
             default_config = {
                 'max_concurrent_downloads': 5,
                 'max_concurrent_procesar_venta': 5,
@@ -1372,13 +1372,13 @@ def get_user_service_config(user_service_id):
             return jsonify({'success': True, 'config': default_config})
             
     except Exception as e:
-        return jsonify({'success': False, 'error': f'?��??�置失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?脣??蔭憭望?: {str(e)}'})
 
 @app.route('/admin/user-services/<int:user_service_id>/config', methods=['POST'])
 def save_user_service_config(user_service_id):
-    """保�??�戶?��??�置"""
+    """靽??冽???蔭"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     try:
         data = request.get_json()
@@ -1387,7 +1387,7 @@ def save_user_service_config(user_service_id):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?�新?�戶?��??�置
+        # ?湔?冽???蔭
         import json
         cursor.execute("""
             UPDATE user_services 
@@ -1398,16 +1398,16 @@ def save_user_service_config(user_service_id):
         conn.commit()
         conn.close()
         
-        return jsonify({'success': True, 'message': '?�置保�??��?'})
+        return jsonify({'success': True, 'message': '?蔭靽???'})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': f'保�??�置失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'靽??蔭憭望?: {str(e)}'})
 
 @app.route('/admin/services/<int:service_id>/param', methods=['POST'])
 def save_service_param(service_id):
-    """保�??��??�數?�置"""
+    """靽?????蔭"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     try:
         data = request.get_json()
@@ -1415,36 +1415,36 @@ def save_service_param(service_id):
         param_content = data.get('param_content', '').strip()
         
         if not param_name:
-            return jsonify({'success': False, 'error': '?�數?�稱不能?�空'})
+            return jsonify({'success': False, 'error': '??迂銝?箇征'})
         
         if not param_content:
-            return jsonify({'success': False, 'error': '?�數?�容不能?�空'})
+            return jsonify({'success': False, 'error': '??批捆銝?箇征'})
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?��??��??�稱
+        # ?脣????迂
         cursor.execute("SELECT name FROM services WHERE id = ?", (service_id,))
         service = cursor.fetchone()
         if not service:
             conn.close()
-            return jsonify({'success': False, 'error': '?��?不�???})
+            return jsonify({'success': False, 'error': '??銝???})
         
         service_name = service[0]
         
-        # 檢查?�數?�稱?�否已�???
+        # 瑼Ｘ??迂?臬撌脣???
         cursor.execute("SELECT id FROM service_versions WHERE service_name = ? AND param_name = ?", (service_name, param_name))
         existing = cursor.fetchone()
         
         if existing:
-            # ?�新?��??�置
+            # ?湔?暹??蔭
             cursor.execute("""
                 UPDATE service_versions 
                 SET param_content = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE service_name = ? AND param_name = ?
             """, (param_content, service_name, param_name))
         else:
-            # ?�建?��?�?
+            # ?萄遣?圈?蝵?
             cursor.execute("""
                 INSERT INTO service_versions (service_name, param_name, param_content)
                 VALUES (?, ?, ?)
@@ -1453,31 +1453,31 @@ def save_service_param(service_id):
         conn.commit()
         conn.close()
         
-        return jsonify({'success': True, 'message': '?�數?�置保�??��?'})
+        return jsonify({'success': True, 'message': '??蔭靽???'})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': f'保�??�數失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'靽??憭望?: {str(e)}'})
 
 @app.route('/admin/services/<int:service_id>/versions', methods=['GET'])
 def get_service_versions(service_id):
-    """?��??��??��??��??��?�?""
+    """?脣????????賊?蝵?""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?��??��??�稱
+        # ?脣????迂
         cursor.execute("SELECT name FROM services WHERE id = ?", (service_id,))
         service = cursor.fetchone()
         if not service:
             conn.close()
-            return jsonify({'success': False, 'error': '?��?不�???})
+            return jsonify({'success': False, 'error': '??銝???})
         
         service_name = service[0]
         
-        # ?��??�?��??��?�?
+        # ?脣?????賊?蝵?
         cursor.execute("""
             SELECT id, param_name, param_content 
             FROM service_versions 
@@ -1499,23 +1499,23 @@ def get_service_versions(service_id):
         return jsonify({'success': True, 'params': param_list})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': f'?��??�數失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?脣??憭望?: {str(e)}'})
 
 @app.route('/admin/services/versions', methods=['GET'])
 def get_service_versions_by_name():
-    """?��??��??�稱?��??�數?�置"""
+    """?????迂?脣???蔭"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     service_name = request.args.get('service_name')
     if not service_name:
-        return jsonify({'success': False, 'error': '請�?供�??��?�?})
+        return jsonify({'success': False, 'error': '隢?靘???蝔?})
     
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?��??�?��??��?�?
+        # ?脣?????賊?蝵?
         cursor.execute("""
             SELECT id, param_name, param_content 
             FROM service_versions 
@@ -1536,47 +1536,47 @@ def get_service_versions_by_name():
         
         return jsonify({'success': True, 'versions': versions})
     except Exception as e:
-        return jsonify({'success': False, 'error': f'?��??�數?�置失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?脣???蔭憭望?: {str(e)}'})
 
 @app.route('/admin/services/<int:service_id>/param/<int:param_id>', methods=['DELETE'])
 def delete_service_param(service_id, param_id):
-    """?�除?��??�單?��??��?�?""
+    """?芷??????賊?蝵?""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?��??��??�稱
+        # ?脣????迂
         cursor.execute("SELECT name FROM services WHERE id = ?", (service_id,))
         service = cursor.fetchone()
         if not service:
             conn.close()
-            return jsonify({'success': False, 'error': '?��?不�???})
+            return jsonify({'success': False, 'error': '??銝???})
         
         service_name = service[0]
         
-        # ?�除?��??��??��?�?
+        # ?芷?????賊?蝵?
         cursor.execute("DELETE FROM service_versions WHERE id = ? AND service_name = ?", (param_id, service_name))
         
         if cursor.rowcount == 0:
             conn.close()
-            return jsonify({'success': False, 'error': '?�數?�置不�???})
+            return jsonify({'success': False, 'error': '??蔭銝???})
         
         conn.commit()
         conn.close()
         
-        return jsonify({'success': True, 'message': '?�數?�置?�除?��?'})
+        return jsonify({'success': True, 'message': '??蔭?芷??'})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': f'?�除?�數失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?芷?憭望?: {str(e)}'})
 
 @app.route('/admin/services/<int:service_id>/config', methods=['GET'])
 def get_service_config(service_id):
-    """?��??��???config_json ?�置"""
+    """?脣?????config_json ?蔭"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     try:
         conn = get_db_connection()
@@ -1591,7 +1591,7 @@ def get_service_config(service_id):
         result = cursor.fetchone()
         conn.close()
         
-        # ?��?返�??��?（可?�是字典?��?組�?
+        # ??餈??澆?嚗?賣摮??蝯?
         config_str = None
         if result:
             if isinstance(result, dict):
@@ -1604,7 +1604,7 @@ def get_service_config(service_id):
             config = json.loads(config_str)
             return jsonify({'success': True, 'config': config})
         else:
-            # 返�?默�??�置
+            # 餈?暺??蔭
             default_config = {
                 'max_concurrent_downloads': 5,
                 'max_concurrent_procesar_venta': 5,
@@ -1622,13 +1622,13 @@ def get_service_config(service_id):
             return jsonify({'success': True, 'config': default_config})
             
     except Exception as e:
-        return jsonify({'success': False, 'error': f'?��??�置失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?脣??蔭憭望?: {str(e)}'})
 
 @app.route('/admin/services/<int:service_id>/config', methods=['POST'])
 def save_service_config(service_id):
-    """保�??��???config_json ?�置"""
+    """靽?????config_json ?蔭"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     try:
         data = request.get_json()
@@ -1637,7 +1637,7 @@ def save_service_config(service_id):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?�新?��??�置
+        # ?湔???蔭
         import json
         cursor.execute("""
             UPDATE services 
@@ -1648,16 +1648,16 @@ def save_service_config(service_id):
         conn.commit()
         conn.close()
         
-        return jsonify({'success': True, 'message': '?��??�置保�??��?'})
+        return jsonify({'success': True, 'message': '???蔭靽???'})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': f'保�??�置失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'靽??蔭憭望?: {str(e)}'})
 
 @app.route('/admin/services/templates', methods=['GET'])
 def get_config_templates():
-    """?��??�數模板?�表"""
+    """?脣??璅⊥?”"""
     if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
-        return jsonify({'success': False, 'error': '權�?不足'})
+        return jsonify({'success': False, 'error': '甈?銝雲'})
     
     try:
         conn = get_db_connection()
@@ -1677,30 +1677,30 @@ def get_config_templates():
         for template in templates:
             template_list.append({
                 'id': template[0],
-                'name': template[1],  # version 作為模板?�稱
+                'name': template[1],  # version 雿璅⊥?迂
                 'description': template[2]
             })
         
         return jsonify({'success': True, 'templates': template_list})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': f'?��?模板失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?脣?璅⊥憭望?: {str(e)}'})
 
 @app.route('/api/user-config', methods=['GET'])
 def get_user_config():
-    """?��??�戶?�置?�數（�?�?��?�入?�使?��?"""
+    """?脣??冽?蔭?嚗?隞?Ⅳ?餃?蝙?剁?"""
     try:
-        # 從�?求頭?��??�戶信息（�?要�??�代碼在?�入?�傳?��?
+        # 敺?瘙?脣??冽靽⊥嚗?閬??誨蝣澆?餃???
         user_id = request.headers.get('X-User-ID')
         service_name = request.args.get('service_name', 'Zofri_Compra_Venta')
         
         if not user_id:
-            return jsonify({'success': False, 'error': '缺�??�戶ID'})
+            return jsonify({'success': False, 'error': '蝻箏??冽ID'})
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?��??�戶?��??��?�?
+        # ?脣??冽????蝵?
         cursor.execute("""
             SELECT us.config_json 
             FROM user_services us
@@ -1713,7 +1713,7 @@ def get_user_config():
         result = cursor.fetchone()
         conn.close()
         
-        # ?��?返�??��?（可?�是字典?��?組�?
+        # ??餈??澆?嚗?賣摮??蝯?
         config_params = None
         if result:
             if isinstance(result, dict):
@@ -1722,13 +1722,13 @@ def get_user_config():
                 config_params = result[0] if len(result) > 0 else None
         
         if config_params:
-            # 返�??��??�數�?��
+            # 餈????隞?Ⅳ
             return jsonify({
                 'success': True,
                 'config_params': config_params
             })
         else:
-            # 返�?默�??�數
+            # 餈?暺??
             default_params = """MAX_CONCURRENT_DOWNLOADS = 5
 MAX_CONCURRENT_PROCESAR_VENTA = 5
 MAX_CONCURRENT_PROCESAR_COMPRA = 3
@@ -1741,11 +1741,11 @@ MAX_CONCURRENT_COMPRA = 25"""
             })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': f'?��??�置失�?: {str(e)}'})
+        return jsonify({'success': False, 'error': f'?脣??蔭憭望?: {str(e)}'})
 
 @app.route('/admin/user-sessions')
 def admin_user_sessions():
-    """管�??�用?��?話監??""
+    """蝞∠??∠?嗆?閰梁??""
     if not session.get('logged_in'):
         return redirect(url_for('login'))
     
@@ -1755,10 +1755,11 @@ def admin_user_sessions():
     
     return render_template('admin/user_sessions.html')
 
-# ========== ?��??�用 ==========
+# ========== ??? ==========
 if __name__ == '__main__':
-    # ?��??��??�庫
+    # ?????澈
     init_database()
     
-    # ?�發模�??��?（PythonAnywhere ?�用 WSGI�?
+    # ?璅∪???嚗ythonAnywhere ? WSGI嚗?
     app.run(debug=True, host='0.0.0.0', port=5000)
+
