@@ -1,4 +1,5 @@
 from functools import wraps
+import logging
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -670,18 +671,38 @@ def iti_cache():
 @container_bp.route("/api/containers/refresh", methods=["POST"])
 @container_access_required
 def refresh_containers():
+    logger = logging.getLogger(__name__)
     data = request.get_json(force=True) or {}
     force_refresh = bool(data.get("force"))
     access_key, error = _require_access_key()
     if error:
         return error
 
+    t0 = time.time()
     cache_before = get_iti_cache_info()
+    logger.info(
+        "[refresh] start force=%s cache_before_age=%s cache_before_updated_at=%s",
+        force_refresh,
+        cache_before.get("age_seconds"),
+        cache_before.get("updated_at"),
+    )
 
+    t_iti0 = time.time()
     try:
         iti_index = get_iti_index(force_refresh=force_refresh)
     except Exception:
+        t_iti1 = time.time()
+        logger.exception(
+            "[refresh] iti fetch failed elapsed=%.3fs",
+            t_iti1 - t_iti0,
+        )
         return jsonify({"ok": False, "msg": "iti fetch failed"}), 502
+    t_iti1 = time.time()
+    logger.info(
+        "[refresh] iti fetch ok elapsed=%.3fs items=%s",
+        t_iti1 - t_iti0,
+        len(iti_index or {}),
+    )
 
     cache_after = get_iti_cache_info()
     refreshed = False
@@ -692,11 +713,14 @@ def refresh_containers():
     ):
         refreshed = True
 
+    t_db0 = time.time()
     conn = get_db_connection()
     cursor = get_cursor(conn)
     save_id = _ensure_latest_save_id(conn, cursor, access_key)
     if not save_id:
         conn.close()
+        t_end = time.time()
+        logger.info("[refresh] no save_id total=%.3fs", t_end - t0)
         return jsonify(
             {
                 "ok": True,
@@ -712,6 +736,7 @@ def refresh_containers():
         (access_key, save_id),
     )
     rows = cursor.fetchall()
+    logger.info("[refresh] rows_to_update=%s", len(rows))
 
     updated = 0
     for r in rows:
@@ -873,6 +898,13 @@ def clear_containers():
     )
     conn.commit()
     conn.close()
+    t_end = time.time()
+    logger.info(
+        "[refresh] done updated=%s total=%.3fs db=%.3fs",
+        updated,
+        t_end - t0,
+        t_end - t_db0,
+    )
     return jsonify({"ok": True, "deleted": 0})
 
 
