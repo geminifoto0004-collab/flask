@@ -1655,24 +1655,6 @@
             applyCacheInfo(payload);
             await loadItiCache();
 
-            let rows = [];
-            try {
-                const listRes = await fetch('/api/containers/list');
-                if (listRes.ok) {
-                    rows = await listRes.json();
-                }
-            } catch (e) {
-                rows = [];
-            }
-
-            if (!isDirty) {
-                hot.loadData(buildTableData(rows));
-                isDirty = false;
-                updateStats();
-            } else {
-                mergeItiIntoTable(rows);
-            }
-
             if (showMessage) {
                 showToast(`Actualizados ${payload.updated} registros`, 'success');
             }
