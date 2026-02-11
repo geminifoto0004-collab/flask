@@ -722,13 +722,83 @@ def refresh_containers():
     ):
         refreshed = True
 
-    updated = 0
-    t_end = time.time()
-    logger.info(
-        "[refresh] cache-only done total=%.3fs refreshed=%s",
-        t_end - t0,
-        refreshed,
+    t_db0 = time.time()
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    save_id = _ensure_latest_save_id(conn, cursor, access_key)
+    if not save_id:
+        conn.close()
+        t_end = time.time()
+        logger.info("[refresh] no save_id total=%.3fs", t_end - t0)
+        return jsonify(
+            {
+                "ok": True,
+                "updated": 0,
+                "refreshed": refreshed,
+                "cache_updated_at": cache_after.get("updated_at"),
+                "cache_age_seconds": cache_after.get("age_seconds"),
+                "cache_ttl_seconds": cache_after.get("ttl_seconds"),
+            }
+        )
+    cursor.execute(
+        "SELECT id, container_no FROM container_items WHERE access_token = ? AND save_id = ?",
+        (access_key, save_id),
     )
+    rows = cursor.fetchall()
+    logger.info("[refresh] rows_to_update=%s", len(rows))
+
+    updated = 0
+    for r in rows:
+        row = get_row_dict(r, cursor) or {}
+        container_no = row.get("container_no")
+        row_id = row.get("id") if isinstance(row, dict) else None
+        if row_id is None and isinstance(r, (list, tuple)):
+            row_id = r[0]
+            if len(r) > 1:
+                container_no = r[1]
+
+        iti = match_iti(iti_index, container_no)
+        if iti:
+            vessel = iti.get("vessel") or ""
+            status = "Con datos"
+            folio = iti.get("folio") or ""
+            sigla = iti.get("sigla") or ""
+            numero = iti.get("numero") or ""
+            digito = iti.get("digito") or ""
+            fecha_entrega = iti.get("fecha_entrega") or ""
+            pies = iti.get("pies") or ""
+            has_data = 1
+        else:
+            vessel = ""
+            status = "Sin datos"
+            folio = ""
+            sigla = ""
+            numero = ""
+            digito = ""
+            fecha_entrega = ""
+            pies = ""
+            has_data = 0
+
+        cursor.execute(
+            """
+            UPDATE container_items
+            SET vessel = ?,
+                status = ?,
+                folio = ?,
+                sigla = ?,
+                numero = ?,
+                digito = ?,
+                fecha_entrega = ?,
+                pies = ?,
+                has_data = ?
+            WHERE id = ?
+            """,
+            (vessel, status, folio, sigla, numero, digito, fecha_entrega, pies, has_data, row_id),
+        )
+        updated += 1
+
+    conn.commit()
+    conn.close()
     return jsonify(
         {
             "ok": True,
