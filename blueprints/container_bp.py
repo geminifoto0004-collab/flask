@@ -858,28 +858,42 @@ def cleanup_containers():
     if limit <= 0:
         limit = 500
 
-    access_key, error = _require_access_key()
-    if error:
-        return error
-
+    access_key = data.get("token") or data.get("access_token")
     conn = get_db_connection()
     cursor = get_cursor(conn)
-    save_id = _ensure_latest_save_id(conn, cursor, access_key)
-    if not save_id:
-        conn.close()
-        return jsonify({"ok": True, "deleted": 0})
 
-    cursor.execute(
-        """
-        SELECT id
-        FROM container_items
-        WHERE access_token = ?
-          AND (save_id IS NULL OR save_id != ?)
-        ORDER BY saved_at ASC
-        LIMIT ?
-        """,
-        (access_key, save_id, limit),
-    )
+    if access_key:
+        save_id = _ensure_latest_save_id(conn, cursor, access_key)
+        if not save_id:
+            conn.close()
+            return jsonify({"ok": True, "deleted": 0})
+        cursor.execute(
+            """
+            SELECT id
+            FROM container_items
+            WHERE access_token = ?
+              AND (save_id IS NULL OR save_id != ?)
+            ORDER BY saved_at ASC
+            LIMIT ?
+            """,
+            (access_key, save_id, limit),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT id
+            FROM container_items
+            WHERE save_id IS NULL
+               OR save_id NOT IN (
+                   SELECT latest_save_id
+                   FROM container_access_tokens
+                   WHERE latest_save_id IS NOT NULL
+               )
+            ORDER BY saved_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
     rows = cursor.fetchall()
     ids = []
     for row in rows:
