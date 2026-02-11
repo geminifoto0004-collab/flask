@@ -21,6 +21,7 @@ from services.container_access_service import (
     create_token,
     delete_token,
     ensure_admin_from_env,
+    get_recent_session_id,
     admin_initialized,
     is_session_active,
     kick_token,
@@ -202,6 +203,14 @@ def gate(access_key: str):
 
     ok, msg, _token = validate_access_key(access_key)
     if not ok:
+        if msg == "max concurrent reached":
+            existing_id = get_recent_session_id(
+                access_key, _client_ip(), request.headers.get("User-Agent", "")
+            )
+            if existing_id:
+                session["container_access_session_id"] = existing_id
+                session["container_access_token"] = access_key
+                return render_template("container/excel_mode.html")
         return render_template("container/access_denied.html", reason=msg), 403
 
     session_id = create_access_session(
