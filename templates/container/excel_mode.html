@@ -574,6 +574,8 @@
         let pendingLookupMap = new Map();
         let autoRefreshMs = 5 * 60 * 1000;
         let refreshInFlight = false;
+        let countdownLabel = 'Actualización ITI en';
+        const pendingRefreshRetryMs = 60 * 1000;
         let itiCacheReady = false;
         let itiCacheItems = [];
         let itiCacheIndex = new Map();
@@ -1122,7 +1124,7 @@
             const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
             const seconds = String(totalSeconds % 60).padStart(2, '0');
             const suffix = lastCacheUpdatedAt ? ` · Última: ${lastCacheUpdatedAt}` : '';
-            setCountdown(`Actualización ITI en ${minutes}:${seconds}${suffix}`);
+            setCountdown(`${countdownLabel} ${minutes}:${seconds}${suffix}`);
         }
 
         function scheduleNextRefresh(delayMs) {
@@ -1154,8 +1156,15 @@
                     0,
                     Number(payload.cache_next_refresh_in_seconds) || 0
                 );
-                nextRefreshAt = Date.now() + remainingSeconds * 1000;
-                scheduleNextRefresh(remainingSeconds * 1000);
+                if (remainingSeconds <= 0) {
+                    countdownLabel = 'Actualización pendiente, reintento en';
+                    nextRefreshAt = Date.now() + pendingRefreshRetryMs;
+                    scheduleNextRefresh(pendingRefreshRetryMs);
+                } else {
+                    countdownLabel = 'Actualización ITI en';
+                    nextRefreshAt = Date.now() + remainingSeconds * 1000;
+                    scheduleNextRefresh(remainingSeconds * 1000);
+                }
                 updateCountdown();
                 return;
             }
@@ -1168,12 +1177,20 @@
                     0,
                     payload.cache_ttl_seconds - payload.cache_age_seconds
                 );
-                nextRefreshAt = Date.now() + remainingSeconds * 1000;
-                scheduleNextRefresh(remainingSeconds * 1000);
+                if (remainingSeconds <= 0) {
+                    countdownLabel = 'Actualización pendiente, reintento en';
+                    nextRefreshAt = Date.now() + pendingRefreshRetryMs;
+                    scheduleNextRefresh(pendingRefreshRetryMs);
+                } else {
+                    countdownLabel = 'Actualización ITI en';
+                    nextRefreshAt = Date.now() + remainingSeconds * 1000;
+                    scheduleNextRefresh(remainingSeconds * 1000);
+                }
                 updateCountdown();
                 return;
             }
 
+            countdownLabel = 'Actualización ITI en';
             nextRefreshAt = Date.now() + autoRefreshMs;
             scheduleNextRefresh(autoRefreshMs);
             updateCountdown();
