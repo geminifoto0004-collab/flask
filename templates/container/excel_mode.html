@@ -759,7 +759,7 @@
                 : (payload.cache_age_seconds && payload.cache_age_seconds > 300);
             if (!skipBackgroundRefresh && isStale && !refreshInFlight) {
                 console.log('Cache is stale, triggering refresh...');
-                refreshFromITI(false, false);
+                refreshFromITI(false, true);
             }
 
             if (pendingLookup.size > 0) {
