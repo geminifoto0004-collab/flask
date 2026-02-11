@@ -237,6 +237,8 @@ def get_iti_cache_info() -> Dict[str, Optional[object]]:
     ttl_seconds = _get_cache_ttl_seconds()
     updated_at = None
     age_seconds = None
+    next_refresh_at = None
+    next_refresh_in_seconds = None
     conn = None
 
     try:
@@ -257,11 +259,17 @@ def get_iti_cache_info() -> Dict[str, Optional[object]]:
     updated_at_str = None
     if updated_at:
         updated_at_str = updated_at.strftime("%Y-%m-%d %H:%M:%S")
+        next_refresh_dt = updated_at + timedelta(seconds=ttl_seconds)
+        next_refresh_at = next_refresh_dt.strftime("%Y-%m-%d %H:%M:%S")
+        if age_seconds is not None:
+            next_refresh_in_seconds = max(0.0, ttl_seconds - age_seconds)
 
     return {
         "ttl_seconds": ttl_seconds,
         "updated_at": updated_at_str,
         "age_seconds": age_seconds,
+        "next_refresh_at": next_refresh_at,
+        "next_refresh_in_seconds": next_refresh_in_seconds,
     }
 
 

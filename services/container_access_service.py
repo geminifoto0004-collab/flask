@@ -304,6 +304,10 @@ def clear_sessions_for_token(token_id: int) -> None:
         data = get_row_dict(row, cursor)
         token = data.get("token") if data else row[0]
         cursor.execute("DELETE FROM container_access_sessions WHERE token = ?", (token,))
+    cursor.execute(
+        "UPDATE container_access_tokens SET blocked_until = NULL WHERE id = ?",
+        (token_id,),
+    )
     conn.commit()
     conn.close()
 

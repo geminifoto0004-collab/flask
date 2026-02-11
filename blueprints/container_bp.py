@@ -673,6 +673,8 @@ def iti_cache():
             "cache_updated_at": cache_info.get("updated_at"),
             "cache_age_seconds": cache_info.get("age_seconds"),
             "cache_ttl_seconds": cache_info.get("ttl_seconds"),
+            "cache_next_refresh_at": cache_info.get("next_refresh_at"),
+            "cache_next_refresh_in_seconds": cache_info.get("next_refresh_in_seconds"),
         }
     )
 
@@ -737,6 +739,8 @@ def refresh_containers():
             "cache_updated_at": cache_after.get("updated_at"),
             "cache_age_seconds": cache_after.get("age_seconds"),
             "cache_ttl_seconds": cache_after.get("ttl_seconds"),
+            "cache_next_refresh_at": cache_after.get("next_refresh_at"),
+            "cache_next_refresh_in_seconds": cache_after.get("next_refresh_in_seconds"),
         }
     )
 

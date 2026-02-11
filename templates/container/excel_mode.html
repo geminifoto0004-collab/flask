@@ -568,6 +568,7 @@
         let autoRefreshTimer = null;
         let countdownTimer = null;
         let nextRefreshAt = null;
+        let lastCacheUpdatedAt = null;
         let lookupTimer = null;
         let pendingLookup = new Set();
         let pendingLookupMap = new Map();
@@ -701,7 +702,8 @@
             return matches;
         }
 
-        async function loadItiCache() {
+        async function loadItiCache(options = {}) {
+            const skipBackgroundRefresh = !!options.skipBackgroundRefresh;
             itiCacheReady = false;
             const handleCacheFailure = () => {
                 buildItiCacheIndexes([]);
@@ -745,21 +747,19 @@
                 applyCacheInfo({
                     cache_ttl_seconds: payload.cache_ttl_seconds,
                     cache_age_seconds: payload.cache_age_seconds,
-                    cache_updated_at: payload.cache_updated_at
+                    cache_updated_at: payload.cache_updated_at,
+                    cache_next_refresh_at: payload.cache_next_refresh_at,
+                    cache_next_refresh_in_seconds: payload.cache_next_refresh_in_seconds
                 });
             }
 
-            if (payload.cache_age_seconds && payload.cache_age_seconds > 300) {
+            const nextRefreshInSeconds = payload.cache_next_refresh_in_seconds;
+            const isStale = nextRefreshInSeconds != null
+                ? Number(nextRefreshInSeconds) <= 0
+                : (payload.cache_age_seconds && payload.cache_age_seconds > 300);
+            if (!skipBackgroundRefresh && isStale && !refreshInFlight) {
                 console.log('Cache is stale, triggering refresh...');
-                fetch('/api/containers/refresh', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ force: false })
-                }).then(() => {
-                    console.log('ITI cache refreshed in background');
-                }).catch((err) => {
-                    console.error('Background refresh failed:', err);
-                });
+                refreshFromITI(false, false);
             }
 
             if (pendingLookup.size > 0) {
@@ -1099,10 +1099,17 @@
                 return;
             }
             if (!nextRefreshAt) {
-                setCountdown('');
                 const el = document.getElementById('iti-countdown');
-                if (el) {
-                    el.style.visibility = 'hidden';
+                if (lastCacheUpdatedAt) {
+                    if (el) {
+                        el.style.visibility = 'visible';
+                    }
+                    setCountdown(`Actualizado: ${lastCacheUpdatedAt}`);
+                } else {
+                    setCountdown('');
+                    if (el) {
+                        el.style.visibility = 'hidden';
+                    }
                 }
                 return;
             }
@@ -1114,7 +1121,8 @@
             const totalSeconds = Math.ceil(diff / 1000);
             const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
             const seconds = String(totalSeconds % 60).padStart(2, '0');
-            setCountdown(`Actualización ITI en ${minutes}:${seconds}`);
+            const suffix = lastCacheUpdatedAt ? ` · Última: ${lastCacheUpdatedAt}` : '';
+            setCountdown(`Actualización ITI en ${minutes}:${seconds}${suffix}`);
         }
 
         function scheduleNextRefresh(delayMs) {
@@ -1129,6 +1137,7 @@
 
         function applyCacheInfo(payload) {
             if (!payload) {
+                lastCacheUpdatedAt = null;
                 nextRefreshAt = Date.now() + autoRefreshMs;
                 scheduleNextRefresh(autoRefreshMs);
                 updateCountdown();
@@ -1137,6 +1146,18 @@
 
             if (payload.cache_ttl_seconds) {
                 autoRefreshMs = Math.max(30000, payload.cache_ttl_seconds * 1000);
+            }
+
+            lastCacheUpdatedAt = payload.cache_updated_at || null;
+            if (payload.cache_next_refresh_in_seconds != null) {
+                const remainingSeconds = Math.max(
+                    0,
+                    Number(payload.cache_next_refresh_in_seconds) || 0
+                );
+                nextRefreshAt = Date.now() + remainingSeconds * 1000;
+                scheduleNextRefresh(remainingSeconds * 1000);
+                updateCountdown();
+                return;
             }
 
             if (
@@ -1156,6 +1177,25 @@
             nextRefreshAt = Date.now() + autoRefreshMs;
             scheduleNextRefresh(autoRefreshMs);
             updateCountdown();
+        }
+
+        function reapplyLookupAllRows() {
+            if (!hot || !itiCacheReady) {
+                return;
+            }
+            const data = hot.getData();
+            const items = [];
+            for (let i = 0; i < data.length; i++) {
+                const key = getRowKey(i);
+                if (!key) {
+                    continue;
+                }
+                items.push({ value: key, row: i });
+            }
+            if (items.length === 0) {
+                return;
+            }
+            queueLookup(items);
         }
 
         function queueLookup(containers) {
@@ -1653,7 +1693,8 @@
                 return;
             }
             applyCacheInfo(payload);
-            await loadItiCache();
+            await loadItiCache({ skipBackgroundRefresh: true });
+            reapplyLookupAllRows();
 
             if (showMessage) {
                 showToast(`Actualizados ${payload.updated} registros`, 'success');
