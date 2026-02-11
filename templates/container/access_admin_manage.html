@@ -685,6 +685,9 @@
         <section class="card">
             <div class="card-header">
                 <h2 class="card-title">Active Tokens</h2>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="openCleanupModal()">
+                    Cleanup History
+                </button>
             </div>
             <div class="table-container">
                 <table>
@@ -719,6 +722,22 @@
             <div class="modal-actions">
                 <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
                 <button class="btn btn-danger" id="confirm-ok">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="cleanup-modal" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cleanup-title">
+            <h3 id="cleanup-title">Cleanup Old Records</h3>
+            <p>Remove historical snapshots (not the latest). This does not affect current data.</p>
+            <div class="modal-field">
+                <label for="cleanup-limit">Delete limit (optional)</label>
+                <input id="cleanup-limit" type="number" min="1" placeholder="500">
+                <div class="modal-hint">Only removes non-latest snapshots.</div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" id="cleanup-cancel">Cancel</button>
+                <button class="btn btn-danger" id="cleanup-confirm">Run Cleanup</button>
             </div>
         </div>
     </div>
@@ -1032,6 +1051,64 @@
                         return;
                     }
                     closeConfirm(false);
+                }
+            });
+        }
+
+        const cleanupModal = document.getElementById('cleanup-modal');
+        const cleanupLimit = document.getElementById('cleanup-limit');
+        const cleanupConfirm = document.getElementById('cleanup-confirm');
+        const cleanupCancel = document.getElementById('cleanup-cancel');
+
+        function openCleanupModal() {
+            if (!cleanupModal) return;
+            if (cleanupLimit) {
+                cleanupLimit.value = '';
+                cleanupLimit.focus();
+            }
+            cleanupModal.classList.add('show');
+        }
+
+        function closeCleanupModal() {
+            if (!cleanupModal) return;
+            cleanupModal.classList.remove('show');
+        }
+
+        async function runCleanup() {
+            let limit = null;
+            if (cleanupLimit) {
+                const raw = cleanupLimit.value.trim();
+                if (raw !== '') {
+                    const parsed = Number(raw);
+                    if (Number.isFinite(parsed) && parsed > 0) {
+                        limit = parsed;
+                    }
+                }
+            }
+            closeCleanupModal();
+            showToast('Cleaning up history...', 'info');
+            try {
+                const res = await fetch('/api/containers/cleanup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(limit ? { limit } : {})
+                });
+                const payload = await res.json();
+                if (!res.ok || !payload.ok) {
+                    throw new Error(payload.msg || 'Cleanup failed');
+                }
+                showToast(`Cleanup done. Deleted ${payload.deleted || 0} records.`, 'success');
+            } catch (e) {
+                showToast(`Cleanup failed: ${e.message}`, 'error');
+            }
+        }
+
+        if (cleanupConfirm && cleanupCancel && cleanupModal) {
+            cleanupConfirm.addEventListener('click', runCleanup);
+            cleanupCancel.addEventListener('click', closeCleanupModal);
+            cleanupModal.addEventListener('click', (e) => {
+                if (e.target === cleanupModal) {
+                    closeCleanupModal();
                 }
             });
         }
