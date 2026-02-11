@@ -848,7 +848,6 @@ def clear_containers():
 
 
 @container_bp.route("/api/containers/cleanup", methods=["POST"])
-@container_access_required
 def cleanup_containers():
     data = request.get_json(silent=True) or {}
     limit = data.get("limit", 500)
