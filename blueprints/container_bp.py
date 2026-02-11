@@ -196,7 +196,7 @@ def gate(access_key: str):
         ok, msg, _token = validate_access_key(access_key)
         if ok or msg == "max concurrent reached":
             touch_session(existing_session)
-            return redirect("/container")
+            return render_template("container/excel_mode.html")
         session.pop("container_access_session_id", None)
         session.pop("container_access_token", None)
 
@@ -209,7 +209,7 @@ def gate(access_key: str):
     )
     session["container_access_session_id"] = session_id
     session["container_access_token"] = access_key
-    return redirect("/container")
+    return render_template("container/excel_mode.html")
 
 
 @container_bp.route("/container")
