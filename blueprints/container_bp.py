@@ -850,13 +850,14 @@ def clear_containers():
 @container_bp.route("/api/containers/cleanup", methods=["POST"])
 def cleanup_containers():
     data = request.get_json(silent=True) or {}
-    limit = data.get("limit", 500)
-    try:
-        limit = int(limit)
-    except (TypeError, ValueError):
-        limit = 500
-    if limit <= 0:
-        limit = 500
+    limit = data.get("limit")
+    if limit is not None:
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = None
+        if limit is not None and limit <= 0:
+            limit = None
 
     access_key = data.get("token") or data.get("access_token")
     conn = get_db_connection()
@@ -867,20 +868,20 @@ def cleanup_containers():
         if not save_id:
             conn.close()
             return jsonify({"ok": True, "deleted": 0})
-        cursor.execute(
-            """
+        sql = """
             SELECT id
             FROM container_items
             WHERE access_token = ?
               AND (save_id IS NULL OR save_id != ?)
             ORDER BY saved_at ASC
-            LIMIT ?
-            """,
-            (access_key, save_id, limit),
-        )
+        """
+        params = [access_key, save_id]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        cursor.execute(sql, params)
     else:
-        cursor.execute(
-            """
+        sql = """
             SELECT id
             FROM container_items
             WHERE save_id IS NULL
@@ -890,10 +891,12 @@ def cleanup_containers():
                    WHERE latest_save_id IS NOT NULL
                )
             ORDER BY saved_at ASC
-            LIMIT ?
-            """,
-            (limit,),
-        )
+        """
+        params = []
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        cursor.execute(sql, params)
     rows = cursor.fetchall()
     ids = []
     for row in rows:

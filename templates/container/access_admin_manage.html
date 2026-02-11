@@ -731,9 +731,9 @@
             <h3 id="cleanup-title">Cleanup Old Records</h3>
             <p>Remove historical snapshots (not the latest). This does not affect current data.</p>
             <div class="modal-field">
-                <label for="cleanup-limit">Delete limit (optional)</label>
-                <input id="cleanup-limit" type="number" min="1" placeholder="500">
-                <div class="modal-hint">Only removes non-latest snapshots.</div>
+                <label for="cleanup-limit">Delete limit (leave empty for all)</label>
+                <input id="cleanup-limit" type="number" min="1" placeholder="All">
+                <div class="modal-hint">Leaves the latest snapshot intact.</div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-ghost" id="cleanup-cancel">Cancel</button>
