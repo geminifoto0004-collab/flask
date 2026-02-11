@@ -569,6 +569,7 @@
         let countdownTimer = null;
         let nextRefreshAt = null;
         let lastCacheUpdatedAt = null;
+        let lastRefreshSucceeded = true;
         let lookupTimer = null;
         let pendingLookup = new Set();
         let pendingLookupMap = new Map();
@@ -1100,6 +1101,21 @@
                 setCountdown('Actualizando ITI...');
                 return;
             }
+            if (!lastRefreshSucceeded) {
+                const el = document.getElementById('iti-countdown');
+                if (lastCacheUpdatedAt) {
+                    if (el) {
+                        el.style.visibility = 'visible';
+                    }
+                    setCountdown(`Actualizado: ${lastCacheUpdatedAt}`);
+                } else {
+                    setCountdown('');
+                    if (el) {
+                        el.style.visibility = 'hidden';
+                    }
+                }
+                return;
+            }
             if (!nextRefreshAt) {
                 const el = document.getElementById('iti-countdown');
                 if (lastCacheUpdatedAt) {
@@ -1156,15 +1172,12 @@
                     0,
                     Number(payload.cache_next_refresh_in_seconds) || 0
                 );
-                if (remainingSeconds <= 0) {
-                    countdownLabel = 'Actualización pendiente, reintento en';
-                    nextRefreshAt = Date.now() + pendingRefreshRetryMs;
-                    scheduleNextRefresh(pendingRefreshRetryMs);
-                } else {
-                    countdownLabel = 'Actualización ITI en';
-                    nextRefreshAt = Date.now() + remainingSeconds * 1000;
-                    scheduleNextRefresh(remainingSeconds * 1000);
-                }
+                countdownLabel = 'Actualización ITI en';
+                const delayMs = remainingSeconds > 0
+                    ? remainingSeconds * 1000
+                    : pendingRefreshRetryMs;
+                nextRefreshAt = Date.now() + delayMs;
+                scheduleNextRefresh(delayMs);
                 updateCountdown();
                 return;
             }
@@ -1177,15 +1190,12 @@
                     0,
                     payload.cache_ttl_seconds - payload.cache_age_seconds
                 );
-                if (remainingSeconds <= 0) {
-                    countdownLabel = 'Actualización pendiente, reintento en';
-                    nextRefreshAt = Date.now() + pendingRefreshRetryMs;
-                    scheduleNextRefresh(pendingRefreshRetryMs);
-                } else {
-                    countdownLabel = 'Actualización ITI en';
-                    nextRefreshAt = Date.now() + remainingSeconds * 1000;
-                    scheduleNextRefresh(remainingSeconds * 1000);
-                }
+                countdownLabel = 'Actualización ITI en';
+                const delayMs = remainingSeconds > 0
+                    ? remainingSeconds * 1000
+                    : pendingRefreshRetryMs;
+                nextRefreshAt = Date.now() + delayMs;
+                scheduleNextRefresh(delayMs);
                 updateCountdown();
                 return;
             }
@@ -1689,7 +1699,9 @@
                 });
             } catch (e) {
                 showToast('Fallo de conexión con la API', 'error');
-                applyCacheInfo(null);
+                lastRefreshSucceeded = false;
+                nextRefreshAt = Date.now() + pendingRefreshRetryMs;
+                scheduleNextRefresh(pendingRefreshRetryMs);
                 refreshInFlight = false;
                 updateCountdown();
                 return;
@@ -1704,11 +1716,14 @@
 
             if (!res.ok || !payload || !payload.ok) {
                 showToast((payload && payload.msg) ? payload.msg : 'Error al actualizar', 'error');
-                applyCacheInfo(null);
+                lastRefreshSucceeded = false;
+                nextRefreshAt = Date.now() + pendingRefreshRetryMs;
+                scheduleNextRefresh(pendingRefreshRetryMs);
                 refreshInFlight = false;
                 updateCountdown();
                 return;
             }
+            lastRefreshSucceeded = true;
             applyCacheInfo(payload);
             await loadItiCache({ skipBackgroundRefresh: true });
             reapplyLookupAllRows();
