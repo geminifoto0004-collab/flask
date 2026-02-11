@@ -270,6 +270,12 @@ def get_text_type():
     else:
         return 'TEXT'
 
+def get_large_text_type():
+    """Larger text type for big payloads (e.g., ITI cache)."""
+    if config.DATABASE_TYPE in ('mysql', 'tidb'):
+        return 'MEDIUMTEXT'
+    return 'TEXT'
+
 def get_text_type_with_default():
     """
     ?²å?å¸¶é?èªå¼ç??æ¬é¡å?
@@ -913,8 +919,13 @@ def init_database():
             )
         '''.format(
             id_type=get_id_type(),
-            text_type=get_text_type()
+            text_type=get_large_text_type()
         ))
+        if config.DATABASE_TYPE in ('mysql', 'tidb'):
+            try:
+                cursor.execute("ALTER TABLE container_iti_cache MODIFY payload MEDIUMTEXT")
+            except Exception:
+                pass
         print("container_iti_cache table ready")
         
         # ?å??é?èªæ???
