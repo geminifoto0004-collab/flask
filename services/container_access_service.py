@@ -158,10 +158,22 @@ def list_tokens() -> List[Dict]:
     cutoff = now - timedelta(minutes=timeout_minutes)
 
     results: List[Dict] = []
+    needs_commit = False
     for row in rows:
         data = get_row_dict(row, cursor)
         if not data:
             continue
+        blocked_until = data.get("blocked_until")
+        blocked_until_dt = blocked_until
+        if isinstance(blocked_until, str):
+            blocked_until_dt = _parse_datetime(blocked_until)
+        if blocked_until_dt and now >= blocked_until_dt:
+            cursor.execute(
+                "UPDATE container_access_tokens SET blocked_until = NULL WHERE id = ?",
+                (data.get("id"),),
+            )
+            data["blocked_until"] = None
+            needs_commit = True
         token = data.get("token")
         cursor.execute(
             "SELECT COUNT(*) AS cnt FROM container_access_sessions WHERE token = ? AND last_heartbeat >= ?",
@@ -174,6 +186,8 @@ def list_tokens() -> List[Dict]:
         data["created_at"] = _format_dt(data.get("created_at"))
         data["last_used_at"] = _format_dt(data.get("last_used_at"))
         results.append(data)
+    if needs_commit:
+        conn.commit()
     conn.close()
     return results
 

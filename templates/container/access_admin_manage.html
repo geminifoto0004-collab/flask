@@ -769,6 +769,18 @@
             return `${window.location.origin}/gate/${token}`;
         }
 
+        function normalizeBlockedUntil(value) {
+            if (!value) return '';
+            const parsed = new Date(String(value).replace(' ', 'T'));
+            if (Number.isNaN(parsed.getTime())) {
+                return value;
+            }
+            if (parsed.getTime() <= Date.now()) {
+                return '';
+            }
+            return value;
+        }
+
         async function loadTokens() {
             let data;
             try {
@@ -795,6 +807,7 @@
             data.tokens.forEach(token => {
                 const tr = document.createElement('tr');
                 tr.dataset.tokenId = token.id;
+                const blockedText = normalizeBlockedUntil(token.blocked_until);
                 tr.innerHTML = `
                     <td><span class="mono">${token.token}</span></td>
                     <td><input class="input-note" value="${token.note || ''}" placeholder="Add note..."></td>
@@ -804,7 +817,7 @@
                             <option value="disabled" ${token.status === 'disabled' ? 'selected' : ''}>disabled</option>
                         </select>
                     </td>
-                    <td class="blocked-text">${token.blocked_until || ''}</td>
+                    <td class="blocked-text">${blockedText}</td>
                     <td><input class="input-md" type="date" value="${formatDate(token.expires_at)}"></td>
                     <td><input class="input-sm" type="number" min="1" value="${token.max_concurrent || ''}" placeholder="∞"></td>
                     <td><strong>${token.active_sessions || 0}</strong></td>
