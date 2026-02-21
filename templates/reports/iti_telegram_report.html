@@ -1,0 +1,192 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #F2F5F9;
+    width: 520px;
+    padding: 28px 24px 40px;
+  }
+
+  .hero {
+    background: linear-gradient(145deg, #0B2447 0%, #19376D 55%, #1a4a8a 100%);
+    border-radius: 22px;
+    padding: 26px 26px 22px;
+    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(11,36,71,0.28);
+  }
+  .hero-orb1 { position:absolute; top:-50px; right:-30px; width:180px; height:180px; border-radius:50%; background:radial-gradient(circle, rgba(99,179,255,0.15) 0%, transparent 70%); }
+  .hero-orb2 { position:absolute; bottom:-70px; left:-20px; width:220px; height:220px; border-radius:50%; background:radial-gradient(circle, rgba(126,232,162,0.1) 0%, transparent 70%); }
+
+  .hero-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; position:relative; z-index:1; }
+  .hero-eyebrow {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .hero-eyebrow .nico { color: #7EE8A2; }
+  .hero-eyebrow .sep  { color: rgba(255,255,255,0.2); margin: 0 6px; }
+  .hero-eyebrow .iti  { color: #63b3ff; }
+
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; position:relative; z-index:1; }
+  .stat { background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:12px 10px; text-align:center; }
+  .stat-num { font-family:'Syne',sans-serif; font-size:28px; font-weight:700; line-height:1; margin-bottom:3px; }
+  .stat.total .stat-num   { color:#fff; }
+  .stat.matched .stat-num { color:#7EE8A2; }
+  .stat.unmatched .stat-num { color:#FF8FA3; }
+  .stat-lbl { font-size:9px; text-transform:uppercase; letter-spacing:0.12em; color:rgba(255,255,255,0.3); font-weight:500; }
+
+  .sec-head { display:flex; align-items:center; gap:10px; margin:16px 0 8px; }
+  .sec-line { flex:1; height:1px; background:linear-gradient(90deg, #dde5f0, transparent); }
+  .sec-pill { font-size:9.5px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; padding:4px 12px; border-radius:6px; }
+  .sec-pill.green { background:#e4f7ee; color:#0a6e47; border:1px solid #b8e8d0; }
+  .sec-pill.red   { background:#fdedf0; color:#b02035; border:1px solid #f5b8c4; }
+  .sec-count { font-size:11px; color:#b0bec5; }
+
+  .v-card { background:#fff; border-radius:16px; overflow:hidden; margin-bottom:10px; box-shadow:0 2px 16px rgba(0,0,0,0.055); border:1px solid rgba(220,230,244,0.8); }
+  .v-head { padding:10px 16px; background:linear-gradient(90deg,#f8fafd,#f3f6fb); border-bottom:1px solid #edf1f7; display:flex; align-items:center; gap:10px; }
+  .v-icon { width:24px; height:24px; background:linear-gradient(135deg,#e8f0fb,#d4e4f7); border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:12px; }
+  .v-name { font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500; color:#3d5a80; letter-spacing:0.05em; }
+  .v-badge { margin-left:auto; font-size:9px; font-weight:600; padding:2px 8px; border-radius:4px; letter-spacing:0.06em; font-family:'DM Mono',monospace; color:#aab8c8; }
+
+  .v-card.matched { border:1.5px solid #a8dfc0; box-shadow:0 4px 20px rgba(10,140,92,0.12); }
+  .v-card.matched .v-head { background:linear-gradient(90deg,#edf8f3,#f0f9f5); border-bottom:1px solid #c8ecd8; }
+  .v-card.matched thead th { background:#e8f7ef; color:#0a8c5c; border-bottom:1px solid #c8ecd8; }
+
+  table { width:100%; border-collapse:collapse; }
+  .col-folio     { width:48px; }
+  .col-container { width:auto; }
+  .col-fecha     { width:165px; }
+  .col-estado    { width:80px; }
+
+  th { font-size:8.5px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:#c8d5e3; padding:8px 12px 7px; text-align:left; background:#fafcfe; border-bottom:1px solid #f0f4f9; }
+  td { padding:10px 12px; border-bottom:1px solid #f5f8fc; vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+
+  tr.row-odd td              { background:#ffffff; }
+  tr.row-even td             { background:#f7faf8; }
+  tr.matched.row-odd td      { background:#f2fbf6; }
+  tr.matched.row-even td     { background:#eaf7f0; }
+  tr.matched td:first-child  { border-left:3px solid #0a8c5c; padding-left:9px; }
+  tr.row-odd.unmatched td    { background:#ffffff; }
+  tr.row-even.unmatched td   { background:#f8f9fb; }
+
+  .t-folio     { font-family:'DM Mono',monospace; font-size:11px; color:#8fa8c0; }
+  .t-container { font-family:'DM Mono',monospace; font-size:13.5px; font-weight:500; color:#0B2447; letter-spacing:0.06em; }
+  .t-fecha     { font-family:'DM Mono',monospace; font-size:12px; font-weight:500; color:#1a6fd4; letter-spacing:0.03em; }
+  .t-estado    { font-family:'DM Mono',monospace; font-size:8.5px; color:#c8d5e0; letter-spacing:0.05em; text-transform:uppercase; }
+
+  .um-card { background:#fff; border-radius:16px; overflow:hidden; margin-bottom:10px; box-shadow:0 2px 16px rgba(0,0,0,0.055); border:1px solid rgba(220,230,244,0.8); }
+  .um-head { padding:9px 16px; background:linear-gradient(90deg,#fdf8f8,#faf5f5); border-bottom:1px solid #f5eaea; display:flex; align-items:center; gap:10px; }
+  .um-vessel-name { font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500; color:#8a6a70; letter-spacing:0.05em; }
+  .um-vessel-count { margin-left:auto; font-size:9px; color:#c0b0b2; font-family:'DM Mono',monospace; }
+  .um-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; }
+  .um-item { padding:7px 14px; border-bottom:1px solid #f8f5f5; border-right:1px solid #f8f5f5; display:flex; align-items:center; gap:8px; }
+  .um-item:nth-child(even) { border-right:none; }
+  .um-item:nth-last-child(-n+2) { border-bottom:none; }
+  .um-item:nth-child(4n+1),
+  .um-item:nth-child(4n+2) { background:#ffffff; }
+  .um-item:nth-child(4n+3),
+  .um-item:nth-child(4n+4) { background:#f8f9fb; }
+  .um-container { font-family:'DM Mono',monospace; font-size:11.5px; color:#6a7f96; letter-spacing:0.04em; }
+  .um-estado { font-family:'DM Mono',monospace; font-size:8.5px; color:#b0bec5; letter-spacing:0.05em; text-transform:uppercase; margin-left:auto; }
+
+  .footer { display:flex; justify-content:center; align-items:center; gap:8px; margin-top:20px; font-family:'DM Mono',monospace; font-size:9px; color:#c8d5e0; letter-spacing:0.07em; }
+  .footer-dot { width:3px; height:3px; background:#d0dce8; border-radius:50%; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-orb1"></div>
+  <div class="hero-orb2"></div>
+  <div class="hero-top">
+    <div class="hero-eyebrow">
+      <span class="nico">{{ company_name }}</span><span class="sep">·</span><span class="iti">ITI MONITOR</span>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat total"><div class="stat-num">{{ total_count }}</div><div class="stat-lbl">Total</div></div>
+    <div class="stat matched"><div class="stat-num">{{ matched_count }}</div><div class="stat-lbl">Matched</div></div>
+    <div class="stat unmatched"><div class="stat-num">{{ unmatched_count }}</div><div class="stat-lbl">Unmatched</div></div>
+  </div>
+</div>
+
+{% if show_matched %}
+<div class="sec-head">
+  <span class="sec-pill green">✓ Matched</span>
+  <span class="sec-count">{{ matched_count }} contenedores</span>
+  <div class="sec-line"></div>
+</div>
+
+{% for g in matched_groups %}
+<div class="v-card matched">
+  <div class="v-head">
+    <div class="v-icon">🚢</div>
+    <span class="v-name">{{ g.nave }}</span>
+    <span class="v-badge">{{ g.count }} matched</span>
+  </div>
+  <table>
+    <colgroup>
+      <col class="col-folio"><col class="col-container"><col class="col-fecha"><col class="col-estado">
+    </colgroup>
+    <thead><tr>
+      <th>Folio</th><th>Contenedor</th><th>Entrega</th><th>Estado</th>
+    </tr></thead>
+    <tbody>
+      {% for c in g.contenedores %}
+      <tr class="matched {{ 'row-odd' if loop.index is odd else 'row-even' }}">
+        <td class="t-folio">{{ c.folio }}</td>
+        <td class="t-container">{{ c.contenedor }}</td>
+        <td class="t-fecha">{{ c.fecha_entrega }}</td>
+        <td class="t-estado">{{ c.estado }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if show_unmatched %}
+<div class="sec-head">
+  <span class="sec-pill red">✕ Unmatched</span>
+  <span class="sec-count">{{ unmatched_count }} contenedores</span>
+  <div class="sec-line"></div>
+</div>
+
+{% for g in unmatched_groups %}
+<div class="um-card">
+  <div class="um-head">
+    <span class="um-vessel-name">🚢 {{ g.nave }}</span>
+    <span class="um-vessel-count">{{ g.count }} contenedores</span>
+  </div>
+  <div class="um-grid">
+    {% for c in g.contenedores %}
+    <div class="um-item">
+      <span class="um-container">{{ c.contenedor }}</span>
+      <span class="um-estado">{{ c.estado }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+<div class="footer">
+  <span>NICO ITI</span>
+  <span class="footer-dot"></span>
+  <span>Generated {{ generated_date }} · {{ generated_time }}</span>
+</div>
+
+</body>
+</html>

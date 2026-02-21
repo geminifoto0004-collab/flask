@@ -8,11 +8,13 @@ import hashlib
 import uuid
 import io
 import re
+from pathlib import Path
 import pandas as pd
 import requests
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from database import get_db_connection, get_lastrowid
 from services.email_service import send_email
@@ -1469,6 +1471,124 @@ def _build_telegram_image_caption(company_name: str, containers: List[Dict]) -> 
     return f"{company_name} | {now_text} | Total {len(containers)} / Coincidentes {matched_count} / Pendientes {unmatched_count}"
 
 
+def _format_telegram_fecha_for_image(row: Dict) -> str:
+    dt_value = row.get('_fecha_dt')
+    if dt_value:
+        return dt_value.strftime('%d/%m/%Y · %H:%M')
+    fallback = _safe_text(row.get('fecha'), '-')
+    if fallback in ('', '-'):
+        return '-'
+    parsed = _parse_telegram_fecha(fallback)
+    if parsed:
+        return parsed.strftime('%d/%m/%Y · %H:%M')
+    return fallback
+
+
+def _build_telegram_html_context(
+    containers: List[Dict],
+    include_matched: bool,
+    include_unmatched: bool
+) -> Dict[str, Any]:
+    matched_rows, unmatched_rows = _collect_telegram_rows(
+        containers=containers,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched
+    )
+    grouped_matched = _group_rows_by_buque(matched_rows)
+    grouped_unmatched = _group_rows_by_buque(unmatched_rows)
+
+    matched_groups = []
+    for ship_name, rows in grouped_matched:
+        matched_groups.append({
+            'nave': ship_name,
+            'count': len(rows),
+            'contenedores': [
+                {
+                    'folio': _safe_text(r.get('folio'), '-'),
+                    'contenedor': _safe_text(r.get('codigo'), '-'),
+                    'fecha_entrega': _format_telegram_fecha_for_image(r),
+                    'estado': _safe_text(r.get('estado'), '-')
+                }
+                for r in rows
+            ]
+        })
+
+    unmatched_groups = []
+    for ship_name, rows in grouped_unmatched:
+        unmatched_groups.append({
+            'nave': ship_name,
+            'count': len(rows),
+            'contenedores': [
+                {
+                    'contenedor': _safe_text(r.get('codigo'), '-'),
+                    'estado': _safe_text(r.get('estado'), '-')
+                }
+                for r in rows
+            ]
+        })
+
+    now_local = get_chile_time_naive()
+    return {
+        'total_count': len(matched_rows) + len(unmatched_rows),
+        'matched_count': len(matched_rows),
+        'unmatched_count': len(unmatched_rows),
+        'matched_groups': matched_groups,
+        'unmatched_groups': unmatched_groups,
+        'show_matched': include_matched,
+        'show_unmatched': include_unmatched,
+        'generated_date': now_local.strftime('%d/%m/%Y'),
+        'generated_time': now_local.strftime('%H:%M')
+    }
+
+
+def _render_telegram_html_image(
+    company_name: str,
+    containers: List[Dict],
+    include_matched: bool,
+    include_unmatched: bool
+) -> Tuple[Optional[bytes], str]:
+    template_dir = Path(__file__).resolve().parent.parent / "templates" / "reports"
+    template_path = template_dir / "iti_telegram_report.html"
+    if not template_path.exists():
+        return None, f"template not found: {template_path}"
+
+    try:
+        env = Environment(
+            loader=FileSystemLoader(str(template_dir)),
+            autoescape=select_autoescape(["html", "xml"])
+        )
+        template = env.get_template("iti_telegram_report.html")
+        context = _build_telegram_html_context(
+            containers=containers,
+            include_matched=include_matched,
+            include_unmatched=include_unmatched
+        )
+        context['company_name'] = _safe_text(company_name, 'NICO').upper()
+        html_content = template.render(**context)
+    except Exception as exc:
+        return None, f"template render failed: {exc}"
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as exc:
+        return None, f"playwright import failed: {exc}"
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = browser.new_page(
+                viewport={"width": 520, "height": 900},
+                device_scale_factor=4
+            )
+            page.set_content(html_content, wait_until="networkidle")
+            page.wait_for_timeout(2000)
+            png_bytes = page.screenshot(full_page=True, type="png")
+            browser.close()
+            return png_bytes, ""
+    except Exception as exc:
+        return None, f"playwright screenshot failed: {exc}"
+
+
 def _load_telegram_font(size: int, bold: bool = False):
     if ImageFont is None:
         return None
@@ -1558,7 +1678,7 @@ def _draw_grid_table(
     return y
 
 
-def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[List[bytes], str]:
+def _render_telegram_table_image_pillow(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[List[bytes], str]:
     if Image is None or ImageDraw is None or ImageFont is None:
         return [], "Pillow is not available for telegram image rendering"
 
@@ -1774,6 +1894,29 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
 
 
 # ========== 發送 Telegram 通知 ==========
+
+def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[List[bytes], str]:
+    html_png, html_err = _render_telegram_html_image(
+        company_name=company_name,
+        containers=containers,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched
+    )
+    if html_png:
+        return [html_png], ""
+
+    pillow_pages, pillow_err = _render_telegram_table_image_pillow(
+        containers=containers,
+        company_name=company_name,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched,
+        max_rows=max_rows
+    )
+    if pillow_pages:
+        return pillow_pages, f"html render failed, fallback to pillow: {html_err}"
+    return [], f"html render failed: {html_err}; pillow fallback failed: {pillow_err}"
+
+
 def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Dict], task_config: Dict = None) -> Tuple[bool, str]:
     """
     發送監控通知到 Telegram
