@@ -1904,17 +1904,7 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     )
     if html_png:
         return [html_png], ""
-
-    pillow_pages, pillow_err = _render_telegram_table_image_pillow(
-        containers=containers,
-        company_name=company_name,
-        include_matched=include_matched,
-        include_unmatched=include_unmatched,
-        max_rows=max_rows
-    )
-    if pillow_pages:
-        return pillow_pages, f"html render failed, fallback to pillow: {html_err}"
-    return [], f"html render failed: {html_err}; pillow fallback failed: {pillow_err}"
+    return [], f"html render failed: {html_err}"
 
 
 def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Dict], task_config: Dict = None) -> Tuple[bool, str]:
