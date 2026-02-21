@@ -1,6 +1,6 @@
-﻿"""
-????璅∠?
-?嚗TI/ZOFRI ??瑼Ｘ?遙?恣?隞園
+"""
+監控服務模組
+功能：ITI/ZOFRI 監控檢查、任務管理、郵件通知
 """
 
 import json
@@ -21,20 +21,20 @@ from services.zofri_iti_service import (
 from utils.time_utils import get_chile_time_naive
 
 
-# ========== ?? API Key ==========
+# ========== 生成 API Key ==========
 def generate_api_key() -> str:
-    """???臭???API Key"""
+    """生成唯一的 API Key"""
     return str(uuid.uuid4()).replace('-', '')
 
 
-# ========== ??撖Ⅳ ==========
+# ========== 加密密碼 ==========
 def hash_password(password: str) -> str:
-    """雿輻 SHA256 ??撖Ⅳ"""
+    """使用 SHA256 加密密碼"""
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 def compute_result_hash(result: Dict) -> str:
-    """閮???蝯??帘摰?Hash"""
+    """計算監控結果的穩定 Hash"""
     try:
         payload = json.dumps(result, sort_keys=True, default=str)
     except Exception:
@@ -42,7 +42,7 @@ def compute_result_hash(result: Dict) -> str:
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
-# ========== ?萄遣??隞餃? ==========
+# ========== 創建監控任務 ==========
 def create_monitor_task(
     user_id: int,
     zofri_username: str,
@@ -58,32 +58,32 @@ def create_monitor_task(
     telegram_chat_id: str = None
 ) -> Tuple[bool, str]:
     """
-    ?萄遣??隞餃?
-    餈?嚗??臬??, ?航炊靽⊥?遙?D)
+    創建監控任務
+    返回：(是否成功, 錯誤信息或任務ID)
     """
     if not company_name:
-        return False, "company_name is required"
+        return False, "請設置公司名稱（company_name）"
     
     if not notify_email and not notify_telegram:
-        return False, "?喳??閬??蝔桅?孵?"
+        return False, "至少需要選擇一種通知方式"
     
     if notify_email and not notification_emails:
-        return False, "?喳??閬???萇拳"
+        return False, "至少需要一個通知郵箱"
     
     if notify_telegram and (not telegram_bot_token or not telegram_chat_id):
-        return False, "telegram_bot_token and telegram_chat_id are required when telegram is enabled"
+        return False, "Telegram Bot Token 或 Chat ID 未設置"
     
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # ?? API Key
+        # 生成 API Key
         api_key = generate_api_key()
         
-        # 瘜冽?嚗?蝣潭????摮嚗???ZOFRI ?駁??閬?憪?蝣潘?
-        # TODO: 敺??寧雿輻 AES ?舫?撖?
+        # 注意：密碼暫時不加密存儲（因為 ZOFRI 登錄需要原始密碼）
+        # TODO: 後續改為使用 AES 可逆加密
         
-        # 撠蝞勗?銵刻???JSON
+        # 將郵箱列表轉為 JSON
         emails_json = json.dumps(notification_emails or [])
         
         cursor.execute('''
@@ -103,12 +103,12 @@ def create_monitor_task(
         return True, str(task_id)
         
     except Exception as e:
-        return False, f"?萄遣憭望?: {str(e)}"
+        return False, f"創建失敗: {str(e)}"
 
 
-# ========== ?脣??冽??找遙??==========
+# ========== 獲取用戶的監控任務 ==========
 def get_user_monitor_tasks(user_id: int) -> List[Dict]:
-    """?脣??冽????找遙??""
+    """獲取用戶的所有監控任務"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -125,7 +125,7 @@ def get_user_monitor_tasks(user_id: int) -> List[Dict]:
         tasks = []
         for row in cursor.fetchall():
             task = dict(row)
-            # 閫???萇拳?”
+            # 解析郵箱列表
             task['notification_emails'] = json.loads(task['notification_emails'] or '[]')
             task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
             task['notify_telegram'] = bool(task.get('notify_telegram'))
@@ -135,13 +135,13 @@ def get_user_monitor_tasks(user_id: int) -> List[Dict]:
         return tasks
         
     except Exception as e:
-        print(f"?脣?隞餃?憭望?: {e}")
+        print(f"獲取任務失敗: {e}")
         return []
 
 
-# ========== ?脣??桀遙??==========
+# ========== 獲取單個任務 ==========
 def get_monitor_task(task_id: int, user_id: int = None) -> Optional[Dict]:
-    """?脣??桀?找遙???舫?冽ID撽?嚗?""
+    """獲取單個監控任務（可選用戶ID驗證）"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -169,11 +169,11 @@ def get_monitor_task(task_id: int, user_id: int = None) -> Optional[Dict]:
         return None
         
     except Exception as e:
-        print(f"?脣?隞餃?憭望?: {e}")
+        print(f"獲取任務失敗: {e}")
         return None
 
 
-# ========== ?湔??隞餃? ==========
+# ========== 更新監控任務 ==========
 def update_monitor_task(
     task_id: int,
     user_id: int,
@@ -190,12 +190,12 @@ def update_monitor_task(
     telegram_chat_id: str = None,
     is_active: bool = None
 ) -> Tuple[bool, str]:
-    """?湔??隞餃?"""
+    """更新監控任務"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 瑼Ｘ隞餃??臬摮銝惇?潸府?冽
+        # 檢查任務是否存在且屬於該用戶
         cursor.execute('''
             SELECT id, notification_emails, notify_email, notify_telegram, telegram_bot_token, telegram_chat_id
             FROM user_monitor_configs
@@ -204,7 +204,7 @@ def update_monitor_task(
         existing = cursor.fetchone()
         if not existing:
             conn.close()
-            return False, "隞餃?銝??冽??⊥???
+            return False, "任務不存在或無權限"
         
         if isinstance(existing, dict):
             existing_emails = json.loads(existing.get('notification_emails') or '[]')
@@ -219,7 +219,7 @@ def update_monitor_task(
             existing_token = existing[4]
             existing_chat_id = existing[5]
         
-        # 瑽遣?湔隤
+        # 構建更新語句
         updates = []
         params = []
         
@@ -229,7 +229,7 @@ def update_monitor_task(
         
         if zofri_password:
             updates.append('zofri_password = ?')
-            params.append(zofri_password)  # ?急?銝?撖?
+            params.append(zofri_password)  # 暫時不加密
         
         if zofri_rut_entidad:
             updates.append('zofri_rut_entidad = ?')
@@ -271,7 +271,7 @@ def update_monitor_task(
             updates.append('is_active = ?')
             params.append(1 if is_active else 0)
         
-        # 撽???蔭
+        # 驗證通知配置
         final_notify_email = existing_notify_email if notify_email is None else notify_email
         final_notify_telegram = existing_notify_telegram if notify_telegram is None else notify_telegram
         final_emails = existing_emails if notification_emails is None else notification_emails
@@ -280,21 +280,22 @@ def update_monitor_task(
         
         if not final_notify_email and not final_notify_telegram:
             conn.close()
-            return False, "?喳??閬??蝔桅?孵?"
+            return False, "至少需要選擇一種通知方式"
         
         if final_notify_email and not final_emails:
             conn.close()
-            return False, "?喳??閬???萇拳"
+            return False, "至少需要一個通知郵箱"
         
         if final_notify_telegram and (not final_token or not final_chat_id):
             conn.close()
-            return False, "Telegram Bot Token ??Chat ID ?芾身蝵?
+            return False, "Telegram Bot Token 或 Chat ID 未設置"
         
         if not updates:
             conn.close()
-            return False, "瘝??閬?啁?摮挾"
+            return False, "沒有需要更新的字段"
         
-        # ?亙???孵????湧?格?嚗?蝵桀????潮???        if (notify_email is not None and notify_email and not existing_notify_email) or (notification_emails is not None):
+        # 若切換通知方式或變更通知目標，重置對應的發送記錄
+        if (notify_email is not None and notify_email and not existing_notify_email) or (notification_emails is not None):
             updates.append('last_email_result_hash = NULL')
         if (notify_telegram is not None and notify_telegram and not existing_notify_telegram) or (telegram_bot_token or telegram_chat_id):
             updates.append('last_telegram_result_hash = NULL')
@@ -312,53 +313,53 @@ def update_monitor_task(
         conn.commit()
         conn.close()
         
-        return True, "?湔??"
+        return True, "更新成功"
         
     except Exception as e:
-        return False, f"?湔憭望?: {str(e)}"
+        return False, f"更新失敗: {str(e)}"
 
 
-# ========== ?芷??隞餃? ==========
+# ========== 刪除監控任務 ==========
 def delete_monitor_task(task_id: int, user_id: int) -> Tuple[bool, str]:
-    """?芷??隞餃?"""
+    """刪除監控任務"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 瑼Ｘ隞餃??臬摮銝惇?潸府?冽
+        # 檢查任務是否存在且屬於該用戶
         cursor.execute('SELECT id FROM user_monitor_configs WHERE id = ? AND user_id = ?', 
                       (task_id, user_id))
         if not cursor.fetchone():
             conn.close()
-            return False, "隞餃?銝??冽??⊥???
+            return False, "任務不存在或無權限"
         
         cursor.execute('DELETE FROM user_monitor_configs WHERE id = ?', (task_id,))
         conn.commit()
         conn.close()
         
-        return True, "?芷??"
+        return True, "刪除成功"
         
     except Exception as e:
-        return False, f"?芷憭望?: {str(e)}"
+        return False, f"刪除失敗: {str(e)}"
 
 
-# ========== 皜征隞餃??炎?交風??==========
+# ========== 清空任務的檢查歷史 ==========
 def clear_check_history(task_id: int, user_id: int = None) -> Tuple[bool, str]:
     """
-    皜征隞餃??炎?交風?莎?撠?last_check_result 閮剔 NULL嚗?
-    餈?嚗??臬??, ?航炊靽⊥)
+    清空任務的檢查歷史（將 last_check_result 設為 NULL）
+    返回：(是否成功, 錯誤信息)
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         if user_id:
-            # 瑼Ｘ隞餃??臬摮銝惇?潸府?冽
+            # 檢查任務是否存在且屬於該用戶
             cursor.execute('SELECT id FROM user_monitor_configs WHERE id = ? AND user_id = ?', 
                           (task_id, user_id))
             if not cursor.fetchone():
                 conn.close()
-                return False, "隞餃?銝??冽??⊥???
+                return False, "任務不存在或無權限"
             
             cursor.execute('''
                 UPDATE user_monitor_configs
@@ -380,15 +381,15 @@ def clear_check_history(task_id: int, user_id: int = None) -> Tuple[bool, str]:
         
         conn.commit()
         conn.close()
-        return True, "瑼Ｘ甇瑕撌脫?蝛?
+        return True, "檢查歷史已清空"
         
     except Exception as e:
-        return False, f"皜征憭望?: {str(e)}"
+        return False, f"清空失敗: {str(e)}"
 
 
-# ========== ?寞? API Key ?脣?隞餃? ==========
+# ========== 根據 API Key 獲取任務 ==========
 def get_task_by_api_key(api_key: str) -> Optional[Dict]:
-    """?寞? API Key ?脣?隞餃??蔭"""
+    """根據 API Key 獲取任務配置"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -410,67 +411,67 @@ def get_task_by_api_key(api_key: str) -> Optional[Dict]:
         return None
         
     except Exception as e:
-        print(f"?脣?隞餃?憭望?: {e}")
+        print(f"獲取任務失敗: {e}")
         return None
 
 
-# ========== 雿輻隞餃??蔭?駁? ZOFRI ==========
+# ========== 使用任務配置登錄 ZOFRI ==========
 def login_zofri_with_config(task_config: Dict) -> Tuple[bool, Dict, str]:
     """
-    雿輻隞餃??蔭?駁? ZOFRI
-    餈?嚗??臬??, cookies摮, ?航炊靽⊥)
-    瘜冽?嚗ㄐ?身撖Ⅳ?冽?澈銝剜?????閬圾撖?
-    雿鈭陛???急????豢?摨怨???銝圾撖?敺??閬祕?橘?
+    使用任務配置登錄 ZOFRI
+    返回：(是否成功, cookies字典, 錯誤信息)
+    注意：這裡假設密碼在數據庫中是加密的，需要解密
+    但為了簡化，暫時先從數據庫讀取時不解密（後續需要實現）
     """
     try:
         session = requests.Session()
         login_url = 'https://zvirtual.zofri.cl/controller?accion=login'
         
-        # 瘜冽?嚗ㄐ?閬??豢?摨怨???憪?蝣潭?閫??
-        # ?桀???閮?task_config 銝剖歇蝬?甇?Ⅱ??蝣?
+        # 注意：這裡需要從數據庫讀取原始密碼或解密
+        # 目前先假設 task_config 中已經有正確的密碼
         login_data = {
             'usuario': task_config['zofri_username'],
-            'clave': task_config['zofri_password'],  # 雿輻?冽頛詨??蝣潘?敺?澈霈??
+            'clave': task_config['zofri_password'],  # 使用用戶輸入的密碼（從數據庫讀取）
             'rutEntidad': task_config['zofri_rut_entidad'],
-            'rutRepresentante': '',  # 銝蝙??RUT 隞?”
+            'rutRepresentante': '',  # 不使用 RUT 代表
             'identificador': 'zsve',
             'tipoUsuario': 'TUSU3'
         }
         
         response = session.post(login_url, data=login_data, verify=False, timeout=10)
         if response.status_code != 200 or 'success' not in response.text:
-            return False, {}, "ZOFRI ?駁?憭望?嚗?瑼Ｘ鞈祈?撖Ⅳ"
+            return False, {}, "ZOFRI 登錄失敗，請檢查賬號密碼"
         
         cookies_dict = {cookie.name: cookie.value for cookie in session.cookies}
         return True, cookies_dict, ""
         
     except Exception as e:
-        return False, {}, f"?駁?憭望?: {str(e)}"
+        return False, {}, f"登錄失敗: {str(e)}"
 
 
-# ========== ?瑁???瑼Ｘ ==========
+# ========== 執行監控檢查 ==========
 def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
     """
-    ?瑁???瑼Ｘ
-    餈?嚗??臬??, 瑼Ｘ蝯?, ?航炊靽⊥)
+    執行監控檢查
+    返回：(是否成功, 檢查結果, 錯誤信息)
     """
     import uuid
-    execution_id = str(uuid.uuid4())[:8]  # ???臭??瑁?ID?冽餈質馱
-    print(f"[??瑼Ｘ-{execution_id}] ???瑁???瑼Ｘ嚗遙?D: {task_config.get('id', 'N/A')}")
+    execution_id = str(uuid.uuid4())[:8]  # 生成唯一執行ID用於追蹤
+    print(f"[監控檢查-{execution_id}] 開始執行監控檢查，任務ID: {task_config.get('id', 'N/A')}")
     
     try:
-        # 1. 雿輻隞餃??蔭?駁? ZOFRI
+        # 1. 使用任務配置登錄 ZOFRI
         login_success, cookies_dict, error = login_zofri_with_config(task_config)
         if not login_success:
             return False, {}, error
         
-        # 2. ?脣? ZOFRI ?豢?嚗?8憭拙嚗?
+        # 2. 獲取 ZOFRI 數據（28天內）
         
         today = get_chile_time_naive()
         end_date = today.strftime('%Y-%m-%d')
         start_date = (today - timedelta(days=28)).strftime('%Y-%m-%d')
         
-        # ??撖衣 fetch_tickets ?摩嚗蝙?典?亦? cookies嚗?
+        # 手動實現 fetch_tickets 邏輯（使用傳入的 cookies）
         busqueda_url = "https://zvirtual.zofri.cl/controller?accion=busquedaDocumentosSolicitar"
         data_busqueda = {
             "rutEmpresa": task_config['zofri_rut_entidad'],
@@ -479,7 +480,7 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
             "fechaHasta": end_date
         }
         
-        time.sleep(3)  # ZOFRI ?閬?????
+        time.sleep(3)  # ZOFRI 需要時間準備
         
         try:
             r = requests.post(busqueda_url, json=data_busqueda, cookies=cookies_dict, verify=False, timeout=10)
@@ -489,7 +490,7 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         except:
             ticket = None
         
-        # 頛芾岷?脣? ticket
+        # 輪詢獲取 ticket
         if not ticket:
             for i in range(12):
                 time.sleep(2)
@@ -503,9 +504,9 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                     pass
         
         if not ticket:
-            return False, {}, "?⊥??脣? ZOFRI ticket"
+            return False, {}, "無法獲取 ZOFRI ticket"
         
-        # 3. ?脣????豢?嚗??祕?橘?雿輻?喳??cookies嚗?
+        # 3. 獲取文檔數據（手動實現，使用傳入的 cookies）
         url = f"https://zvirtual.zofri.cl/controller?accion=busquedaDocumentosObtener&idSolicitud={ticket}&"
         
         for attempt in range(12):
@@ -519,7 +520,7 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                 if j.get("status") == "fail":
                     continue
                 
-                # ???豢?嚗?閬??cookies_dict嚗?
+                # 處理數據（需要傳遞 cookies_dict）
                 df_zofri = process_data(j, cookies_dict)
                 if df_zofri is not None and not df_zofri.empty:
                     break
@@ -539,30 +540,30 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                 'unmatched_count': 0
             }, ""
         
-        # 4. ?脣? ITI ?豢?銝血??
-        print(f"[??瑼Ｘ-{execution_id}] ZOFRI 摰孵蝮賣: {len(df_zofri)}")
+        # 4. 獲取 ITI 數據並匹配
+        print(f"[監控檢查-{execution_id}] ZOFRI 容器總數: {len(df_zofri)}")
         
         iti_results = iti_data()
         
         matched_data = pd.DataFrame()
         matched_indices = pd.Series([False] * len(df_zofri), index=df_zofri.index)
-        iti_info_map = {}  # 摮?寥???ITI 靽⊥嚗index: {iti_item, vessel_name, fecha}}
+        iti_info_map = {}  # 存儲匹配的 ITI 信息：{index: {iti_item, vessel_name, fecha}}
         
         for iti_item in iti_results:
             if len(iti_item) == 7:
                 iti_codigo = (iti_item[2] + iti_item[3] + iti_item[4]).strip()
-                # 雿輻 _container_number ?脰??寥?
+                # 使用 _container_number 進行匹配
                 if '_container_number' not in df_zofri.columns:
-                    # 憒?瘝? _container_number嚗???唬蝙??glosa_codigo
+                    # 如果沒有 _container_number，回退到使用 glosa_codigo
                     df_zofri['_container_number'] = df_zofri['glosa_codigo']
                 df_zofri['_container_number'] = df_zofri['_container_number'].astype(str).str.strip()
                 match = df_zofri[df_zofri['_container_number'] == iti_codigo]
                 
                 if not match.empty:
                     match = match.copy()
-                    # 靽? ITI 靽⊥
+                    # 保存 ITI 信息
                     for match_idx in match.index:
-                        # ???交?嚗ti_item[5] ?舀??蝚虫葡嚗撘?05/01/2026 10:24嚗?
+                        # 提取日期（iti_item[5] 是日期字符串，格式：05/01/2026 10:24）
                         fecha = iti_item[5] if len(iti_item) > 5 else ''
                         vessel_name = iti_item[0] if len(iti_item) > 0 else ''
                         iti_info_map[match_idx] = {
@@ -575,44 +576,44 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         
         unmatched_data = df_zofri[~matched_indices]
         
-        # ? ZOFRI 摰孵?寥?蝯?
+        # 打印 ZOFRI 容器匹配結果
         matched_count = int(matched_indices.sum())
         unmatched_count = len(unmatched_data)
-        print(f"[??瑼Ｘ-{execution_id}] ZOFRI 摰孵?寥?蝯?: 蝮賣={len(df_zofri)}, 撌脣??VISADO)={matched_count}, ?芸??{unmatched_count}")
+        print(f"[監控檢查-{execution_id}] ZOFRI 容器匹配結果: 總數={len(df_zofri)}, 已匹配(VISADO)={matched_count}, 未匹配={unmatched_count}")
         
-        # ?撌脣?? ZOFRI 摰孵
+        # 打印已匹配的 ZOFRI 容器
         if matched_count > 0:
-            print(f"[??瑼Ｘ-{execution_id}] ========== 撌脣??VISADO)??ZOFRI 摰孵 (??{matched_count} ?? ==========")
+            print(f"[監控檢查-{execution_id}] ========== 已匹配(VISADO)的 ZOFRI 容器 (共 {matched_count} 個) ==========")
             for idx, row in df_zofri[matched_indices].iterrows():
                 codigo = row.get('codigo', 'N/A')
                 glosa_codigo = row.get('glosa_codigo', 'N/A')
                 glosa_descripcion = row.get('glosa_descripcion', 'N/A')
                 estado = row.get('nombre', 'N/A')
-                print(f"[??瑼Ｘ-{execution_id}] ??VISADO: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
-            print(f"[??瑼Ｘ-{execution_id}] ========== 撌脣?捆?典?銵函???==========")
+                print(f"[監控檢查-{execution_id}] ✅ VISADO: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查-{execution_id}] ========== 已匹配容器列表結束 ==========")
         
-        # ??芸?? ZOFRI 摰孵
+        # 打印未匹配的 ZOFRI 容器
         if unmatched_count > 0:
-            print(f"[??瑼Ｘ-{execution_id}] ========== ?芸?? ZOFRI 摰孵 (??{unmatched_count} ?? ==========")
+            print(f"[監控檢查-{execution_id}] ========== 未匹配的 ZOFRI 容器 (共 {unmatched_count} 個) ==========")
             for idx, row in unmatched_data.iterrows():
                 codigo = row.get('codigo', 'N/A')
                 glosa_codigo = row.get('glosa_codigo', 'N/A')
                 glosa_descripcion = row.get('glosa_descripcion', 'N/A')
                 estado = row.get('nombre', 'N/A')
-                print(f"[??瑼Ｘ-{execution_id}] ???芸?? codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
-            print(f"[??瑼Ｘ-{execution_id}] ========== ?芸?捆?典?銵函???==========")
+                print(f"[監控檢查-{execution_id}] ❌ 未匹配: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查-{execution_id}] ========== 未匹配容器列表結束 ==========")
         else:
-            print(f"[??瑼Ｘ-{execution_id}] ?????ZOFRI 摰孵?賢歇?寥?(VISADO)嚗???寥??捆??)
+            print(f"[監控檢查-{execution_id}] ✅ 所有 ZOFRI 容器都已匹配(VISADO)，沒有未匹配的容器")
         
-        # 5. 頧??箏??詨?銵剁???iti.py ??頛荔?
+        # 5. 轉換為字典列表（參考 iti.py 的邏輯）
         all_containers = []
         for idx, row in df_zofri.iterrows():
-            # 雿輻 matched_indices 靘?瑟?血????iti.py ?摩銝?湛?
-            # matched_indices ??index ??df_zofri ??index 銝?湛??臭誑?湔閮芸?
+            # 使用 matched_indices 來判斷是否匹配（與 iti.py 邏輯一致）
+            # matched_indices 的 index 與 df_zofri 的 index 一致，可以直接訪問
             try:
                 is_matched = bool(matched_indices.loc[idx])
             except (KeyError, IndexError):
-                # 憒?蝝Ｗ?銝??剁?暺??箸?寥?
+                # 如果索引不存在，默認為未匹配
                 is_matched = False
             
             codigo = row.get('codigo', '')
@@ -625,30 +626,30 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                 'matched': is_matched
             }
             
-            # 憒??臬歇?寥???瘛餃? ITI 靽⊥
+            # 如果是已匹配的，添加 ITI 信息
             if idx in iti_info_map:
                 container['iti_item'] = iti_info_map[idx]['iti_item']
                 container['vessel_name'] = iti_info_map[idx]['vessel_name']
                 container['fecha'] = iti_info_map[idx]['fecha']
             all_containers.append(container)
         
-        # 隤輯岫嚗??啣?絞閮???iti.py ???圈?頛臭??湛?
+        # 調試：打印匹配統計（與 iti.py 的打印邏輯一致）
         matched_count = int(matched_indices.sum())
-        unmatched_count = len(unmatched_data)  # 雿輻 unmatched_data ?摨佗???iti.py 銝?湛?
-        print(f"[??瑼Ｘ-{execution_id}] 摰孵蝯梯?: 蝮賣={len(all_containers)}, 撌脣??{matched_count}, ?芸??{unmatched_count}")
+        unmatched_count = len(unmatched_data)  # 使用 unmatched_data 的長度（與 iti.py 一致）
+        print(f"[監控檢查-{execution_id}] 容器統計: 總數={len(all_containers)}, 已匹配={matched_count}, 未匹配={unmatched_count}")
         
-        # 憿?隤輯岫嚗??唳?寥?摰孵?底蝝唬縑?荔???iti.py ???圈?頛臭??湛?
+        # 額外調試：打印未匹配容器的詳細信息（與 iti.py 的打印邏輯一致）
         if not unmatched_data.empty:
-            print(f"[??瑼Ｘ-{execution_id}] ========== ?芸?捆?典?銵?(??{len(unmatched_data)} ?? ==========")
+            print(f"[監控檢查-{execution_id}] ========== 未匹配容器列表 (共 {len(unmatched_data)} 個) ==========")
             for idx, row in unmatched_data.iterrows():
                 codigo = row.get('codigo', 'N/A')
                 glosa_codigo = row.get('glosa_codigo', 'N/A')
                 glosa_descripcion = row.get('glosa_descripcion', 'N/A')
                 estado = row.get('nombre', 'N/A')
-                print(f"[??瑼Ｘ-{execution_id}] ???芸?? codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
-            print(f"[??瑼Ｘ-{execution_id}] ========== ?芸?捆?典?銵函???==========")
+                print(f"[監控檢查-{execution_id}] ❌ 未匹配: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控檢查-{execution_id}] ========== 未匹配容器列表結束 ==========")
         else:
-            print(f"[??瑼Ｘ-{execution_id}] ????捆?券撌脣??瘝??芸??摰孵")
+            print(f"[監控檢查-{execution_id}] ✅ 所有容器都已匹配，沒有未匹配的容器")
         
         result = {
             'containers': all_containers,
@@ -656,54 +657,54 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
             'unmatched_count': len(unmatched_data)
         }
         
-        print(f"[??瑼Ｘ-{execution_id}] ??瑼Ｘ摰?")
+        print(f"[監控檢查-{execution_id}] 監控檢查完成")
         return True, result, ""
         
     except Exception as e:
-        print(f"[??瑼Ｘ-{execution_id}] ??瑼Ｘ憭望?: {str(e)}")
+        print(f"[監控檢查-{execution_id}] 監控檢查失敗: {str(e)}")
         import traceback
         traceback.print_exc()
-        return False, {}, f"瑼Ｘ憭望?: {str(e)}"
+        return False, {}, f"檢查失敗: {str(e)}"
 
 
-# ========== 撠?銝活蝯?嚗?瑟?行?霈? ==========
+# ========== 對比上次結果，判斷是否有變化 ==========
 def has_result_changed(last_result: Optional[str], current_result: Dict) -> bool:
     """
-    撠?銝活?甈∠????斗?臬????閬?隞?
-    餈?嚗rue 銵函內????閬??False 銵函內瘝?霈?
+    對比上次和本次結果，判斷是否有變化需要發送郵件
+    返回：True 表示有變化需要發送，False 表示沒有變化
     
-    ?摩嚗?
-    1. 蝚砌?甈⊥炎?伐?last_result ?箇征嚗?憒????餈? True嚗???捆?剁???寥???寥???
-    2. 敺?瑼Ｘ嚗?
-       - 憒??捆?典? unmatched ??matched嚗???True嚗???捆?剁?
-       - 憒??憓?摰孵嚗隢???佗?嚗???True嚗???捆?剁?
-       - 憒?摰孵?賊?????餈? True嚗???捆?剁?
-       - ?血?餈? False嚗??潮?
+    邏輯：
+    1. 第一次檢查（last_result 為空）：如果有數據，返回 True（發送所有容器，包括匹配和未匹配的）
+    2. 後續檢查：
+       - 如果有容器從 unmatched → matched，返回 True（發送所有容器）
+       - 如果有新增的容器（無論匹配與否），返回 True（發送所有容器）
+       - 如果容器數量有變化，返回 True（發送所有容器）
+       - 否則返回 False（不發送）
     """
     if not last_result:
-        # 蝚砌?甈⊥炎?伐?憒??捆?冽??撠梁????寥???寥???
+        # 第一次檢查：如果有容器數據，就發送（包括匹配和未匹配的）
         containers = current_result.get('containers', [])
         return len(containers) > 0
     
     try:
-        # 撠?銝活?甈∠???
+        # 對比上次和本次結果
         last_data = json.loads(last_result)
         
-        # ?脣?摰孵?”
+        # 獲取容器列表
         last_containers = last_data.get('containers', [])
         current_containers = current_result.get('containers', [])
         
-        # 憒?摰孵?賊??????潮?
+        # 如果容器數量有變化，發送
         if len(last_containers) != len(current_containers):
             return True
         
-        # ?萄遣摰孵???撠?{codigo: matched}
+        # 創建容器狀態映射：{codigo: matched}
         def create_status_map(data):
             containers = data.get('containers', [])
             status_map = {}
             for c in containers:
                 codigo = c.get('codigo', '')
-                if codigo:  # 蝣箔? codigo 銝蝛?
+                if codigo:  # 確保 codigo 不為空
                     matched = c.get('matched', False)
                     status_map[codigo] = matched
             return status_map
@@ -711,87 +712,87 @@ def has_result_changed(last_result: Optional[str], current_result: Dict) -> bool
         last_map = create_status_map(last_data)
         current_map = create_status_map(current_result)
         
-        # ?曉?勗?摮?捆?剁??拇活瑼Ｘ?賢??函?摰孵嚗?
+        # 找出共同存在的容器（兩次檢查都存在的容器）
         common_codes = set(last_map.keys()) & set(current_map.keys())
         
-        # 憒??憓?摰孵嚗??其?甈∠??葉??嚗??
+        # 如果有新增的容器（不在上次結果中的），發送
         new_codes = set(current_map.keys()) - set(last_map.keys())
         if new_codes:
             return True
         
-        # 瑼Ｘ?勗?摮?捆?剁??臬?? unmatched ??matched ????
+        # 檢查共同存在的容器，是否有從 unmatched → matched 的變化
         for codigo in common_codes:
             last_matched = last_map.get(codigo)
             current_matched = current_map.get(codigo)
             
-            # 憒?銝活?芸???祆活?寥?鈭????閬??
+            # 如果上次未匹配，本次匹配了 → 需要發送
             if last_matched is False and current_matched is True:
                 return True
         
-        # 瘝?霈?嚗捆?冽???瘝??啣?嚗???unmatched ??matched ????
+        # 沒有變化（容器數量相同，沒有新增，沒有 unmatched → matched 的變化）
         return False
         
     except Exception as e:
-        print(f"撠?憭望?: {e}")
+        print(f"對比失敗: {e}")
         import traceback
         traceback.print_exc()
-        # 撠?憭望????箔?摰韏瑁?嚗??箸?霈?嚗???捆?剁?
+        # 對比失敗時，為了安全起見，認為有變化（發送所有容器）
         return True
 
 
-# ========== ?潮?萎辣 ==========
+# ========== 發送通知郵件 ==========
 def send_notification_email(emails: List[str], containers: List[Dict], task_config: Dict = None) -> Tuple[bool, str]:
     """
-    ?潮?折?萎辣
-    ?嚗?
-        emails - ?嗡辣鈭粹蝞勗?銵?
-        containers - 摰孵?豢??”
-        task_config - ??隞餃??蔭嚗?賂?? company_name ??email_subject嚗?
-    餈?嚗?bool, str) - (?臬??, ?航炊靽⊥)
+    發送監控通知郵件
+    參數：
+        emails - 收件人郵箱列表
+        containers - 容器數據列表
+        task_config - 監控任務配置（可選，包含 company_name 和 email_subject）
+    返回：(bool, str) - (是否成功, 錯誤信息)
     """
-    print(f"[???萎辣] 皞??潮隞塚??嗡辣鈭? {emails}, 摰孵?賊?: {len(containers)}")
+    print(f"[監控郵件] 準備發送郵件，收件人: {emails}, 容器數量: {len(containers)}")
     
     if not containers:
-        print("[???萎辣] 瘝?摰孵?豢?嚗歲???)
-        return True, "瘝??啣??摰孵"
+        print("[監控郵件] 沒有容器數據，跳過發送")
+        return True, "沒有新匹配的容器"
     
     if not emails:
-        print("[???萎辣] 瘝??嗡辣鈭粹蝞梧?頝喲??潮?)
-        return False, "瘝??嗡辣鈭粹蝞?
+        print("[監控郵件] 沒有收件人郵箱，跳過發送")
+        return False, "沒有收件人郵箱"
     
-    # 蝯梯??寥???寥??捆?冽???冽隤輯岫嚗?
+    # 統計匹配和未匹配的容器數量（用於調試）
     matched_count = sum(1 for c in containers if c.get('matched', False))
     unmatched_count = len(containers) - matched_count
-    print(f"[???萎辣] 摰孵蝯梯?: 蝮賣={len(containers)}, 撌脣??{matched_count}, ?芸??{unmatched_count}")
+    print(f"[監控郵件] 容器統計: 總數={len(containers)}, 已匹配={matched_count}, 未匹配={unmatched_count}")
     
-    # 敺遙??蝵桃??詨?蝔梧?敹‵嚗?
+    # 從任務配置獲取公司名稱（必填）
     if not task_config:
-        return False, "蝻箏?隞餃??蔭靽⊥"
+        return False, "缺少任務配置信息"
     
     company_name = task_config.get('company_name')
     if not company_name:
-        return False, "隢??隞餃??蔭銝剛身蝵桀?詨?蝔梧?company_name嚗?
+        return False, "請在監控任務配置中設置公司名稱（company_name）"
     
-    # ?脣??萎辣銝駁?嚗??隞餃??蔭嚗????停雿輻暺??澆?嚗?
+    # 獲取郵件主題（優先從任務配置，如果沒有就使用默認格式）
     email_subject = None
     if task_config:
         email_subject = task_config.get('email_subject')
     
-    # 憒?瘝??芸?蝢拐蜓憿?雿輻暺??澆?嚗??怠?詨?蝔梧?
+    # 如果沒有自定義主題，使用默認格式（包含公司名稱）
     if not email_subject:
-        email_subject = f"? {company_name} 瑹???"
+        email_subject = f"🚢 {company_name} 櫃子通知🚢"
     
-    # ???萎辣?批捆
+    # 生成郵件內容
     matched_list = []
     unmatched_list = []
     
-    print(f"[???萎辣] ???? {len(containers)} ?捆??..")
+    print(f"[監控郵件] 開始處理 {len(containers)} 個容器...")
     for container in containers:
         is_matched = container.get('matched', False)
         status_class = "status-matched" if is_matched else "status-unmatched"
-        status_text = "撌脣?? if is_matched else "?芸??
+        status_text = "已匹配" if is_matched else "未匹配"
         
-        # 憿舐內嚗?餈啜???鋆拳?Ⅳ?漱鞎冽??4??撌脣?隤選?
+        # 顯示：描述、狀態、集裝箱號碼、交貨日期（4列，已對調）
         if is_matched:
             fecha = container.get('fecha', '')
             item = f"""
@@ -803,7 +804,7 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
         </tr>
         """
             matched_list.append(item)
-            print(f"[???萎辣] 撌脣?捆?? {container.get('glosa_codigo', 'N/A')}")
+            print(f"[監控郵件] 已匹配容器: {container.get('glosa_codigo', 'N/A')}")
         else:
             item = f"""
         <tr>
@@ -818,9 +819,9 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
             glosa_codigo = container.get('glosa_codigo', 'N/A')
             glosa_descripcion = container.get('glosa_descripcion', 'N/A')
             estado = container.get('estado', 'N/A')
-            print(f"[???萎辣] ???芸?捆?? codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
+            print(f"[監控郵件] ❌ 未匹配容器: codigo={codigo}, glosa_codigo={glosa_codigo}, descripcion={glosa_descripcion}, estado={estado}")
     
-    print(f"[???萎辣] ?萎辣?批捆??: 撌脣??{len(matched_list)}, ?芸??{len(unmatched_list)}")
+    print(f"[監控郵件] 郵件內容生成: 已匹配={len(matched_list)}, 未匹配={len(unmatched_list)}")
     
     html_content = f"""
     <!DOCTYPE html>
@@ -1042,51 +1043,51 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
     <body>
         <div class="email-wrapper">
             <div class="header">
-                <h1 style="color: #000000 !important; margin: 0 0 8px 0; font-size: 24px; font-weight: 600;">? {company_name} 瑹???</h1>
-                <p>摰孵?寥?????/p>
+                <h1 style="color: #000000 !important; margin: 0 0 8px 0; font-size: 24px; font-weight: 600;">🚢 {company_name} 櫃子通知🚢</h1>
+                <p>容器匹配狀態更新</p>
             </div>
             
             <div class="content">
                 <div class="stats">
                     <div class="stat-box">
                         <span class="stat-number">{len(containers)}</span>
-                        <span class="stat-label">蝮賣</span>
+                        <span class="stat-label">總數</span>
                     </div>
                     <div class="stat-box matched">
                         <span class="stat-number">{len(matched_list)}</span>
-                        <span class="stat-label">撌脣??/span>
+                        <span class="stat-label">已匹配</span>
                     </div>
                     <div class="stat-box unmatched">
                         <span class="stat-number">{len(unmatched_list)}</span>
-                        <span class="stat-label">?芸??/span>
+                        <span class="stat-label">未匹配</span>
                     </div>
                 </div>
                 
                 <div class="section">
                     <div class="section-header matched">
-                        <span>??/span>
-                        <span>撌脣? ITI ({len(matched_list)} ??</span>
+                        <span>✅</span>
+                        <span>已匹配到 ITI ({len(matched_list)} 個)</span>
                     </div>
-                    {f'<div class="table-container"><table cellpadding="0" cellspacing="0" style="width: 100%; border-collapse: collapse; background: white; border: 2px solid #000000;"><thead><tr><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000;">?膩</th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000;">???/th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000; white-space: nowrap;">??蝞梯?蝣?/th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000; white-space: nowrap; min-width: 120px;">鈭方疏?交?</th></tr></thead><tbody>{"".join(matched_list)}</tbody></table></div>' if matched_list else '<div class="empty-message">?怎撌脣??摰孵</div>'}
+                    {f'<div class="table-container"><table cellpadding="0" cellspacing="0" style="width: 100%; border-collapse: collapse; background: white; border: 2px solid #000000;"><thead><tr><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000;">描述</th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000;">狀態</th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000; white-space: nowrap;">集裝箱號碼</th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000; white-space: nowrap; min-width: 120px;">交貨日期</th></tr></thead><tbody>{"".join(matched_list)}</tbody></table></div>' if matched_list else '<div class="empty-message">暫無已匹配的容器</div>'}
                 </div>
                 
-                {f'<div class="section"><div class="section-header unmatched"><span>??/span><span>?芸? ITI ({len(unmatched_list)} ??</span></div><div class="table-container"><table cellpadding="0" cellspacing="0" style="width: 100%; border-collapse: collapse; background: white; border: 2px solid #000000;"><thead><tr><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000;">?膩</th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000;">???/th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000; white-space: nowrap;">??蝞梯?蝣?/th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000; white-space: nowrap; min-width: 120px;">鈭方疏?交?</th></tr></thead><tbody>{"".join(unmatched_list)}</tbody></table></div></div>' if unmatched_list else ''}
+                {f'<div class="section"><div class="section-header unmatched"><span>❌</span><span>未匹配到 ITI ({len(unmatched_list)} 個)</span></div><div class="table-container"><table cellpadding="0" cellspacing="0" style="width: 100%; border-collapse: collapse; background: white; border: 2px solid #000000;"><thead><tr><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000;">描述</th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000;">狀態</th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000; white-space: nowrap;">集裝箱號碼</th><th style="border: 1px solid #000000; padding: 14px 10px; text-align: left; font-weight: 700; font-size: 13px; color: #000000; background: #e5e7eb; border-bottom: 2px solid #000000; white-space: nowrap; min-width: 120px;">交貨日期</th></tr></thead><tbody>{"".join(unmatched_list)}</tbody></table></div></div>' if unmatched_list else ''}
             </div>
             
             <div class="footer">
-                <div>瑼Ｘ??嚗get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}</div>
-                <div style="margin-top: 5px;">蝮質?嚗len(containers)} ?捆??/div>
+                <div>檢查時間：{get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}</div>
+                <div style="margin-top: 5px;">總計：{len(containers)} 個容器</div>
             </div>
         </div>
     </body>
     </html>
     """
     
-    # ?潮??蝞?
+    # 發送到所有郵箱
     success_count = 0
     error_messages = []
     
-    # 皜???霅隞嗅?
+    # 清理和驗證郵件地址
     from services.email_service import clean_email_address, validate_email_format
     cleaned_emails = []
     for email in emails:
@@ -1094,61 +1095,63 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
         if cleaned and validate_email_format(cleaned):
             cleaned_emails.append(cleaned)
         else:
-            print(f"[???萎辣] 頝喲??⊥??隞嗅?: {email}")
+            print(f"[監控郵件] 跳過無效的郵件地址: {email}")
     
     if not cleaned_emails:
-        return False, "瘝????隞嗅?"
+        return False, "沒有有效的郵件地址"
     
     for email in cleaned_emails:
-        print(f"[???萎辣] 甇??潮隞嗅: {email}")
+        print(f"[監控郵件] 正在發送郵件到: {email}")
         success, error = send_email(
             email,
-            email_subject,  # 雿輻???脣??隞嗡蜓憿?
+            email_subject,  # 使用動態獲取的郵件主題
             html_content
         )
         if success:
             success_count += 1
-            print(f"[???萎辣] ???萎辣撌脫???: {email}")
+            print(f"[監控郵件] ✅ 郵件已成功發送到: {email}")
         else:
             error_messages.append(f"{email}: {error}")
-            print(f"[???萎辣] ???萎辣?潮仃? {email}: {error}")
+            print(f"[監控郵件] ❌ 郵件發送失敗到 {email}: {error}")
     
     if success_count > 0:
-        result_msg = f"撌脩? {success_count}/{len(emails)} ?蝞?
-        print(f"[???萎辣] ??{result_msg}")
+        result_msg = f"已發送到 {success_count}/{len(emails)} 個郵箱"
+        print(f"[監控郵件] ✅ {result_msg}")
         return True, result_msg
     else:
         result_msg = "; ".join(error_messages)
-        print(f"[???萎辣] ????隞嗥?仃?? {result_msg}")
+        print(f"[監控郵件] ❌ 所有郵件發送失敗: {result_msg}")
         return False, result_msg
 
 
-# ========== ?潮?Telegram ? ==========
+# ========== 發送 Telegram 通知 ==========
 def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Dict], task_config: Dict = None) -> Tuple[bool, str]:
     """
-    ?潮?折??Telegram
-    ?嚗?        bot_token - Telegram Bot Token
-        chat_id - Chat ID ??@channelusername
-        containers - 摰孵?豢??”
-        task_config - ??隞餃??蔭嚗???company_name嚗?    餈?嚗?bool, str) - (?臬??, ?航炊靽⊥)
+    發送監控通知到 Telegram
+    參數：
+        bot_token - Telegram Bot Token
+        chat_id - Chat ID 或 @channelusername
+        containers - 容器數據列表
+        task_config - 監控任務配置（包含 company_name）
+    返回：(bool, str) - (是否成功, 錯誤信息)
     """
     if not task_config:
-        return False, "蝻箏?隞餃??蔭靽⊥"
+        return False, "缺少任務配置信息"
     
     company_name = task_config.get('company_name')
     if not company_name:
-        return False, "隢??隞餃??蔭銝剛身蝵桀?詨?蝔梧?company_name嚗?
+        return False, "請在監控任務配置中設置公司名稱（company_name）"
     
     if not containers:
-        return True, "瘝??啣??摰孵"
+        return True, "沒有新匹配的容器"
     
     matched = [c for c in containers if c.get('matched', False)]
     unmatched = [c for c in containers if not c.get('matched', False)]
     
     lines = []
-    lines.append(f"? {company_name} ???")
-    lines.append(f"?寥?: {len(matched)} / ?芸?? {len(unmatched)}")
-    lines.append(f"??: {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"🚢 {company_name} 監控通知")
+    lines.append(f"匹配: {len(matched)} / 未匹配: {len(unmatched)}")
+    lines.append(f"時間: {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}")
     
     sample = (matched + unmatched)[:5]
     if sample:
