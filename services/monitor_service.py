@@ -1504,10 +1504,25 @@ def _fit_text(draw, text: str, font, max_width: int) -> str:
     return text[:cut] + ellipsis
 
 
-def _draw_grid_table(draw, x0: int, y0: int, col_widths: List[int], header_h: int, row_h: int, headers: List[str], rows: List[List[str]], fonts: Dict[str, Any]) -> int:
-    header_bg = "#d1d5db"
-    line_color = "#9ca3af"
-    body_bg = "#ffffff"
+def _draw_grid_table(
+    draw,
+    x0: int,
+    y0: int,
+    col_widths: List[int],
+    header_h: int,
+    row_h: int,
+    headers: List[str],
+    rows: List[List[str]],
+    fonts: Dict[str, Any],
+    style: Optional[Dict[str, str]] = None
+) -> int:
+    style = style or {}
+    header_bg = style.get('header_bg', "#d1d5db")
+    line_color = style.get('line_color', "#9ca3af")
+    body_bg = style.get('body_bg', "#ffffff")
+    row_alt_bg = style.get('row_alt_bg', body_bg)
+    text_color = style.get('text_color', "#111827")
+    header_text_color = style.get('header_text_color', "#111827")
     header_font = fonts['header']
     body_font = fonts['body']
     table_w = sum(col_widths)
@@ -1518,7 +1533,7 @@ def _draw_grid_table(draw, x0: int, y0: int, col_widths: List[int], header_h: in
     x = x0
     for idx, h in enumerate(headers):
         w = col_widths[idx]
-        draw.text((x + 10, y + (header_h - 20) // 2), _fit_text(draw, h, header_font, w - 16), fill="#111827", font=header_font)
+        draw.text((x + 10, y + (header_h - 20) // 2), _fit_text(draw, h, header_font, w - 16), fill=header_text_color, font=header_font)
         x += w
         if idx < len(headers) - 1:
             draw.line([x, y, x, y + header_h], fill=line_color, width=2)
@@ -1527,12 +1542,13 @@ def _draw_grid_table(draw, x0: int, y0: int, col_widths: List[int], header_h: in
     if not rows:
         rows = [["-"] + [""] * (len(headers) - 1)]
 
-    for row in rows:
-        draw.rectangle([x0, y, x1, y + row_h], fill=body_bg, outline=line_color, width=1)
+    for ridx, row in enumerate(rows):
+        row_bg = body_bg if ridx % 2 == 0 else row_alt_bg
+        draw.rectangle([x0, y, x1, y + row_h], fill=row_bg, outline=line_color, width=1)
         x = x0
         for idx, cell in enumerate(row):
             w = col_widths[idx]
-            draw.text((x + 10, y + (row_h - 18) // 2), _fit_text(draw, cell, body_font, w - 16), fill="#111827", font=body_font)
+            draw.text((x + 10, y + (row_h - 18) // 2), _fit_text(draw, cell, body_font, w - 16), fill=text_color, font=body_font)
             x += w
             if idx < len(row) - 1:
                 draw.line([x, y, x, y + row_h], fill=line_color, width=1)
@@ -1540,45 +1556,6 @@ def _draw_grid_table(draw, x0: int, y0: int, col_widths: List[int], header_h: in
 
     draw.rectangle([x0, y0, x1, y], outline=line_color, width=2)
     return y
-
-
-def _paginate_grouped_rows(grouped_rows: List[Tuple[str, List[Dict]]], max_rows_per_page: int) -> List[List[Tuple[str, List[Dict]]]]:
-    pages: List[List[Tuple[str, List[Dict]]]] = []
-    current_page: List[Tuple[str, List[Dict]]] = []
-    current_count = 0
-
-    if max_rows_per_page <= 0:
-        max_rows_per_page = 25
-
-    for ship, rows in grouped_rows:
-        idx = 0
-        while idx < len(rows):
-            remaining = max_rows_per_page - current_count
-            if remaining <= 0:
-                if current_page:
-                    pages.append(current_page)
-                current_page = []
-                current_count = 0
-                remaining = max_rows_per_page
-
-            take = min(remaining, len(rows) - idx)
-            chunk = rows[idx: idx + take]
-            current_page.append((ship, chunk))
-            current_count += take
-            idx += take
-
-            if idx < len(rows):
-                pages.append(current_page)
-                current_page = []
-                current_count = 0
-
-    if current_page:
-        pages.append(current_page)
-
-    if not pages:
-        pages = [[]]
-
-    return pages
 
 
 def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[List[bytes], str]:
@@ -1596,98 +1573,196 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     matched_count = sum(1 for item in containers if item.get('matched', False))
     unmatched_count = len(containers) - matched_count
 
-    scale = 3
-    margin = 20 * scale
-    summary_h = 74 * scale
-    header_h = 22 * scale
-    row_h = 22 * scale
-    section_gap = 14 * scale
-    footer_h = 24 * scale
-    ship_h = 20 * scale
-    matched_cols = [130 * scale, 260 * scale, 230 * scale]
-    unmatched_cols = [330 * scale, 290 * scale]
+    scale = 2.2
+    margin = int(20 * scale)
+    summary_h = int(74 * scale)
+    header_h = int(22 * scale)
+    row_h = int(20 * scale)
+    section_gap = int(14 * scale)
+    footer_h = int(24 * scale)
+    ship_h = int(20 * scale)
+    matched_cols = [int(110 * scale), int(220 * scale), int(200 * scale), int(180 * scale)]
+    unmatched_cols = [int(300 * scale), int(200 * scale)]
     table_w = max(sum(matched_cols), sum(unmatched_cols))
 
-    font_title = _load_telegram_font(17 * scale, bold=True)
-    font_summary = _load_telegram_font(12 * scale, bold=False)
-    font_header = _load_telegram_font(11 * scale, bold=True)
-    font_body = _load_telegram_font(10 * scale, bold=False)
+    font_title = _load_telegram_font(int(17 * scale), bold=True)
+    font_summary = _load_telegram_font(int(12 * scale), bold=False)
+    font_header = _load_telegram_font(int(11 * scale), bold=True)
+    font_body = _load_telegram_font(int(10 * scale), bold=False)
     fonts = {'header': font_header, 'body': font_body}
 
-    pages: List[bytes] = []
-    section_specs = []
+    def section_height(grouped: List[Tuple[str, List[Dict]]]) -> int:
+        if not grouped:
+            return ship_h + header_h + row_h + section_gap
+        h = 0
+        for _, rows in grouped:
+            h += ship_h + header_h + max(1, len(rows)) * row_h + 6
+        return h + section_gap
+
+    section_count = (1 if include_matched else 0) + (1 if include_unmatched else 0)
+    content_h = 0
     if include_matched:
-        section_specs.append(("MATCHED", grouped_matched, matched_cols, ["FOLIO", "CONTENEDOR", "FECHA ENTREGA"], matched_count))
+        content_h += header_h + section_height(grouped_matched)
     if include_unmatched:
-        section_specs.append(("UNMATCHED", grouped_unmatched, unmatched_cols, ["CONTENEDOR", "ESTADO"], unmatched_count))
+        content_h += header_h + section_height(grouped_unmatched)
+    height = margin * 2 + summary_h + section_gap + content_h + footer_h
+    width = margin * 2 + table_w
 
-    max_rows_per_page = 26
-    for section_name, grouped, col_widths, headers, total_count in section_specs:
-        section_pages = _paginate_grouped_rows(grouped, max_rows_per_page)
-        total_section_pages = len(section_pages)
-        for page_idx, grouped_page in enumerate(section_pages, 1):
-            row_count = sum(max(1, len(rows)) for _, rows in grouped_page) if grouped_page else 1
-            ship_count = len(grouped_page) if grouped_page else 1
-            height = margin * 2 + summary_h + header_h + ship_count * ship_h + row_count * row_h + section_gap + footer_h
-            width = margin * 2 + table_w
+    # Telegram image constraints guard: keep a single long image but shrink layout if needed.
+    while height > 9200 and scale > 1.3:
+        scale -= 0.2
+        margin = int(20 * scale)
+        summary_h = int(74 * scale)
+        header_h = int(22 * scale)
+        row_h = int(20 * scale)
+        section_gap = int(14 * scale)
+        footer_h = int(24 * scale)
+        ship_h = int(20 * scale)
+        matched_cols = [int(110 * scale), int(220 * scale), int(200 * scale), int(180 * scale)]
+        unmatched_cols = [int(300 * scale), int(200 * scale)]
+        table_w = max(sum(matched_cols), sum(unmatched_cols))
+        font_title = _load_telegram_font(int(17 * scale), bold=True)
+        font_summary = _load_telegram_font(int(12 * scale), bold=False)
+        font_header = _load_telegram_font(int(11 * scale), bold=True)
+        font_body = _load_telegram_font(int(10 * scale), bold=False)
+        fonts = {'header': font_header, 'body': font_body}
+        content_h = 0
+        if include_matched:
+            content_h += header_h + section_height(grouped_matched)
+        if include_unmatched:
+            content_h += header_h + section_height(grouped_unmatched)
+        height = margin * 2 + summary_h + section_gap + content_h + footer_h
+        width = margin * 2 + table_w
 
-            image = Image.new("RGB", (width, height), "#eff3ff")
-            draw = ImageDraw.Draw(image)
+    image = Image.new("RGB", (width, height), "#f0f9ff")
+    draw = ImageDraw.Draw(image)
+    y = margin
 
-            y = margin
-            draw.rounded_rectangle([margin, y, width - margin, y + summary_h], radius=18, fill="#ffffff", outline="#cbd5e1", width=2)
-            draw.rectangle([margin, y, width - margin, y + 10], fill="#2563eb")
-            draw.text((margin + 14, y + 18), f"{company_name} • ITI Monitor", fill="#0f172a", font=font_title)
-            draw.text((margin + 14, y + 54), f"Time (Chile): {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}", fill="#334155", font=font_summary)
-            draw.text((margin + 14, y + 78), f"Total: {len(containers)} | Matched: {matched_count} | Unmatched: {unmatched_count}", fill="#334155", font=font_summary)
-            y += summary_h + section_gap
+    # Brighter, premium header card
+    draw.rounded_rectangle([margin, y, width - margin, y + summary_h], radius=max(12, int(10 * scale)), fill="#ffffff", outline="#93c5fd", width=2)
+    draw.rectangle([margin, y, width - margin, y + max(6, int(5 * scale))], fill="#2563eb")
+    draw.text((margin + 14, y + int(16 * scale)), f"{company_name} • ITI Monitor", fill="#0f172a", font=font_title)
+    draw.text((margin + 14, y + int(40 * scale)), f"Time (Chile): {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}", fill="#334155", font=font_summary)
+    draw.text((margin + 14, y + int(58 * scale)), f"Total: {len(containers)} | Matched: {matched_count} | Unmatched: {unmatched_count}", fill="#334155", font=font_summary)
+    y += summary_h + section_gap
 
-            title_suffix = f" PAGE {page_idx}/{total_section_pages}" if total_section_pages > 1 else ""
-            draw.rounded_rectangle([margin, y, width - margin, y + header_h], radius=10, fill="#dbeafe", outline="#93c5fd", width=2)
-            draw.text((margin + 10, y + 10), f"{section_name} ({total_count}){title_suffix}", fill="#1e3a8a", font=font_header)
-            y += header_h
+    def draw_section_title(text: str, bg: str, border: str, fg: str):
+        nonlocal y
+        draw.rounded_rectangle([margin, y, width - margin, y + header_h], radius=max(8, int(7 * scale)), fill=bg, outline=border, width=2)
+        draw.text((margin + 10, y + int(8 * scale)), text, fill=fg, font=font_header)
+        y += header_h
 
-            if not grouped_page:
-                draw.rounded_rectangle([margin, y, width - margin, y + ship_h], radius=8, fill="#ffffff", outline="#d1d5db", width=1)
-                draw.text((margin + 10, y + 8), "No data", fill="#64748b", font=font_body)
-                y += ship_h
-            else:
-                for ship, rows in grouped_page:
-                    draw.rounded_rectangle([margin, y, width - margin, y + ship_h], radius=8, fill="#f8fafc", outline="#d1d5db", width=1)
-                    draw.text((margin + 10, y + 8), _fit_text(draw, ship, font_header, width - margin * 2 - 20), fill="#334155", font=font_header)
-                    y += ship_h
+    def draw_ship_title(text: str):
+        nonlocal y
+        draw.rounded_rectangle([margin, y, width - margin, y + ship_h], radius=max(6, int(5 * scale)), fill="#f8fafc", outline="#cbd5e1", width=1)
+        draw.text((margin + 10, y + int(7 * scale)), _fit_text(draw, text, font_header, width - margin * 2 - 20), fill="#334155", font=font_header)
+        y += ship_h
 
-                    if section_name == "MATCHED":
-                        table_rows = []
-                        for row in rows:
-                            folio = row['folio'] if row.get('folio') and row['folio'] != '-' else '-'
-                            table_rows.append([folio, row['codigo'], row['fecha']])
-                    else:
-                        table_rows = [[row['codigo'], row['estado']] for row in rows]
+    if include_matched:
+        draw_section_title(f"MATCHED ({matched_count})", bg="#dcfce7", border="#22c55e", fg="#166534")
+        if not grouped_matched:
+            draw_ship_title("No matched data")
+            y = _draw_grid_table(
+                draw=draw,
+                x0=margin,
+                y0=y,
+                col_widths=matched_cols,
+                header_h=header_h,
+                row_h=row_h,
+                headers=["FOLIO", "CONTENEDOR", "FECHA ENTREGA", "ESTADO"],
+                rows=[],
+                fonts=fonts,
+                style={
+                    'header_bg': "#bbf7d0",
+                    'line_color': "#86efac",
+                    'body_bg': "#ffffff",
+                    'row_alt_bg': "#f0fdf4",
+                    'text_color': "#14532d",
+                    'header_text_color': "#14532d"
+                }
+            )
+        else:
+            for ship, rows in grouped_matched:
+                draw_ship_title(ship)
+                table_rows = []
+                for row in rows:
+                    folio = row['folio'] if row.get('folio') and row['folio'] != '-' else '-'
+                    table_rows.append([folio, row['codigo'], row['fecha'], row['estado']])
+                y = _draw_grid_table(
+                    draw=draw,
+                    x0=margin,
+                    y0=y,
+                    col_widths=matched_cols,
+                    header_h=header_h,
+                    row_h=row_h,
+                    headers=["FOLIO", "CONTENEDOR", "FECHA ENTREGA", "ESTADO"],
+                    rows=table_rows,
+                    fonts=fonts,
+                    style={
+                        'header_bg': "#bbf7d0",
+                        'line_color': "#86efac",
+                        'body_bg': "#ffffff",
+                        'row_alt_bg': "#f0fdf4",
+                        'text_color': "#14532d",
+                        'header_text_color': "#14532d"
+                    }
+                )
+                y += 6
+        y += section_gap
 
-                    y = _draw_grid_table(
-                        draw=draw,
-                        x0=margin,
-                        y0=y,
-                        col_widths=col_widths,
-                        header_h=header_h,
-                        row_h=row_h,
-                        headers=headers,
-                        rows=table_rows,
-                        fonts=fonts
-                    )
-                    y += 6
+    if include_unmatched:
+        draw_section_title(f"UNMATCHED ({unmatched_count})", bg="#fee2e2", border="#f87171", fg="#991b1b")
+        if not grouped_unmatched:
+            draw_ship_title("No unmatched data")
+            y = _draw_grid_table(
+                draw=draw,
+                x0=margin,
+                y0=y,
+                col_widths=unmatched_cols,
+                header_h=header_h,
+                row_h=row_h,
+                headers=["CONTENEDOR", "ESTADO"],
+                rows=[],
+                fonts=fonts,
+                style={
+                    'header_bg': "#fecaca",
+                    'line_color': "#fca5a5",
+                    'body_bg': "#ffffff",
+                    'row_alt_bg': "#fff1f2",
+                    'text_color': "#7f1d1d",
+                    'header_text_color': "#7f1d1d"
+                }
+            )
+        else:
+            for ship, rows in grouped_unmatched:
+                draw_ship_title(ship)
+                table_rows = [[row['codigo'], row['estado']] for row in rows]
+                y = _draw_grid_table(
+                    draw=draw,
+                    x0=margin,
+                    y0=y,
+                    col_widths=unmatched_cols,
+                    header_h=header_h,
+                    row_h=row_h,
+                    headers=["CONTENEDOR", "ESTADO"],
+                    rows=table_rows,
+                    fonts=fonts,
+                    style={
+                        'header_bg': "#fecaca",
+                        'line_color': "#fca5a5",
+                        'body_bg': "#ffffff",
+                        'row_alt_bg': "#fff1f2",
+                        'text_color': "#7f1d1d",
+                        'header_text_color': "#7f1d1d"
+                    }
+                )
+                y += 6
+        y += section_gap
 
-            y += 8
-            draw.text((margin + 4, y), "Generated by monitor service", fill="#64748b", font=font_summary)
-
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG", optimize=True)
-            pages.append(buffer.getvalue())
-
-    if not pages:
-        return [], "No image page generated"
-    return pages, ""
+    draw.text((margin + 4, y), "Generated by monitor service", fill="#64748b", font=font_summary)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return [buffer.getvalue()], ""
 
 
 # ========== 發送 Telegram 通知 ==========
