@@ -8,6 +8,7 @@ import hashlib
 import uuid
 import io
 import re
+import os
 from pathlib import Path
 import pandas as pd
 import requests
@@ -15,6 +16,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from urllib.parse import quote
 
 from database import get_db_connection, get_lastrowid
 from services.email_service import send_email
@@ -73,6 +75,29 @@ def normalize_telegram_max_rows(value, default: int = 200) -> int:
     except Exception:
         rows = default
     return max(10, min(rows, 1000))
+
+
+def resolve_public_base_url(explicit_base_url: Optional[str] = None) -> str:
+    """Resolve public base URL for external links."""
+    candidates = [
+        explicit_base_url,
+        os.environ.get("PUBLIC_BASE_URL"),
+        os.environ.get("APP_BASE_URL"),
+        os.environ.get("RENDER_EXTERNAL_URL"),
+    ]
+    for candidate in candidates:
+        if candidate:
+            return str(candidate).strip().rstrip("/")
+    return ""
+
+
+def build_monitor_report_url(api_key: str, base_url: Optional[str] = None) -> str:
+    """Build public monitor report URL bound to monitor api_key."""
+    base = resolve_public_base_url(base_url)
+    key = (api_key or "").strip()
+    if not base or not key:
+        return ""
+    return f"{base}/monitor/report?api_key={quote(key)}"
 
 
 # ========== 創建監控任務 ==========
@@ -1541,6 +1566,37 @@ def _build_telegram_html_context(
     }
 
 
+def get_monitor_report_context_by_api_key(api_key: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Load last monitor result by api_key and build HTML context for report page."""
+    task_config = get_task_by_api_key(api_key)
+    if not task_config:
+        return None, "Invalid api_key"
+
+    raw_result = task_config.get('last_check_result')
+    parsed_result: Dict[str, Any] = {}
+    if raw_result:
+        try:
+            if isinstance(raw_result, str):
+                parsed_result = json.loads(raw_result)
+            elif isinstance(raw_result, dict):
+                parsed_result = raw_result
+        except Exception as exc:
+            return None, f"Failed to parse last_check_result: {exc}"
+
+    containers = parsed_result.get('containers', []) if isinstance(parsed_result, dict) else []
+    include_matched = True if task_config.get('telegram_include_matched') is None else bool(task_config.get('telegram_include_matched'))
+    include_unmatched = True if task_config.get('telegram_include_unmatched') is None else bool(task_config.get('telegram_include_unmatched'))
+    context = _build_telegram_html_context(
+        containers=containers,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched
+    )
+    context['company_name'] = _safe_text(task_config.get('company_name'), 'NICO').upper()
+    context['task_id'] = task_config.get('id')
+    context['api_key'] = task_config.get('api_key')
+    return context, ""
+
+
 def _render_telegram_html_image(
     company_name: str,
     containers: List[Dict],
@@ -1931,7 +1987,13 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     return [], f"html render failed: {html_err}"
 
 
-def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Dict], task_config: Dict = None) -> Tuple[bool, str]:
+def send_notification_telegram(
+    bot_token: str,
+    chat_id: str,
+    containers: List[Dict],
+    task_config: Dict = None,
+    report_url: Optional[str] = None
+) -> Tuple[bool, str]:
     """
     發送監控通知到 Telegram
     參數：
@@ -1972,6 +2034,12 @@ def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Di
     image_ok = None
     error_messages = []
 
+    def send_report_link_if_needed() -> Tuple[bool, str]:
+        if not report_url:
+            return True, ""
+        link_text = f"🔗 Ver reporte web:\n{report_url}"
+        return send_telegram_message(bot_token, chat_id, link_text)
+
     if telegram_mode in ("text", "both"):
         text_ok, text_err = send_telegram_message(bot_token, chat_id, text_message)
         if not text_ok:
@@ -2006,23 +2074,37 @@ def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Di
 
     if telegram_mode == "text":
         if text_ok:
-            return True, "Telegram text sent"
+            link_ok, link_err = send_report_link_if_needed()
+            if link_ok:
+                return True, "Telegram text sent"
+            return True, f"Telegram text sent; report link failed: {link_err}"
         return False, "; ".join(error_messages) if error_messages else "Telegram text failed"
 
     if telegram_mode == "image":
         if image_ok:
-            return True, "Telegram image sent"
+            link_ok, link_err = send_report_link_if_needed()
+            if link_ok:
+                return True, "Telegram image sent"
+            return True, f"Telegram image sent; report link failed: {link_err}"
         # fallback to text to avoid total loss
         fallback_ok, fallback_err = send_telegram_message(bot_token, chat_id, text_message)
         if fallback_ok:
-            return True, "Telegram image failed, fallback text sent"
+            link_ok, link_err = send_report_link_if_needed()
+            if link_ok:
+                return True, "Telegram image failed, fallback text sent"
+            return True, f"Telegram image failed, fallback text sent; report link failed: {link_err}"
         error_messages.append(f"fallback text failed: {fallback_err}")
         return False, "; ".join(error_messages)
 
     # both mode: allow partial success to prevent repeated duplicates
     if text_ok or image_ok:
+        link_ok, link_err = send_report_link_if_needed()
+        if not link_ok:
+            error_messages.append(f"report link failed: {link_err}")
         if text_ok and image_ok:
-            return True, "Telegram text+image sent"
+            if link_ok:
+                return True, "Telegram text+image sent"
+            return True, "Telegram text+image sent; report link failed"
         return True, "Telegram partial success: " + "; ".join(error_messages)
 
     return False, "; ".join(error_messages) if error_messages else "Telegram send failed"

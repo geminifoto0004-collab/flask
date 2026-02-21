@@ -13,7 +13,8 @@ from services.monitor_service import (
     update_monitor_task, delete_monitor_task, get_task_by_api_key,
     check_monitor_task, has_result_changed, send_notification_email,
     send_notification_telegram, compute_result_hash,
-    generate_api_key, clear_check_history
+    generate_api_key, clear_check_history,
+    get_monitor_report_context_by_api_key, build_monitor_report_url
 )
 from utils.time_utils import get_chile_time_naive
 
@@ -408,6 +409,20 @@ def delete_monitor_task_admin(task_id):
 
 
 # ========== 公開 API：監控檢查（用於 cron-job） ==========
+@monitor_bp.route('/monitor/report', methods=['GET'])
+def monitor_report_page():
+    """Public report page by monitor api_key token."""
+    api_key = (request.args.get('api_key') or request.args.get('token') or '').strip()
+    if not api_key:
+        return "Missing api_key", 400
+
+    context, error = get_monitor_report_context_by_api_key(api_key)
+    if not context:
+        return f"Invalid report token: {error}", 404
+
+    return render_template('reports/iti_telegram_report.html', **context)
+
+
 @monitor_bp.route('/api/monitor/check', methods=['GET'])
 def check_monitor_api():
     """
@@ -430,6 +445,7 @@ def check_monitor_api():
         # 使用異步任務執行檢查（避免超過 Render 的 30 秒超時限制）
         try:
             from services.async_task_service import create_async_task
+            task_config['_request_base_url'] = request.url_root.rstrip('/')
             async_task_id = create_async_task('monitor_check', task_config)
             
             # 立即返回任務 ID，任務在後台執行
@@ -467,6 +483,7 @@ def check_monitor_api():
             
             notify_email = True if task_config.get('notify_email') is None else bool(task_config.get('notify_email'))
             notify_telegram = bool(task_config.get('notify_telegram'))
+            report_url = build_monitor_report_url(task_config.get('api_key'), base_url=request.url_root)
             
             email_sent = None
             email_error = None
@@ -497,7 +514,8 @@ def check_monitor_api():
                         task_config.get('telegram_bot_token'),
                         task_config.get('telegram_chat_id'),
                         result.get('containers', []),
-                        task_config
+                        task_config,
+                        report_url=report_url
                     )
                     telegram_attempted = True
                     telegram_sent = send_success

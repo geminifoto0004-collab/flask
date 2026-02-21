@@ -424,7 +424,12 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                 telegram_error_msg = None
                 
                 try:
-                    from services.monitor_service import has_result_changed, send_notification_email, send_notification_telegram
+                    from services.monitor_service import (
+                        has_result_changed,
+                        send_notification_email,
+                        send_notification_telegram,
+                        build_monitor_report_url
+                    )
                     
                     # 檢查是否有數據變化
                     should_send = has_result_changed(last_result, result)
@@ -447,11 +452,16 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                     
                     if notify_telegram and last_telegram_hash != result_hash:
                         telegram_attempted = True
+                        report_url = build_monitor_report_url(
+                            task_config.get('api_key'),
+                            base_url=task_config.get('_request_base_url')
+                        )
                         send_success, send_message = send_notification_telegram(
                             task_config.get('telegram_bot_token'),
                             task_config.get('telegram_chat_id'),
                             result.get('containers', []),
-                            task_config
+                            task_config,
+                            report_url=report_url
                         )
                         telegram_sent_successfully = send_success
                         telegram_error_msg = send_message if not send_success else None
