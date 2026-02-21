@@ -8,9 +8,14 @@
 
   body {
     font-family: 'DM Sans', sans-serif;
+    font-weight: 700;
     background: #F2F5F9;
     width: 520px;
     padding: 28px 24px 40px;
+  }
+
+  th, td, span, div {
+    font-weight: 700 !important;
   }
 
   .hero {
@@ -54,7 +59,7 @@
 
   .v-card { background:#fff; border-radius:16px; overflow:hidden; margin-bottom:10px; box-shadow:0 2px 16px rgba(0,0,0,0.055); border:1px solid rgba(220,230,244,0.8); }
   .v-head { padding:10px 16px; background:linear-gradient(90deg,#f8fafd,#f3f6fb); border-bottom:1px solid #edf1f7; display:flex; align-items:center; gap:10px; }
-  .v-icon { width:24px; height:24px; background:linear-gradient(135deg,#e8f0fb,#d4e4f7); border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:12px; }
+  .v-icon { width:24px; height:24px; background:linear-gradient(135deg,#e8f0fb,#d4e4f7); border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:16px; line-height:1; }
   .v-name { font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500; color:#3d5a80; letter-spacing:0.05em; }
   .v-badge { margin-left:auto; font-size:9px; font-weight:600; padding:2px 8px; border-radius:4px; letter-spacing:0.06em; font-family:'DM Mono',monospace; color:#aab8c8; }
 
@@ -131,7 +136,7 @@
 {% for g in matched_groups %}
 <div class="v-card matched">
   <div class="v-head">
-    <div class="v-icon">🚢</div>
+    <div class="v-icon">🛳️</div>
     <span class="v-name">{{ g.nave }}</span>
     <span class="v-badge">{{ g.count }} matched</span>
   </div>
@@ -167,7 +172,7 @@
 {% for g in unmatched_groups %}
 <div class="um-card">
   <div class="um-head">
-    <span class="um-vessel-name">🚢 {{ g.nave }}</span>
+    <span class="um-vessel-name">🛳️ {{ g.nave }}</span>
     <span class="um-vessel-count">{{ g.count }} contenedores</span>
   </div>
   <div class="um-grid">

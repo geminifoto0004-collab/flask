@@ -1587,8 +1587,21 @@ def _render_telegram_html_image(
             target_width = max(520, content_width)
 
             if content_height <= 860:
-                # Avoid large blank area for short reports.
-                target_height = max(420, content_height + 8)
+                # Short report: tighten bottom spacing to avoid visible blank area.
+                page.evaluate("""
+                    (() => {
+                      const styleId = 'iti-short-report-compact-style';
+                      if (!document.getElementById(styleId)) {
+                        const st = document.createElement('style');
+                        st.id = styleId;
+                        st.textContent = 'body{padding-bottom:12px !important;} .footer{margin-top:8px !important;}';
+                        document.head.appendChild(st);
+                      }
+                    })();
+                """)
+                page.wait_for_timeout(80)
+                content_height = int(page.evaluate("Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight || 900)"))
+                target_height = max(280, content_height + 4)
                 page.set_viewport_size({"width": target_width, "height": target_height})
                 png_bytes = page.screenshot(full_page=False, type="png")
             else:
