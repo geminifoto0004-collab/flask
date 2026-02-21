@@ -1582,7 +1582,18 @@ def _render_telegram_html_image(
             )
             page.set_content(html_content, wait_until="networkidle")
             page.wait_for_timeout(2000)
-            png_bytes = page.screenshot(full_page=True, type="png")
+            content_height = int(page.evaluate("Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight || 900)"))
+            content_width = int(page.evaluate("Math.ceil(document.documentElement.scrollWidth || document.body.scrollWidth || 520)"))
+            target_width = max(520, content_width)
+
+            if content_height <= 860:
+                # Avoid large blank area for short reports.
+                target_height = max(420, content_height + 8)
+                page.set_viewport_size({"width": target_width, "height": target_height})
+                png_bytes = page.screenshot(full_page=False, type="png")
+            else:
+                page.set_viewport_size({"width": target_width, "height": 900})
+                png_bytes = page.screenshot(full_page=True, type="png")
             browser.close()
             return png_bytes, ""
     except Exception as exc:
