@@ -1318,8 +1318,8 @@ def _build_telegram_sections(
         else:
             unmatched_rows.append(row)
 
-    # matched: date old -> new
-    matched_rows.sort(key=lambda r: (r['_fecha_dt'] is None, r['_fecha_dt'] or datetime.max, r['codigo']))
+    # matched: group by ship, then date old -> new
+    matched_rows.sort(key=lambda r: (r['buque'], r['_fecha_dt'] is None, r['_fecha_dt'] or datetime.max, r['codigo']))
     # unmatched: keep stable and easy scan
     unmatched_rows.sort(key=lambda r: (r['buque'], r['codigo']))
 
@@ -1361,6 +1361,14 @@ def _build_telegram_sections(
     return shown_matched, shown_unmatched, hidden_matched, hidden_unmatched
 
 
+def _group_rows_by_buque(rows: List[Dict]) -> List[Tuple[str, List[Dict]]]:
+    grouped: Dict[str, List[Dict]] = {}
+    for row in rows:
+        ship = _safe_text(row.get('buque'), 'UNKNOWN')
+        grouped.setdefault(ship, []).append(row)
+    return list(grouped.items())
+
+
 def _build_telegram_text_message(company_name: str, containers: List[Dict], include_matched: bool, include_unmatched: bool, max_rows: int) -> str:
     max_text_len = 3900
     matched = [c for c in containers if c.get('matched', False)]
@@ -1368,6 +1376,8 @@ def _build_telegram_text_message(company_name: str, containers: List[Dict], incl
     shown_matched, shown_unmatched, hidden_matched, hidden_unmatched = _build_telegram_sections(
         containers, include_matched, include_unmatched, max_rows
     )
+    grouped_matched = _group_rows_by_buque(shown_matched)
+    grouped_unmatched = _group_rows_by_buque(shown_unmatched)
     now_text = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
 
     lines = [
@@ -1378,22 +1388,32 @@ def _build_telegram_text_message(company_name: str, containers: List[Dict], incl
         f"✅ 已匹配 ({len(matched)})"
     ]
 
-    # Keep mobile readability: each row in 2-3 short lines.
+    def try_add_line(line: str) -> bool:
+        projected = len("\n".join(lines + [line]))
+        if projected > max_text_len:
+            return False
+        lines.append(line)
+        return True
+
     extra_hidden_matched = 0
-    if not shown_matched:
+    if not grouped_matched:
         lines.append("- 無")
     else:
-        for idx, row in enumerate(shown_matched, 1):
-            block = [
-                f"{idx}) {row['codigo']}  {row['fecha']}",
-                f"   { _truncate_text(row['buque'], 46) }",
-                f"   F:{row['folio']} S:{row['sigla']} N:{row['numero']}-{row['digito']} P:{row['pies']} | { _truncate_text(row['estado'], 16) }"
-            ]
-            projected = len("\n".join(lines + block))
-            if projected > max_text_len:
-                extra_hidden_matched = len(shown_matched) - idx + 1
+        printed = 0
+        for ship, rows in grouped_matched:
+            if not try_add_line(f"【{_truncate_text(ship, 48)}】"):
+                extra_hidden_matched = len(shown_matched) - printed
                 break
-            lines.extend(block)
+            for idx, row in enumerate(rows, 1):
+                folio_text = f"F{row['folio']}" if row.get('folio') and row['folio'] != '-' else "F-"
+                line = f"{idx}. {folio_text} | {row['codigo']} | {row['fecha']}"
+                if not try_add_line(line):
+                    extra_hidden_matched = len(shown_matched) - printed
+                    break
+                printed += 1
+            if extra_hidden_matched > 0:
+                break
+
     if hidden_matched > 0:
         lines.append(f"... 已匹配尚有 {hidden_matched} 筆未顯示")
     if extra_hidden_matched > 0:
@@ -1402,19 +1422,23 @@ def _build_telegram_text_message(company_name: str, containers: List[Dict], incl
     lines.append("--------------------")
     lines.append(f"❌ 未匹配 ({len(unmatched)})")
     extra_hidden_unmatched = 0
-    if not shown_unmatched:
+    if not grouped_unmatched:
         lines.append("- 無")
     else:
-        for idx, row in enumerate(shown_unmatched, 1):
-            block = [
-                f"{idx}) {row['codigo']}",
-                f"   { _truncate_text(row['buque'], 46) } | { _truncate_text(row['estado'], 16) }"
-            ]
-            projected = len("\n".join(lines + block))
-            if projected > max_text_len:
-                extra_hidden_unmatched = len(shown_unmatched) - idx + 1
+        printed = 0
+        for ship, rows in grouped_unmatched:
+            if not try_add_line(f"【{_truncate_text(ship, 48)}】"):
+                extra_hidden_unmatched = len(shown_unmatched) - printed
                 break
-            lines.extend(block)
+            for idx, row in enumerate(rows, 1):
+                line = f"{idx}. {row['codigo']} | {row['estado']}"
+                if not try_add_line(line):
+                    extra_hidden_unmatched = len(shown_unmatched) - printed
+                    break
+                printed += 1
+            if extra_hidden_unmatched > 0:
+                break
+
     if hidden_unmatched > 0:
         lines.append(f"... 未匹配尚有 {hidden_unmatched} 筆未顯示")
     if extra_hidden_unmatched > 0:
@@ -1510,6 +1534,8 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     shown_matched, shown_unmatched, hidden_matched, hidden_unmatched = _build_telegram_sections(
         containers, include_matched, include_unmatched, max_rows
     )
+    grouped_matched = _group_rows_by_buque(shown_matched)
+    grouped_unmatched = _group_rows_by_buque(shown_unmatched)
     matched_count = sum(1 for item in containers if item.get('matched', False))
     unmatched_count = len(containers) - matched_count
 
@@ -1520,22 +1546,18 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     row_h = 22 * scale
     section_gap = 18 * scale
     footer_h = 28 * scale
-    matched_cols = [220 * scale, 90 * scale, 80 * scale, 110 * scale, 75 * scale, 190 * scale, 70 * scale]
-    unmatched_cols = [280 * scale, 140 * scale, 180 * scale, 260 * scale]
+    ship_h = 22 * scale
+    matched_cols = [120 * scale, 260 * scale, 220 * scale]
+    unmatched_cols = [300 * scale, 300 * scale]
     table_w = max(sum(matched_cols), sum(unmatched_cols))
 
-    matched_rows = [
-        [row['buque'], row['folio'], row['sigla'], row['numero'], row['digito'], row['fecha'], row['pies']]
-        for row in shown_matched
-    ]
-    unmatched_rows = [
-        [row['buque'], row['estado'], row['codigo'], row['descripcion']]
-        for row in shown_unmatched
-    ]
-
     section_count = (1 if include_matched else 0) + (1 if include_unmatched else 0)
-    approx_rows = max(1, len(matched_rows)) + max(1, len(unmatched_rows))
-    height = margin * 2 + summary_h + section_count * (header_h + section_gap) + approx_rows * row_h + footer_h
+    matched_row_count = sum(max(1, len(rows)) for _, rows in grouped_matched) if grouped_matched else 1
+    unmatched_row_count = sum(max(1, len(rows)) for _, rows in grouped_unmatched) if grouped_unmatched else 1
+    matched_ship_count = len(grouped_matched) if grouped_matched else (1 if include_matched else 0)
+    unmatched_ship_count = len(grouped_unmatched) if grouped_unmatched else (1 if include_unmatched else 0)
+    approx_rows = (matched_row_count + unmatched_row_count)
+    height = margin * 2 + summary_h + section_count * (header_h + section_gap) + (matched_ship_count + unmatched_ship_count) * ship_h + approx_rows * row_h + footer_h
     width = margin * 2 + table_w
 
     image = Image.new("RGB", (width, height), "#f3f4f6")
@@ -1562,36 +1584,81 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
         draw.text((margin + 10, y + 10), text, fill="#111827", font=font_header)
         y += header_h
 
+    def draw_ship_title(text: str):
+        nonlocal y
+        draw.rectangle([margin, y, width - margin, y + ship_h], fill="#f8fafc", outline="#d1d5db", width=1)
+        draw.text((margin + 10, y + 9), _fit_text(draw, text, font_header, width - margin * 2 - 20), fill="#1f2937", font=font_header)
+        y += ship_h
+
     if include_matched:
         suffix = f" (+{hidden_matched} hidden)" if hidden_matched > 0 else ""
-        draw_section_title(f"MATCHED ITI ({matched_count}){suffix}")
-        y = _draw_grid_table(
-            draw=draw,
-            x0=margin,
-            y0=y,
-            col_widths=matched_cols,
-            header_h=header_h,
-            row_h=row_h,
-            headers=["BUQUE", "FOLIO", "SIGLA", "NUMERO", "DIGITO", "FECHA ENTREGA", "PIES"],
-            rows=matched_rows,
-            fonts=fonts
-        )
+        draw_section_title(f"MATCHED ({matched_count}){suffix}")
+        if not grouped_matched:
+            draw_ship_title("No matched data")
+            y = _draw_grid_table(
+                draw=draw,
+                x0=margin,
+                y0=y,
+                col_widths=matched_cols,
+                header_h=header_h,
+                row_h=row_h,
+                headers=["FOLIO", "CONTENEDOR", "FECHA ENTREGA"],
+                rows=[],
+                fonts=fonts
+            )
+        else:
+            for ship, rows in grouped_matched:
+                draw_ship_title(ship)
+                table_rows = []
+                for row in rows:
+                    folio = row['folio'] if row.get('folio') and row['folio'] != '-' else '-'
+                    table_rows.append([folio, row['codigo'], row['fecha']])
+                y = _draw_grid_table(
+                    draw=draw,
+                    x0=margin,
+                    y0=y,
+                    col_widths=matched_cols,
+                    header_h=header_h,
+                    row_h=row_h,
+                    headers=["FOLIO", "CONTENEDOR", "FECHA ENTREGA"],
+                    rows=table_rows,
+                    fonts=fonts
+                )
+                y += 8
         y += section_gap
 
     if include_unmatched:
         suffix = f" (+{hidden_unmatched} hidden)" if hidden_unmatched > 0 else ""
         draw_section_title(f"UNMATCHED ({unmatched_count}){suffix}")
-        y = _draw_grid_table(
-            draw=draw,
-            x0=margin,
-            y0=y,
-            col_widths=unmatched_cols,
-            header_h=header_h,
-            row_h=row_h,
-            headers=["BUQUE", "ESTADO", "CONTENEDOR", "DESCRIPCION"],
-            rows=unmatched_rows,
-            fonts=fonts
-        )
+        if not grouped_unmatched:
+            draw_ship_title("No unmatched data")
+            y = _draw_grid_table(
+                draw=draw,
+                x0=margin,
+                y0=y,
+                col_widths=unmatched_cols,
+                header_h=header_h,
+                row_h=row_h,
+                headers=["CONTENEDOR", "ESTADO"],
+                rows=[],
+                fonts=fonts
+            )
+        else:
+            for ship, rows in grouped_unmatched:
+                draw_ship_title(ship)
+                table_rows = [[row['codigo'], row['estado']] for row in rows]
+                y = _draw_grid_table(
+                    draw=draw,
+                    x0=margin,
+                    y0=y,
+                    col_widths=unmatched_cols,
+                    header_h=header_h,
+                    row_h=row_h,
+                    headers=["CONTENEDOR", "ESTADO"],
+                    rows=table_rows,
+                    fonts=fonts
+                )
+                y += 8
         y += section_gap
 
     y += 8
