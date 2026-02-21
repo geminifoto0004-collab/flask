@@ -6,6 +6,7 @@
 import threading
 import time
 import json
+import hashlib
 from datetime import datetime, date
 from typing import Dict, Optional
 from database import get_db_connection, get_cursor
@@ -387,33 +388,51 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                 
                 # 先獲取上次結果（在更新之前），用於判斷是否需要發送郵件
                 last_result = None
+                last_email_hash = None
+                last_telegram_hash = None
                 try:
                     cursor.execute('''
-                        SELECT last_check_result FROM user_monitor_configs WHERE id = ?
+                        SELECT last_check_result, last_email_result_hash, last_telegram_result_hash
+                        FROM user_monitor_configs WHERE id = ?
                     ''', (task_config.get('id'),))
                     last_result_row = cursor.fetchone()
                     if last_result_row:
                         if isinstance(last_result_row, dict):
                             last_result = last_result_row.get('last_check_result')
+                            last_email_hash = last_result_row.get('last_email_result_hash')
+                            last_telegram_hash = last_result_row.get('last_telegram_result_hash')
                         else:
                             last_result = last_result_row[0] if len(last_result_row) > 0 else None
+                            last_email_hash = last_result_row[1] if len(last_result_row) > 1 else None
+                            last_telegram_hash = last_result_row[2] if len(last_result_row) > 2 else None
                 except Exception as e:
                     print(f"[Async Task] 獲取上次結果失敗: {e}")
                 
-                # 🔥 關鍵改動：先嘗試發送郵件，再根據結果決定任務狀態
-                email_sent_successfully = True  # 預設為成功
-                email_error_msg = None
-                need_to_send_email = False  # 是否需要發送郵件
-                
-                # 處理郵件通知
+                # 準備結果 Hash（用於通道去重）
                 try:
-                    from services.monitor_service import has_result_changed, send_notification_email
+                    from services.monitor_service import compute_result_hash
+                    result_hash = compute_result_hash(clean_result)
+                except Exception:
+                    result_hash = hashlib.sha256(result_json.encode('utf-8')).hexdigest()
+                
+                # 🔥 關鍵改動：按通知通道分別發送
+                email_attempted = False
+                email_sent_successfully = None
+                email_error_msg = None
+                telegram_attempted = False
+                telegram_sent_successfully = None
+                telegram_error_msg = None
+                
+                try:
+                    from services.monitor_service import has_result_changed, send_notification_email, send_notification_telegram
                     
                     # 檢查是否有數據變化
                     should_send = has_result_changed(last_result, result)
-                    if should_send:
-                        need_to_send_email = True
-                        # 有數據變化，發送通知郵件
+                    notify_email = True if task_config.get('notify_email') is None else bool(task_config.get('notify_email'))
+                    notify_telegram = bool(task_config.get('notify_telegram'))
+                    
+                    if notify_email and last_email_hash != result_hash:
+                        email_attempted = True
                         send_success, send_message = send_notification_email(
                             task_config.get('notification_emails', []),
                             result.get('containers', []),
@@ -422,21 +441,39 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                         email_sent_successfully = send_success
                         email_error_msg = send_message if not send_success else None
                         print(f"[Async Task] 📧 郵件發送結果: {send_success}, {send_message}")
-                    else:
-                        print(f"[Async Task] ℹ️ 沒有數據變化，跳過郵件發送")
-                        # 沒有變化不需要發送，也算成功
+                    elif notify_email:
                         email_sent_successfully = True
+                        print(f"[Async Task] ℹ️ 郵件已對此結果發送，跳過")
+                    
+                    if notify_telegram and last_telegram_hash != result_hash:
+                        telegram_attempted = True
+                        send_success, send_message = send_notification_telegram(
+                            task_config.get('telegram_bot_token'),
+                            task_config.get('telegram_chat_id'),
+                            result.get('containers', []),
+                            task_config
+                        )
+                        telegram_sent_successfully = send_success
+                        telegram_error_msg = send_message if not send_success else None
+                        print(f"[Async Task] 📨 Telegram 發送結果: {send_success}, {send_message}")
+                    elif notify_telegram:
+                        telegram_sent_successfully = True
+                        print(f"[Async Task] ℹ️ Telegram 已對此結果發送，跳過")
                 except Exception as e:
-                    # 郵件發送異常，記錄錯誤
-                    if need_to_send_email:
-                        email_sent_successfully = False
-                        email_error_msg = str(e)
-                    print(f"[Async Task] ❌ 郵件發送異常: {e}")
+                    # 通知發送異常，記錄錯誤
+                    print(f"[Async Task] ❌ 通知發送異常: {e}")
                     import traceback
                     traceback.print_exc()
+                    if email_attempted and email_sent_successfully is None:
+                        email_sent_successfully = False
+                        email_error_msg = str(e)
+                    if telegram_attempted and telegram_sent_successfully is None:
+                        telegram_sent_successfully = False
+                        telegram_error_msg = str(e)
                 
-                # 🔥 根據郵件發送結果決定最終狀態
-                if email_sent_successfully:
+                # 🔥 根據通知發送結果決定最終狀態
+                any_failed = (email_attempted and email_sent_successfully is False) or (telegram_attempted and telegram_sent_successfully is False)
+                if not any_failed:
                     # PA 成功 + 郵件成功（或不需要發送）→ COMPLETED
                     cursor.execute('''
                         UPDATE async_tasks 
@@ -444,38 +481,69 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                         WHERE task_id = ?
                     ''', (TASK_STATUS_COMPLETED, result_json, updated_at, task_id))
                     conn.commit()
-                    if should_send:
-                        print(f"[Async Task] ✅ 任務完成：PA 查詢成功，郵件已發送")
-                    else:
-                        print(f"[Async Task] ✅ 任務完成：PA 查詢成功，無需發送郵件")
+                    print(f"[Async Task] ✅ 任務完成：PA 查詢成功")
                     
-                    # 🔥🔥🔥 只有在郵件成功時，才更新 last_check_result
-                    # 這樣下次檢查時才能正確判斷是否有變化
+                    # 更新 last_check_result 和通道發送記錄
                     try:
-                        cursor.execute('''
+                        updates = ['last_check_time = ?', 'last_check_result = ?']
+                        params = [updated_at, result_json]
+                        
+                        if email_attempted and email_sent_successfully:
+                            updates.append('last_email_result_hash = ?')
+                            params.append(result_hash)
+                        
+                        if telegram_attempted and telegram_sent_successfully:
+                            updates.append('last_telegram_result_hash = ?')
+                            params.append(result_hash)
+                        
+                        params.append(task_config.get('id'))
+                        cursor.execute(f'''
                             UPDATE user_monitor_configs
-                            SET last_check_time = ?, last_check_result = ?
+                            SET {', '.join(updates)}
                             WHERE id = ?
-                        ''', (
-                            updated_at,
-                            result_json,
-                            task_config.get('id')
-                        ))
+                        ''', params)
                         conn.commit()
-                        print(f"[Async Task] ✅ 已更新 last_check_result（因為郵件發送成功）")
+                        print(f"[Async Task] ✅ 已更新 last_check_result")
                     except Exception as e:
                         print(f"[Async Task] 更新監控任務配置失敗: {e}")
                 else:
-                    # PA 成功 + 郵件失敗 → FAILED
-                    error_msg = f"PA 查詢成功，但郵件發送失敗: {email_error_msg}"
+                    # PA 成功 + 通道發送失敗 → FAILED
+                    error_parts = []
+                    if email_attempted and email_sent_successfully is False:
+                        error_parts.append(f"Email 失敗: {email_error_msg}")
+                    if telegram_attempted and telegram_sent_successfully is False:
+                        error_parts.append(f"Telegram 失敗: {telegram_error_msg}")
+                    error_msg = "PA 查詢成功，但通知發送失敗: " + "; ".join(error_parts)
                     cursor.execute('''
                         UPDATE async_tasks 
                         SET status = ?, error = ?, result = ?, updated_at = ?
                         WHERE task_id = ?
                     ''', (TASK_STATUS_FAILED, error_msg, result_json, updated_at, task_id))
                     conn.commit()
-                    print(f"[Async Task] ⚠️ 任務失敗：PA 成功但郵件發送失敗")
-                    print(f"[Async Task] ⚠️ 不更新 last_check_result（保留舊值，下次可以重試）")
+                    print(f"[Async Task] ⚠️ 任務失敗：PA 成功但通知發送失敗")
+                    
+                    # 即使通知失敗，也更新 last_check_result（通道會依 hash 重試）
+                    try:
+                        updates = ['last_check_time = ?', 'last_check_result = ?']
+                        params = [updated_at, result_json]
+                        
+                        if email_attempted and email_sent_successfully:
+                            updates.append('last_email_result_hash = ?')
+                            params.append(result_hash)
+                        
+                        if telegram_attempted and telegram_sent_successfully:
+                            updates.append('last_telegram_result_hash = ?')
+                            params.append(result_hash)
+                        
+                        params.append(task_config.get('id'))
+                        cursor.execute(f'''
+                            UPDATE user_monitor_configs
+                            SET {', '.join(updates)}
+                            WHERE id = ?
+                        ''', params)
+                        conn.commit()
+                    except Exception as e:
+                        print(f"[Async Task] 更新監控任務配置失敗: {e}")
                     
             else:
                 # 任務失敗，更新狀態並發送異常通知郵件
@@ -493,7 +561,8 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                     
                     # 獲取通知郵箱
                     notification_emails = task_config.get('notification_emails', [])
-                    if notification_emails:
+                    notify_email = True if task_config.get('notify_email') is None else bool(task_config.get('notify_email'))
+                    if notification_emails and notify_email:
                         company_name = task_config.get('company_name', '監控系統')
                         email_subject = task_config.get('email_subject', f"⚠️ {company_name} 監控任務執行失敗")
                         
@@ -554,7 +623,8 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
             
             # 獲取通知郵箱
             notification_emails = task_config.get('notification_emails', [])
-            if notification_emails:
+            notify_email = True if task_config.get('notify_email') is None else bool(task_config.get('notify_email'))
+            if notification_emails and notify_email:
                 company_name = task_config.get('company_name', '監控系統')
                 email_subject = task_config.get('email_subject', f"⚠️ {company_name} 監控任務系統異常")
                 

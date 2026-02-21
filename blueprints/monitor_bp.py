@@ -12,6 +12,7 @@ from services.monitor_service import (
     create_monitor_task, get_user_monitor_tasks, get_monitor_task,
     update_monitor_task, delete_monitor_task, get_task_by_api_key,
     check_monitor_task, has_result_changed, send_notification_email,
+    send_notification_telegram, compute_result_hash,
     generate_api_key, clear_check_history
 )
 from utils.time_utils import get_chile_time_naive
@@ -40,6 +41,15 @@ def admin_required(f):
             return jsonify({'success': False, 'error': '權限不足'}), 403
         return f(*args, **kwargs)
     return decorated_function
+
+
+def _mask_secret(value: str, tail: int = 4) -> str:
+    """遮罩敏感資訊，只顯示結尾幾碼"""
+    if not value:
+        return ""
+    if len(value) <= tail:
+        return "*" * len(value)
+    return "*" * (len(value) - tail) + value[-tail:]
 
 
 # ========== 用戶端：獲取我的監控任務列表 ==========
@@ -88,12 +98,22 @@ def create_user_monitor_task():
         notification_emails = data.get('notification_emails', [])
         company_name = data.get('company_name', '').strip()
         email_subject = data.get('email_subject', '').strip()
+        notify_email = bool(data.get('notify_email', True))
+        notify_telegram = bool(data.get('notify_telegram', False))
+        telegram_bot_token = data.get('telegram_bot_token', '').strip()
+        telegram_chat_id = data.get('telegram_chat_id', '').strip()
         
         if not all([zofri_username, zofri_password, zofri_rut_entidad, company_name]):
             return jsonify({'success': False, 'error': '請填寫所有必填欄位'}), 400
         
-        if not notification_emails or not isinstance(notification_emails, list):
+        if not notify_email and not notify_telegram:
+            return jsonify({'success': False, 'error': '請至少選擇一種通知方式'}), 400
+        
+        if notify_email and (not notification_emails or not isinstance(notification_emails, list)):
             return jsonify({'success': False, 'error': '至少需要一個通知郵箱'}), 400
+        
+        if notify_telegram and (not telegram_bot_token or not telegram_chat_id):
+            return jsonify({'success': False, 'error': '請填寫 Telegram Bot Token 與 Chat ID'}), 400
         
         success, result = create_monitor_task(
             user_id=user_id,
@@ -103,7 +123,11 @@ def create_user_monitor_task():
             zofri_rut_representante='',  # 不使用，傳空字符串
             notification_emails=notification_emails,
             company_name=company_name,
-            email_subject=email_subject if email_subject else None
+            email_subject=email_subject if email_subject else None,
+            notify_email=notify_email,
+            notify_telegram=notify_telegram,
+            telegram_bot_token=telegram_bot_token if telegram_bot_token else None,
+            telegram_chat_id=telegram_chat_id if telegram_chat_id else None
         )
         
         if success:
@@ -126,6 +150,8 @@ def update_user_monitor_task(task_id):
             return jsonify({'success': False, 'error': '用戶ID不存在'}), 400
         
         data = request.get_json()
+        telegram_bot_token = data.get('telegram_bot_token')
+        telegram_chat_id = data.get('telegram_chat_id')
         
         success, message = update_monitor_task(
             task_id=task_id,
@@ -136,6 +162,10 @@ def update_user_monitor_task(task_id):
             notification_emails=data.get('notification_emails'),
             company_name=data.get('company_name'),
             email_subject=data.get('email_subject'),
+            notify_email=data.get('notify_email'),
+            notify_telegram=data.get('notify_telegram'),
+            telegram_bot_token=telegram_bot_token.strip() if isinstance(telegram_bot_token, str) and telegram_bot_token.strip() else None,
+            telegram_chat_id=telegram_chat_id.strip() if isinstance(telegram_chat_id, str) and telegram_chat_id.strip() else None,
             is_active=data.get('is_active')
         )
         
@@ -208,6 +238,12 @@ def get_user_monitor_task_detail(task_id):
         
         # 隱藏敏感信息（密碼不返回）
         task.pop('zofri_password', None)
+        telegram_token = task.pop('telegram_bot_token', None)
+        task['telegram_token_masked'] = _mask_secret(telegram_token)
+        task['telegram_token_last4'] = telegram_token[-4:] if telegram_token else ''
+        task['telegram_configured'] = True if (telegram_token and task.get('telegram_chat_id')) else False
+        task.pop('last_email_result_hash', None)
+        task.pop('last_telegram_result_hash', None)
         
         return jsonify({'success': True, 'task': task})
         
@@ -393,25 +429,53 @@ def check_monitor_api():
             # 同步執行模式：對比上次結果，判斷是否有變化
             last_result = task_config.get('last_check_result')
             should_send = has_result_changed(last_result, result)
+            result_hash = compute_result_hash(result)
             
             print(f"[監控API] 任務ID: {task_config['id']}, 應該發送: {should_send}")
             print(f"[監控API] 上次結果存在: {last_result is not None}")
             print(f"[監控API] 當前容器數量: {len(result.get('containers', []))}")
             
-            # 如果有變化（或第一次檢查有數據），發送通知
-            notification_sent = False
-            if should_send:
-                print(f"[監控API] 準備發送郵件，收件人: {task_config['notification_emails']}")
-                # 發送所有當前容器
-                send_success, send_message = send_notification_email(
-                    task_config['notification_emails'],
-                    result.get('containers', []),  # 發送所有容器
-                    task_config  # 傳遞任務配置以獲取公司名稱
-                )
-                notification_sent = send_success
-                print(f"[監控API] 郵件發送結果: {send_success}, 消息: {send_message}")
-            else:
-                print(f"[監控API] 不需要發送郵件（結果無變化）")
+            notify_email = True if task_config.get('notify_email') is None else bool(task_config.get('notify_email'))
+            notify_telegram = bool(task_config.get('notify_telegram'))
+            
+            email_sent = None
+            email_error = None
+            email_attempted = False
+            if notify_email:
+                if task_config.get('last_email_result_hash') != result_hash:
+                    print(f"[監控API] 準備發送郵件，收件人: {task_config['notification_emails']}")
+                    send_success, send_message = send_notification_email(
+                        task_config['notification_emails'],
+                        result.get('containers', []),
+                        task_config
+                    )
+                    email_attempted = True
+                    email_sent = send_success
+                    email_error = None if send_success else send_message
+                    print(f"[監控API] 郵件發送結果: {send_success}, 消息: {send_message}")
+                else:
+                    email_sent = True
+                    print(f"[監控API] 郵件已對此結果發送，跳過")
+            
+            telegram_sent = None
+            telegram_error = None
+            telegram_attempted = False
+            if notify_telegram:
+                if task_config.get('last_telegram_result_hash') != result_hash:
+                    print(f"[監控API] 準備發送 Telegram 通知")
+                    send_success, send_message = send_notification_telegram(
+                        task_config.get('telegram_bot_token'),
+                        task_config.get('telegram_chat_id'),
+                        result.get('containers', []),
+                        task_config
+                    )
+                    telegram_attempted = True
+                    telegram_sent = send_success
+                    telegram_error = None if send_success else send_message
+                    print(f"[監控API] Telegram 發送結果: {send_success}, 消息: {send_message}")
+                else:
+                    telegram_sent = True
+                    print(f"[監控API] Telegram 已對此結果發送，跳過")
             
             # 計算變化數量（用於響應信息）
             new_matches_count = 0
@@ -437,15 +501,23 @@ def check_monitor_api():
             
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('''
+            updates = ['last_check_time = ?', 'last_check_result = ?']
+            params = [check_time_str, json.dumps(result)]
+            
+            if notify_email and email_attempted and email_sent:
+                updates.append('last_email_result_hash = ?')
+                params.append(result_hash)
+            
+            if notify_telegram and telegram_attempted and telegram_sent:
+                updates.append('last_telegram_result_hash = ?')
+                params.append(result_hash)
+            
+            params.append(task_config['id'])
+            cursor.execute(f'''
                 UPDATE user_monitor_configs
-                SET last_check_time = ?, last_check_result = ?
+                SET {', '.join(updates)}
                 WHERE id = ?
-            ''', (
-                check_time_str,
-                json.dumps(result),
-                task_config['id']
-            ))
+            ''', params)
             conn.commit()
             conn.close()
             
@@ -455,7 +527,10 @@ def check_monitor_api():
                 'matched_count': result.get('matched_count', 0),
                 'unmatched_count': result.get('unmatched_count', 0),
                 'new_matches_count': new_matches_count,
-                'notification_sent': notification_sent,
+                'email_sent': email_sent,
+                'telegram_sent': telegram_sent,
+                'email_error': email_error,
+                'telegram_error': telegram_error,
                 'check_time': check_time_str,
                 'check_time_readable': check_time_readable  # 人類可讀的時間格式
             })

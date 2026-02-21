@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 from database import get_db_connection, get_lastrowid
 from services.email_service import send_email
+from services.telegram_service import send_telegram_message
 from services.zofri_iti_service import (
     iti_data, process_data
 )
@@ -32,6 +33,15 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 
+def compute_result_hash(result: Dict) -> str:
+    """計算監控結果的穩定 Hash"""
+    try:
+        payload = json.dumps(result, sort_keys=True, default=str)
+    except Exception:
+        payload = str(result)
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
 # ========== 創建監控任務 ==========
 def create_monitor_task(
     user_id: int,
@@ -41,17 +51,27 @@ def create_monitor_task(
     zofri_rut_representante: str = '',
     notification_emails: List[str] = None,
     company_name: str = None,
-    email_subject: str = None
+    email_subject: str = None,
+    notify_email: bool = True,
+    notify_telegram: bool = False,
+    telegram_bot_token: str = None,
+    telegram_chat_id: str = None
 ) -> Tuple[bool, str]:
     """
     創建監控任務
     返回：(是否成功, 錯誤信息或任務ID)
     """
-    if not notification_emails:
-        return False, "至少需要一個通知郵箱"
-    
     if not company_name:
         return False, "請設置公司名稱（company_name）"
+    
+    if not notify_email and not notify_telegram:
+        return False, "至少需要選擇一種通知方式"
+    
+    if notify_email and not notification_emails:
+        return False, "至少需要一個通知郵箱"
+    
+    if notify_telegram and (not telegram_bot_token or not telegram_chat_id):
+        return False, "Telegram Bot Token 或 Chat ID 未設置"
     
     try:
         conn = get_db_connection()
@@ -64,15 +84,17 @@ def create_monitor_task(
         # TODO: 後續改為使用 AES 可逆加密
         
         # 將郵箱列表轉為 JSON
-        emails_json = json.dumps(notification_emails)
+        emails_json = json.dumps(notification_emails or [])
         
         cursor.execute('''
             INSERT INTO user_monitor_configs 
             (user_id, api_key, zofri_username, zofri_password, zofri_rut_entidad, 
-             zofri_rut_representante, notification_emails, company_name, email_subject, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+             zofri_rut_representante, notification_emails, company_name, email_subject, 
+             notify_email, notify_telegram, telegram_bot_token, telegram_chat_id, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ''', (user_id, api_key, zofri_username, zofri_password, zofri_rut_entidad,
-              zofri_rut_representante, emails_json, company_name, email_subject))
+              zofri_rut_representante, emails_json, company_name, email_subject,
+              1 if notify_email else 0, 1 if notify_telegram else 0, telegram_bot_token, telegram_chat_id))
         
         task_id = get_lastrowid(cursor, conn)
         conn.commit()
@@ -93,7 +115,8 @@ def get_user_monitor_tasks(user_id: int) -> List[Dict]:
         
         cursor.execute('''
             SELECT id, api_key, zofri_username, zofri_rut_entidad, 
-                   notification_emails, last_check_time, is_active, created_at
+                   notification_emails, last_check_time, is_active, created_at,
+                   notify_email, notify_telegram, telegram_chat_id
             FROM user_monitor_configs
             WHERE user_id = ?
             ORDER BY created_at DESC
@@ -103,8 +126,10 @@ def get_user_monitor_tasks(user_id: int) -> List[Dict]:
         for row in cursor.fetchall():
             task = dict(row)
             # 解析郵箱列表
-            task['notification_emails'] = json.loads(task['notification_emails'])
-            tasks.append(task)
+            task['notification_emails'] = json.loads(task['notification_emails'] or '[]')
+            task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
+            task['notify_telegram'] = bool(task.get('notify_telegram'))
+        tasks.append(task)
         
         conn.close()
         return tasks
@@ -137,7 +162,9 @@ def get_monitor_task(task_id: int, user_id: int = None) -> Optional[Dict]:
         
         if row:
             task = dict(row)
-            task['notification_emails'] = json.loads(task['notification_emails'])
+            task['notification_emails'] = json.loads(task['notification_emails'] or '[]')
+            task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
+            task['notify_telegram'] = bool(task.get('notify_telegram'))
             return task
         return None
         
@@ -157,6 +184,10 @@ def update_monitor_task(
     notification_emails: List[str] = None,
     company_name: str = None,
     email_subject: str = None,
+    notify_email: bool = None,
+    notify_telegram: bool = None,
+    telegram_bot_token: str = None,
+    telegram_chat_id: str = None,
     is_active: bool = None
 ) -> Tuple[bool, str]:
     """更新監控任務"""
@@ -165,11 +196,28 @@ def update_monitor_task(
         cursor = conn.cursor()
         
         # 檢查任務是否存在且屬於該用戶
-        cursor.execute('SELECT id FROM user_monitor_configs WHERE id = ? AND user_id = ?', 
-                      (task_id, user_id))
-        if not cursor.fetchone():
+        cursor.execute('''
+            SELECT id, notification_emails, notify_email, notify_telegram, telegram_bot_token, telegram_chat_id
+            FROM user_monitor_configs
+            WHERE id = ? AND user_id = ?
+        ''', (task_id, user_id))
+        existing = cursor.fetchone()
+        if not existing:
             conn.close()
             return False, "任務不存在或無權限"
+        
+        if isinstance(existing, dict):
+            existing_emails = json.loads(existing.get('notification_emails') or '[]')
+            existing_notify_email = True if existing.get('notify_email') is None else bool(existing.get('notify_email'))
+            existing_notify_telegram = bool(existing.get('notify_telegram'))
+            existing_token = existing.get('telegram_bot_token')
+            existing_chat_id = existing.get('telegram_chat_id')
+        else:
+            existing_emails = json.loads(existing[1] or '[]')
+            existing_notify_email = True if existing[2] is None else bool(existing[2])
+            existing_notify_telegram = bool(existing[3])
+            existing_token = existing[4]
+            existing_chat_id = existing[5]
         
         # 構建更新語句
         updates = []
@@ -191,7 +239,7 @@ def update_monitor_task(
             updates.append('zofri_rut_representante = ?')
             params.append(zofri_rut_representante)
         
-        if notification_emails:
+        if notification_emails is not None:
             updates.append('notification_emails = ?')
             params.append(json.dumps(notification_emails))
         
@@ -203,13 +251,54 @@ def update_monitor_task(
             updates.append('email_subject = ?')
             params.append(email_subject)
         
+        if notify_email is not None:
+            updates.append('notify_email = ?')
+            params.append(1 if notify_email else 0)
+        
+        if notify_telegram is not None:
+            updates.append('notify_telegram = ?')
+            params.append(1 if notify_telegram else 0)
+        
+        if telegram_bot_token:
+            updates.append('telegram_bot_token = ?')
+            params.append(telegram_bot_token)
+        
+        if telegram_chat_id:
+            updates.append('telegram_chat_id = ?')
+            params.append(telegram_chat_id)
+        
         if is_active is not None:
             updates.append('is_active = ?')
             params.append(1 if is_active else 0)
         
+        # 驗證通知配置
+        final_notify_email = existing_notify_email if notify_email is None else notify_email
+        final_notify_telegram = existing_notify_telegram if notify_telegram is None else notify_telegram
+        final_emails = existing_emails if notification_emails is None else notification_emails
+        final_token = telegram_bot_token if telegram_bot_token else existing_token
+        final_chat_id = telegram_chat_id if telegram_chat_id else existing_chat_id
+        
+        if not final_notify_email and not final_notify_telegram:
+            conn.close()
+            return False, "至少需要選擇一種通知方式"
+        
+        if final_notify_email and not final_emails:
+            conn.close()
+            return False, "至少需要一個通知郵箱"
+        
+        if final_notify_telegram and (not final_token or not final_chat_id):
+            conn.close()
+            return False, "Telegram Bot Token 或 Chat ID 未設置"
+        
         if not updates:
             conn.close()
             return False, "沒有需要更新的字段"
+        
+        # 若切換通知方式或變更通知目標，重置對應的發送記錄
+        if (notify_email is not None and notify_email and not existing_notify_email) or (notification_emails is not None):
+            updates.append('last_email_result_hash = NULL')
+        if (notify_telegram is not None and notify_telegram and not existing_notify_telegram) or (telegram_bot_token or telegram_chat_id):
+            updates.append('last_telegram_result_hash = NULL')
         
         updates.append('updated_at = ?')
         params.append(get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S'))
@@ -274,13 +363,19 @@ def clear_check_history(task_id: int, user_id: int = None) -> Tuple[bool, str]:
             
             cursor.execute('''
                 UPDATE user_monitor_configs
-                SET last_check_result = NULL, last_check_time = NULL
+                SET last_check_result = NULL,
+                    last_check_time = NULL,
+                    last_email_result_hash = NULL,
+                    last_telegram_result_hash = NULL
                 WHERE id = ? AND user_id = ?
             ''', (task_id, user_id))
         else:
             cursor.execute('''
                 UPDATE user_monitor_configs
-                SET last_check_result = NULL, last_check_time = NULL
+                SET last_check_result = NULL,
+                    last_check_time = NULL,
+                    last_email_result_hash = NULL,
+                    last_telegram_result_hash = NULL
                 WHERE id = ?
             ''', (task_id,))
         
@@ -309,7 +404,9 @@ def get_task_by_api_key(api_key: str) -> Optional[Dict]:
         
         if row:
             task = dict(row)
-            task['notification_emails'] = json.loads(task['notification_emails'])
+            task['notification_emails'] = json.loads(task['notification_emails'] or '[]')
+            task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
+            task['notify_telegram'] = bool(task.get('notify_telegram'))
             return task
         return None
         
@@ -1025,4 +1122,45 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
         result_msg = "; ".join(error_messages)
         print(f"[監控郵件] ❌ 所有郵件發送失敗: {result_msg}")
         return False, result_msg
+
+
+# ========== 發送 Telegram 通知 ==========
+def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Dict], task_config: Dict = None) -> Tuple[bool, str]:
+    """
+    發送監控通知到 Telegram
+    參數：
+        bot_token - Telegram Bot Token
+        chat_id - Chat ID 或 @channelusername
+        containers - 容器數據列表
+        task_config - 監控任務配置（包含 company_name）
+    返回：(bool, str) - (是否成功, 錯誤信息)
+    """
+    if not task_config:
+        return False, "缺少任務配置信息"
+    
+    company_name = task_config.get('company_name')
+    if not company_name:
+        return False, "請在監控任務配置中設置公司名稱（company_name）"
+    
+    if not containers:
+        return True, "沒有新匹配的容器"
+    
+    matched = [c for c in containers if c.get('matched', False)]
+    unmatched = [c for c in containers if not c.get('matched', False)]
+    
+    lines = []
+    lines.append(f"🚢 {company_name} 監控通知")
+    lines.append(f"匹配: {len(matched)} / 未匹配: {len(unmatched)}")
+    lines.append(f"時間: {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    sample = (matched + unmatched)[:5]
+    if sample:
+        lines.append("----")
+        for item in sample:
+            code = item.get('glosa_codigo') or item.get('codigo') or '-'
+            estado = item.get('estado') or '-'
+            lines.append(f"- {code} | {estado}")
+    
+    message = "\n".join(lines)
+    return send_telegram_message(bot_token, chat_id, message)
 

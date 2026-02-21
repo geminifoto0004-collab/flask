@@ -84,6 +84,19 @@
                 </div>
                 
                 <div class="form-group">
+                    <label>Canales de Notificación <span class="required">*</span></label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="notifyEmail" checked>
+                        <span>Email</span>
+                    </label>
+                    <label class="checkbox-label" style="margin-left: 12px;">
+                        <input type="checkbox" id="notifyTelegram">
+                        <span>Telegram</span>
+                    </label>
+                    <small class="form-hint">Seleccione uno o ambos canales</small>
+                </div>
+                
+                <div class="form-group" id="emailSettings">
                     <label for="notificationEmails">Correos de Notificación <span class="required">*</span></label>
                     <textarea id="notificationEmails" name="notification_emails" rows="3" placeholder="email1@example.com, email2@example.com 或 email1@example.com; email2@example.com" required></textarea>
                     <small class="form-hint">Separe múltiples correos con comas (,) o punto y coma (;)</small>
@@ -95,10 +108,23 @@
                     <small class="form-hint">Este nombre aparecerá en los correos de notificación</small>
                 </div>
                 
-                <div class="form-group">
+                <div class="form-group" id="emailSubjectGroup">
                     <label for="emailSubject">Asunto del Correo (Opcional)</label>
                     <input type="text" id="emailSubject" name="email_subject" placeholder="Dejar vacío para usar formato predeterminado">
                     <small class="form-hint">Si está vacío, se usará: 🚢 {Nombre de la Empresa} 櫃子通知🚢</small>
+                </div>
+                
+                <div id="telegramSettings" style="display: none;">
+                    <div class="form-group">
+                        <label for="telegramBotToken">Telegram Bot Token</label>
+                        <input type="password" id="telegramBotToken" name="telegram_bot_token" placeholder="Ej: 123456:ABC-DEF...">
+                        <small class="form-hint" id="telegramTokenHint"></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="telegramChatId">Telegram Chat ID / Channel</label>
+                        <input type="text" id="telegramChatId" name="telegram_chat_id" placeholder="Ej: @tu_canal o -1001234567890">
+                        <small class="form-hint">El bot debe ser administrador del canal</small>
+                    </div>
                 </div>
                 
                 <div class="form-group" id="isActiveGroup" style="display: none;">
@@ -152,6 +178,7 @@
 <script>
 let currentTaskId = null;
 let currentApiKey = null;
+let currentTelegramConfigured = false;
 
 document.addEventListener('DOMContentLoaded', function() {
     loadTasks();
@@ -167,6 +194,16 @@ document.addEventListener('DOMContentLoaded', function() {
             saveTask();  // 使用自定義的保存函數
         });
     }
+
+    const notifyEmail = document.getElementById('notifyEmail');
+    const notifyTelegram = document.getElementById('notifyTelegram');
+    if (notifyEmail) {
+        notifyEmail.addEventListener('change', toggleNotificationFields);
+    }
+    if (notifyTelegram) {
+        notifyTelegram.addEventListener('change', toggleNotificationFields);
+    }
+    toggleNotificationFields();
     
     // API Key Modal 仍然可以點擊背景關閉（因為它只是顯示信息）
     document.getElementById('apiKeyModal').addEventListener('click', function(e) {
@@ -249,6 +286,10 @@ function createTaskCard(task) {
     const statusIcon = task.is_active ? 'fa-check-circle' : 'fa-pause-circle';
     const lastCheck = task.last_check_time || 'Nunca';
     const emails = task.notification_emails ? task.notification_emails.join(', ') : 'N/A';
+    const channels = [];
+    if (task.notify_email !== false) channels.push('Email');
+    if (task.notify_telegram) channels.push('Telegram');
+    const channelText = channels.length > 0 ? channels.join(', ') : 'N/A';
     
     card.innerHTML = `
         <div class="task-card-header">
@@ -269,6 +310,11 @@ function createTaskCard(task) {
                 <i class="fas fa-envelope"></i>
                 <span class="info-label">Correos:</span>
                 <span class="info-value" title="${escapeHtml(emails)}">${truncateText(emails, 30)}</span>
+            </div>
+            <div class="task-info-item">
+                <i class="fas fa-bell"></i>
+                <span class="info-label">Canales:</span>
+                <span class="info-value">${channelText}</span>
             </div>
             <div class="task-info-item">
                 <i class="fas fa-clock"></i>
@@ -308,6 +354,7 @@ function truncateText(text, maxLength) {
 
 function showCreateForm() {
     currentTaskId = null;
+    currentTelegramConfigured = false;
     document.getElementById('modalTitle').textContent = 'Crear Tarea de Monitoreo';
     document.getElementById('taskForm').reset();
     document.getElementById('isActiveGroup').style.display = 'none';
@@ -315,6 +362,12 @@ function showCreateForm() {
     document.getElementById('zofriPassword').required = true;
     document.getElementById('passwordRequired').style.display = 'inline';
     document.getElementById('passwordHint').style.display = 'none';
+    document.getElementById('notifyEmail').checked = true;
+    document.getElementById('notifyTelegram').checked = false;
+    document.getElementById('telegramBotToken').value = '';
+    document.getElementById('telegramChatId').value = '';
+    document.getElementById('telegramTokenHint').textContent = '';
+    toggleNotificationFields();
     document.getElementById('taskModal').style.display = 'flex';
     document.body.style.overflow = 'hidden';
 }
@@ -335,6 +388,15 @@ function editTask(taskId) {
                 document.getElementById('notificationEmails').value = task.notification_emails ? task.notification_emails.join(', ') : '';
                 document.getElementById('companyName').value = task.company_name || '';
                 document.getElementById('emailSubject').value = task.email_subject || '';
+                document.getElementById('notifyEmail').checked = task.notify_email !== false;
+                document.getElementById('notifyTelegram').checked = !!task.notify_telegram;
+                document.getElementById('telegramBotToken').value = '';
+                document.getElementById('telegramChatId').value = task.telegram_chat_id || '';
+                currentTelegramConfigured = !!task.telegram_configured;
+                document.getElementById('telegramTokenHint').textContent = task.telegram_token_masked
+                    ? `Token guardado: ${task.telegram_token_masked}`
+                    : (task.telegram_token_last4 ? `Token guardado (termina en ${task.telegram_token_last4})` : '');
+                toggleNotificationFields();
                 if (document.getElementById('isActive')) {
                     document.getElementById('isActive').checked = task.is_active !== false;
                 }
@@ -354,6 +416,8 @@ function editTask(taskId) {
 }
 
 function saveTask() {
+    const notifyEmail = document.getElementById('notifyEmail').checked;
+    const notifyTelegram = document.getElementById('notifyTelegram').checked;
     const formData = {
         zofri_username: document.getElementById('zofriUsername').value.trim(),
         zofri_password: document.getElementById('zofriPassword').value.trim(),
@@ -364,13 +428,46 @@ function saveTask() {
             .filter(e => e && e.includes('@')),  // 基本驗證：包含 @ 符號
         company_name: document.getElementById('companyName').value.trim(),
         email_subject: document.getElementById('emailSubject').value.trim(),
+        notify_email: notifyEmail,
+        notify_telegram: notifyTelegram,
+        telegram_bot_token: document.getElementById('telegramBotToken').value.trim(),
+        telegram_chat_id: document.getElementById('telegramChatId').value.trim(),
         is_active: document.getElementById('isActive') ? document.getElementById('isActive').checked : true
     };
+
+    if (!notifyEmail) {
+        formData.notification_emails = [];
+    }
+    if (!notifyTelegram) {
+        formData.telegram_bot_token = '';
+        formData.telegram_chat_id = '';
+    }
+    
+    if (!notifyEmail && !notifyTelegram) {
+        showToast('Seleccione al menos un canal de notificación', 'error');
+        return;
+    }
     
     // 驗證必填字段（編輯時密碼可選）
-    if (!formData.zofri_username || !formData.zofri_rut_entidad || formData.notification_emails.length === 0 || !formData.company_name) {
+    if (!formData.zofri_username || !formData.zofri_rut_entidad || !formData.company_name) {
         showToast('Por favor complete todos los campos obligatorios', 'error');
         return;
+    }
+    
+    if (notifyEmail && formData.notification_emails.length === 0) {
+        showToast('Ingrese al menos un correo de notificación', 'error');
+        return;
+    }
+    
+    if (notifyTelegram) {
+        if (!formData.telegram_chat_id) {
+            showToast('Ingrese Telegram Chat ID', 'error');
+            return;
+        }
+        if (!formData.telegram_bot_token && !currentTelegramConfigured) {
+            showToast('Ingrese Telegram Bot Token', 'error');
+            return;
+        }
     }
     
     // 創建時密碼必填，編輯時可選
@@ -406,6 +503,22 @@ function saveTask() {
         console.error('Error:', error);
         showToast('Error al guardar', 'error');
     });
+}
+
+function toggleNotificationFields() {
+    const notifyEmail = document.getElementById('notifyEmail')?.checked;
+    const notifyTelegram = document.getElementById('notifyTelegram')?.checked;
+    
+    const emailSettings = document.getElementById('emailSettings');
+    const emailSubjectGroup = document.getElementById('emailSubjectGroup');
+    if (emailSettings) emailSettings.style.display = notifyEmail ? 'block' : 'none';
+    if (emailSubjectGroup) emailSubjectGroup.style.display = notifyEmail ? 'block' : 'none';
+    
+    const notificationEmails = document.getElementById('notificationEmails');
+    if (notificationEmails) notificationEmails.required = !!notifyEmail;
+    
+    const telegramSettings = document.getElementById('telegramSettings');
+    if (telegramSettings) telegramSettings.style.display = notifyTelegram ? 'block' : 'none';
 }
 
 function deleteTask(taskId) {

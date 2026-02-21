@@ -720,6 +720,12 @@ def init_database():
                 notification_emails {text_type} NOT NULL,
                 last_check_time TIMESTAMP,
                 last_check_result {text_type},
+                notify_email {boolean_type} DEFAULT 1,
+                notify_telegram {boolean_type} DEFAULT 0,
+                telegram_bot_token {text_type},
+                telegram_chat_id {text_type},
+                last_email_result_hash {text_type},
+                last_telegram_result_hash {text_type},
                 is_active {boolean_type} DEFAULT 1,
                 created_at TIMESTAMP {timestamp_default},
                 updated_at TIMESTAMP {timestamp_default},
@@ -746,6 +752,42 @@ def init_database():
                 text_type=get_text_type()
             ))
             print("Added email_subject column to user_monitor_configs")
+
+        if not check_column_exists(cursor, 'user_monitor_configs', 'notify_email'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN notify_email {boolean_type} DEFAULT 1'.format(
+                boolean_type=get_boolean_type()
+            ))
+            print("Added notify_email column to user_monitor_configs")
+        
+        if not check_column_exists(cursor, 'user_monitor_configs', 'notify_telegram'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN notify_telegram {boolean_type} DEFAULT 0'.format(
+                boolean_type=get_boolean_type()
+            ))
+            print("Added notify_telegram column to user_monitor_configs")
+        
+        if not check_column_exists(cursor, 'user_monitor_configs', 'telegram_bot_token'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN telegram_bot_token {text_type}'.format(
+                text_type=get_text_type()
+            ))
+            print("Added telegram_bot_token column to user_monitor_configs")
+        
+        if not check_column_exists(cursor, 'user_monitor_configs', 'telegram_chat_id'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN telegram_chat_id {text_type}'.format(
+                text_type=get_text_type()
+            ))
+            print("Added telegram_chat_id column to user_monitor_configs")
+        
+        if not check_column_exists(cursor, 'user_monitor_configs', 'last_email_result_hash'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN last_email_result_hash {text_type}'.format(
+                text_type=get_text_type()
+            ))
+            print("Added last_email_result_hash column to user_monitor_configs")
+        
+        if not check_column_exists(cursor, 'user_monitor_configs', 'last_telegram_result_hash'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN last_telegram_result_hash {text_type}'.format(
+                text_type=get_text_type()
+            ))
+            print("Added last_telegram_result_hash column to user_monitor_configs")
         
         # ?µå»º async_tasks è¡¨ï??¨æ¼?°æ­¥ä»»å?ï¼?
         cursor.execute('''
