@@ -6,6 +6,7 @@
 import json
 import hashlib
 import uuid
+import io
 import pandas as pd
 import requests
 import time
@@ -14,11 +15,21 @@ from typing import Dict, List, Optional, Tuple
 
 from database import get_db_connection, get_lastrowid
 from services.email_service import send_email
-from services.telegram_service import send_telegram_message
+from services.telegram_service import send_telegram_message, send_telegram_photo
 from services.zofri_iti_service import (
     iti_data, process_data
 )
 from utils.time_utils import get_chile_time_naive
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except Exception:
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+
+
+ALLOWED_TELEGRAM_MODES = {"text", "image", "both"}
 
 
 # ========== 生成 API Key ==========
@@ -42,6 +53,25 @@ def compute_result_hash(result: Dict) -> str:
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
+def normalize_telegram_mode(mode: Optional[str]) -> str:
+    """Normalize telegram mode to text/image/both."""
+    if not mode:
+        return "text"
+    normalized = str(mode).strip().lower()
+    if normalized not in ALLOWED_TELEGRAM_MODES:
+        return "text"
+    return normalized
+
+
+def normalize_telegram_max_rows(value, default: int = 200) -> int:
+    """Clamp telegram rows to a safe range."""
+    try:
+        rows = int(value)
+    except Exception:
+        rows = default
+    return max(10, min(rows, 1000))
+
+
 # ========== 創建監控任務 ==========
 def create_monitor_task(
     user_id: int,
@@ -55,7 +85,11 @@ def create_monitor_task(
     notify_email: bool = True,
     notify_telegram: bool = False,
     telegram_bot_token: str = None,
-    telegram_chat_id: str = None
+    telegram_chat_id: str = None,
+    telegram_mode: str = "text",
+    telegram_include_matched: bool = True,
+    telegram_include_unmatched: bool = True,
+    telegram_max_rows: int = 200
 ) -> Tuple[bool, str]:
     """
     創建監控任務
@@ -72,6 +106,11 @@ def create_monitor_task(
     
     if notify_telegram and (not telegram_bot_token or not telegram_chat_id):
         return False, "Telegram Bot Token 或 Chat ID 未設置"
+
+    telegram_mode = normalize_telegram_mode(telegram_mode)
+    telegram_max_rows = normalize_telegram_max_rows(telegram_max_rows)
+    if notify_telegram and not telegram_include_matched and not telegram_include_unmatched:
+        return False, "Telegram 至少要選擇顯示匹配或未匹配"
     
     try:
         conn = get_db_connection()
@@ -90,11 +129,13 @@ def create_monitor_task(
             INSERT INTO user_monitor_configs 
             (user_id, api_key, zofri_username, zofri_password, zofri_rut_entidad, 
              zofri_rut_representante, notification_emails, company_name, email_subject, 
-             notify_email, notify_telegram, telegram_bot_token, telegram_chat_id, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+             notify_email, notify_telegram, telegram_bot_token, telegram_chat_id,
+             telegram_mode, telegram_include_matched, telegram_include_unmatched, telegram_max_rows, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ''', (user_id, api_key, zofri_username, zofri_password, zofri_rut_entidad,
               zofri_rut_representante, emails_json, company_name, email_subject,
-              1 if notify_email else 0, 1 if notify_telegram else 0, telegram_bot_token, telegram_chat_id))
+              1 if notify_email else 0, 1 if notify_telegram else 0, telegram_bot_token, telegram_chat_id,
+              telegram_mode, 1 if telegram_include_matched else 0, 1 if telegram_include_unmatched else 0, telegram_max_rows))
         
         task_id = get_lastrowid(cursor, conn)
         conn.commit()
@@ -116,7 +157,8 @@ def get_user_monitor_tasks(user_id: int) -> List[Dict]:
         cursor.execute('''
             SELECT id, api_key, zofri_username, zofri_rut_entidad, 
                    notification_emails, last_check_time, is_active, created_at,
-                   notify_email, notify_telegram, telegram_chat_id
+                   notify_email, notify_telegram, telegram_chat_id,
+                   telegram_mode, telegram_include_matched, telegram_include_unmatched, telegram_max_rows
             FROM user_monitor_configs
             WHERE user_id = ?
             ORDER BY created_at DESC
@@ -129,6 +171,10 @@ def get_user_monitor_tasks(user_id: int) -> List[Dict]:
             task['notification_emails'] = json.loads(task['notification_emails'] or '[]')
             task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
             task['notify_telegram'] = bool(task.get('notify_telegram'))
+            task['telegram_mode'] = normalize_telegram_mode(task.get('telegram_mode'))
+            task['telegram_include_matched'] = True if task.get('telegram_include_matched') is None else bool(task.get('telegram_include_matched'))
+            task['telegram_include_unmatched'] = True if task.get('telegram_include_unmatched') is None else bool(task.get('telegram_include_unmatched'))
+            task['telegram_max_rows'] = normalize_telegram_max_rows(task.get('telegram_max_rows', 200))
             tasks.append(task)
         
         conn.close()
@@ -165,6 +211,10 @@ def get_monitor_task(task_id: int, user_id: int = None) -> Optional[Dict]:
             task['notification_emails'] = json.loads(task['notification_emails'] or '[]')
             task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
             task['notify_telegram'] = bool(task.get('notify_telegram'))
+            task['telegram_mode'] = normalize_telegram_mode(task.get('telegram_mode'))
+            task['telegram_include_matched'] = True if task.get('telegram_include_matched') is None else bool(task.get('telegram_include_matched'))
+            task['telegram_include_unmatched'] = True if task.get('telegram_include_unmatched') is None else bool(task.get('telegram_include_unmatched'))
+            task['telegram_max_rows'] = normalize_telegram_max_rows(task.get('telegram_max_rows', 200))
             return task
         return None
         
@@ -188,6 +238,10 @@ def update_monitor_task(
     notify_telegram: bool = None,
     telegram_bot_token: str = None,
     telegram_chat_id: str = None,
+    telegram_mode: str = None,
+    telegram_include_matched: bool = None,
+    telegram_include_unmatched: bool = None,
+    telegram_max_rows: int = None,
     is_active: bool = None
 ) -> Tuple[bool, str]:
     """更新監控任務"""
@@ -197,7 +251,8 @@ def update_monitor_task(
         
         # 檢查任務是否存在且屬於該用戶
         cursor.execute('''
-            SELECT id, notification_emails, notify_email, notify_telegram, telegram_bot_token, telegram_chat_id
+            SELECT id, notification_emails, notify_email, notify_telegram, telegram_bot_token, telegram_chat_id,
+                   telegram_mode, telegram_include_matched, telegram_include_unmatched, telegram_max_rows
             FROM user_monitor_configs
             WHERE id = ? AND user_id = ?
         ''', (task_id, user_id))
@@ -212,12 +267,20 @@ def update_monitor_task(
             existing_notify_telegram = bool(existing.get('notify_telegram'))
             existing_token = existing.get('telegram_bot_token')
             existing_chat_id = existing.get('telegram_chat_id')
+            existing_mode = normalize_telegram_mode(existing.get('telegram_mode'))
+            existing_include_matched = True if existing.get('telegram_include_matched') is None else bool(existing.get('telegram_include_matched'))
+            existing_include_unmatched = True if existing.get('telegram_include_unmatched') is None else bool(existing.get('telegram_include_unmatched'))
+            existing_max_rows = normalize_telegram_max_rows(existing.get('telegram_max_rows', 200))
         else:
             existing_emails = json.loads(existing[1] or '[]')
             existing_notify_email = True if existing[2] is None else bool(existing[2])
             existing_notify_telegram = bool(existing[3])
             existing_token = existing[4]
             existing_chat_id = existing[5]
+            existing_mode = normalize_telegram_mode(existing[6] if len(existing) > 6 else 'text')
+            existing_include_matched = True if (len(existing) <= 7 or existing[7] is None) else bool(existing[7])
+            existing_include_unmatched = True if (len(existing) <= 8 or existing[8] is None) else bool(existing[8])
+            existing_max_rows = normalize_telegram_max_rows(existing[9] if len(existing) > 9 else 200)
         
         # 構建更新語句
         updates = []
@@ -266,6 +329,22 @@ def update_monitor_task(
         if telegram_chat_id:
             updates.append('telegram_chat_id = ?')
             params.append(telegram_chat_id)
+
+        if telegram_mode is not None:
+            updates.append('telegram_mode = ?')
+            params.append(normalize_telegram_mode(telegram_mode))
+
+        if telegram_include_matched is not None:
+            updates.append('telegram_include_matched = ?')
+            params.append(1 if telegram_include_matched else 0)
+
+        if telegram_include_unmatched is not None:
+            updates.append('telegram_include_unmatched = ?')
+            params.append(1 if telegram_include_unmatched else 0)
+
+        if telegram_max_rows is not None:
+            updates.append('telegram_max_rows = ?')
+            params.append(normalize_telegram_max_rows(telegram_max_rows))
         
         if is_active is not None:
             updates.append('is_active = ?')
@@ -277,6 +356,10 @@ def update_monitor_task(
         final_emails = existing_emails if notification_emails is None else notification_emails
         final_token = telegram_bot_token if telegram_bot_token else existing_token
         final_chat_id = telegram_chat_id if telegram_chat_id else existing_chat_id
+        final_mode = existing_mode if telegram_mode is None else normalize_telegram_mode(telegram_mode)
+        final_include_matched = existing_include_matched if telegram_include_matched is None else bool(telegram_include_matched)
+        final_include_unmatched = existing_include_unmatched if telegram_include_unmatched is None else bool(telegram_include_unmatched)
+        final_max_rows = existing_max_rows if telegram_max_rows is None else normalize_telegram_max_rows(telegram_max_rows)
         
         if not final_notify_email and not final_notify_telegram:
             conn.close()
@@ -289,6 +372,18 @@ def update_monitor_task(
         if final_notify_telegram and (not final_token or not final_chat_id):
             conn.close()
             return False, "Telegram Bot Token 或 Chat ID 未設置"
+
+        if final_notify_telegram and final_mode not in ALLOWED_TELEGRAM_MODES:
+            conn.close()
+            return False, "Telegram 模式不正確"
+
+        if final_notify_telegram and not final_include_matched and not final_include_unmatched:
+            conn.close()
+            return False, "Telegram 至少要選擇顯示匹配或未匹配"
+
+        if final_notify_telegram and final_max_rows < 10:
+            conn.close()
+            return False, "Telegram 顯示筆數至少為 10"
         
         if not updates:
             conn.close()
@@ -297,7 +392,13 @@ def update_monitor_task(
         # 若切換通知方式或變更通知目標，重置對應的發送記錄
         if (notify_email is not None and notify_email and not existing_notify_email) or (notification_emails is not None):
             updates.append('last_email_result_hash = NULL')
+
+        reset_telegram_hash = False
         if (notify_telegram is not None and notify_telegram and not existing_notify_telegram) or (telegram_bot_token or telegram_chat_id):
+            reset_telegram_hash = True
+        if telegram_mode is not None or telegram_include_matched is not None or telegram_include_unmatched is not None or telegram_max_rows is not None:
+            reset_telegram_hash = True
+        if reset_telegram_hash:
             updates.append('last_telegram_result_hash = NULL')
         
         updates.append('updated_at = ?')
@@ -407,6 +508,10 @@ def get_task_by_api_key(api_key: str) -> Optional[Dict]:
             task['notification_emails'] = json.loads(task['notification_emails'] or '[]')
             task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
             task['notify_telegram'] = bool(task.get('notify_telegram'))
+            task['telegram_mode'] = normalize_telegram_mode(task.get('telegram_mode'))
+            task['telegram_include_matched'] = True if task.get('telegram_include_matched') is None else bool(task.get('telegram_include_matched'))
+            task['telegram_include_unmatched'] = True if task.get('telegram_include_unmatched') is None else bool(task.get('telegram_include_unmatched'))
+            task['telegram_max_rows'] = normalize_telegram_max_rows(task.get('telegram_max_rows', 200))
             return task
         return None
         
@@ -1124,6 +1229,138 @@ def send_notification_email(emails: List[str], containers: List[Dict], task_conf
         return False, result_msg
 
 
+def _safe_text(value, default='-') -> str:
+    if value is None:
+        return default
+    text = str(value).replace('\n', ' ').replace('\r', ' ').strip()
+    return text if text else default
+
+
+def _truncate_text(value: str, limit: int = 40) -> str:
+    value = _safe_text(value)
+    if len(value) <= limit:
+        return value
+    return value[:limit - 3] + "..."
+
+
+def _split_telegram_rows(containers: List[Dict], include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[List[Dict], int]:
+    rows = []
+    for container in containers:
+        is_matched = bool(container.get('matched', False))
+        if is_matched and not include_matched:
+            continue
+        if (not is_matched) and not include_unmatched:
+            continue
+        rows.append({
+            'matched': is_matched,
+            'descripcion': _truncate_text(container.get('glosa_descripcion'), 48),
+            'estado': _truncate_text(container.get('estado'), 28),
+            'codigo': _truncate_text(container.get('glosa_codigo') or container.get('codigo'), 20),
+            'fecha': _truncate_text(container.get('fecha') if is_matched else '-', 20)
+        })
+
+    total_rows = len(rows)
+    max_rows = normalize_telegram_max_rows(max_rows)
+    return rows[:max_rows], max(0, total_rows - max_rows)
+
+
+def _build_telegram_text_message(company_name: str, containers: List[Dict], include_matched: bool, include_unmatched: bool, max_rows: int) -> str:
+    matched = [c for c in containers if c.get('matched', False)]
+    unmatched = [c for c in containers if not c.get('matched', False)]
+    rows, hidden_count = _split_telegram_rows(containers, include_matched, include_unmatched, max_rows)
+    now_text = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
+
+    lines = [
+        f"🚢 {company_name} Monitor",
+        f"Time: {now_text} (Chile)",
+        f"Total: {len(containers)} | Matched: {len(matched)} | Unmatched: {len(unmatched)}",
+        "----"
+    ]
+
+    if not rows:
+        lines.append("No rows selected by current telegram filters.")
+    else:
+        for idx, row in enumerate(rows, 1):
+            flag = "M" if row['matched'] else "U"
+            lines.append(f"{idx}. [{flag}] {row['codigo']} | {row['estado']} | {row['fecha']} | {row['descripcion']}")
+
+    if hidden_count > 0:
+        lines.append(f"... {hidden_count} more rows hidden by telegram_max_rows")
+
+    return "\n".join(lines)
+
+
+def _build_telegram_image_caption(company_name: str, containers: List[Dict]) -> str:
+    matched_count = sum(1 for item in containers if item.get('matched', False))
+    unmatched_count = len(containers) - matched_count
+    now_text = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
+    return f"{company_name} | {now_text} | Total {len(containers)} / M {matched_count} / U {unmatched_count}"
+
+
+def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[Optional[bytes], str]:
+    if Image is None or ImageDraw is None or ImageFont is None:
+        return None, "Pillow is not available for telegram image rendering"
+
+    rows, hidden_count = _split_telegram_rows(containers, include_matched, include_unmatched, max_rows)
+    matched_count = sum(1 for item in containers if item.get('matched', False))
+    unmatched_count = len(containers) - matched_count
+
+    margin = 28
+    summary_h = 110
+    header_h = 42
+    row_h = 34
+    footer_h = 36
+    columns = [330, 180, 210, 170]
+    table_w = sum(columns)
+    width = margin * 2 + table_w
+    height = margin * 2 + summary_h + header_h + max(1, len(rows)) * row_h + footer_h
+
+    image = Image.new("RGB", (width, height), "#f4f6fb")
+    draw = ImageDraw.Draw(image)
+    font_title = ImageFont.load_default()
+    font_body = ImageFont.load_default()
+
+    y = margin
+    draw.rectangle([margin, y, width - margin, y + summary_h], fill="#ffffff", outline="#dbe2ef", width=1)
+    draw.text((margin + 12, y + 10), f"Monitor Report - {company_name}", fill="#111827", font=font_title)
+    draw.text((margin + 12, y + 34), f"Time (Chile): {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}", fill="#374151", font=font_body)
+    draw.text((margin + 12, y + 56), f"Total: {len(containers)}  Matched: {matched_count}  Unmatched: {unmatched_count}", fill="#1f2937", font=font_body)
+    if hidden_count > 0:
+        draw.text((margin + 12, y + 78), f"Rows hidden by limit: {hidden_count}", fill="#b45309", font=font_body)
+    y += summary_h + 10
+
+    draw.rectangle([margin, y, width - margin, y + header_h], fill="#1f2937")
+    headers = ["Description", "Status", "Container", "ETA"]
+    x = margin
+    for idx, title in enumerate(headers):
+        draw.text((x + 8, y + 12), title, fill="#ffffff", font=font_body)
+        x += columns[idx]
+    y += header_h
+
+    if not rows:
+        draw.rectangle([margin, y, width - margin, y + row_h], fill="#ffffff", outline="#d1d5db", width=1)
+        draw.text((margin + 8, y + 10), "No rows selected by current telegram filters", fill="#6b7280", font=font_body)
+        y += row_h
+    else:
+        for row in rows:
+            base_color = "#ecfdf5" if row['matched'] else "#fef2f2"
+            draw.rectangle([margin, y, width - margin, y + row_h], fill=base_color, outline="#d1d5db", width=1)
+
+            values = [row['descripcion'], row['estado'], row['codigo'], row['fecha']]
+            x = margin
+            for idx, value in enumerate(values):
+                draw.text((x + 8, y + 10), value, fill="#111827", font=font_body)
+                x += columns[idx]
+            y += row_h
+
+    y += 8
+    draw.text((margin + 4, y), "Generated by monitor service", fill="#6b7280", font=font_body)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue(), ""
+
+
 # ========== 發送 Telegram 通知 ==========
 def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Dict], task_config: Dict = None) -> Tuple[bool, str]:
     """
@@ -1137,30 +1374,76 @@ def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Di
     """
     if not task_config:
         return False, "缺少任務配置信息"
-    
+
     company_name = task_config.get('company_name')
     if not company_name:
         return False, "請在監控任務配置中設置公司名稱（company_name）"
-    
+
     if not containers:
         return True, "沒有新匹配的容器"
-    
-    matched = [c for c in containers if c.get('matched', False)]
-    unmatched = [c for c in containers if not c.get('matched', False)]
-    
-    lines = []
-    lines.append(f"🚢 {company_name} 監控通知")
-    lines.append(f"匹配: {len(matched)} / 未匹配: {len(unmatched)}")
-    lines.append(f"時間: {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    sample = (matched + unmatched)[:5]
-    if sample:
-        lines.append("----")
-        for item in sample:
-            code = item.get('glosa_codigo') or item.get('codigo') or '-'
-            estado = item.get('estado') or '-'
-            lines.append(f"- {code} | {estado}")
-    
-    message = "\n".join(lines)
-    return send_telegram_message(bot_token, chat_id, message)
+
+    telegram_mode = normalize_telegram_mode(task_config.get('telegram_mode'))
+    include_matched = True if task_config.get('telegram_include_matched') is None else bool(task_config.get('telegram_include_matched'))
+    include_unmatched = True if task_config.get('telegram_include_unmatched') is None else bool(task_config.get('telegram_include_unmatched'))
+    max_rows = normalize_telegram_max_rows(task_config.get('telegram_max_rows', 200))
+
+    if not include_matched and not include_unmatched:
+        return False, "Telegram 至少要顯示匹配或未匹配其中一種"
+
+    text_message = _build_telegram_text_message(
+        company_name=company_name,
+        containers=containers,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched,
+        max_rows=max_rows
+    )
+    caption = _build_telegram_image_caption(company_name, containers)
+
+    text_ok = None
+    image_ok = None
+    error_messages = []
+
+    if telegram_mode in ("text", "both"):
+        text_ok, text_err = send_telegram_message(bot_token, chat_id, text_message)
+        if not text_ok:
+            error_messages.append(f"text failed: {text_err}")
+
+    if telegram_mode in ("image", "both"):
+        image_bytes, render_err = _render_telegram_table_image(
+            containers=containers,
+            company_name=company_name,
+            include_matched=include_matched,
+            include_unmatched=include_unmatched,
+            max_rows=max_rows
+        )
+        if image_bytes is None:
+            image_ok = False
+            error_messages.append(f"image render failed: {render_err}")
+        else:
+            image_ok, image_err = send_telegram_photo(bot_token, chat_id, image_bytes, caption=caption)
+            if not image_ok:
+                error_messages.append(f"image send failed: {image_err}")
+
+    if telegram_mode == "text":
+        if text_ok:
+            return True, "Telegram text sent"
+        return False, "; ".join(error_messages) if error_messages else "Telegram text failed"
+
+    if telegram_mode == "image":
+        if image_ok:
+            return True, "Telegram image sent"
+        # fallback to text to avoid total loss
+        fallback_ok, fallback_err = send_telegram_message(bot_token, chat_id, text_message)
+        if fallback_ok:
+            return True, "Telegram image failed, fallback text sent"
+        error_messages.append(f"fallback text failed: {fallback_err}")
+        return False, "; ".join(error_messages)
+
+    # both mode: allow partial success to prevent repeated duplicates
+    if text_ok or image_ok:
+        if text_ok and image_ok:
+            return True, "Telegram text+image sent"
+        return True, "Telegram partial success: " + "; ".join(error_messages)
+
+    return False, "; ".join(error_messages) if error_messages else "Telegram send failed"
 

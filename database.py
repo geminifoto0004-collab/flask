@@ -724,6 +724,10 @@ def init_database():
                 notify_telegram {boolean_type} DEFAULT 0,
                 telegram_bot_token {text_type},
                 telegram_chat_id {text_type},
+                telegram_mode {text_type_with_default} DEFAULT 'text',
+                telegram_include_matched {boolean_type} DEFAULT 1,
+                telegram_include_unmatched {boolean_type} DEFAULT 1,
+                telegram_max_rows INTEGER DEFAULT 200,
                 last_email_result_hash {text_type},
                 last_telegram_result_hash {text_type},
                 is_active {boolean_type} DEFAULT 1,
@@ -735,6 +739,7 @@ def init_database():
             id_type=get_id_type(),
             text_type=get_text_type(),
             text_type_unique=get_text_type_unique(),
+            text_type_with_default=get_text_type_with_default(),
             boolean_type=boolean_type,
             timestamp_default=get_timestamp_default()
         ))
@@ -776,6 +781,28 @@ def init_database():
                 text_type=get_text_type()
             ))
             print("Added telegram_chat_id column to user_monitor_configs")
+
+        if not check_column_exists(cursor, 'user_monitor_configs', 'telegram_mode'):
+            cursor.execute("ALTER TABLE user_monitor_configs ADD COLUMN telegram_mode {text_type_with_default} DEFAULT 'text'".format(
+                text_type_with_default=get_text_type_with_default()
+            ))
+            print("Added telegram_mode column to user_monitor_configs")
+
+        if not check_column_exists(cursor, 'user_monitor_configs', 'telegram_include_matched'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN telegram_include_matched {boolean_type} DEFAULT 1'.format(
+                boolean_type=get_boolean_type()
+            ))
+            print("Added telegram_include_matched column to user_monitor_configs")
+
+        if not check_column_exists(cursor, 'user_monitor_configs', 'telegram_include_unmatched'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN telegram_include_unmatched {boolean_type} DEFAULT 1'.format(
+                boolean_type=get_boolean_type()
+            ))
+            print("Added telegram_include_unmatched column to user_monitor_configs")
+
+        if not check_column_exists(cursor, 'user_monitor_configs', 'telegram_max_rows'):
+            cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN telegram_max_rows INTEGER DEFAULT 200')
+            print("Added telegram_max_rows column to user_monitor_configs")
         
         if not check_column_exists(cursor, 'user_monitor_configs', 'last_email_result_hash'):
             cursor.execute('ALTER TABLE user_monitor_configs ADD COLUMN last_email_result_hash {text_type}'.format(

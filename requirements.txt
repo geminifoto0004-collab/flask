@@ -16,3 +16,4 @@ PyMySQL==1.1.0
 DBUtils==3.0.3
 python-dotenv==1.0.0
 resend==2.1.0
+Pillow==10.4.0

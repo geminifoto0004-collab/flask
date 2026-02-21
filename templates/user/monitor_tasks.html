@@ -125,6 +125,30 @@
                         <input type="text" id="telegramChatId" name="telegram_chat_id" placeholder="Ej: @tu_canal o -1001234567890">
                         <small class="form-hint">El bot debe ser administrador del canal</small>
                     </div>
+                    <div class="form-group">
+                        <label for="telegramMode">Formato Telegram</label>
+                        <select id="telegramMode" name="telegram_mode">
+                            <option value="text">Texto</option>
+                            <option value="image">Imagen</option>
+                            <option value="both">Texto + Imagen</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Contenido Telegram</label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="telegramIncludeMatched" checked>
+                            <span>Mostrar Matched</span>
+                        </label>
+                        <label class="checkbox-label" style="margin-left: 12px;">
+                            <input type="checkbox" id="telegramIncludeUnmatched" checked>
+                            <span>Mostrar Unmatched</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="telegramMaxRows">Máximo de filas</label>
+                        <input type="number" id="telegramMaxRows" name="telegram_max_rows" min="10" max="1000" value="200">
+                        <small class="form-hint">Rango recomendado: 50 - 300</small>
+                    </div>
                 </div>
                 
                 <div class="form-group" id="isActiveGroup" style="display: none;">
@@ -288,7 +312,10 @@ function createTaskCard(task) {
     const emails = task.notification_emails ? task.notification_emails.join(', ') : 'N/A';
     const channels = [];
     if (task.notify_email !== false) channels.push('Email');
-    if (task.notify_telegram) channels.push('Telegram');
+    if (task.notify_telegram) {
+        const mode = (task.telegram_mode || 'text').toUpperCase();
+        channels.push(`Telegram(${mode})`);
+    }
     const channelText = channels.length > 0 ? channels.join(', ') : 'N/A';
     
     card.innerHTML = `
@@ -366,6 +393,10 @@ function showCreateForm() {
     document.getElementById('notifyTelegram').checked = false;
     document.getElementById('telegramBotToken').value = '';
     document.getElementById('telegramChatId').value = '';
+    document.getElementById('telegramMode').value = 'both';
+    document.getElementById('telegramIncludeMatched').checked = true;
+    document.getElementById('telegramIncludeUnmatched').checked = true;
+    document.getElementById('telegramMaxRows').value = 200;
     document.getElementById('telegramTokenHint').textContent = '';
     toggleNotificationFields();
     document.getElementById('taskModal').style.display = 'flex';
@@ -392,6 +423,10 @@ function editTask(taskId) {
                 document.getElementById('notifyTelegram').checked = !!task.notify_telegram;
                 document.getElementById('telegramBotToken').value = '';
                 document.getElementById('telegramChatId').value = task.telegram_chat_id || '';
+                document.getElementById('telegramMode').value = task.telegram_mode || 'text';
+                document.getElementById('telegramIncludeMatched').checked = task.telegram_include_matched !== false;
+                document.getElementById('telegramIncludeUnmatched').checked = task.telegram_include_unmatched !== false;
+                document.getElementById('telegramMaxRows').value = task.telegram_max_rows || 200;
                 currentTelegramConfigured = !!task.telegram_configured;
                 document.getElementById('telegramTokenHint').textContent = task.telegram_token_masked
                     ? `Token guardado: ${task.telegram_token_masked}`
@@ -432,6 +467,10 @@ function saveTask() {
         notify_telegram: notifyTelegram,
         telegram_bot_token: document.getElementById('telegramBotToken').value.trim(),
         telegram_chat_id: document.getElementById('telegramChatId').value.trim(),
+        telegram_mode: document.getElementById('telegramMode').value,
+        telegram_include_matched: document.getElementById('telegramIncludeMatched').checked,
+        telegram_include_unmatched: document.getElementById('telegramIncludeUnmatched').checked,
+        telegram_max_rows: parseInt(document.getElementById('telegramMaxRows').value || '200', 10),
         is_active: document.getElementById('isActive') ? document.getElementById('isActive').checked : true
     };
 
@@ -441,6 +480,10 @@ function saveTask() {
     if (!notifyTelegram) {
         formData.telegram_bot_token = '';
         formData.telegram_chat_id = '';
+        formData.telegram_mode = 'text';
+        formData.telegram_include_matched = true;
+        formData.telegram_include_unmatched = true;
+        formData.telegram_max_rows = 200;
     }
     
     if (!notifyEmail && !notifyTelegram) {
@@ -466,6 +509,14 @@ function saveTask() {
         }
         if (!formData.telegram_bot_token && !currentTelegramConfigured) {
             showToast('Ingrese Telegram Bot Token', 'error');
+            return;
+        }
+        if (!formData.telegram_include_matched && !formData.telegram_include_unmatched) {
+            showToast('Seleccione Matched o Unmatched para Telegram', 'error');
+            return;
+        }
+        if (!Number.isFinite(formData.telegram_max_rows) || formData.telegram_max_rows < 10 || formData.telegram_max_rows > 1000) {
+            showToast('Telegram máximo de filas debe ser entre 10 y 1000', 'error');
             return;
         }
     }

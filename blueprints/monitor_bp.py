@@ -52,6 +52,19 @@ def _mask_secret(value: str, tail: int = 4) -> str:
     return "*" * (len(value) - tail) + value[-tail:]
 
 
+def _parse_bool(value, default: bool = False) -> bool:
+    """Parse bool from JSON values safely."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes', 'on')
+    return bool(value)
+
+
 # ========== 用戶端：獲取我的監控任務列表 ==========
 @monitor_bp.route('/user/monitor/tasks', methods=['GET'])
 @login_required
@@ -98,10 +111,14 @@ def create_user_monitor_task():
         notification_emails = data.get('notification_emails', [])
         company_name = data.get('company_name', '').strip()
         email_subject = data.get('email_subject', '').strip()
-        notify_email = bool(data.get('notify_email', True))
-        notify_telegram = bool(data.get('notify_telegram', False))
+        notify_email = _parse_bool(data.get('notify_email'), True)
+        notify_telegram = _parse_bool(data.get('notify_telegram'), False)
         telegram_bot_token = data.get('telegram_bot_token', '').strip()
         telegram_chat_id = data.get('telegram_chat_id', '').strip()
+        telegram_mode = (data.get('telegram_mode') or 'text').strip().lower()
+        telegram_include_matched = _parse_bool(data.get('telegram_include_matched'), True)
+        telegram_include_unmatched = _parse_bool(data.get('telegram_include_unmatched'), True)
+        telegram_max_rows = data.get('telegram_max_rows', 200)
         
         if not all([zofri_username, zofri_password, zofri_rut_entidad, company_name]):
             return jsonify({'success': False, 'error': '請填寫所有必填欄位'}), 400
@@ -127,7 +144,11 @@ def create_user_monitor_task():
             notify_email=notify_email,
             notify_telegram=notify_telegram,
             telegram_bot_token=telegram_bot_token if telegram_bot_token else None,
-            telegram_chat_id=telegram_chat_id if telegram_chat_id else None
+            telegram_chat_id=telegram_chat_id if telegram_chat_id else None,
+            telegram_mode=telegram_mode,
+            telegram_include_matched=telegram_include_matched,
+            telegram_include_unmatched=telegram_include_unmatched,
+            telegram_max_rows=telegram_max_rows
         )
         
         if success:
@@ -152,6 +173,11 @@ def update_user_monitor_task(task_id):
         data = request.get_json()
         telegram_bot_token = data.get('telegram_bot_token')
         telegram_chat_id = data.get('telegram_chat_id')
+        notify_email = _parse_bool(data.get('notify_email'), None) if 'notify_email' in data else None
+        notify_telegram = _parse_bool(data.get('notify_telegram'), None) if 'notify_telegram' in data else None
+        telegram_include_matched = _parse_bool(data.get('telegram_include_matched'), None) if 'telegram_include_matched' in data else None
+        telegram_include_unmatched = _parse_bool(data.get('telegram_include_unmatched'), None) if 'telegram_include_unmatched' in data else None
+        telegram_max_rows = data.get('telegram_max_rows') if 'telegram_max_rows' in data else None
         
         success, message = update_monitor_task(
             task_id=task_id,
@@ -162,10 +188,14 @@ def update_user_monitor_task(task_id):
             notification_emails=data.get('notification_emails'),
             company_name=data.get('company_name'),
             email_subject=data.get('email_subject'),
-            notify_email=data.get('notify_email'),
-            notify_telegram=data.get('notify_telegram'),
+            notify_email=notify_email,
+            notify_telegram=notify_telegram,
             telegram_bot_token=telegram_bot_token.strip() if isinstance(telegram_bot_token, str) and telegram_bot_token.strip() else None,
             telegram_chat_id=telegram_chat_id.strip() if isinstance(telegram_chat_id, str) and telegram_chat_id.strip() else None,
+            telegram_mode=(data.get('telegram_mode') or '').strip().lower() if 'telegram_mode' in data else None,
+            telegram_include_matched=telegram_include_matched,
+            telegram_include_unmatched=telegram_include_unmatched,
+            telegram_max_rows=telegram_max_rows,
             is_active=data.get('is_active')
         )
         
