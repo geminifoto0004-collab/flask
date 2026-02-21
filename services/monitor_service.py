@@ -7,11 +7,12 @@ import json
 import hashlib
 import uuid
 import io
+import re
 import pandas as pd
 import requests
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from database import get_db_connection, get_lastrowid
 from services.email_service import send_email
@@ -674,7 +675,12 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                         iti_info_map[match_idx] = {
                             'iti_item': str(iti_item),
                             'vessel_name': vessel_name,
-                            'fecha': fecha
+                            'fecha': fecha,
+                            'folio': iti_item[1] if len(iti_item) > 1 else '',
+                            'sigla': iti_item[2] if len(iti_item) > 2 else '',
+                            'numero': iti_item[3] if len(iti_item) > 3 else '',
+                            'digito': iti_item[4] if len(iti_item) > 4 else '',
+                            'pies': iti_item[6] if len(iti_item) > 6 else ''
                         }
                     matched_data = pd.concat([matched_data, match])
                     matched_indices[match.index] = True
@@ -736,6 +742,11 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                 container['iti_item'] = iti_info_map[idx]['iti_item']
                 container['vessel_name'] = iti_info_map[idx]['vessel_name']
                 container['fecha'] = iti_info_map[idx]['fecha']
+                container['iti_folio'] = iti_info_map[idx].get('folio', '')
+                container['iti_sigla'] = iti_info_map[idx].get('sigla', '')
+                container['iti_numero'] = iti_info_map[idx].get('numero', '')
+                container['iti_digito'] = iti_info_map[idx].get('digito', '')
+                container['iti_pies'] = iti_info_map[idx].get('pies', '')
             all_containers.append(container)
         
         # 調試：打印匹配統計（與 iti.py 的打印邏輯一致）
@@ -1255,6 +1266,38 @@ def _parse_telegram_fecha(value) -> Optional[datetime]:
     return None
 
 
+def _split_container_code(code_text: str) -> Tuple[str, str, str]:
+    cleaned = re.sub(r'[^A-Za-z0-9]', '', _safe_text(code_text, '')).upper()
+    match = re.match(r'^([A-Z]{4})(\d{6,7})(\d)$', cleaned)
+    if match:
+        return match.group(1), match.group(2), match.group(3)
+    if len(cleaned) >= 5:
+        return cleaned[:4], cleaned[4:-1] or '-', cleaned[-1]
+    return '-', '-', '-'
+
+
+def _prepare_telegram_row(container: Dict) -> Dict:
+    is_matched = bool(container.get('matched', False))
+    code = _safe_text(container.get('glosa_codigo') or container.get('codigo'))
+    sigla_auto, numero_auto, digito_auto = _split_container_code(code)
+
+    row = {
+        'matched': is_matched,
+        'codigo': code,
+        'buque': _safe_text(container.get('vessel_name') if is_matched else container.get('glosa_descripcion')),
+        'estado': _safe_text(container.get('estado')),
+        'descripcion': _safe_text(container.get('glosa_descripcion')),
+        'folio': _safe_text(container.get('iti_folio'), '-') if is_matched else '-',
+        'sigla': _safe_text(container.get('iti_sigla'), sigla_auto) if is_matched else sigla_auto,
+        'numero': _safe_text(container.get('iti_numero'), numero_auto) if is_matched else numero_auto,
+        'digito': _safe_text(container.get('iti_digito'), digito_auto) if is_matched else digito_auto,
+        'fecha': _safe_text(container.get('fecha'), '-') if is_matched else '-',
+        'pies': _safe_text(container.get('iti_pies'), '-') if is_matched else '-',
+        '_fecha_dt': _parse_telegram_fecha(container.get('fecha') if is_matched else None)
+    }
+    return row
+
+
 def _build_telegram_sections(
     containers: List[Dict],
     include_matched: bool,
@@ -1265,38 +1308,47 @@ def _build_telegram_sections(
     unmatched_rows = []
 
     for container in containers:
-        is_matched = bool(container.get('matched', False))
-        if is_matched and not include_matched:
+        row = _prepare_telegram_row(container)
+        if row['matched'] and not include_matched:
             continue
-        if (not is_matched) and not include_unmatched:
+        if (not row['matched']) and not include_unmatched:
             continue
-
-        row = {
-            'matched': is_matched,
-            'descripcion': _truncate_text(container.get('glosa_descripcion'), 48),
-            'estado': _truncate_text(container.get('estado'), 28),
-            'codigo': _truncate_text(container.get('glosa_codigo') or container.get('codigo'), 20),
-            'fecha': _truncate_text(container.get('fecha') if is_matched else '-', 20),
-            '_fecha_dt': _parse_telegram_fecha(container.get('fecha') if is_matched else None)
-        }
-        if is_matched:
+        if row['matched']:
             matched_rows.append(row)
         else:
             unmatched_rows.append(row)
 
-    # matched: sort by date asc (no date goes last), then by code
+    # matched: date old -> new
     matched_rows.sort(key=lambda r: (r['_fecha_dt'] is None, r['_fecha_dt'] or datetime.max, r['codigo']))
-    # unmatched: sort by code asc for stable view
-    unmatched_rows.sort(key=lambda r: (r['codigo'], r['estado']))
+    # unmatched: keep stable and easy scan
+    unmatched_rows.sort(key=lambda r: (r['buque'], r['codigo']))
 
     max_rows = normalize_telegram_max_rows(max_rows)
-    shown_matched = matched_rows
-    shown_unmatched = unmatched_rows
+    total_rows = len(matched_rows) + len(unmatched_rows)
+    shown_matched = []
+    shown_unmatched = []
 
-    if len(matched_rows) + len(unmatched_rows) > max_rows:
-        shown_matched = matched_rows[:max_rows]
-        remaining = max(0, max_rows - len(shown_matched))
-        shown_unmatched = unmatched_rows[:remaining]
+    if total_rows <= max_rows:
+        shown_matched = matched_rows
+        shown_unmatched = unmatched_rows
+    else:
+        if include_matched and include_unmatched:
+            matched_quota = min(len(matched_rows), max(1, max_rows // 2))
+            unmatched_quota = min(len(unmatched_rows), max(1, max_rows - matched_quota))
+            remain = max_rows - matched_quota - unmatched_quota
+            if remain > 0:
+                add_m = min(remain, len(matched_rows) - matched_quota)
+                matched_quota += add_m
+                remain -= add_m
+            if remain > 0:
+                add_u = min(remain, len(unmatched_rows) - unmatched_quota)
+                unmatched_quota += add_u
+            shown_matched = matched_rows[:matched_quota]
+            shown_unmatched = unmatched_rows[:unmatched_quota]
+        elif include_matched:
+            shown_matched = matched_rows[:max_rows]
+        else:
+            shown_unmatched = unmatched_rows[:max_rows]
 
     hidden_matched = len(matched_rows) - len(shown_matched)
     hidden_unmatched = len(unmatched_rows) - len(shown_unmatched)
@@ -1310,6 +1362,7 @@ def _build_telegram_sections(
 
 
 def _build_telegram_text_message(company_name: str, containers: List[Dict], include_matched: bool, include_unmatched: bool, max_rows: int) -> str:
+    max_text_len = 3900
     matched = [c for c in containers if c.get('matched', False)]
     unmatched = [c for c in containers if not c.get('matched', False)]
     shown_matched, shown_unmatched, hidden_matched, hidden_unmatched = _build_telegram_sections(
@@ -1325,23 +1378,47 @@ def _build_telegram_text_message(company_name: str, containers: List[Dict], incl
         f"✅ 已匹配 ({len(matched)})"
     ]
 
+    # Keep mobile readability: each row in 2-3 short lines.
+    extra_hidden_matched = 0
     if not shown_matched:
         lines.append("- 無")
     else:
         for idx, row in enumerate(shown_matched, 1):
-            lines.append(f"{idx}. {row['codigo']} | {row['estado']} | {row['fecha']} | {row['descripcion']}")
+            block = [
+                f"{idx}) {row['codigo']}  {row['fecha']}",
+                f"   { _truncate_text(row['buque'], 46) }",
+                f"   F:{row['folio']} S:{row['sigla']} N:{row['numero']}-{row['digito']} P:{row['pies']} | { _truncate_text(row['estado'], 16) }"
+            ]
+            projected = len("\n".join(lines + block))
+            if projected > max_text_len:
+                extra_hidden_matched = len(shown_matched) - idx + 1
+                break
+            lines.extend(block)
     if hidden_matched > 0:
         lines.append(f"... 已匹配尚有 {hidden_matched} 筆未顯示")
+    if extra_hidden_matched > 0:
+        lines.append(f"... 已匹配尚有 {extra_hidden_matched} 筆因訊息長度未顯示")
 
     lines.append("--------------------")
     lines.append(f"❌ 未匹配 ({len(unmatched)})")
+    extra_hidden_unmatched = 0
     if not shown_unmatched:
         lines.append("- 無")
     else:
         for idx, row in enumerate(shown_unmatched, 1):
-            lines.append(f"{idx}. {row['codigo']} | {row['estado']} | - | {row['descripcion']}")
+            block = [
+                f"{idx}) {row['codigo']}",
+                f"   { _truncate_text(row['buque'], 46) } | { _truncate_text(row['estado'], 16) }"
+            ]
+            projected = len("\n".join(lines + block))
+            if projected > max_text_len:
+                extra_hidden_unmatched = len(shown_unmatched) - idx + 1
+                break
+            lines.extend(block)
     if hidden_unmatched > 0:
         lines.append(f"... 未匹配尚有 {hidden_unmatched} 筆未顯示")
+    if extra_hidden_unmatched > 0:
+        lines.append(f"... 未匹配尚有 {extra_hidden_unmatched} 筆因訊息長度未顯示")
 
     return "\n".join(lines)
 
@@ -1351,6 +1428,79 @@ def _build_telegram_image_caption(company_name: str, containers: List[Dict]) -> 
     unmatched_count = len(containers) - matched_count
     now_text = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
     return f"{company_name} | {now_text} | Total {len(containers)} / M {matched_count} / U {unmatched_count}"
+
+
+def _load_telegram_font(size: int, bold: bool = False):
+    if ImageFont is None:
+        return None
+    if bold:
+        candidates = ["DejaVuSans-Bold.ttf", "Arial Bold.ttf", "arialbd.ttf"]
+    else:
+        candidates = ["DejaVuSans.ttf", "Arial.ttf", "arial.ttf"]
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _fit_text(draw, text: str, font, max_width: int) -> str:
+    text = _safe_text(text)
+    if not text:
+        return '-'
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    ellipsis = "..."
+    low = 0
+    high = len(text)
+    while low < high:
+        mid = (low + high) // 2
+        probe = text[:mid] + ellipsis
+        if draw.textlength(probe, font=font) <= max_width:
+            low = mid + 1
+        else:
+            high = mid
+    cut = max(1, low - 1)
+    return text[:cut] + ellipsis
+
+
+def _draw_grid_table(draw, x0: int, y0: int, col_widths: List[int], header_h: int, row_h: int, headers: List[str], rows: List[List[str]], fonts: Dict[str, Any]) -> int:
+    header_bg = "#d1d5db"
+    line_color = "#9ca3af"
+    body_bg = "#ffffff"
+    header_font = fonts['header']
+    body_font = fonts['body']
+    table_w = sum(col_widths)
+    x1 = x0 + table_w
+    y = y0
+
+    draw.rectangle([x0, y, x1, y + header_h], fill=header_bg, outline=line_color, width=2)
+    x = x0
+    for idx, h in enumerate(headers):
+        w = col_widths[idx]
+        draw.text((x + 10, y + (header_h - 20) // 2), _fit_text(draw, h, header_font, w - 16), fill="#111827", font=header_font)
+        x += w
+        if idx < len(headers) - 1:
+            draw.line([x, y, x, y + header_h], fill=line_color, width=2)
+    y += header_h
+
+    if not rows:
+        rows = [["-"] + [""] * (len(headers) - 1)]
+
+    for row in rows:
+        draw.rectangle([x0, y, x1, y + row_h], fill=body_bg, outline=line_color, width=1)
+        x = x0
+        for idx, cell in enumerate(row):
+            w = col_widths[idx]
+            draw.text((x + 10, y + (row_h - 18) // 2), _fit_text(draw, cell, body_font, w - 16), fill="#111827", font=body_font)
+            x += w
+            if idx < len(row) - 1:
+                draw.line([x, y, x, y + row_h], fill=line_color, width=1)
+        y += row_h
+
+    draw.rectangle([x0, y0, x1, y], outline=line_color, width=2)
+    return y
 
 
 def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[Optional[bytes], str]:
@@ -1363,76 +1513,92 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     matched_count = sum(1 for item in containers if item.get('matched', False))
     unmatched_count = len(containers) - matched_count
 
-    margin = 28
-    summary_h = 110
-    header_h = 42
-    section_h = 30
-    row_h = 34
-    footer_h = 36
-    columns = [330, 180, 210, 170]
-    table_w = sum(columns)
-    width = margin * 2 + table_w
-    displayed_rows = max(1, len(shown_matched) + len(shown_unmatched))
-    section_rows = 0
-    if include_matched:
-        section_rows += 1
-    if include_unmatched:
-        section_rows += 1
-    height = margin * 2 + summary_h + header_h + section_rows * section_h + displayed_rows * row_h + footer_h
+    scale = 2
+    margin = 22 * scale
+    summary_h = 82 * scale
+    header_h = 24 * scale
+    row_h = 22 * scale
+    section_gap = 18 * scale
+    footer_h = 28 * scale
+    matched_cols = [220 * scale, 90 * scale, 80 * scale, 110 * scale, 75 * scale, 190 * scale, 70 * scale]
+    unmatched_cols = [280 * scale, 140 * scale, 180 * scale, 260 * scale]
+    table_w = max(sum(matched_cols), sum(unmatched_cols))
 
-    image = Image.new("RGB", (width, height), "#f4f6fb")
+    matched_rows = [
+        [row['buque'], row['folio'], row['sigla'], row['numero'], row['digito'], row['fecha'], row['pies']]
+        for row in shown_matched
+    ]
+    unmatched_rows = [
+        [row['buque'], row['estado'], row['codigo'], row['descripcion']]
+        for row in shown_unmatched
+    ]
+
+    section_count = (1 if include_matched else 0) + (1 if include_unmatched else 0)
+    approx_rows = max(1, len(matched_rows)) + max(1, len(unmatched_rows))
+    height = margin * 2 + summary_h + section_count * (header_h + section_gap) + approx_rows * row_h + footer_h
+    width = margin * 2 + table_w
+
+    image = Image.new("RGB", (width, height), "#f3f4f6")
     draw = ImageDraw.Draw(image)
-    font_title = ImageFont.load_default()
-    font_body = ImageFont.load_default()
+    font_title = _load_telegram_font(18 * scale, bold=True)
+    font_summary = _load_telegram_font(13 * scale, bold=False)
+    font_header = _load_telegram_font(12 * scale, bold=True)
+    font_body = _load_telegram_font(11 * scale, bold=False)
+    fonts = {'header': font_header, 'body': font_body}
 
     y = margin
-    draw.rectangle([margin, y, width - margin, y + summary_h], fill="#ffffff", outline="#dbe2ef", width=1)
-    draw.text((margin + 12, y + 10), f"Monitor Report - {company_name}", fill="#111827", font=font_title)
-    draw.text((margin + 12, y + 34), f"Time (Chile): {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}", fill="#374151", font=font_body)
-    draw.text((margin + 12, y + 56), f"Total: {len(containers)}  Matched: {matched_count}  Unmatched: {unmatched_count}", fill="#1f2937", font=font_body)
+    draw.rectangle([margin, y, width - margin, y + summary_h], fill="#ffffff", outline="#cbd5e1", width=2)
+    draw.text((margin + 14, y + 10), f"{company_name} - ITI Monitor", fill="#111827", font=font_title)
+    draw.text((margin + 14, y + 44), f"Time (Chile): {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}", fill="#374151", font=font_summary)
+    draw.text((margin + 14, y + 66), f"Total: {len(containers)}   Matched: {matched_count}   Unmatched: {unmatched_count}", fill="#1f2937", font=font_summary)
     hidden_total = hidden_matched + hidden_unmatched
     if hidden_total > 0:
-        draw.text((margin + 12, y + 78), f"Rows hidden by limit: {hidden_total}", fill="#b45309", font=font_body)
-    y += summary_h + 10
+        draw.text((margin + 14, y + 88), f"Rows hidden by limit: {hidden_total}", fill="#b45309", font=font_summary)
+    y += summary_h + section_gap
 
-    draw.rectangle([margin, y, width - margin, y + header_h], fill="#1f2937")
-    headers = ["Description", "Status", "Container", "ETA"]
-    x = margin
-    for idx, title in enumerate(headers):
-        draw.text((x + 8, y + 12), title, fill="#ffffff", font=font_body)
-        x += columns[idx]
-    y += header_h
-
-    def draw_section(title: str, rows: List[Dict], bg_color: str, hide_count: int):
+    def draw_section_title(text: str):
         nonlocal y
-        draw.rectangle([margin, y, width - margin, y + section_h], fill=bg_color, outline="#d1d5db", width=1)
-        suffix = f" (+{hide_count} hidden)" if hide_count > 0 else ""
-        draw.text((margin + 8, y + 8), f"{title}{suffix}", fill="#111827", font=font_body)
-        y += section_h
-        if not rows:
-            draw.rectangle([margin, y, width - margin, y + row_h], fill="#ffffff", outline="#d1d5db", width=1)
-            draw.text((margin + 8, y + 10), "No data", fill="#6b7280", font=font_body)
-            y += row_h
-            return
-        for row in rows:
-            draw.rectangle([margin, y, width - margin, y + row_h], fill="#ffffff", outline="#d1d5db", width=1)
-            values = [row['descripcion'], row['estado'], row['codigo'], row['fecha']]
-            x = margin
-            for idx, value in enumerate(values):
-                draw.text((x + 8, y + 10), value, fill="#111827", font=font_body)
-                x += columns[idx]
-            y += row_h
+        draw.rectangle([margin, y, width - margin, y + header_h], fill="#e5e7eb", outline="#cbd5e1", width=2)
+        draw.text((margin + 10, y + 10), text, fill="#111827", font=font_header)
+        y += header_h
 
     if include_matched:
-        draw_section(f"Matched ({matched_count})", shown_matched, "#dcfce7", hidden_matched)
+        suffix = f" (+{hidden_matched} hidden)" if hidden_matched > 0 else ""
+        draw_section_title(f"MATCHED ITI ({matched_count}){suffix}")
+        y = _draw_grid_table(
+            draw=draw,
+            x0=margin,
+            y0=y,
+            col_widths=matched_cols,
+            header_h=header_h,
+            row_h=row_h,
+            headers=["BUQUE", "FOLIO", "SIGLA", "NUMERO", "DIGITO", "FECHA ENTREGA", "PIES"],
+            rows=matched_rows,
+            fonts=fonts
+        )
+        y += section_gap
+
     if include_unmatched:
-        draw_section(f"Unmatched ({unmatched_count})", shown_unmatched, "#fee2e2", hidden_unmatched)
+        suffix = f" (+{hidden_unmatched} hidden)" if hidden_unmatched > 0 else ""
+        draw_section_title(f"UNMATCHED ({unmatched_count}){suffix}")
+        y = _draw_grid_table(
+            draw=draw,
+            x0=margin,
+            y0=y,
+            col_widths=unmatched_cols,
+            header_h=header_h,
+            row_h=row_h,
+            headers=["BUQUE", "ESTADO", "CONTENEDOR", "DESCRIPCION"],
+            rows=unmatched_rows,
+            fonts=fonts
+        )
+        y += section_gap
 
     y += 8
-    draw.text((margin + 4, y), "Generated by monitor service", fill="#6b7280", font=font_body)
+    draw.text((margin + 4, y), "Generated by monitor service", fill="#6b7280", font=font_summary)
 
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
+    image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue(), ""
 
 
