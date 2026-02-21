@@ -1243,49 +1243,105 @@ def _truncate_text(value: str, limit: int = 40) -> str:
     return value[:limit - 3] + "..."
 
 
-def _split_telegram_rows(containers: List[Dict], include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[List[Dict], int]:
-    rows = []
+def _parse_telegram_fecha(value) -> Optional[datetime]:
+    text = _safe_text(value, '').strip()
+    if not text or text == '-':
+        return None
+    for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            continue
+    return None
+
+
+def _build_telegram_sections(
+    containers: List[Dict],
+    include_matched: bool,
+    include_unmatched: bool,
+    max_rows: int
+) -> Tuple[List[Dict], List[Dict], int, int]:
+    matched_rows = []
+    unmatched_rows = []
+
     for container in containers:
         is_matched = bool(container.get('matched', False))
         if is_matched and not include_matched:
             continue
         if (not is_matched) and not include_unmatched:
             continue
-        rows.append({
+
+        row = {
             'matched': is_matched,
             'descripcion': _truncate_text(container.get('glosa_descripcion'), 48),
             'estado': _truncate_text(container.get('estado'), 28),
             'codigo': _truncate_text(container.get('glosa_codigo') or container.get('codigo'), 20),
-            'fecha': _truncate_text(container.get('fecha') if is_matched else '-', 20)
-        })
+            'fecha': _truncate_text(container.get('fecha') if is_matched else '-', 20),
+            '_fecha_dt': _parse_telegram_fecha(container.get('fecha') if is_matched else None)
+        }
+        if is_matched:
+            matched_rows.append(row)
+        else:
+            unmatched_rows.append(row)
 
-    total_rows = len(rows)
+    # matched: sort by date asc (no date goes last), then by code
+    matched_rows.sort(key=lambda r: (r['_fecha_dt'] is None, r['_fecha_dt'] or datetime.max, r['codigo']))
+    # unmatched: sort by code asc for stable view
+    unmatched_rows.sort(key=lambda r: (r['codigo'], r['estado']))
+
     max_rows = normalize_telegram_max_rows(max_rows)
-    return rows[:max_rows], max(0, total_rows - max_rows)
+    shown_matched = matched_rows
+    shown_unmatched = unmatched_rows
+
+    if len(matched_rows) + len(unmatched_rows) > max_rows:
+        shown_matched = matched_rows[:max_rows]
+        remaining = max(0, max_rows - len(shown_matched))
+        shown_unmatched = unmatched_rows[:remaining]
+
+    hidden_matched = len(matched_rows) - len(shown_matched)
+    hidden_unmatched = len(unmatched_rows) - len(shown_unmatched)
+
+    for row in shown_matched:
+        row.pop('_fecha_dt', None)
+    for row in shown_unmatched:
+        row.pop('_fecha_dt', None)
+
+    return shown_matched, shown_unmatched, hidden_matched, hidden_unmatched
 
 
 def _build_telegram_text_message(company_name: str, containers: List[Dict], include_matched: bool, include_unmatched: bool, max_rows: int) -> str:
     matched = [c for c in containers if c.get('matched', False)]
     unmatched = [c for c in containers if not c.get('matched', False)]
-    rows, hidden_count = _split_telegram_rows(containers, include_matched, include_unmatched, max_rows)
+    shown_matched, shown_unmatched, hidden_matched, hidden_unmatched = _build_telegram_sections(
+        containers, include_matched, include_unmatched, max_rows
+    )
     now_text = get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')
 
     lines = [
-        f"🚢 {company_name} Monitor",
-        f"Time: {now_text} (Chile)",
-        f"Total: {len(containers)} | Matched: {len(matched)} | Unmatched: {len(unmatched)}",
-        "----"
+        f"🚢 {company_name} 監控通知",
+        f"時間: {now_text} (Chile)",
+        f"總數: {len(containers)} | 匹配: {len(matched)} | 未匹配: {len(unmatched)}",
+        "====================",
+        f"✅ 已匹配 ({len(matched)})"
     ]
 
-    if not rows:
-        lines.append("No rows selected by current telegram filters.")
+    if not shown_matched:
+        lines.append("- 無")
     else:
-        for idx, row in enumerate(rows, 1):
-            flag = "M" if row['matched'] else "U"
-            lines.append(f"{idx}. [{flag}] {row['codigo']} | {row['estado']} | {row['fecha']} | {row['descripcion']}")
+        for idx, row in enumerate(shown_matched, 1):
+            lines.append(f"{idx}. {row['codigo']} | {row['estado']} | {row['fecha']} | {row['descripcion']}")
+    if hidden_matched > 0:
+        lines.append(f"... 已匹配尚有 {hidden_matched} 筆未顯示")
 
-    if hidden_count > 0:
-        lines.append(f"... {hidden_count} more rows hidden by telegram_max_rows")
+    lines.append("--------------------")
+    lines.append(f"❌ 未匹配 ({len(unmatched)})")
+    if not shown_unmatched:
+        lines.append("- 無")
+    else:
+        for idx, row in enumerate(shown_unmatched, 1):
+            lines.append(f"{idx}. {row['codigo']} | {row['estado']} | - | {row['descripcion']}")
+    if hidden_unmatched > 0:
+        lines.append(f"... 未匹配尚有 {hidden_unmatched} 筆未顯示")
 
     return "\n".join(lines)
 
@@ -1301,19 +1357,28 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     if Image is None or ImageDraw is None or ImageFont is None:
         return None, "Pillow is not available for telegram image rendering"
 
-    rows, hidden_count = _split_telegram_rows(containers, include_matched, include_unmatched, max_rows)
+    shown_matched, shown_unmatched, hidden_matched, hidden_unmatched = _build_telegram_sections(
+        containers, include_matched, include_unmatched, max_rows
+    )
     matched_count = sum(1 for item in containers if item.get('matched', False))
     unmatched_count = len(containers) - matched_count
 
     margin = 28
     summary_h = 110
     header_h = 42
+    section_h = 30
     row_h = 34
     footer_h = 36
     columns = [330, 180, 210, 170]
     table_w = sum(columns)
     width = margin * 2 + table_w
-    height = margin * 2 + summary_h + header_h + max(1, len(rows)) * row_h + footer_h
+    displayed_rows = max(1, len(shown_matched) + len(shown_unmatched))
+    section_rows = 0
+    if include_matched:
+        section_rows += 1
+    if include_unmatched:
+        section_rows += 1
+    height = margin * 2 + summary_h + header_h + section_rows * section_h + displayed_rows * row_h + footer_h
 
     image = Image.new("RGB", (width, height), "#f4f6fb")
     draw = ImageDraw.Draw(image)
@@ -1325,8 +1390,9 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     draw.text((margin + 12, y + 10), f"Monitor Report - {company_name}", fill="#111827", font=font_title)
     draw.text((margin + 12, y + 34), f"Time (Chile): {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}", fill="#374151", font=font_body)
     draw.text((margin + 12, y + 56), f"Total: {len(containers)}  Matched: {matched_count}  Unmatched: {unmatched_count}", fill="#1f2937", font=font_body)
-    if hidden_count > 0:
-        draw.text((margin + 12, y + 78), f"Rows hidden by limit: {hidden_count}", fill="#b45309", font=font_body)
+    hidden_total = hidden_matched + hidden_unmatched
+    if hidden_total > 0:
+        draw.text((margin + 12, y + 78), f"Rows hidden by limit: {hidden_total}", fill="#b45309", font=font_body)
     y += summary_h + 10
 
     draw.rectangle([margin, y, width - margin, y + header_h], fill="#1f2937")
@@ -1337,21 +1403,30 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
         x += columns[idx]
     y += header_h
 
-    if not rows:
-        draw.rectangle([margin, y, width - margin, y + row_h], fill="#ffffff", outline="#d1d5db", width=1)
-        draw.text((margin + 8, y + 10), "No rows selected by current telegram filters", fill="#6b7280", font=font_body)
-        y += row_h
-    else:
+    def draw_section(title: str, rows: List[Dict], bg_color: str, hide_count: int):
+        nonlocal y
+        draw.rectangle([margin, y, width - margin, y + section_h], fill=bg_color, outline="#d1d5db", width=1)
+        suffix = f" (+{hide_count} hidden)" if hide_count > 0 else ""
+        draw.text((margin + 8, y + 8), f"{title}{suffix}", fill="#111827", font=font_body)
+        y += section_h
+        if not rows:
+            draw.rectangle([margin, y, width - margin, y + row_h], fill="#ffffff", outline="#d1d5db", width=1)
+            draw.text((margin + 8, y + 10), "No data", fill="#6b7280", font=font_body)
+            y += row_h
+            return
         for row in rows:
-            base_color = "#ecfdf5" if row['matched'] else "#fef2f2"
-            draw.rectangle([margin, y, width - margin, y + row_h], fill=base_color, outline="#d1d5db", width=1)
-
+            draw.rectangle([margin, y, width - margin, y + row_h], fill="#ffffff", outline="#d1d5db", width=1)
             values = [row['descripcion'], row['estado'], row['codigo'], row['fecha']]
             x = margin
             for idx, value in enumerate(values):
                 draw.text((x + 8, y + 10), value, fill="#111827", font=font_body)
                 x += columns[idx]
             y += row_h
+
+    if include_matched:
+        draw_section(f"Matched ({matched_count})", shown_matched, "#dcfce7", hidden_matched)
+    if include_unmatched:
+        draw_section(f"Unmatched ({unmatched_count})", shown_unmatched, "#fee2e2", hidden_unmatched)
 
     y += 8
     draw.text((margin + 4, y), "Generated by monitor service", fill="#6b7280", font=font_body)
