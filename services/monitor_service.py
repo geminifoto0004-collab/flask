@@ -1298,12 +1298,11 @@ def _prepare_telegram_row(container: Dict) -> Dict:
     return row
 
 
-def _build_telegram_sections(
+def _collect_telegram_rows(
     containers: List[Dict],
     include_matched: bool,
-    include_unmatched: bool,
-    max_rows: int
-) -> Tuple[List[Dict], List[Dict], int, int]:
+    include_unmatched: bool
+) -> Tuple[List[Dict], List[Dict]]:
     matched_rows = []
     unmatched_rows = []
 
@@ -1322,6 +1321,21 @@ def _build_telegram_sections(
     matched_rows.sort(key=lambda r: (r['buque'], r['_fecha_dt'] is None, r['_fecha_dt'] or datetime.max, r['codigo']))
     # unmatched: keep stable and easy scan
     unmatched_rows.sort(key=lambda r: (r['buque'], r['codigo']))
+
+    return matched_rows, unmatched_rows
+
+
+def _build_telegram_sections(
+    containers: List[Dict],
+    include_matched: bool,
+    include_unmatched: bool,
+    max_rows: int
+) -> Tuple[List[Dict], List[Dict], int, int]:
+    matched_rows, unmatched_rows = _collect_telegram_rows(
+        containers=containers,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched
+    )
 
     max_rows = normalize_telegram_max_rows(max_rows)
     total_rows = len(matched_rows) + len(unmatched_rows)
@@ -1405,9 +1419,10 @@ def _build_telegram_text_message(company_name: str, containers: List[Dict], incl
                 extra_hidden_matched = len(shown_matched) - printed
                 break
             for idx, row in enumerate(rows, 1):
-                folio_text = f"F{row['folio']}" if row.get('folio') and row['folio'] != '-' else "F-"
-                line = f"{idx}. {folio_text} | {row['codigo']} | {row['fecha']}"
-                if not try_add_line(line):
+                folio_text = row['folio'] if row.get('folio') and row['folio'] != '-' else '-'
+                line_a = f"{idx}. F{folio_text} |"
+                line_b = f"   {row['codigo']} | {row['fecha']}"
+                if not try_add_line(line_a) or not try_add_line(line_b):
                     extra_hidden_matched = len(shown_matched) - printed
                     break
                 printed += 1
@@ -1527,146 +1542,152 @@ def _draw_grid_table(draw, x0: int, y0: int, col_widths: List[int], header_h: in
     return y
 
 
-def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[Optional[bytes], str]:
-    if Image is None or ImageDraw is None or ImageFont is None:
-        return None, "Pillow is not available for telegram image rendering"
+def _paginate_grouped_rows(grouped_rows: List[Tuple[str, List[Dict]]], max_rows_per_page: int) -> List[List[Tuple[str, List[Dict]]]]:
+    pages: List[List[Tuple[str, List[Dict]]]] = []
+    current_page: List[Tuple[str, List[Dict]]] = []
+    current_count = 0
 
-    shown_matched, shown_unmatched, hidden_matched, hidden_unmatched = _build_telegram_sections(
-        containers, include_matched, include_unmatched, max_rows
+    if max_rows_per_page <= 0:
+        max_rows_per_page = 25
+
+    for ship, rows in grouped_rows:
+        idx = 0
+        while idx < len(rows):
+            remaining = max_rows_per_page - current_count
+            if remaining <= 0:
+                if current_page:
+                    pages.append(current_page)
+                current_page = []
+                current_count = 0
+                remaining = max_rows_per_page
+
+            take = min(remaining, len(rows) - idx)
+            chunk = rows[idx: idx + take]
+            current_page.append((ship, chunk))
+            current_count += take
+            idx += take
+
+            if idx < len(rows):
+                pages.append(current_page)
+                current_page = []
+                current_count = 0
+
+    if current_page:
+        pages.append(current_page)
+
+    if not pages:
+        pages = [[]]
+
+    return pages
+
+
+def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[List[bytes], str]:
+    if Image is None or ImageDraw is None or ImageFont is None:
+        return [], "Pillow is not available for telegram image rendering"
+
+    # Image mode should be complete: do not trim by telegram_max_rows.
+    full_matched, full_unmatched = _collect_telegram_rows(
+        containers=containers,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched
     )
-    grouped_matched = _group_rows_by_buque(shown_matched)
-    grouped_unmatched = _group_rows_by_buque(shown_unmatched)
+    grouped_matched = _group_rows_by_buque(full_matched)
+    grouped_unmatched = _group_rows_by_buque(full_unmatched)
     matched_count = sum(1 for item in containers if item.get('matched', False))
     unmatched_count = len(containers) - matched_count
 
-    scale = 2
-    margin = 22 * scale
-    summary_h = 82 * scale
-    header_h = 24 * scale
+    scale = 3
+    margin = 20 * scale
+    summary_h = 74 * scale
+    header_h = 22 * scale
     row_h = 22 * scale
-    section_gap = 18 * scale
-    footer_h = 28 * scale
-    ship_h = 22 * scale
-    matched_cols = [120 * scale, 260 * scale, 220 * scale]
-    unmatched_cols = [300 * scale, 300 * scale]
+    section_gap = 14 * scale
+    footer_h = 24 * scale
+    ship_h = 20 * scale
+    matched_cols = [130 * scale, 260 * scale, 230 * scale]
+    unmatched_cols = [330 * scale, 290 * scale]
     table_w = max(sum(matched_cols), sum(unmatched_cols))
 
-    section_count = (1 if include_matched else 0) + (1 if include_unmatched else 0)
-    matched_row_count = sum(max(1, len(rows)) for _, rows in grouped_matched) if grouped_matched else 1
-    unmatched_row_count = sum(max(1, len(rows)) for _, rows in grouped_unmatched) if grouped_unmatched else 1
-    matched_ship_count = len(grouped_matched) if grouped_matched else (1 if include_matched else 0)
-    unmatched_ship_count = len(grouped_unmatched) if grouped_unmatched else (1 if include_unmatched else 0)
-    approx_rows = (matched_row_count + unmatched_row_count)
-    height = margin * 2 + summary_h + section_count * (header_h + section_gap) + (matched_ship_count + unmatched_ship_count) * ship_h + approx_rows * row_h + footer_h
-    width = margin * 2 + table_w
-
-    image = Image.new("RGB", (width, height), "#f3f4f6")
-    draw = ImageDraw.Draw(image)
-    font_title = _load_telegram_font(18 * scale, bold=True)
-    font_summary = _load_telegram_font(13 * scale, bold=False)
-    font_header = _load_telegram_font(12 * scale, bold=True)
-    font_body = _load_telegram_font(11 * scale, bold=False)
+    font_title = _load_telegram_font(17 * scale, bold=True)
+    font_summary = _load_telegram_font(12 * scale, bold=False)
+    font_header = _load_telegram_font(11 * scale, bold=True)
+    font_body = _load_telegram_font(10 * scale, bold=False)
     fonts = {'header': font_header, 'body': font_body}
 
-    y = margin
-    draw.rectangle([margin, y, width - margin, y + summary_h], fill="#ffffff", outline="#cbd5e1", width=2)
-    draw.text((margin + 14, y + 10), f"{company_name} - ITI Monitor", fill="#111827", font=font_title)
-    draw.text((margin + 14, y + 44), f"Time (Chile): {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}", fill="#374151", font=font_summary)
-    draw.text((margin + 14, y + 66), f"Total: {len(containers)}   Matched: {matched_count}   Unmatched: {unmatched_count}", fill="#1f2937", font=font_summary)
-    hidden_total = hidden_matched + hidden_unmatched
-    if hidden_total > 0:
-        draw.text((margin + 14, y + 88), f"Rows hidden by limit: {hidden_total}", fill="#b45309", font=font_summary)
-    y += summary_h + section_gap
-
-    def draw_section_title(text: str):
-        nonlocal y
-        draw.rectangle([margin, y, width - margin, y + header_h], fill="#e5e7eb", outline="#cbd5e1", width=2)
-        draw.text((margin + 10, y + 10), text, fill="#111827", font=font_header)
-        y += header_h
-
-    def draw_ship_title(text: str):
-        nonlocal y
-        draw.rectangle([margin, y, width - margin, y + ship_h], fill="#f8fafc", outline="#d1d5db", width=1)
-        draw.text((margin + 10, y + 9), _fit_text(draw, text, font_header, width - margin * 2 - 20), fill="#1f2937", font=font_header)
-        y += ship_h
-
+    pages: List[bytes] = []
+    section_specs = []
     if include_matched:
-        suffix = f" (+{hidden_matched} hidden)" if hidden_matched > 0 else ""
-        draw_section_title(f"MATCHED ({matched_count}){suffix}")
-        if not grouped_matched:
-            draw_ship_title("No matched data")
-            y = _draw_grid_table(
-                draw=draw,
-                x0=margin,
-                y0=y,
-                col_widths=matched_cols,
-                header_h=header_h,
-                row_h=row_h,
-                headers=["FOLIO", "CONTENEDOR", "FECHA ENTREGA"],
-                rows=[],
-                fonts=fonts
-            )
-        else:
-            for ship, rows in grouped_matched:
-                draw_ship_title(ship)
-                table_rows = []
-                for row in rows:
-                    folio = row['folio'] if row.get('folio') and row['folio'] != '-' else '-'
-                    table_rows.append([folio, row['codigo'], row['fecha']])
-                y = _draw_grid_table(
-                    draw=draw,
-                    x0=margin,
-                    y0=y,
-                    col_widths=matched_cols,
-                    header_h=header_h,
-                    row_h=row_h,
-                    headers=["FOLIO", "CONTENEDOR", "FECHA ENTREGA"],
-                    rows=table_rows,
-                    fonts=fonts
-                )
-                y += 8
-        y += section_gap
-
+        section_specs.append(("MATCHED", grouped_matched, matched_cols, ["FOLIO", "CONTENEDOR", "FECHA ENTREGA"], matched_count))
     if include_unmatched:
-        suffix = f" (+{hidden_unmatched} hidden)" if hidden_unmatched > 0 else ""
-        draw_section_title(f"UNMATCHED ({unmatched_count}){suffix}")
-        if not grouped_unmatched:
-            draw_ship_title("No unmatched data")
-            y = _draw_grid_table(
-                draw=draw,
-                x0=margin,
-                y0=y,
-                col_widths=unmatched_cols,
-                header_h=header_h,
-                row_h=row_h,
-                headers=["CONTENEDOR", "ESTADO"],
-                rows=[],
-                fonts=fonts
-            )
-        else:
-            for ship, rows in grouped_unmatched:
-                draw_ship_title(ship)
-                table_rows = [[row['codigo'], row['estado']] for row in rows]
-                y = _draw_grid_table(
-                    draw=draw,
-                    x0=margin,
-                    y0=y,
-                    col_widths=unmatched_cols,
-                    header_h=header_h,
-                    row_h=row_h,
-                    headers=["CONTENEDOR", "ESTADO"],
-                    rows=table_rows,
-                    fonts=fonts
-                )
-                y += 8
-        y += section_gap
+        section_specs.append(("UNMATCHED", grouped_unmatched, unmatched_cols, ["CONTENEDOR", "ESTADO"], unmatched_count))
 
-    y += 8
-    draw.text((margin + 4, y), "Generated by monitor service", fill="#6b7280", font=font_summary)
+    max_rows_per_page = 26
+    for section_name, grouped, col_widths, headers, total_count in section_specs:
+        section_pages = _paginate_grouped_rows(grouped, max_rows_per_page)
+        total_section_pages = len(section_pages)
+        for page_idx, grouped_page in enumerate(section_pages, 1):
+            row_count = sum(max(1, len(rows)) for _, rows in grouped_page) if grouped_page else 1
+            ship_count = len(grouped_page) if grouped_page else 1
+            height = margin * 2 + summary_h + header_h + ship_count * ship_h + row_count * row_h + section_gap + footer_h
+            width = margin * 2 + table_w
 
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG", optimize=True)
-    return buffer.getvalue(), ""
+            image = Image.new("RGB", (width, height), "#eff3ff")
+            draw = ImageDraw.Draw(image)
+
+            y = margin
+            draw.rounded_rectangle([margin, y, width - margin, y + summary_h], radius=18, fill="#ffffff", outline="#cbd5e1", width=2)
+            draw.rectangle([margin, y, width - margin, y + 10], fill="#2563eb")
+            draw.text((margin + 14, y + 18), f"{company_name} • ITI Monitor", fill="#0f172a", font=font_title)
+            draw.text((margin + 14, y + 54), f"Time (Chile): {get_chile_time_naive().strftime('%Y-%m-%d %H:%M:%S')}", fill="#334155", font=font_summary)
+            draw.text((margin + 14, y + 78), f"Total: {len(containers)} | Matched: {matched_count} | Unmatched: {unmatched_count}", fill="#334155", font=font_summary)
+            y += summary_h + section_gap
+
+            title_suffix = f" PAGE {page_idx}/{total_section_pages}" if total_section_pages > 1 else ""
+            draw.rounded_rectangle([margin, y, width - margin, y + header_h], radius=10, fill="#dbeafe", outline="#93c5fd", width=2)
+            draw.text((margin + 10, y + 10), f"{section_name} ({total_count}){title_suffix}", fill="#1e3a8a", font=font_header)
+            y += header_h
+
+            if not grouped_page:
+                draw.rounded_rectangle([margin, y, width - margin, y + ship_h], radius=8, fill="#ffffff", outline="#d1d5db", width=1)
+                draw.text((margin + 10, y + 8), "No data", fill="#64748b", font=font_body)
+                y += ship_h
+            else:
+                for ship, rows in grouped_page:
+                    draw.rounded_rectangle([margin, y, width - margin, y + ship_h], radius=8, fill="#f8fafc", outline="#d1d5db", width=1)
+                    draw.text((margin + 10, y + 8), _fit_text(draw, ship, font_header, width - margin * 2 - 20), fill="#334155", font=font_header)
+                    y += ship_h
+
+                    if section_name == "MATCHED":
+                        table_rows = []
+                        for row in rows:
+                            folio = row['folio'] if row.get('folio') and row['folio'] != '-' else '-'
+                            table_rows.append([folio, row['codigo'], row['fecha']])
+                    else:
+                        table_rows = [[row['codigo'], row['estado']] for row in rows]
+
+                    y = _draw_grid_table(
+                        draw=draw,
+                        x0=margin,
+                        y0=y,
+                        col_widths=col_widths,
+                        header_h=header_h,
+                        row_h=row_h,
+                        headers=headers,
+                        rows=table_rows,
+                        fonts=fonts
+                    )
+                    y += 6
+
+            y += 8
+            draw.text((margin + 4, y), "Generated by monitor service", fill="#64748b", font=font_summary)
+
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG", optimize=True)
+            pages.append(buffer.getvalue())
+
+    if not pages:
+        return [], "No image page generated"
+    return pages, ""
 
 
 # ========== 發送 Telegram 通知 ==========
@@ -1717,20 +1738,31 @@ def send_notification_telegram(bot_token: str, chat_id: str, containers: List[Di
             error_messages.append(f"text failed: {text_err}")
 
     if telegram_mode in ("image", "both"):
-        image_bytes, render_err = _render_telegram_table_image(
+        image_pages, render_err = _render_telegram_table_image(
             containers=containers,
             company_name=company_name,
             include_matched=include_matched,
             include_unmatched=include_unmatched,
             max_rows=max_rows
         )
-        if image_bytes is None:
+        if not image_pages:
             image_ok = False
             error_messages.append(f"image render failed: {render_err}")
         else:
-            image_ok, image_err = send_telegram_photo(bot_token, chat_id, image_bytes, caption=caption)
-            if not image_ok:
-                error_messages.append(f"image send failed: {image_err}")
+            page_errors = []
+            sent_count = 0
+            total_pages = len(image_pages)
+            for page_idx, image_bytes in enumerate(image_pages, 1):
+                page_caption = caption if page_idx == 1 else f"{company_name} | page {page_idx}/{total_pages}"
+                ok, err = send_telegram_photo(bot_token, chat_id, image_bytes, caption=page_caption)
+                if ok:
+                    sent_count += 1
+                else:
+                    page_errors.append(f"page {page_idx}: {err}")
+
+            image_ok = sent_count > 0
+            if page_errors:
+                error_messages.append("image send partial failed: " + "; ".join(page_errors))
 
     if telegram_mode == "text":
         if text_ok:

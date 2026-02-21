@@ -203,9 +203,13 @@
 let currentTaskId = null;
 let currentApiKey = null;
 let currentTelegramConfigured = false;
+let isLoadingTasks = false;
+let tasksAutoRefreshTimer = null;
+const TASKS_AUTO_REFRESH_MS = 30000;
 
 document.addEventListener('DOMContentLoaded', function() {
     loadTasks();
+    startTasksAutoRefresh();
     
     // 移除點擊背景關閉 Modal 的功能，防止意外關閉
     // 只能通過關閉按鈕或取消按鈕關閉 Modal
@@ -235,9 +239,36 @@ document.addEventListener('DOMContentLoaded', function() {
             closeApiKeyModal();
         }
     });
+
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+            loadTasks(true);
+        }
+    });
 });
 
-function loadTasks() {
+function shouldAutoRefreshTasks() {
+    const taskModal = document.getElementById('taskModal');
+    const apiKeyModal = document.getElementById('apiKeyModal');
+    const taskModalOpen = taskModal && taskModal.style.display === 'flex';
+    const apiModalOpen = apiKeyModal && apiKeyModal.style.display === 'flex';
+    return !taskModalOpen && !apiModalOpen && document.visibilityState === 'visible';
+}
+
+function startTasksAutoRefresh() {
+    if (tasksAutoRefreshTimer) {
+        clearInterval(tasksAutoRefreshTimer);
+    }
+    tasksAutoRefreshTimer = setInterval(() => {
+        if (shouldAutoRefreshTasks()) {
+            loadTasks(true);
+        }
+    }, TASKS_AUTO_REFRESH_MS);
+}
+
+function loadTasks(silent = false) {
+    if (isLoadingTasks) return;
+    isLoadingTasks = true;
     fetch('/api/user/monitor/tasks')
         .then(response => response.json())
         .then(data => {
@@ -246,13 +277,17 @@ function loadTasks() {
             if (data.success && data.tasks && data.tasks.length > 0) {
                 displayTasks(data.tasks);
             } else {
+                document.getElementById('tasksList').style.display = 'none';
                 document.getElementById('noTasksMessage').style.display = 'block';
             }
         })
         .catch(error => {
             console.error('Error loading tasks:', error);
             document.getElementById('loadingMessage').style.display = 'none';
-            showToast('Error al cargar tareas', 'error');
+            if (!silent) showToast('Error al cargar tareas', 'error');
+        })
+        .finally(() => {
+            isLoadingTasks = false;
         });
 }
 
@@ -717,6 +752,13 @@ function showToast(message, type = 'info') {
         toast.classList.remove('toast-show');
     }, 3000);
 }
+
+window.addEventListener('beforeunload', function() {
+    if (tasksAutoRefreshTimer) {
+        clearInterval(tasksAutoRefreshTimer);
+        tasksAutoRefreshTimer = null;
+    }
+});
 </script>
 {% endblock %}
 
