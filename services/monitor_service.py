@@ -215,6 +215,79 @@ def get_user_monitor_tasks(user_id: int) -> List[Dict]:
 
 
 # ========== 獲取單個任務 ==========
+def get_all_monitor_tasks_admin(
+    keyword: str = "",
+    status: str = "all",
+    user_id: Optional[int] = None,
+    limit: int = 500,
+) -> List[Dict]:
+    """
+    Admin view: list monitor tasks across all users.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        where = []
+        params: List[Any] = []
+
+        if user_id is not None:
+            where.append("umc.user_id = ?")
+            params.append(int(user_id))
+
+        normalized_status = (status or "all").strip().lower()
+        if normalized_status == "active":
+            where.append("umc.is_active = 1")
+        elif normalized_status == "inactive":
+            where.append("umc.is_active = 0")
+
+        keyword = (keyword or "").strip()
+        if keyword:
+            where.append(
+                "(u.username LIKE ? OR u.email LIKE ? OR umc.company_name LIKE ? OR umc.zofri_username LIKE ? OR umc.zofri_rut_entidad LIKE ?)"
+            )
+            like = f"%{keyword}%"
+            params.extend([like, like, like, like, like])
+
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        limit = max(1, min(int(limit or 500), 2000))
+
+        query = f"""
+            SELECT
+                umc.*,
+                u.username AS user_username,
+                u.email AS user_email
+            FROM user_monitor_configs umc
+            LEFT JOIN users u ON umc.user_id = u.id
+            {where_sql}
+            ORDER BY umc.updated_at DESC, umc.id DESC
+            LIMIT ?
+        """
+        cursor.execute(query, (*params, limit))
+
+        rows = cursor.fetchall() or []
+        conn.close()
+
+        tasks: List[Dict] = []
+        for row in rows:
+            task = dict(row)
+            task['notification_emails'] = json.loads(task.get('notification_emails') or '[]')
+            task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
+            task['notify_telegram'] = bool(task.get('notify_telegram'))
+            task['telegram_mode'] = normalize_telegram_mode(task.get('telegram_mode'))
+            task['telegram_include_matched'] = True if task.get('telegram_include_matched') is None else bool(task.get('telegram_include_matched'))
+            task['telegram_include_unmatched'] = True if task.get('telegram_include_unmatched') is None else bool(task.get('telegram_include_unmatched'))
+            task['telegram_max_rows'] = normalize_telegram_max_rows(task.get('telegram_max_rows', 200))
+            task.pop('zofri_password', None)
+            task.pop('telegram_bot_token', None)
+            tasks.append(task)
+
+        return tasks
+    except Exception as e:
+        print(f"[monitor] get_all_monitor_tasks_admin failed: {e}")
+        return []
+
+
 def get_monitor_task(task_id: int, user_id: int = None) -> Optional[Dict]:
     """獲取單個監控任務（可選用戶ID驗證）"""
     try:

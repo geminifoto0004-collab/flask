@@ -22,6 +22,10 @@
             <i class="fas fa-shopping-cart"></i>
             <span>用戶服務</span>
         </a>
+        <a href="/admin/monitor-tasks" class="nav-item {% if request.endpoint == 'admin_monitor_tasks' %}active{% endif %}">
+            <i class="fas fa-bell"></i>
+            <span>Monitor Tasks</span>
+        </a>
         <a href="/admin/user-sessions" class="nav-item {% if request.endpoint == 'admin_user_sessions' %}active{% endif %}">
             <i class="fas fa-heartbeat"></i>
             <span>會話監控</span>

@@ -1,0 +1,365 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Monitor Tasks{% endblock %}
+{% block breadcrumb %}Monitor Tasks{% endblock %}
+
+{% block top_actions %}
+<button class="btn-primary" onclick="reloadTasks()">
+    <i class="fas fa-rotate-right"></i> 刷新
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-key"></i> Monitor Batch Token</h3>
+    </div>
+    <div class="token-row">
+        <div><strong>Estado:</strong> <span id="batchTokenConfigured">-</span></div>
+        <div><strong>Fuente:</strong> <span id="batchTokenSource">-</span></div>
+        <div><strong>Token:</strong> <code id="batchTokenMasked">-</code></div>
+        <div class="token-actions">
+            <button class="btn-mini" onclick="rotateBatchToken()">Generar Nuevo</button>
+            <button class="btn-mini" onclick="setBatchTokenManually()">Definir Manual</button>
+            <button class="btn-mini" onclick="loadBatchTokenStatus()">Refrescar</button>
+        </div>
+    </div>
+</div>
+
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-list-check"></i> 全部用戶監控任務</h3>
+    </div>
+    <div class="toolbar">
+        <input id="q" type="text" placeholder="搜尋 user/email/company/zofri..." />
+        <select id="status">
+            <option value="all">全部</option>
+            <option value="active">啟用</option>
+            <option value="inactive">停用</option>
+        </select>
+        <button class="btn-primary" onclick="reloadTasks()"><i class="fas fa-search"></i> 查詢</button>
+    </div>
+    <div id="summary" class="summary">載入中...</div>
+    <div class="table-wrap">
+        <table class="task-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>用戶</th>
+                    <th>公司</th>
+                    <th>ZOFRI</th>
+                    <th>RUT</th>
+                    <th>通知</th>
+                    <th>狀態</th>
+                    <th>最後檢查</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="tasksBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<div id="editModal" class="modal" style="display:none;">
+    <div class="modal-content monitor-modal">
+        <div class="modal-header">
+            <h3><i class="fas fa-pen"></i> 編輯任務</h3>
+            <span class="close" onclick="closeEditModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="editId" />
+            <div class="grid">
+                <label>公司名稱
+                    <input id="editCompany" type="text" />
+                </label>
+                <label>ZOFRI 帳號
+                    <input id="editZofriUser" type="text" />
+                </label>
+                <label>ZOFRI 密碼（留空=不改）
+                    <input id="editZofriPass" type="password" />
+                </label>
+                <label>RUT
+                    <input id="editRut" type="text" />
+                </label>
+                <label>Email Subject
+                    <input id="editEmailSubject" type="text" />
+                </label>
+                <label>Telegram Chat ID
+                    <input id="editTgChatId" type="text" />
+                </label>
+                <label>Telegram Token（留空=不改）
+                    <input id="editTgToken" type="password" />
+                </label>
+                <label>最大列數（Telegram）
+                    <input id="editTgMaxRows" type="number" min="10" max="1000" step="1" />
+                </label>
+            </div>
+            <label>通知 Email（逗號或分號分隔）
+                <textarea id="editEmails" rows="3"></textarea>
+            </label>
+            <div class="checks">
+                <label><input id="editActive" type="checkbox" /> 啟用</label>
+                <label><input id="editNotifyEmail" type="checkbox" /> Email</label>
+                <label><input id="editNotifyTg" type="checkbox" /> Telegram</label>
+                <label><input id="editIncMatched" type="checkbox" /> Telegram 包含 matched</label>
+                <label><input id="editIncUnmatched" type="checkbox" /> Telegram 包含 unmatched</label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeEditModal()">取消</button>
+            <button class="btn-primary" onclick="saveTask()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let taskMap = new Map();
+
+function parseEmails(raw) {
+    return String(raw || '')
+        .split(/[,\n;]/)
+        .map(v => v.trim())
+        .filter(Boolean);
+}
+
+function htmlEscape(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (m) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[m]));
+}
+
+async function loadBatchTokenStatus() {
+    try {
+        const response = await fetch('/api/admin/monitor/batch-token/status');
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'status error');
+        const status = data.status || {};
+        document.getElementById('batchTokenConfigured').textContent = status.configured ? 'Configurado' : 'No configurado';
+        document.getElementById('batchTokenSource').textContent = status.source || '-';
+        document.getElementById('batchTokenMasked').textContent = status.token_masked || '-';
+    } catch (e) {
+        document.getElementById('batchTokenConfigured').textContent = 'Error';
+        document.getElementById('batchTokenSource').textContent = '-';
+        document.getElementById('batchTokenMasked').textContent = '-';
+    }
+}
+
+async function rotateBatchToken() {
+    if (!confirm('Generate new token and invalidate old one immediately?')) return;
+    try {
+        const response = await fetch('/api/admin/monitor/batch-token/rotate', { method: 'POST' });
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'rotate failed');
+        const token = data.token || '';
+        if (token) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try { await navigator.clipboard.writeText(token); } catch (e) {}
+            }
+            alert(`New token:\n\n${token}\n\nUpdate your cron URLs now.`);
+        }
+        await loadBatchTokenStatus();
+    } catch (e) {
+        alert(`Rotate failed: ${e.message || e}`);
+    }
+}
+
+async function setBatchTokenManually() {
+    const token = prompt('Enter new token (min 16 chars):');
+    if (!token) return;
+    try {
+        const response = await fetch('/api/admin/monitor/batch-token/set', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token }),
+        });
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'set failed');
+        alert('Token updated. Update your cron URLs now.');
+        await loadBatchTokenStatus();
+    } catch (e) {
+        alert(`Set token failed: ${e.message || e}`);
+    }
+}
+
+async function reloadTasks() {
+    const q = document.getElementById('q').value.trim();
+    const status = document.getElementById('status').value;
+    const body = document.getElementById('tasksBody');
+    body.innerHTML = '<tr><td colspan="9">載入中...</td></tr>';
+
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (status) params.set('status', status);
+    params.set('limit', '1000');
+
+    try {
+        const res = await fetch(`/api/admin/monitor/tasks?${params.toString()}`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'load failed');
+
+        taskMap = new Map();
+        const tasks = data.tasks || [];
+        document.getElementById('summary').textContent = `共 ${tasks.length} 筆`;
+
+        if (!tasks.length) {
+            body.innerHTML = '<tr><td colspan="9">沒有資料</td></tr>';
+            return;
+        }
+
+        body.innerHTML = tasks.map((t) => {
+            taskMap.set(t.id, t);
+            const channels = [
+                t.notify_email ? 'Email' : null,
+                t.notify_telegram ? 'Telegram' : null
+            ].filter(Boolean).join(', ') || '-';
+            return `
+                <tr>
+                    <td>${t.id}</td>
+                    <td>${htmlEscape(t.user_username || '')}<br><small>${htmlEscape(t.user_email || '')}</small></td>
+                    <td>${htmlEscape(t.company_name || '')}</td>
+                    <td>${htmlEscape(t.zofri_username || '')}</td>
+                    <td>${htmlEscape(t.zofri_rut_entidad || '')}</td>
+                    <td>${htmlEscape(channels)}</td>
+                    <td>${t.is_active ? '<span class="on">啟用</span>' : '<span class="off">停用</span>'}</td>
+                    <td>${htmlEscape(t.last_check_time || '-')}</td>
+                    <td class="ops">
+                        <button class="btn-mini" onclick="openEditModal(${t.id})">編輯</button>
+                        <button class="btn-mini" onclick="toggleTask(${t.id}, ${t.is_active ? 0 : 1})">${t.is_active ? '停用' : '啟用'}</button>
+                        <button class="btn-mini danger" onclick="deleteTask(${t.id})">刪除</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="9" style="color:#dc2626;">載入失敗: ${htmlEscape(e.message || e)}</td></tr>`;
+        document.getElementById('summary').textContent = '載入失敗';
+    }
+}
+
+function openEditModal(taskId) {
+    const t = taskMap.get(taskId);
+    if (!t) return;
+    document.getElementById('editId').value = t.id;
+    document.getElementById('editCompany').value = t.company_name || '';
+    document.getElementById('editZofriUser').value = t.zofri_username || '';
+    document.getElementById('editZofriPass').value = '';
+    document.getElementById('editRut').value = t.zofri_rut_entidad || '';
+    document.getElementById('editEmails').value = (t.notification_emails || []).join(', ');
+    document.getElementById('editEmailSubject').value = t.email_subject || '';
+    document.getElementById('editTgChatId').value = t.telegram_chat_id || '';
+    document.getElementById('editTgToken').value = '';
+    document.getElementById('editTgMaxRows').value = t.telegram_max_rows || 200;
+    document.getElementById('editActive').checked = !!t.is_active;
+    document.getElementById('editNotifyEmail').checked = !!t.notify_email;
+    document.getElementById('editNotifyTg').checked = !!t.notify_telegram;
+    document.getElementById('editIncMatched').checked = !!t.telegram_include_matched;
+    document.getElementById('editIncUnmatched').checked = !!t.telegram_include_unmatched;
+    document.getElementById('editModal').style.display = 'block';
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+async function saveTask() {
+    const id = Number(document.getElementById('editId').value);
+    if (!id) return;
+
+    const payload = {
+        company_name: document.getElementById('editCompany').value.trim(),
+        zofri_username: document.getElementById('editZofriUser').value.trim(),
+        zofri_password: document.getElementById('editZofriPass').value.trim(),
+        zofri_rut_entidad: document.getElementById('editRut').value.trim(),
+        notification_emails: parseEmails(document.getElementById('editEmails').value),
+        email_subject: document.getElementById('editEmailSubject').value.trim(),
+        telegram_chat_id: document.getElementById('editTgChatId').value.trim(),
+        telegram_bot_token: document.getElementById('editTgToken').value.trim(),
+        telegram_max_rows: Number(document.getElementById('editTgMaxRows').value || 200),
+        is_active: document.getElementById('editActive').checked,
+        notify_email: document.getElementById('editNotifyEmail').checked,
+        notify_telegram: document.getElementById('editNotifyTg').checked,
+        telegram_include_matched: document.getElementById('editIncMatched').checked,
+        telegram_include_unmatched: document.getElementById('editIncUnmatched').checked,
+    };
+    if (!payload.zofri_password) delete payload.zofri_password;
+    if (!payload.telegram_bot_token) delete payload.telegram_bot_token;
+
+    try {
+        const res = await fetch(`/api/admin/monitor/tasks/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'save failed');
+        closeEditModal();
+        await reloadTasks();
+    } catch (e) {
+        alert(`保存失敗: ${e.message || e}`);
+    }
+}
+
+async function toggleTask(id, activeFlag) {
+    try {
+        const res = await fetch(`/api/admin/monitor/tasks/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: !!activeFlag }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'update failed');
+        await reloadTasks();
+    } catch (e) {
+        alert(`更新失敗: ${e.message || e}`);
+    }
+}
+
+async function deleteTask(id) {
+    if (!confirm(`確定刪除任務 #${id} ?`)) return;
+    try {
+        const res = await fetch(`/api/admin/monitor/tasks/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'delete failed');
+        await reloadTasks();
+    } catch (e) {
+        alert(`刪除失敗: ${e.message || e}`);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadBatchTokenStatus();
+    await reloadTasks();
+});
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.toolbar { display:flex; gap:10px; padding:16px; align-items:center; flex-wrap:wrap; }
+.token-row { display:flex; gap:14px; padding:14px 16px 16px; align-items:center; flex-wrap:wrap; }
+.token-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.toolbar input,.toolbar select { padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; min-width:220px; }
+.summary { padding:0 16px 12px; color:#334155; font-weight:600; }
+.table-wrap { overflow:auto; padding:0 16px 16px; }
+.task-table { width:100%; border-collapse:collapse; min-width:1100px; background:#fff; }
+.task-table th,.task-table td { border-bottom:1px solid #e2e8f0; padding:10px; text-align:left; vertical-align:top; }
+.task-table th { background:#f8fafc; position:sticky; top:0; z-index:1; }
+.on { color:#0f766e; font-weight:700; }
+.off { color:#b91c1c; font-weight:700; }
+.ops { display:flex; gap:6px; flex-wrap:wrap; }
+.btn-mini { border:none; background:#2563eb; color:#fff; border-radius:6px; padding:6px 10px; cursor:pointer; }
+.btn-mini.danger { background:#dc2626; }
+.monitor-modal { max-width:900px; width:95%; }
+.grid { display:grid; grid-template-columns:repeat(2, minmax(220px, 1fr)); gap:10px; margin-bottom:10px; }
+.grid label, .modal-body > label { display:flex; flex-direction:column; gap:6px; color:#334155; font-weight:600; }
+.grid input, .modal-body textarea { border:1px solid #cbd5e1; border-radius:8px; padding:8px; font-weight:500; }
+.checks { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
+.checks label { font-weight:600; color:#1e293b; }
+.modal-footer { display:flex; justify-content:flex-end; gap:8px; padding:12px 16px 16px; }
+.btn-primary, .btn-secondary { border:none; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:700; }
+.btn-primary { background:#2563eb; color:#fff; }
+.btn-secondary { background:#e2e8f0; color:#0f172a; }
+</style>
+{% endblock %}

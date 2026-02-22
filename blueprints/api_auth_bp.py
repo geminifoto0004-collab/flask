@@ -800,6 +800,7 @@ def api_get_user_sessions():
         cursor = conn.cursor()
         
         # 獲取每個用戶的最新會話狀態（最近24小時）
+        cutoff_time = get_chile_time_naive() - timedelta(hours=24)
         cursor.execute("""
             SELECT 
                 us.id,
@@ -812,15 +813,15 @@ def api_get_user_sessions():
                 us.is_online
             FROM user_sessions us
             JOIN users u ON us.user_id = u.id
-            WHERE us.last_activity > datetime('now', '-24 hours')
+            WHERE us.last_activity > ?
             AND us.id IN (
                 SELECT MAX(id) 
                 FROM user_sessions 
-                WHERE last_activity > datetime('now', '-24 hours')
+                WHERE last_activity > ?
                 GROUP BY user_id
             )
             ORDER BY us.last_activity DESC
-        """)
+        """, (cutoff_time, cutoff_time))
         
         sessions = cursor.fetchall()
         

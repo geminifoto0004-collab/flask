@@ -551,6 +551,14 @@ def admin_users():
     
     return render_template('admin/users.html', users=users, super_admin_role=admin_config.SUPER_ADMIN_ROLE)
 
+
+@app.route('/admin/monitor-tasks')
+def admin_monitor_tasks():
+    """Admin page: manage all monitor tasks in one place."""
+    if not session.get('logged_in') or session.get('role') not in ['admin', admin_config.SUPER_ADMIN_ROLE]:
+        return redirect(url_for('login'))
+    return render_template('admin/monitor_tasks.html')
+
 @app.route('/admin/users/<int:user_id>/role', methods=['POST'])
 def update_user_role(user_id):
     """更新用戶角色"""

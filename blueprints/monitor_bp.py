@@ -15,7 +15,7 @@ from services.monitor_service import (
     send_notification_telegram, compute_result_hash,
     generate_api_key, clear_check_history,
     get_monitor_report_context_by_api_key, get_monitor_report_status_by_api_key, build_monitor_report_url,
-    get_all_active_monitor_tasks
+    get_all_active_monitor_tasks, get_all_monitor_tasks_admin
 )
 from services.unified_iti_service import refresh_unified_iti_cache
 from services.monitor_batch_token_service import (
@@ -387,6 +387,46 @@ def get_user_monitor_tasks_admin(user_id):
 
 
 # ========== 管理員端：更新用戶的監控任務 ==========
+@monitor_bp.route('/api/admin/monitor/tasks', methods=['GET'])
+@admin_required
+def get_all_monitor_tasks_admin_api():
+    """Admin list all monitor tasks with optional filters."""
+    try:
+        keyword = (request.args.get('q') or '').strip()
+        status = (request.args.get('status') or 'all').strip().lower()
+        user_id_raw = request.args.get('user_id')
+        limit_raw = request.args.get('limit')
+
+        user_id = None
+        if user_id_raw:
+            try:
+                user_id = int(user_id_raw)
+            except Exception:
+                return jsonify({'success': False, 'error': 'Invalid user_id'}), 400
+
+        limit = 500
+        if limit_raw:
+            try:
+                limit = int(limit_raw)
+            except Exception:
+                limit = 500
+
+        tasks = get_all_monitor_tasks_admin(
+            keyword=keyword,
+            status=status,
+            user_id=user_id,
+            limit=limit,
+        )
+
+        return jsonify({
+            'success': True,
+            'tasks': tasks,
+            'count': len(tasks),
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @monitor_bp.route('/api/admin/monitor/tasks/<int:task_id>', methods=['PUT'])
 @admin_required
 def update_monitor_task_admin(task_id):
@@ -406,6 +446,16 @@ def update_monitor_task_admin(task_id):
             zofri_password=data.get('zofri_password'),
             zofri_rut_entidad=data.get('zofri_rut_entidad'),
             notification_emails=data.get('notification_emails'),
+            company_name=data.get('company_name'),
+            email_subject=data.get('email_subject'),
+            notify_email=_parse_bool(data.get('notify_email'), None) if 'notify_email' in data else None,
+            notify_telegram=_parse_bool(data.get('notify_telegram'), None) if 'notify_telegram' in data else None,
+            telegram_bot_token=data.get('telegram_bot_token'),
+            telegram_chat_id=data.get('telegram_chat_id'),
+            telegram_mode=(data.get('telegram_mode') or '').strip().lower() if 'telegram_mode' in data else None,
+            telegram_include_matched=_parse_bool(data.get('telegram_include_matched'), None) if 'telegram_include_matched' in data else None,
+            telegram_include_unmatched=_parse_bool(data.get('telegram_include_unmatched'), None) if 'telegram_include_unmatched' in data else None,
+            telegram_max_rows=data.get('telegram_max_rows') if 'telegram_max_rows' in data else None,
             is_active=data.get('is_active')
         )
         
