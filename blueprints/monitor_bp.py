@@ -14,7 +14,15 @@ from services.monitor_service import (
     check_monitor_task, has_result_changed, send_notification_email,
     send_notification_telegram, compute_result_hash,
     generate_api_key, clear_check_history,
-    get_monitor_report_context_by_api_key, get_monitor_report_status_by_api_key, build_monitor_report_url
+    get_monitor_report_context_by_api_key, get_monitor_report_status_by_api_key, build_monitor_report_url,
+    get_all_active_monitor_tasks
+)
+from services.unified_iti_service import refresh_unified_iti_cache
+from services.monitor_batch_token_service import (
+    get_monitor_batch_token_status,
+    rotate_monitor_batch_token,
+    set_monitor_batch_token,
+    validate_monitor_batch_token,
 )
 from utils.time_utils import get_chile_time_naive
 
@@ -64,6 +72,29 @@ def _parse_bool(value, default: bool = False) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in ('1', 'true', 'yes', 'on')
     return bool(value)
+
+
+def _require_cron_key():
+    """
+    Validate centralized cron key for monitor batch endpoints.
+    """
+    provided = (
+        request.headers.get('X-Cron-Key')
+        or request.args.get('cron_key')
+        or request.args.get('api_key')
+        or ''
+    ).strip()
+    if not provided:
+        return False, (jsonify({'success': False, 'error': 'Missing cron_key'}), 401)
+
+    status = get_monitor_batch_token_status()
+    if not status.get('configured'):
+        return False, (jsonify({'success': False, 'error': 'Batch cron token not configured'}), 503)
+
+    if not validate_monitor_batch_token(provided):
+        return False, (jsonify({'success': False, 'error': 'Invalid cron_key'}), 403)
+
+    return True, None
 
 
 # ========== 用戶端：獲取我的監控任務列表 ==========
@@ -435,6 +466,165 @@ def monitor_report_status_api():
         return jsonify({'success': False, 'error': error}), 404
 
     return jsonify({'success': True, 'status': status})
+
+
+@monitor_bp.route('/api/admin/monitor/batch-token/status', methods=['GET'])
+@admin_required
+def admin_monitor_batch_token_status():
+    try:
+        status = get_monitor_batch_token_status()
+        return jsonify({'success': True, 'status': status})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@monitor_bp.route('/api/admin/monitor/batch-token/rotate', methods=['POST'])
+@admin_required
+def admin_monitor_batch_token_rotate():
+    try:
+        admin_user_id = session.get('user_id')
+        success, token_or_error = rotate_monitor_batch_token(updated_by=admin_user_id)
+        if not success:
+            return jsonify({'success': False, 'error': token_or_error}), 400
+
+        status = get_monitor_batch_token_status()
+        return jsonify({
+            'success': True,
+            'message': 'Batch token rotated',
+            'token': token_or_error,
+            'status': status,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@monitor_bp.route('/api/admin/monitor/batch-token/set', methods=['POST'])
+@admin_required
+def admin_monitor_batch_token_set():
+    try:
+        data = request.get_json(force=True) or {}
+        token = (data.get('token') or '').strip()
+        if not token:
+            return jsonify({'success': False, 'error': 'Missing token'}), 400
+
+        admin_user_id = session.get('user_id')
+        success, token_or_error = set_monitor_batch_token(token, updated_by=admin_user_id)
+        if not success:
+            return jsonify({'success': False, 'error': token_or_error}), 400
+
+        status = get_monitor_batch_token_status()
+        return jsonify({
+            'success': True,
+            'message': 'Batch token updated',
+            'token': token_or_error,
+            'status': status,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@monitor_bp.route('/api/monitor/iti-refresh', methods=['GET', 'POST'])
+def refresh_monitor_iti_cache_api():
+    """
+    Centralized ITI refresh endpoint for cron.
+    """
+    try:
+        ok, error_resp = _require_cron_key()
+        if not ok:
+            return error_resp
+
+        data = request.get_json(silent=True) or {}
+        force_refresh = _parse_bool(
+            data.get('force') if 'force' in data else request.args.get('force'),
+            True
+        )
+        refresh_info = refresh_unified_iti_cache(force=force_refresh)
+        return jsonify({
+            'success': True,
+            'message': 'ITI cache refreshed',
+            'refresh': refresh_info
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@monitor_bp.route('/api/monitor/check-all', methods=['GET', 'POST'])
+def check_monitor_all_api():
+    """
+    Centralized cron entrypoint:
+    - optional ITI pre-refresh once
+    - enqueue all active monitor tasks as async jobs
+    """
+    try:
+        ok, error_resp = _require_cron_key()
+        if not ok:
+            return error_resp
+
+        data = request.get_json(silent=True) or {}
+        pre_refresh = _parse_bool(
+            data.get('pre_refresh') if 'pre_refresh' in data else request.args.get('pre_refresh'),
+            True
+        )
+        force_refresh = _parse_bool(
+            data.get('force_refresh') if 'force_refresh' in data else request.args.get('force_refresh'),
+            True
+        )
+
+        limit_raw = data.get('limit', request.args.get('limit'))
+        limit = None
+        if limit_raw not in (None, ''):
+            try:
+                parsed_limit = int(limit_raw)
+                limit = parsed_limit if parsed_limit > 0 else None
+            except Exception:
+                limit = None
+
+        refresh_info = None
+        if pre_refresh:
+            refresh_info = refresh_unified_iti_cache(force=force_refresh)
+
+        tasks = get_all_active_monitor_tasks(limit=limit)
+        if not tasks:
+            return jsonify({
+                'success': True,
+                'message': 'No active monitor tasks',
+                'scheduled_count': 0,
+                'refresh': refresh_info
+            }), 200
+
+        from services.async_task_service import create_async_task
+
+        scheduled = []
+        failed = []
+        request_base_url = request.url_root.rstrip('/')
+        for task in tasks:
+            try:
+                task['_request_base_url'] = request_base_url
+                async_task_id = create_async_task('monitor_check', task)
+                scheduled.append({
+                    'task_config_id': task.get('id'),
+                    'async_task_id': async_task_id,
+                })
+            except Exception as task_error:
+                failed.append({
+                    'task_config_id': task.get('id'),
+                    'error': str(task_error),
+                })
+
+        current_time = get_chile_time_naive()
+        return jsonify({
+            'success': True,
+            'message': 'Monitor check-all enqueued',
+            'request_time': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'total_active_tasks': len(tasks),
+            'scheduled_count': len(scheduled),
+            'failed_count': len(failed),
+            'scheduled': scheduled,
+            'failed': failed,
+            'refresh': refresh_info,
+        }), 202
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @monitor_bp.route('/api/monitor/check', methods=['GET'])

@@ -98,6 +98,35 @@
         </div>
     </div>
 </div>
+
+<div class="content-card">
+    <div class="card-header">
+        <h3><i class="fas fa-key"></i> Monitor Batch Token</h3>
+    </div>
+    <div class="batch-token-panel">
+        <div class="info-item">
+            <strong>Estado:</strong> <span id="batchTokenConfigured">-</span>
+        </div>
+        <div class="info-item">
+            <strong>Fuente:</strong> <span id="batchTokenSource">-</span>
+        </div>
+        <div class="info-item">
+            <strong>Token:</strong> <code id="batchTokenMasked">-</code>
+        </div>
+        <div class="batch-token-actions">
+            <button class="btn-token btn-token-primary" onclick="rotateBatchToken()">
+                <i class="fas fa-sync-alt"></i> Generar Nuevo
+            </button>
+            <button class="btn-token btn-token-secondary" onclick="setBatchTokenManually()">
+                <i class="fas fa-edit"></i> Definir Manual
+            </button>
+            <button class="btn-token btn-token-light" onclick="loadBatchTokenStatus()">
+                <i class="fas fa-rotate-right"></i> Refrescar
+            </button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -106,6 +135,7 @@
     document.addEventListener('DOMContentLoaded', function() {
         loadServiceStats();
         updateLastUpdateTime();
+        loadBatchTokenStatus();
     });
 
     function loadServiceStats() {
@@ -132,6 +162,79 @@
         // 跳轉到服務管理頁面
         window.location.href = '/admin/services';
     }
+
+    async function loadBatchTokenStatus() {
+        try {
+            const response = await fetch('/api/admin/monitor/batch-token/status');
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'status error');
+            }
+
+            const status = data.status || {};
+            document.getElementById('batchTokenConfigured').textContent = status.configured ? 'Configurado' : 'No configurado';
+            document.getElementById('batchTokenSource').textContent = status.source || '-';
+            document.getElementById('batchTokenMasked').textContent = status.token_masked || '-';
+        } catch (error) {
+            console.error('Batch token status error:', error);
+            document.getElementById('batchTokenConfigured').textContent = 'Error';
+            document.getElementById('batchTokenSource').textContent = '-';
+            document.getElementById('batchTokenMasked').textContent = '-';
+        }
+    }
+
+    async function rotateBatchToken() {
+        if (!confirm('Generar un nuevo token invalidara el token anterior inmediatamente. Continuar?')) {
+            return;
+        }
+        try {
+            const response = await fetch('/api/admin/monitor/batch-token/rotate', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'rotate failed');
+            }
+
+            const token = data.token || '';
+            if (token) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    try { await navigator.clipboard.writeText(token); } catch (e) {}
+                }
+                alert(`Nuevo token generado:
+
+${token}
+
+Actualiza tus cron URLs ahora.`);
+            }
+            await loadBatchTokenStatus();
+        } catch (error) {
+            console.error('Rotate token error:', error);
+            alert('No se pudo generar token: ' + (error.message || error));
+        }
+    }
+
+    async function setBatchTokenManually() {
+        const token = prompt('Ingresa el nuevo token (min 16 caracteres):');
+        if (!token) return;
+        try {
+            const response = await fetch('/api/admin/monitor/batch-token/set', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'set failed');
+            }
+            alert('Token actualizado. Recuerda actualizar tus cron URLs.');
+            await loadBatchTokenStatus();
+        } catch (error) {
+            console.error('Set token error:', error);
+            alert('No se pudo actualizar token: ' + (error.message || error));
+        }
+    }
+
 </script>
 {% endblock %}
 
@@ -196,5 +299,40 @@
         color: #10b981;
         font-weight: 500;
     }
+
+    .batch-token-panel {
+        padding: 1.5rem;
+    }
+
+    .batch-token-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+    }
+
+    .btn-token {
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 0.9rem;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .btn-token-primary {
+        background: #2563eb;
+        color: #fff;
+    }
+
+    .btn-token-secondary {
+        background: #0f766e;
+        color: #fff;
+    }
+
+    .btn-token-light {
+        background: #e2e8f0;
+        color: #0f172a;
+    }
+
 </style>
 {% endblock %}

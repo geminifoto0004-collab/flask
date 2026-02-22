@@ -22,8 +22,9 @@ from database import get_db_connection, get_lastrowid
 from services.email_service import send_email
 from services.telegram_service import send_telegram_message, send_telegram_photo
 from services.zofri_iti_service import (
-    iti_data, process_data
+    process_data
 )
+from services.unified_iti_service import get_unified_iti_legacy_rows_fresh
 from utils.time_utils import get_chile_time_naive
 
 try:
@@ -549,6 +550,54 @@ def get_task_by_api_key(api_key: str) -> Optional[Dict]:
 
 
 # ========== 使用任務配置登錄 ZOFRI ==========
+def get_all_active_monitor_tasks(limit: Optional[int] = None) -> List[Dict]:
+    """
+    Get all active monitor tasks for centralized check-all cron flow.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        if limit and int(limit) > 0:
+            cursor.execute(
+                """
+                SELECT * FROM user_monitor_configs
+                WHERE is_active = 1
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (int(limit),)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM user_monitor_configs
+                WHERE is_active = 1
+                ORDER BY id ASC
+                """
+            )
+
+        rows = cursor.fetchall() or []
+        conn.close()
+
+        tasks: List[Dict] = []
+        for row in rows:
+            task = dict(row)
+            task['notification_emails'] = json.loads(task.get('notification_emails') or '[]')
+            task['notify_email'] = True if task.get('notify_email') is None else bool(task.get('notify_email'))
+            task['notify_telegram'] = bool(task.get('notify_telegram'))
+            task['telegram_mode'] = normalize_telegram_mode(task.get('telegram_mode'))
+            task['telegram_include_matched'] = True if task.get('telegram_include_matched') is None else bool(task.get('telegram_include_matched'))
+            task['telegram_include_unmatched'] = True if task.get('telegram_include_unmatched') is None else bool(task.get('telegram_include_unmatched'))
+            task['telegram_max_rows'] = normalize_telegram_max_rows(task.get('telegram_max_rows', 200))
+            tasks.append(task)
+
+        return tasks
+    except Exception as e:
+        print(f"[monitor] get_all_active_monitor_tasks failed: {e}")
+        return []
+
+
 def login_zofri_with_config(task_config: Dict) -> Tuple[bool, Dict, str]:
     """
     使用任務配置登錄 ZOFRI
@@ -676,7 +725,14 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         # 4. 獲取 ITI 數據並匹配
         print(f"[監控檢查-{execution_id}] ZOFRI 容器總數: {len(df_zofri)}")
         
-        iti_results = iti_data()
+        iti_max_age_seconds = int(os.environ.get("MONITOR_ITI_MAX_AGE_SECONDS", "300"))
+        iti_results, iti_cache_meta = get_unified_iti_legacy_rows_fresh(
+            max_age_seconds=iti_max_age_seconds
+        )
+        print(
+            f"[監控檢查-{execution_id}] ITI cache age={iti_cache_meta.get('age_seconds')}s, "
+            f"refreshed={iti_cache_meta.get('refreshed')}"
+        )
         
         matched_data = pd.DataFrame()
         matched_indices = pd.Series([False] * len(df_zofri), index=df_zofri.index)
