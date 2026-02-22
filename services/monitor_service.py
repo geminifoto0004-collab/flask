@@ -1583,6 +1583,7 @@ def get_monitor_report_context_by_api_key(api_key: str) -> Tuple[Optional[Dict[s
         except Exception as exc:
             return None, f"Failed to parse last_check_result: {exc}"
 
+    result_hash = compute_result_hash(parsed_result if parsed_result else {'containers': []})
     containers = parsed_result.get('containers', []) if isinstance(parsed_result, dict) else []
     include_matched = True if task_config.get('telegram_include_matched') is None else bool(task_config.get('telegram_include_matched'))
     include_unmatched = True if task_config.get('telegram_include_unmatched') is None else bool(task_config.get('telegram_include_unmatched'))
@@ -1594,7 +1595,33 @@ def get_monitor_report_context_by_api_key(api_key: str) -> Tuple[Optional[Dict[s
     context['company_name'] = _safe_text(task_config.get('company_name'), 'NICO').upper()
     context['task_id'] = task_config.get('id')
     context['api_key'] = task_config.get('api_key')
+    context['result_hash'] = result_hash
     return context, ""
+
+
+def get_monitor_report_status_by_api_key(api_key: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Return lightweight report status for polling without triggering crawlers."""
+    task_config = get_task_by_api_key(api_key)
+    if not task_config:
+        return None, "Invalid api_key"
+
+    raw_result = task_config.get('last_check_result')
+    parsed_result: Dict[str, Any] = {}
+    if raw_result:
+        try:
+            if isinstance(raw_result, str):
+                parsed_result = json.loads(raw_result)
+            elif isinstance(raw_result, dict):
+                parsed_result = raw_result
+        except Exception as exc:
+            return None, f"Failed to parse last_check_result: {exc}"
+
+    result_hash = compute_result_hash(parsed_result if parsed_result else {'containers': []})
+    return {
+        'result_hash': result_hash,
+        'last_check_time': task_config.get('last_check_time'),
+        'task_id': task_config.get('id')
+    }, ""
 
 
 def _render_telegram_html_image(

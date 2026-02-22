@@ -219,5 +219,33 @@
   <span>Generated {{ generated_date }} · {{ generated_time }}</span>
 </div>
 
+<script>
+(() => {
+  const apiKey = "{{ api_key }}";
+  let currentHash = "{{ result_hash }}";
+  if (!apiKey) return;
+
+  const poll = async () => {
+    try {
+      const qs = new URLSearchParams({ api_key: apiKey });
+      const resp = await fetch(`/api/monitor/report/status?${qs.toString()}`, { cache: "no-store" });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data || !data.success || !data.status) return;
+      const nextHash = data.status.result_hash || "";
+      if (nextHash && currentHash && nextHash !== currentHash) {
+        window.location.reload();
+        return;
+      }
+      if (nextHash) currentHash = nextHash;
+    } catch (_) {
+      // ignore transient polling errors
+    }
+  };
+
+  setInterval(poll, 30000);
+})();
+</script>
+
 </body>
 </html>

@@ -14,7 +14,7 @@ from services.monitor_service import (
     check_monitor_task, has_result_changed, send_notification_email,
     send_notification_telegram, compute_result_hash,
     generate_api_key, clear_check_history,
-    get_monitor_report_context_by_api_key, build_monitor_report_url
+    get_monitor_report_context_by_api_key, get_monitor_report_status_by_api_key, build_monitor_report_url
 )
 from utils.time_utils import get_chile_time_naive
 
@@ -421,6 +421,20 @@ def monitor_report_page():
         return f"Invalid report token: {error}", 404
 
     return render_template('reports/iti_telegram_report.html', **context)
+
+
+@monitor_bp.route('/api/monitor/report/status', methods=['GET'])
+def monitor_report_status_api():
+    """Lightweight polling endpoint for monitor report page."""
+    api_key = (request.args.get('api_key') or request.args.get('token') or '').strip()
+    if not api_key:
+        return jsonify({'success': False, 'error': 'Missing api_key'}), 400
+
+    status, error = get_monitor_report_status_by_api_key(api_key)
+    if not status:
+        return jsonify({'success': False, 'error': error}), 404
+
+    return jsonify({'success': True, 'status': status})
 
 
 @monitor_bp.route('/api/monitor/check', methods=['GET'])

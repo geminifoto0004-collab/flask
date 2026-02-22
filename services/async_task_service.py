@@ -44,11 +44,86 @@ TASK_STATUS_COMPLETED = 'completed'
 TASK_STATUS_FAILED = 'failed'
 
 
+def _parse_task_created_at(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            continue
+    return None
+
+
+def _find_recent_active_task(task_type: str, task_config_id: int, max_age_seconds: int = 240) -> Optional[str]:
+    """
+    Find a recent pending/running task for the same monitor config.
+    Used to avoid duplicate sends when same API is hit multiple times quickly.
+    """
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+
+    try:
+        cursor.execute('''
+            SELECT task_id, task_config, created_at
+            FROM async_tasks
+            WHERE task_type = ? AND status IN (?, ?)
+            ORDER BY created_at DESC
+        ''', (task_type, TASK_STATUS_PENDING, TASK_STATUS_RUNNING))
+
+        now = get_chile_time_naive()
+        rows = cursor.fetchall() or []
+        for row in rows:
+            if isinstance(row, dict):
+                existing_task_id = row.get('task_id')
+                task_config_raw = row.get('task_config')
+                created_at_raw = row.get('created_at')
+            else:
+                existing_task_id = row[0] if len(row) > 0 else None
+                task_config_raw = row[1] if len(row) > 1 else None
+                created_at_raw = row[2] if len(row) > 2 else None
+
+            if not existing_task_id:
+                continue
+
+            try:
+                cfg = json.loads(task_config_raw) if isinstance(task_config_raw, str) and task_config_raw else {}
+            except Exception:
+                cfg = {}
+
+            if int(cfg.get('id', -1)) != int(task_config_id):
+                continue
+
+            created_dt = _parse_task_created_at(created_at_raw)
+            if not created_dt:
+                return existing_task_id
+
+            if (now - created_dt).total_seconds() <= max_age_seconds:
+                return existing_task_id
+
+        return None
+    finally:
+        conn.close()
+
+
 def create_async_task(task_type: str, task_config: Dict, task_data: Dict = None) -> str:
     """
     創建異步任務
     返回：任務 ID
     """
+    if task_type == 'monitor_check' and isinstance(task_config, dict) and task_config.get('id'):
+        existing_task_id = _find_recent_active_task(
+            task_type=task_type,
+            task_config_id=int(task_config.get('id')),
+            max_age_seconds=240
+        )
+        if existing_task_id:
+            print(f"[Async Task] Reusing existing in-flight task: {existing_task_id} (config_id={task_config.get('id')})")
+            return existing_task_id
+
     conn = get_db_connection()
     cursor = get_cursor(conn)
     
