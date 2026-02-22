@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
@@ -10,8 +11,9 @@
     font-family: 'DM Sans', sans-serif;
     font-weight: 700;
     background: #F2F5F9;
-    width: 520px;
-    padding: 28px 24px 40px;
+    width: min(520px, 100%);
+    margin: 0 auto;
+    padding: clamp(12px, 3vw, 28px) clamp(10px, 4vw, 24px) clamp(14px, 5vw, 40px);
   }
 
   th, td, span, div {
@@ -107,6 +109,30 @@
 
   .footer { display:flex; justify-content:center; align-items:center; gap:8px; margin-top:20px; font-family:'DM Mono',monospace; font-size:9px; color:#c8d5e0; letter-spacing:0.07em; }
   .footer-dot { width:3px; height:3px; background:#d0dce8; border-radius:50%; }
+
+  @media (max-width: 430px) {
+    .hero-eyebrow { font-size: 18px; }
+    .hero { padding: 18px 16px 14px; border-radius: 16px; }
+    .stats { gap: 6px; }
+    .stat { padding: 9px 8px; border-radius: 10px; }
+    .stat-num { font-size: 22px; }
+    .v-head, .um-head { padding: 8px 10px; }
+    .v-icon { width: 22px; height: 22px; font-size: 14px; }
+    .v-name, .um-vessel-name { font-size: 9px; letter-spacing: 0.03em; }
+    .v-badge, .um-vessel-count { font-size: 8px; }
+    .col-folio { width: 42px; }
+    .col-fecha { width: 118px; }
+    .col-estado { width: 68px; }
+    th { font-size: 7px; padding: 6px 7px; letter-spacing: 0.08em; }
+    td { padding: 7px 7px; }
+    .t-container { font-size: 10.8px; letter-spacing: 0.03em; }
+    .t-fecha { font-size: 9px; }
+    .t-folio { font-size: 9px; }
+    .t-estado { font-size: 7px; }
+    .um-item { padding: 6px 8px; }
+    .um-container { font-size: 9.6px; }
+    .um-estado { font-size: 7px; }
+  }
 </style>
 </head>
 <body>

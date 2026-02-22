@@ -2029,16 +2029,29 @@ def send_notification_telegram(
         max_rows=max_rows
     )
     caption = _build_telegram_image_caption(company_name, containers)
+    report_url = (report_url or "").strip()
 
     text_ok = None
     image_ok = None
     error_messages = []
 
-    def send_report_link_if_needed() -> Tuple[bool, str]:
+    def build_photo_caption(base_caption: str) -> str:
         if not report_url:
-            return True, ""
-        link_text = f"🔗 Ver reporte web:\n{report_url}"
-        return send_telegram_message(bot_token, chat_id, link_text)
+            return base_caption
+        suffix = f"\n🔗 {report_url}"
+        max_len = 1024
+        if len(base_caption) + len(suffix) <= max_len:
+            return base_caption + suffix
+        allowed = max_len - len(suffix)
+        if allowed <= 0:
+            return report_url[:max_len]
+        trimmed = base_caption
+        if len(trimmed) > allowed:
+            trimmed = trimmed[:max(0, allowed - 3)] + "..."
+        return trimmed + suffix
+
+    if telegram_mode == "text" and report_url:
+        text_message = f"{text_message}\n\n🔗 Ver reporte web:\n{report_url}"
 
     if telegram_mode in ("text", "both"):
         text_ok, text_err = send_telegram_message(bot_token, chat_id, text_message)
@@ -2061,7 +2074,10 @@ def send_notification_telegram(
             sent_count = 0
             total_pages = len(image_pages)
             for page_idx, image_bytes in enumerate(image_pages, 1):
-                page_caption = caption if page_idx == 1 else f"{company_name} | page {page_idx}/{total_pages}"
+                if page_idx == 1:
+                    page_caption = build_photo_caption(caption)
+                else:
+                    page_caption = f"{company_name} | page {page_idx}/{total_pages}"
                 ok, err = send_telegram_photo(bot_token, chat_id, image_bytes, caption=page_caption)
                 if ok:
                     sent_count += 1
@@ -2074,37 +2090,25 @@ def send_notification_telegram(
 
     if telegram_mode == "text":
         if text_ok:
-            link_ok, link_err = send_report_link_if_needed()
-            if link_ok:
-                return True, "Telegram text sent"
-            return True, f"Telegram text sent; report link failed: {link_err}"
+            return True, "Telegram text sent"
         return False, "; ".join(error_messages) if error_messages else "Telegram text failed"
 
     if telegram_mode == "image":
         if image_ok:
-            link_ok, link_err = send_report_link_if_needed()
-            if link_ok:
-                return True, "Telegram image sent"
-            return True, f"Telegram image sent; report link failed: {link_err}"
+            return True, "Telegram image sent"
         # fallback to text to avoid total loss
+        if report_url:
+            text_message = f"{text_message}\n\n🔗 Ver reporte web:\n{report_url}"
         fallback_ok, fallback_err = send_telegram_message(bot_token, chat_id, text_message)
         if fallback_ok:
-            link_ok, link_err = send_report_link_if_needed()
-            if link_ok:
-                return True, "Telegram image failed, fallback text sent"
-            return True, f"Telegram image failed, fallback text sent; report link failed: {link_err}"
+            return True, "Telegram image failed, fallback text sent"
         error_messages.append(f"fallback text failed: {fallback_err}")
         return False, "; ".join(error_messages)
 
     # both mode: allow partial success to prevent repeated duplicates
     if text_ok or image_ok:
-        link_ok, link_err = send_report_link_if_needed()
-        if not link_ok:
-            error_messages.append(f"report link failed: {link_err}")
         if text_ok and image_ok:
-            if link_ok:
-                return True, "Telegram text+image sent"
-            return True, "Telegram text+image sent; report link failed"
+            return True, "Telegram text+image sent"
         return True, "Telegram partial success: " + "; ".join(error_messages)
 
     return False, "; ".join(error_messages) if error_messages else "Telegram send failed"
