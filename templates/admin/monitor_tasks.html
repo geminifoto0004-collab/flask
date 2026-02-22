@@ -20,9 +20,22 @@
         <div><strong>Token:</strong> <code id="batchTokenMasked">-</code></div>
         <div class="token-actions">
             <button class="btn-mini" onclick="rotateBatchToken()">Generar Nuevo</button>
-            <button class="btn-mini" onclick="setBatchTokenManually()">Definir Manual</button>
             <button class="btn-mini" onclick="loadBatchTokenStatus()">Refrescar</button>
         </div>
+    </div>
+    <div class="token-url-grid">
+        <label>Cron URL: ITI Refresh
+            <div class="url-row">
+                <input id="cronUrlRefresh" type="text" readonly value="請先點擊 Generar Nuevo" />
+                <button class="btn-mini" type="button" onclick="copyTextInput('cronUrlRefresh')">Copy</button>
+            </div>
+        </label>
+        <label>Cron URL: Check All
+            <div class="url-row">
+                <input id="cronUrlCheckAll" type="text" readonly value="請先點擊 Generar Nuevo" />
+                <button class="btn-mini" type="button" onclick="copyTextInput('cronUrlCheckAll')">Copy</button>
+            </div>
+        </label>
     </div>
 </div>
 
@@ -111,11 +124,78 @@
         </div>
     </div>
 </div>
+
+<div id="cronUrlModal" class="modal" style="display:none;">
+    <div class="modal-content monitor-modal">
+        <div class="modal-header">
+            <h3><i class="fas fa-link"></i> Cron URLs</h3>
+            <span class="close" onclick="closeCronUrlModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <p id="cronUrlModalMsg" class="summary" style="padding:0;">Token 已更新，直接貼到 Cron：</p>
+            <label>ITI Refresh URL
+                <div class="url-row">
+                    <input id="cronUrlModalRefresh" type="text" readonly />
+                    <button class="btn-mini" type="button" onclick="copyTextInput('cronUrlModalRefresh')">Copy</button>
+                </div>
+            </label>
+            <label>Check All URL
+                <div class="url-row">
+                    <input id="cronUrlModalCheckAll" type="text" readonly />
+                    <button class="btn-mini" type="button" onclick="copyTextInput('cronUrlModalCheckAll')">Copy</button>
+                </div>
+            </label>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-primary" onclick="closeCronUrlModal()">確定</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 let taskMap = new Map();
+
+function buildCronUrls(token) {
+    const base = window.location.origin;
+    const encoded = encodeURIComponent(token || '');
+    return {
+        refresh: `${base}/api/monitor/iti-refresh?cron_key=${encoded}&force=1`,
+        checkAll: `${base}/api/monitor/check-all?cron_key=${encoded}&pre_refresh=1&force_refresh=1`,
+    };
+}
+
+function setCronUrlInputs(urls) {
+    document.getElementById('cronUrlRefresh').value = urls?.refresh || '請先點擊 Generar Nuevo';
+    document.getElementById('cronUrlCheckAll').value = urls?.checkAll || '請先點擊 Generar Nuevo';
+}
+
+function openCronUrlModal(urls, message) {
+    document.getElementById('cronUrlModalMsg').textContent = message || 'Token 已更新，直接貼到 Cron：';
+    document.getElementById('cronUrlModalRefresh').value = urls.refresh || '';
+    document.getElementById('cronUrlModalCheckAll').value = urls.checkAll || '';
+    document.getElementById('cronUrlModal').style.display = 'block';
+}
+
+function closeCronUrlModal() {
+    document.getElementById('cronUrlModal').style.display = 'none';
+}
+
+async function copyTextInput(inputId) {
+    const el = document.getElementById(inputId);
+    if (!el || !el.value || el.value.includes('請先點擊')) return;
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(el.value);
+        } else {
+            el.select();
+            document.execCommand('copy');
+        }
+    } catch (e) {
+        console.error('copy failed', e);
+    }
+}
 
 function parseEmails(raw) {
     return String(raw || '')
@@ -147,39 +227,18 @@ async function loadBatchTokenStatus() {
 }
 
 async function rotateBatchToken() {
-    if (!confirm('Generate new token and invalidate old one immediately?')) return;
     try {
         const response = await fetch('/api/admin/monitor/batch-token/rotate', { method: 'POST' });
         const data = await response.json();
         if (!data.success) throw new Error(data.error || 'rotate failed');
         const token = data.token || '';
-        if (token) {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                try { await navigator.clipboard.writeText(token); } catch (e) {}
-            }
-            alert(`New token:\n\n${token}\n\nUpdate your cron URLs now.`);
-        }
+        if (!token) throw new Error('empty token');
+        const urls = buildCronUrls(token);
+        setCronUrlInputs(urls);
+        openCronUrlModal(urls, 'Nuevo token generado. Copia estas 2 URLs a tu cron.');
         await loadBatchTokenStatus();
     } catch (e) {
-        alert(`Rotate failed: ${e.message || e}`);
-    }
-}
-
-async function setBatchTokenManually() {
-    const token = prompt('Enter new token (min 16 chars):');
-    if (!token) return;
-    try {
-        const response = await fetch('/api/admin/monitor/batch-token/set', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token }),
-        });
-        const data = await response.json();
-        if (!data.success) throw new Error(data.error || 'set failed');
-        alert('Token updated. Update your cron URLs now.');
-        await loadBatchTokenStatus();
-    } catch (e) {
-        alert(`Set token failed: ${e.message || e}`);
+        openCronUrlModal({ refresh: '', checkAll: '' }, `Rotate failed: ${e.message || e}`);
     }
 }
 
@@ -340,6 +399,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 .toolbar { display:flex; gap:10px; padding:16px; align-items:center; flex-wrap:wrap; }
 .token-row { display:flex; gap:14px; padding:14px 16px 16px; align-items:center; flex-wrap:wrap; }
 .token-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.token-url-grid { display:grid; grid-template-columns:1fr; gap:10px; padding:0 16px 16px; }
+.token-url-grid label { display:flex; flex-direction:column; gap:6px; color:#334155; font-weight:600; }
+.url-row { display:flex; gap:8px; align-items:center; }
+.url-row input { flex:1; min-width:280px; border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; }
 .toolbar input,.toolbar select { padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; min-width:220px; }
 .summary { padding:0 16px 12px; color:#334155; font-weight:600; }
 .table-wrap { overflow:auto; padding:0 16px 16px; }
