@@ -128,7 +128,7 @@
             <span class="close" onclick="closeCronUrlModal()">&times;</span>
         </div>
         <div class="modal-body">
-            <p id="cronUrlModalMsg">請先點「Regenerar API Key」，再複製 Cron URL。</p>
+            <p id="cronUrlModalMsg">如果你之前已生成過，可直接複製；需要時再按 Regenerar API Key。</p>
             <div class="cron-copy-grid">
                 <button id="copyRefreshBtn" class="copy-box" type="button" onclick="copyCronUrl('refresh', this)">
                     <span class="copy-box-icon">
@@ -170,6 +170,7 @@
 {% block extra_js %}
 <script>
     let latestCronUrls = { refresh: '', checkAll: '' };
+    const BATCH_TOKEN_STORAGE_KEY = 'monitor_batch_token_plain';
 
     // 載入服務統計
     document.addEventListener('DOMContentLoaded', function() {
@@ -207,6 +208,52 @@
         };
     }
 
+    function readStoredBatchToken() {
+        try {
+            return localStorage.getItem(BATCH_TOKEN_STORAGE_KEY) || '';
+        } catch (_e) {
+            return '';
+        }
+    }
+
+    function writeStoredBatchToken(token) {
+        try {
+            if (token) {
+                localStorage.setItem(BATCH_TOKEN_STORAGE_KEY, token);
+            }
+        } catch (_e) {}
+    }
+
+    function clearStoredBatchToken() {
+        try {
+            localStorage.removeItem(BATCH_TOKEN_STORAGE_KEY);
+        } catch (_e) {}
+    }
+
+    function hydrateCronUrlsFromStorage(status) {
+        const stored = readStoredBatchToken();
+        if (!stored) {
+            latestCronUrls = { refresh: '', checkAll: '' };
+            return false;
+        }
+
+        if (!status?.configured) {
+            clearStoredBatchToken();
+            latestCronUrls = { refresh: '', checkAll: '' };
+            return false;
+        }
+
+        const last4 = String(status.token_last4 || '').trim();
+        if (last4 && !stored.endsWith(last4)) {
+            clearStoredBatchToken();
+            latestCronUrls = { refresh: '', checkAll: '' };
+            return false;
+        }
+
+        latestCronUrls = buildCronUrls(stored);
+        return true;
+    }
+
     function setCopied(button, copied = true) {
         if (!button) return;
         if (copied) {
@@ -240,7 +287,7 @@
     function openCronUrlModal(message) {
         const defaultMessage = latestCronUrls.checkAll
             ? '已準備好兩個 URL，直接複製即可。'
-            : '請先點「Regenerar API Key」，再複製 Cron URL。';
+            : '目前找不到可用的舊 token，請按 Regenerar API Key 生成一次。';
         document.getElementById('cronUrlModalMsg').textContent = message || defaultMessage;
         setCopied(document.getElementById('copyRefreshBtn'), false);
         setCopied(document.getElementById('copyCheckAllBtn'), false);
@@ -267,6 +314,7 @@
             const status = data.status || {};
             document.getElementById('batchTokenConfigured').textContent = status.configured ? 'Configurado' : 'No configurado';
             document.getElementById('batchTokenSource').textContent = status.source || '-';
+            hydrateCronUrlsFromStorage(status);
         } catch (error) {
             console.error('Batch token status error:', error);
             document.getElementById('batchTokenConfigured').textContent = 'Error';
@@ -288,6 +336,7 @@
             if (!token) {
                 throw new Error('empty token');
             }
+            writeStoredBatchToken(token);
             latestCronUrls = buildCronUrls(token);
             openCronUrlModal('Nuevo API Key generado. Copia las URLs para cron.');
             await loadBatchTokenStatus();
