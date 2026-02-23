@@ -110,9 +110,6 @@
         <div class="info-item">
             <strong>Fuente:</strong> <span id="batchTokenSource">-</span>
         </div>
-        <div class="info-item">
-            <strong>Token:</strong> <code id="batchTokenMasked">-</code>
-        </div>
         <div class="batch-token-actions">
             <button class="btn-token btn-token-primary" onclick="openCronUrlModal()">
                 <i class="fas fa-key"></i> API Key
@@ -131,11 +128,33 @@
             <span class="close" onclick="closeCronUrlModal()">&times;</span>
         </div>
         <div class="modal-body">
-            <p id="cronUrlModalMsg">Copie este endpoint completo para configurar en cron-job:</p>
-            <textarea id="cronEndpointValue" class="endpoint-text" rows="3" readonly>請先點「Regenerar API Key」</textarea>
-            <button id="copyEndpointBtn" class="btn-token btn-token-primary endpoint-btn" type="button" onclick="copyCronEndpoint(this)">
-                <i class="fas fa-copy"></i> Copiar Endpoint
-            </button>
+            <p id="cronUrlModalMsg">請先點「Regenerar API Key」，再複製 Cron URL。</p>
+            <div class="cron-copy-grid">
+                <button id="copyRefreshBtn" class="copy-box" type="button" onclick="copyCronUrl('refresh', this)">
+                    <span class="copy-box-icon">
+                        <svg class="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                            <rect x="5" y="5" width="10" height="10" rx="2"></rect>
+                        </svg>
+                        <svg class="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                            <path d="M5 12l5 5L19 8"></path>
+                        </svg>
+                    </span>
+                    <span class="copy-box-text">Copiar ITI Refresh URL</span>
+                </button>
+                <button id="copyCheckAllBtn" class="copy-box" type="button" onclick="copyCronUrl('checkAll', this)">
+                    <span class="copy-box-icon">
+                        <svg class="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                            <rect x="5" y="5" width="10" height="10" rx="2"></rect>
+                        </svg>
+                        <svg class="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                            <path d="M5 12l5 5L19 8"></path>
+                        </svg>
+                    </span>
+                    <span class="copy-box-text">Copiar Check All URL</span>
+                </button>
+            </div>
             <button class="btn-token btn-token-danger endpoint-btn" type="button" onclick="rotateBatchToken()">
                 <i class="fas fa-sync-alt"></i> Regenerar API Key
             </button>
@@ -150,7 +169,7 @@
 
 {% block extra_js %}
 <script>
-    let latestCronEndpoint = '';
+    let latestCronUrls = { refresh: '', checkAll: '' };
 
     // 載入服務統計
     document.addEventListener('DOMContentLoaded', function() {
@@ -179,29 +198,27 @@
         document.getElementById('lastUpdate').textContent = timeString;
     }
 
-    function buildCronEndpoint(token) {
+    function buildCronUrls(token) {
         const base = window.location.origin;
         const encoded = encodeURIComponent(token || '');
-        return `${base}/api/monitor/check-all?cron_key=${encoded}&pre_refresh=1&force_refresh=1`;
+        return {
+            refresh: `${base}/api/monitor/iti-refresh?cron_key=${encoded}&force=1`,
+            checkAll: `${base}/api/monitor/check-all?cron_key=${encoded}&pre_refresh=1&force_refresh=1`,
+        };
     }
 
-    function setCopyState(button, copied) {
+    function setCopied(button, copied = true) {
         if (!button) return;
         if (copied) {
-            button.innerHTML = '<i class="fas fa-check"></i> Copiado';
             button.classList.add('copied');
-            setTimeout(() => {
-                button.innerHTML = '<i class="fas fa-copy"></i> Copiar Endpoint';
-                button.classList.remove('copied');
-            }, 1200);
-            return;
+            setTimeout(() => button.classList.remove('copied'), 1400);
+        } else {
+            button.classList.remove('copied');
         }
-        button.innerHTML = '<i class="fas fa-copy"></i> Copiar Endpoint';
-        button.classList.remove('copied');
     }
 
-    async function copyCronEndpoint(button) {
-        const value = latestCronEndpoint || '';
+    async function copyCronUrl(kind, button) {
+        const value = latestCronUrls?.[kind] || '';
         if (!value) return;
         try {
             if (navigator.clipboard?.writeText) {
@@ -214,19 +231,19 @@
                 document.execCommand('copy');
                 temp.remove();
             }
-            setCopyState(button, true);
+            setCopied(button, true);
         } catch (error) {
             console.error('copy failed:', error);
         }
     }
 
     function openCronUrlModal(message) {
-        const defaultMessage = latestCronEndpoint
-            ? 'Copie este endpoint completo para configurar en cron-job:'
-            : '請先點「Regenerar API Key」生成可用 endpoint。';
+        const defaultMessage = latestCronUrls.checkAll
+            ? '已準備好兩個 URL，直接複製即可。'
+            : '請先點「Regenerar API Key」，再複製 Cron URL。';
         document.getElementById('cronUrlModalMsg').textContent = message || defaultMessage;
-        document.getElementById('cronEndpointValue').value = latestCronEndpoint || '請先點「Regenerar API Key」';
-        setCopyState(document.getElementById('copyEndpointBtn'), false);
+        setCopied(document.getElementById('copyRefreshBtn'), false);
+        setCopied(document.getElementById('copyCheckAllBtn'), false);
         document.getElementById('cronUrlModal').style.display = 'block';
     }
 
@@ -250,12 +267,10 @@
             const status = data.status || {};
             document.getElementById('batchTokenConfigured').textContent = status.configured ? 'Configurado' : 'No configurado';
             document.getElementById('batchTokenSource').textContent = status.source || '-';
-            document.getElementById('batchTokenMasked').textContent = status.token_masked || '-';
         } catch (error) {
             console.error('Batch token status error:', error);
             document.getElementById('batchTokenConfigured').textContent = 'Error';
             document.getElementById('batchTokenSource').textContent = '-';
-            document.getElementById('batchTokenMasked').textContent = '-';
         }
     }
 
@@ -273,8 +288,8 @@
             if (!token) {
                 throw new Error('empty token');
             }
-            latestCronEndpoint = buildCronEndpoint(token);
-            openCronUrlModal('Nuevo API Key generado. Copia el endpoint para tu cron-job.');
+            latestCronUrls = buildCronUrls(token);
+            openCronUrlModal('Nuevo API Key generado. Copia las URLs para cron.');
             await loadBatchTokenStatus();
         } catch (error) {
             console.error('Rotate token error:', error);
@@ -357,28 +372,60 @@
         flex-wrap: wrap;
         margin-top: 0.5rem;
     }
-    .endpoint-text {
-        width: 100%;
-        border: 1px solid #cbd5e1;
-        border-radius: 10px;
-        padding: 12px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        font-size: 13px;
-        color: #0f172a;
-        background: #f8fafc;
+    .cron-copy-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
         margin-bottom: 10px;
+    }
+    .copy-box {
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        border-radius: 10px;
+        padding: 10px 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        text-align: left;
+        transition: all 0.15s ease;
+    }
+    .copy-box:hover {
+        border-color: #93c5fd;
+        background: #eff6ff;
+    }
+    .copy-box.copied {
+        border-color: #22c55e;
+        background: #ecfdf5;
+    }
+    .copy-box-icon {
+        width: 20px;
+        height: 20px;
+        color: #2563eb;
+        position: relative;
+        flex: 0 0 20px;
+    }
+    .copy-box .icon-copy,
+    .copy-box .icon-check {
+        position: absolute;
+        inset: 0;
+        transition: opacity 0.15s ease;
+    }
+    .copy-box .icon-copy { opacity: 1; }
+    .copy-box .icon-check { opacity: 0; color: #16a34a; }
+    .copy-box.copied .icon-copy { opacity: 0; }
+    .copy-box.copied .icon-check { opacity: 1; }
+    .copy-box-text {
+        font-weight: 700;
+        color: #0f172a;
     }
     .endpoint-btn {
         width: 100%;
-        margin-bottom: 10px;
+        margin-bottom: 0;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
-    }
-    .endpoint-btn.copied {
-        background: #16a34a;
-        color: #fff;
     }
 
     .btn-token {
