@@ -110,11 +110,11 @@
     </div>
 </div>
 
-<div id="cronUrlModal" class="modal" style="display:none;">
-    <div class="modal-content monitor-modal">
+<div id="cronUrlModal" class="modal api-key-modal" style="display:none;">
+    <div class="modal-content monitor-modal api-key-content">
         <div class="modal-header">
             <h3><i class="fas fa-key"></i> API Key</h3>
-            <span class="close" onclick="closeCronUrlModal()">&times;</span>
+            <button class="modal-close" type="button" onclick="closeCronUrlModal()">&times;</button>
         </div>
         <div class="modal-body">
             <p id="cronUrlModalMsg" class="summary" style="padding:0;">如果你之前已生成過，可直接複製；需要時再按 Regenerar API Key。</p>
@@ -233,12 +233,19 @@ function openCronUrlModal(message) {
     document.getElementById('cronUrlModalMsg').textContent = message || defaultMessage;
     setCopied(document.getElementById('copyRefreshBtn'), false);
     setCopied(document.getElementById('copyCheckAllBtn'), false);
-    document.getElementById('cronUrlModal').style.display = 'block';
+    document.getElementById('cronUrlModal').style.display = 'flex';
 }
 
 function closeCronUrlModal() {
     document.getElementById('cronUrlModal').style.display = 'none';
 }
+
+document.addEventListener('click', function (e) {
+    const modal = document.getElementById('cronUrlModal');
+    if (modal && e.target === modal) {
+        closeCronUrlModal();
+    }
+});
 
 async function copyCronUrl(kind, button) {
     const value = latestCronUrls?.[kind] || '';
@@ -461,6 +468,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 .toolbar { display:flex; gap:10px; padding:16px; align-items:center; flex-wrap:wrap; }
 .token-row { display:flex; gap:14px; padding:14px 16px 16px; align-items:center; flex-wrap:wrap; }
 .token-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.api-key-modal { align-items:center; justify-content:center; padding:20px; }
+.api-key-modal .api-key-content { width:min(620px,94vw) !important; max-width:620px !important; margin:0 !important; margin-left:0 !important; transform:none !important; border:1px solid #dbe5f3; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(15,23,42,.3); }
+.api-key-modal .modal-header { background:linear-gradient(135deg,#2557d6 0%,#6b5fd8 100%); border-bottom:none; padding:16px 20px; }
+.api-key-modal .modal-header h3 { color:#fff; font-weight:800; letter-spacing:.2px; }
+.api-key-modal .modal-header .modal-close { color:#fff; background:rgba(255,255,255,.2); }
+.api-key-modal .modal-header .modal-close:hover { background:rgba(255,255,255,.35); }
+.api-key-modal .modal-body { padding:20px; }
+.api-key-modal #cronUrlModalMsg { margin:0 0 14px 0; color:#334155; font-size:15px; font-weight:700; line-height:1.4; }
+.api-key-modal .modal-footer { padding:12px 20px 16px; }
 .cron-copy-grid { display:grid; grid-template-columns:1fr; gap:10px; margin-bottom:10px; }
 .copy-box { border:1px solid #cbd5e1; background:#f8fafc; border-radius:10px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer; text-align:left; transition:all .15s ease; }
 .copy-box:hover { border-color:#93c5fd; background:#eff6ff; }
