@@ -59,6 +59,16 @@ def compute_result_hash(result: Dict) -> str:
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
+def _get_container_identity(container: Dict) -> str:
+    """Prefer stable container number for comparison, fallback to document code."""
+    if not isinstance(container, dict):
+        return ""
+    container_no = str(container.get('glosa_codigo') or "").strip().upper()
+    if container_no:
+        return container_no
+    return str(container.get('codigo') or "").strip().upper()
+
+
 def normalize_telegram_mode(mode: Optional[str]) -> str:
     """Normalize telegram mode to text/image/both."""
     if not mode:
@@ -764,6 +774,8 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         # 3. 獲取文檔數據（手動實現，使用傳入的 cookies）
         url = f"https://zvirtual.zofri.cl/controller?accion=busquedaDocumentosObtener&idSolicitud={ticket}&"
         
+        df_zofri = None
+        received_valid_doc_payload = False
         for attempt in range(12):
             time.sleep(2)
             try:
@@ -776,17 +788,15 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                     continue
                 
                 # 處理數據（需要傳遞 cookies_dict）
+                received_valid_doc_payload = True
                 df_zofri = process_data(j, cookies_dict)
                 if df_zofri is not None and not df_zofri.empty:
                     break
             except:
                 continue
         else:
-            return True, {
-                'containers': [],
-                'matched_count': 0,
-                'unmatched_count': 0
-            }, ""
+            if not received_valid_doc_payload:
+                return False, {}, "無法取得有效 ZOFRI 文件資料（保留上次結果）"
         
         if df_zofri is None or df_zofri.empty:
             return True, {
@@ -975,27 +985,27 @@ def has_result_changed(last_result: Optional[str], current_result: Dict) -> bool
             containers = data.get('containers', [])
             status_map = {}
             for c in containers:
-                codigo = c.get('codigo', '')
-                if codigo:  # 確保 codigo 不為空
+                container_id = _get_container_identity(c)
+                if container_id:  # 確保 codigo 不為空
                     matched = c.get('matched', False)
-                    status_map[codigo] = matched
+                    status_map[container_id] = matched
             return status_map
         
         last_map = create_status_map(last_data)
         current_map = create_status_map(current_result)
         
         # 找出共同存在的容器（兩次檢查都存在的容器）
-        common_codes = set(last_map.keys()) & set(current_map.keys())
+        common_ids = set(last_map.keys()) & set(current_map.keys())
         
         # 如果有新增的容器（不在上次結果中的），發送
-        new_codes = set(current_map.keys()) - set(last_map.keys())
-        if new_codes:
+        new_ids = set(current_map.keys()) - set(last_map.keys())
+        if new_ids:
             return True
         
         # 檢查共同存在的容器，是否有從 unmatched → matched 的變化
-        for codigo in common_codes:
-            last_matched = last_map.get(codigo)
-            current_matched = current_map.get(codigo)
+        for container_id in common_ids:
+            last_matched = last_map.get(container_id)
+            current_matched = current_map.get(container_id)
             
             # 如果上次未匹配，本次匹配了 → 需要發送
             if last_matched is False and current_matched is True:

@@ -37,6 +37,21 @@ def _serialize_for_json(obj):
         return obj
 
 
+def _extract_container_count(raw_result) -> int:
+    """Best-effort container count from stored or current result payload."""
+    try:
+        data = raw_result
+        if isinstance(raw_result, str):
+            data = json.loads(raw_result)
+        if isinstance(data, dict):
+            containers = data.get('containers', [])
+            if isinstance(containers, list):
+                return len(containers)
+    except Exception:
+        pass
+    return 0
+
+
 # 任務狀態
 TASK_STATUS_PENDING = 'pending'
 TASK_STATUS_RUNNING = 'running'
@@ -497,6 +512,7 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                 telegram_attempted = False
                 telegram_sent_successfully = None
                 telegram_error_msg = None
+                preserve_last_result = False
                 
                 try:
                     from services.monitor_service import (
@@ -508,10 +524,16 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                     
                     # 檢查是否有數據變化
                     should_send = has_result_changed(last_result, result)
+                    last_count = _extract_container_count(last_result)
+                    current_count = _extract_container_count(result)
+                    if last_count > 0 and current_count == 0:
+                        should_send = False
+                        preserve_last_result = True
+                        print(f"[Async Task] ℹ️ 本次結果為空且上次有資料，保留 last_check_result，跳過通知")
                     notify_email = True if task_config.get('notify_email') is None else bool(task_config.get('notify_email'))
                     notify_telegram = bool(task_config.get('notify_telegram'))
                     
-                    if notify_email and last_email_hash != result_hash:
+                    if notify_email and should_send and last_email_hash != result_hash:
                         email_attempted = True
                         send_success, send_message = send_notification_email(
                             task_config.get('notification_emails', []),
@@ -525,7 +547,7 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                         email_sent_successfully = True
                         print(f"[Async Task] ℹ️ 郵件已對此結果發送，跳過")
                     
-                    if notify_telegram and last_telegram_hash != result_hash:
+                    if notify_telegram and should_send and last_telegram_hash != result_hash:
                         telegram_attempted = True
                         report_url = build_monitor_report_url(
                             task_config.get('api_key'),
@@ -570,8 +592,11 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                     
                     # 更新 last_check_result 和通道發送記錄
                     try:
-                        updates = ['last_check_time = ?', 'last_check_result = ?']
-                        params = [updated_at, result_json]
+                        updates = ['last_check_time = ?']
+                        params = [updated_at]
+                        if not preserve_last_result:
+                            updates.append('last_check_result = ?')
+                            params.append(result_json)
                         
                         if email_attempted and email_sent_successfully:
                             updates.append('last_email_result_hash = ?')
@@ -609,8 +634,11 @@ def _run_task(task_id: str, task_type: str, task_config: Dict, task_data: Dict):
                     
                     # 即使通知失敗，也更新 last_check_result（通道會依 hash 重試）
                     try:
-                        updates = ['last_check_time = ?', 'last_check_result = ?']
-                        params = [updated_at, result_json]
+                        updates = ['last_check_time = ?']
+                        params = [updated_at]
+                        if not preserve_last_result:
+                            updates.append('last_check_result = ?')
+                            params.append(result_json)
                         
                         if email_attempted and email_sent_successfully:
                             updates.append('last_email_result_hash = ?')

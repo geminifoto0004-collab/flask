@@ -729,6 +729,20 @@ def check_monitor_api():
             # 同步執行模式：對比上次結果，判斷是否有變化
             last_result = task_config.get('last_check_result')
             should_send = has_result_changed(last_result, result)
+            preserve_last_result = False
+            last_count = 0
+            if last_result:
+                try:
+                    last_data_for_count = json.loads(last_result) if isinstance(last_result, str) else last_result
+                    if isinstance(last_data_for_count, dict):
+                        last_count = len(last_data_for_count.get('containers', []) or [])
+                except Exception:
+                    last_count = 0
+            current_count = len(result.get('containers', []) or [])
+            if last_count > 0 and current_count == 0:
+                should_send = False
+                preserve_last_result = True
+                print(f"[監控API] ℹ️ 本次結果為空且上次有資料，保留 last_check_result，跳過通知")
             result_hash = compute_result_hash(result)
             
             print(f"[監控API] 任務ID: {task_config['id']}, 應該發送: {should_send}")
@@ -743,7 +757,7 @@ def check_monitor_api():
             email_error = None
             email_attempted = False
             if notify_email:
-                if task_config.get('last_email_result_hash') != result_hash:
+                if should_send and task_config.get('last_email_result_hash') != result_hash:
                     print(f"[監控API] 準備發送郵件，收件人: {task_config['notification_emails']}")
                     send_success, send_message = send_notification_email(
                         task_config['notification_emails'],
@@ -756,13 +770,16 @@ def check_monitor_api():
                     print(f"[監控API] 郵件發送結果: {send_success}, 消息: {send_message}")
                 else:
                     email_sent = True
-                    print(f"[監控API] 郵件已對此結果發送，跳過")
+                    if should_send:
+                        print(f"[監控API] 郵件已對此結果發送，跳過")
+                    else:
+                        print(f"[監控API] 結果無實質變化，跳過郵件發送")
             
             telegram_sent = None
             telegram_error = None
             telegram_attempted = False
             if notify_telegram:
-                if task_config.get('last_telegram_result_hash') != result_hash:
+                if should_send and task_config.get('last_telegram_result_hash') != result_hash:
                     print(f"[監控API] 準備發送 Telegram 通知")
                     send_success, send_message = send_notification_telegram(
                         task_config.get('telegram_bot_token'),
@@ -777,7 +794,10 @@ def check_monitor_api():
                     print(f"[監控API] Telegram 發送結果: {send_success}, 消息: {send_message}")
                 else:
                     telegram_sent = True
-                    print(f"[監控API] Telegram 已對此結果發送，跳過")
+                    if should_send:
+                        print(f"[監控API] Telegram 已對此結果發送，跳過")
+                    else:
+                        print(f"[監控API] 結果無實質變化，跳過 Telegram 發送")
             
             # 計算變化數量（用於響應信息）
             new_matches_count = 0
@@ -803,8 +823,11 @@ def check_monitor_api():
             
             conn = get_db_connection()
             cursor = conn.cursor()
-            updates = ['last_check_time = ?', 'last_check_result = ?']
-            params = [check_time_str, json.dumps(result)]
+            updates = ['last_check_time = ?']
+            params = [check_time_str]
+            if not preserve_last_result:
+                updates.append('last_check_result = ?')
+                params.append(json.dumps(result))
             
             if notify_email and email_attempted and email_sent:
                 updates.append('last_email_result_hash = ?')
