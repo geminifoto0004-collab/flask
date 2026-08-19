@@ -960,6 +960,19 @@ def _load_home_orders_from_active_source(current_role, current_user_id):
         conn.close()
 
 
+def _cloud_provider_call(method_name, *args, **kwargs):
+    """Call one Render/TiDB read method without changing LAN/SQLite behavior."""
+    provider = get_order_data_provider()
+    if provider is None:
+        if cloud_mode_enabled():
+            raise RuntimeError('Render ORDER data provider is not registered')
+        return None
+    method = getattr(provider, method_name, None)
+    if not callable(method):
+        raise RuntimeError(f'OrderDataProvider must implement {method_name}() in cloud mode')
+    return method(*args, **kwargs)
+
+
 @tracking_bp.route('/api/orders/all-for-filter', methods=['GET'])
 @api_login_required
 def api_orders_all_for_filter():
@@ -1076,14 +1089,29 @@ def _load_customer_history_dataset(conn, customer_name, current_role, current_us
 @tracking_bp.route('/api/customers/history-orders', methods=['GET'])
 @api_login_required
 def api_customer_history_orders():
-    if cloud_mode_enabled():
-        return jsonify({'success': False, 'error': '云端客户历史查询尚未接通'}), 400
     customer_input = ' '.join(str(request.args.get('customer_name') or '').strip().split())
     if not customer_input:
         return jsonify({'success': False, 'error': '缺少客户名称'}), 400
     history_scope = _normalize_guest_history_scope(request.args.get('scope') or 'current')
     include_cancelled = str(request.args.get('include_cancelled') or '').strip().lower() in {'1','true','yes','on'}
     ctx = get_current_user_context()
+    if cloud_mode_enabled():
+        try:
+            result = _cloud_provider_call(
+                'get_customer_history', customer_input, history_scope, include_cancelled,
+                ctx.get('role', 'viewer'), ctx.get('id')
+            ) or {}
+        except Exception as exc:
+            return jsonify({'success': False, 'error': f'雲端客戶資料載入失敗: {exc}'}), 503
+        rows = list(result.get('data') or [])
+        customer_name = result.get('customer_name') or customer_input
+        response = jsonify({
+            'success': True, 'customer_name': customer_name, 'scope': history_scope,
+            'include_cancelled': bool(include_cancelled), 'total': len(rows), 'data': rows
+        })
+        response.headers['Cache-Control'] = 'no-store, private, max-age=0'
+        return response
+
     conn = get_db()
     try:
         access_all, user_id = _customer_report_access_context()
@@ -5357,6 +5385,15 @@ def api_customer_report_download(file_id):
 @api_login_required
 def api_order_detail(order_number):
     """獲取訂單詳情API"""
+    if cloud_mode_enabled():
+        try:
+            order = _cloud_provider_call('get_order_detail', order_number)
+        except Exception as exc:
+            return jsonify({'success': False, 'error': f'雲端訂單資料載入失敗: {exc}'}), 503
+        if not order:
+            return jsonify({'success': False, 'error': '訂單不存在', 'code': 'NOT_FOUND'}), 404
+        return jsonify({'success': True, 'data': order})
+
     conn = get_db()
     cursor = conn.cursor()
     
@@ -5540,6 +5577,15 @@ def api_create_workflow():
 @api_login_required
 def api_workflow_detail(workflow_number):
     """獲取流程詳情API（包含時間軸）"""
+    if cloud_mode_enabled():
+        try:
+            workflow = _cloud_provider_call('get_workflow_detail', workflow_number)
+        except Exception as exc:
+            return jsonify({'success': False, 'error': f'雲端流程資料載入失敗: {exc}'}), 503
+        if not workflow:
+            return jsonify({'success': False, 'error': '流程不存在', 'code': 'NOT_FOUND'}), 404
+        return jsonify({'success': True, 'data': workflow})
+
     conn = get_db()
     cursor = conn.cursor()
     
@@ -6034,6 +6080,12 @@ def api_transfer_workflow_handler(workflow_number):
 @tracking_bp.route('/api/workflows/<workflow_number>/files', methods=['GET'])
 @login_required
 def api_get_workflow_files(workflow_number):
+    # Render uses the same UI but has no LAN file system. Published cloud media is
+    # served by the public-share/B2 path, not by this local attachment API.
+    if cloud_mode_enabled():
+        return jsonify({'success': True, 'data': {
+            'workflow_number': workflow_number, 'files': [], 'total': 0
+        }})
     # visual=1 always re-queries current SQLite rows and current source-file versions.
     conn = get_db()
     cursor = conn.cursor()
@@ -6840,6 +6892,13 @@ def api_search_customers():
     
     if not query or len(query) < 1:
         return jsonify({'success': True, 'data': []})
+
+    if cloud_mode_enabled():
+        try:
+            customers = _cloud_provider_call('search_customers', query, 10) or []
+            return jsonify({'success': True, 'data': list(customers)})
+        except Exception as exc:
+            return jsonify({'success': False, 'error': f'雲端客戶搜尋失敗: {exc}'}), 503
     
     conn = get_db()
     cursor = conn.cursor()
@@ -8713,6 +8772,25 @@ def api_batch_delete_orders():
 def api_global_search():
     """全局搜索API - 搜索当前权限范围内的流程，并补充无流程订单"""
     keyword = request.args.get('q', '').strip()
+
+    if cloud_mode_enabled():
+        ctx = get_current_user_context()
+        try:
+            rows = _load_home_orders_from_active_source(ctx.get('role', 'viewer'), ctx.get('id'))
+        except Exception as exc:
+            return jsonify({'success': False, 'error': f'雲端搜尋失敗: {exc}'}), 503
+        needle = keyword.casefold()
+        if needle:
+            rows = [row for row in rows if needle in str(row.get('order_number') or '').casefold()
+                    or needle in str(row.get('workflow_number') or '').casefold()
+                    or needle in str(row.get('customer_name') or '').casefold()]
+        else:
+            rows = [row for row in rows if str(row.get('current_status') or '') not in {STATUS_KEYS['COMPLETED'], STATUS_KEYS['CANCELLED']}]
+        rows = rows[:200]
+        return jsonify({
+            'success': True, 'type': 'search' if keyword else 'recent', 'keyword': keyword,
+            'orders': rows, 'total': len(rows), 'limit_reached': len(rows) >= 200
+        })
 
     conn = get_db()
     cursor = conn.cursor()
@@ -11434,6 +11512,10 @@ def api_upload_order_files(order_number):
 @tracking_bp.route('/api/orders/<order_number>/files', methods=['GET'])
 @login_required
 def api_get_order_files(order_number):
+    if cloud_mode_enabled():
+        return jsonify({'success': True, 'data': {
+            'order_number': order_number, 'files': [], 'total': 0
+        }})
     # visual=1 always re-queries current SQLite rows and current source-file versions.
     conn = get_db()
     cursor = conn.cursor()
