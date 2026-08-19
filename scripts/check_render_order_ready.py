@@ -2,8 +2,8 @@
 """Public smoke check for the Render-hosted read-only ORDER mount.
 
 No login credentials or sync keys are required. This verifies that Render is alive,
-the ORDER cloud/TiDB gateway initializes, and /order is actually mounted and sends
-an unauthenticated browser to the existing login flow.
+the ORDER cloud/TiDB gateway initializes, /order routes into ORDER, and the native
+ORDER login page is being served instead of the parent Flask authorization login.
 """
 from __future__ import annotations
 
@@ -33,8 +33,8 @@ def check_once() -> list[str]:
         r = requests.get(BASE_URL + "/order", timeout=(5, 30), allow_redirects=False)
         location = r.headers.get("location") or ""
         if r.status_code not in (301, 302, 303, 307, 308):
-            problems.append(f"/order expected login redirect, got HTTP {r.status_code}")
-        elif "/login" not in location:
+            problems.append(f"/order expected ORDER redirect, got HTTP {r.status_code}")
+        elif "/tracking" not in location:
             problems.append(f"/order redirected somewhere unexpected: {location}")
         else:
             print("Render /order mount: OK")
@@ -46,12 +46,24 @@ def check_once() -> list[str]:
         location = r.headers.get("location") or ""
         if r.status_code not in (200, 301, 302, 303, 307, 308):
             problems.append(f"/tracking/ returned HTTP {r.status_code}")
-        elif r.status_code != 200 and "/login" not in location:
+        elif r.status_code != 200 and "/tracking/login" not in location:
             problems.append(f"/tracking/ redirect unexpected: {location}")
         else:
             print("Render ORDER blueprint: OK")
     except Exception as exc:
         problems.append(f"/tracking request failed: {type(exc).__name__}: {exc}")
+
+    try:
+        r = requests.get(BASE_URL + "/tracking/login", timeout=(5, 30), allow_redirects=False)
+        body = r.text or ""
+        if r.status_code != 200:
+            problems.append(f"native ORDER login HTTP {r.status_code}")
+        elif "订单流程追踪系统" not in body and "欢迎登录" not in body:
+            problems.append("/tracking/login is not the native ORDER login page")
+        else:
+            print("Render native ORDER login: OK")
+    except Exception as exc:
+        problems.append(f"native ORDER login request failed: {type(exc).__name__}: {exc}")
 
     return problems
 
