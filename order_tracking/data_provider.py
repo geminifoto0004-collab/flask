@@ -27,6 +27,23 @@ class OrderDataProvider:
     def load_home_orders(self, role: str, user_id: Any):  # pragma: no cover - interface only
         raise NotImplementedError
 
+    # The methods below let the exact same ORDER routes/UI run against a cloud
+    # mirror. Local/LAN deployments do not register a provider, so they keep
+    # using the original SQLite code paths unchanged.
+    def get_order_detail(self, order_number: str):  # pragma: no cover - interface only
+        raise NotImplementedError
+
+    def get_workflow_detail(self, workflow_number: str):  # pragma: no cover - interface only
+        raise NotImplementedError
+
+    def search_customers(self, query: str, limit: int = 10):  # pragma: no cover - interface only
+        raise NotImplementedError
+
+    def get_customer_history(self, customer_name: str, history_scope: str = 'current',
+                             include_cancelled: bool = False, role: str = 'viewer',
+                             user_id: Any = None):  # pragma: no cover - interface only
+        raise NotImplementedError
+
     def get_last_synced_at(self) -> Optional[str]:
         return None
 
