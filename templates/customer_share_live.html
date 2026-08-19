@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estado de pedidos</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#20242c;font-family:Arial,"Helvetica Neue",sans-serif}.wrap{max-width:920px;margin:0 auto;padding:18px 12px 36px}.head{padding:20px 18px 15px;background:#fff;border:1px solid #e7e9ed;border-radius:16px;box-shadow:0 2px 12px rgba(20,28,40,.05)}.head small{color:#888e98}.head h1{margin:5px 0 0;font-size:25px}.order{margin-top:13px;padding:18px;background:#fff;border:1px solid #e7e9ed;border-radius:16px}.order-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.order-no{font-size:18px;font-weight:900}.status{display:inline-block;padding:6px 10px;border-radius:999px;background:#fff1d8;color:#a46100;font-size:12px;font-weight:800}.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:13px}.meta>div{padding:10px;background:#f7f8fa;border-radius:10px}.meta small{display:block;color:#8a9099;font-size:10px}.meta strong{display:block;margin-top:3px;font-size:12px}.wf{margin-top:12px;padding-top:12px;border-top:1px solid #eceef2}.wf-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.wf-title strong{font-size:14px}.timeline{display:flex;gap:8px;overflow-x:auto;padding:12px 0 2px}.step{min-width:110px;padding:9px;border-radius:10px;background:#f5f6f8}.step b{display:block;font-size:11px}.step span{display:block;margin-top:4px;color:#858b95;font-size:10px}.empty{padding:24px;text-align:center;color:#8a9099}@media(max-width:640px){.meta{grid-template-columns:1fr 1fr}.head h1{font-size:21px}.order{padding:14px}.order-top{display:block}.status{margin-top:8px}}
+</style>
+</head>
+<body><main class="wrap">
+<section class="head"><small>Estado de pedidos</small><h1>{{ space.customer.customer_name }}</h1></section>
+{% if space.orders %}
+  {% for order in space.orders %}
+  <article class="order">
+    <div class="order-top"><div class="order-no">Pedido {{ order.order_number }}</div><span class="status">{{ order.order_status or 'En proceso' }}</span></div>
+    <div class="meta">
+      <div><small>Fecha de pedido</small><strong>{{ order.order_date or '—' }}</strong></div>
+      <div><small>Entrega prevista</small><strong>{{ order.expected_delivery_date or '—' }}</strong></div>
+      <div><small>Producto</small><strong>{{ order.product_name or order.product_code or '—' }}</strong></div>
+    </div>
+    {% for wf in order.workflows %}
+    <section class="wf">
+      <div class="wf-title"><strong>{{ wf.product_name or wf.product_code or wf.workflow_number or 'Proceso' }}</strong><span class="status">{{ wf.status or 'En proceso' }}</span></div>
+      <div class="meta">
+        <div><small>Tipo</small><strong>{{ wf.production_type or '—' }}</strong></div>
+        <div><small>Código</small><strong>{{ wf.product_code or '—' }}</strong></div>
+        <div><small>Cantidad</small><strong>{{ wf.quantity or '—' }}</strong></div>
+      </div>
+      {% if wf.timeline %}<div class="timeline">{% for item in wf.timeline %}<div class="step"><b>{{ item.status or 'Actualización' }}</b><span>{{ item.action_date or '' }}</span></div>{% endfor %}</div>{% endif %}
+    </section>
+    {% endfor %}
+  </article>
+  {% endfor %}
+{% else %}<div class="empty">No hay pedidos disponibles.</div>{% endif %}
+</main></body></html>
