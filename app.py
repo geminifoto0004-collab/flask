@@ -44,6 +44,50 @@ app.register_blueprint(b2_test_bp)
 # 如果要在 PythonAnywhere 上使用代理功能，取消下面的註釋
 app.register_blueprint(email_proxy_bp)
 
+# ========== Render ORDER（TiDB 唯讀） ==========
+# Render 直接掛載同一份 vendored order_tracking UI。
+# 本機正式 ORDER 不會走到這裡；只有 Render（或明確開啟環境變數）才啟用。
+import os as _os
+
+def _env_true(name, default=False):
+    raw = _os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {'1', 'true', 'yes', 'on', 'y'}
+
+_RENDER_ORDER_ENABLED = _env_true(
+    'TRACKING_RENDER_ORDER_ENABLED',
+    bool(_os.environ.get('RENDER') or _os.environ.get('RENDER_SERVICE_NAME'))
+)
+
+if _RENDER_ORDER_ENABLED:
+    # ORDER on Render is always cloud + read-only. Official writes stay in local SQLite.
+    app.config['TRACKING_CLOUD_MODE'] = True
+    app.config['TRACKING_CLOUD_READ_ONLY'] = True
+    app.config['TRACKING_TIDB_PROVIDER_ENABLED'] = True
+    app.config['TRACKING_PUBLIC_SHARE_BACKGROUND_SYNC_ENABLED'] = False
+
+    from order_tracking import init_app as init_order_tracking_app, register_cloud_db_connection_factory
+    from services.order_tracking_render_provider import RenderOrderDataProvider
+
+    # Raw ORDER cloud DB calls, when needed, use the same TiDB connection wrapper as Render.
+    # Cloud mode never falls back to a Render-local SQLite file.
+    register_cloud_db_connection_factory(app, get_db_connection)
+    init_order_tracking_app(app, data_provider=RenderOrderDataProvider())
+    print('✅ Render ORDER mounted at /tracking (TiDB read-only)')
+
+    @app.before_request
+    def _render_order_parent_login_gate():
+        # ORDER reuses the existing Render login/session. Do not maintain a second cloud password store.
+        if request.path.startswith('/tracking'):
+            if not session.get('logged_in') or not session.get('user_id'):
+                target = request.full_path if request.query_string else request.path
+                if not target.startswith('/') or target.startswith('//'):
+                    target = '/tracking'
+                session['post_login_next'] = target
+                return redirect(url_for('login'))
+        return None
+
 # ========== 自動初始化資料庫 ==========
 # 在應用啟動時自動初始化資料庫（適用於 Render 等生產環境）
 # 使用 before_request 但只執行一次
@@ -284,6 +328,11 @@ def api_check_license():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """統一登入入口"""
+    if request.method == 'GET':
+        next_url = (request.args.get('next') or '').strip()
+        if next_url.startswith('/') and not next_url.startswith('//'):
+            session['post_login_next'] = next_url
+
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
@@ -372,7 +421,7 @@ def login():
                 print(f"❌ 創建會話記錄失敗（不影響登入）: {e}")
                 print(f"   詳細錯誤: {traceback.format_exc()}")
             
-            return redirect(url_for('admin_dashboard'))
+            return redirect(session.pop('post_login_next', None) or url_for('admin_dashboard'))
         else:
             print("Super Admin登入失敗，嘗試普通用戶驗證")
         
@@ -404,7 +453,10 @@ def login():
                 print(f"❌ 創建會話記錄失敗（不影響登入）: {e}")
                 print(f"   詳細錯誤: {traceback.format_exc()}")
             
-            # 根據角色重定向到不同頁面
+            # 如果是從 ORDER 進來，登入後回到 ORDER；否則維持原本角色首頁。
+            post_login_next = session.pop('post_login_next', None)
+            if post_login_next:
+                return redirect(post_login_next)
             if result['role'] == 'admin':
                 return redirect(url_for('admin_dashboard'))
             else:
@@ -413,6 +465,17 @@ def login():
             return render_template('user/login.html', error='Correo electrónico o contraseña incorrectos')
     
     return render_template('user/login.html')
+
+
+@app.route('/order')
+def order_entry():
+    """Stable entry point for the Render-hosted read-only ORDER UI."""
+    if not _RENDER_ORDER_ENABLED:
+        return jsonify({'success': False, 'error': 'Render ORDER is disabled'}), 404
+    if not session.get('logged_in') or not session.get('user_id'):
+        session['post_login_next'] = '/order'
+        return redirect(url_for('login'))
+    return redirect('/tracking')
 
 
 @app.route('/logout')
