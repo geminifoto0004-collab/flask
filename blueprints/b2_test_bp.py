@@ -1,11 +1,15 @@
-"""Temporary isolated Backblaze B2 connectivity tests and ORDER cloud phase-1 API."""
+"""Temporary Backblaze B2 tests plus isolated ORDER cloud gateway routes.
+
+The ORDER cloud routes remain here temporarily because this blueprint is already
+registered by app.py. Business/storage logic lives in services/order_cloud_service.py.
+"""
 
 import os
 import uuid
 
 import boto3
 from botocore.exceptions import ClientError
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify, render_template, request
 
 b2_test_bp = Blueprint("b2_test", __name__)
 
@@ -152,22 +156,34 @@ def share_test_image():
 
 
 # ---------------------------------------------------------------------------
-# ORDER Cloud Phase 1
-# Kept inside this already-registered blueprint so app.py remains untouched.
-# TiDB decides what is active/visible. B2 asset sync is Phase 2.
+# ORDER Cloud Gateway
+# Kept inside this already-registered blueprint temporarily so app.py remains
+# untouched. Only safe publishing data reaches TiDB.
 # ---------------------------------------------------------------------------
 _order_cloud_initialized = False
 
 
-def _order_cloud_auth_error():
+def _order_cloud_auth_source():
+    """Authenticate caller and derive CN/CL identity from Render-side secrets.
+
+    ORDER_SYNC_API_KEY remains as a temporary backwards-compatible key while the
+    user transitions to separate CN/CL credentials.
+    """
     import hmac
-    expected = (os.environ.get("ORDER_SYNC_API_KEY") or "").strip()
+
     supplied = (request.headers.get("X-Order-Sync-Key") or "").strip()
-    if not expected:
-        return jsonify({"ok": False, "error": "ORDER_SYNC_API_KEY is not configured"}), 503
-    if not supplied or not hmac.compare_digest(supplied, expected):
-        return jsonify({"ok": False, "error": "unauthorized"}), 401
-    return None
+    configured = [
+        ("CN", (os.environ.get("ORDER_SYNC_API_KEY_CN") or "").strip()),
+        ("CL", (os.environ.get("ORDER_SYNC_API_KEY_CL") or "").strip()),
+        ("LEGACY", (os.environ.get("ORDER_SYNC_API_KEY") or "").strip()),
+    ]
+    active = [(source, key) for source, key in configured if key]
+    if not active:
+        return None, (jsonify({"ok": False, "error": "ORDER sync API key is not configured"}), 503)
+    for source, key in active:
+        if supplied and hmac.compare_digest(supplied, key):
+            return source, None
+    return None, (jsonify({"ok": False, "error": "unauthorized"}), 401)
 
 
 def _ensure_order_cloud_tables():
@@ -182,21 +198,21 @@ def _ensure_order_cloud_tables():
 def order_cloud_health():
     try:
         _ensure_order_cloud_tables()
-        return jsonify({"ok": True, "service": "order-cloud", "phase": 1})
+        return jsonify({"ok": True, "service": "order-cloud", "phase": 2})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @b2_test_bp.route("/api/order-cloud/sync/order", methods=["POST"])
 def order_cloud_sync_order():
-    auth_error = _order_cloud_auth_error()
+    source_site, auth_error = _order_cloud_auth_source()
     if auth_error:
         return auth_error
     try:
         _ensure_order_cloud_tables()
         from services.order_cloud_service import sync_order
         payload = request.get_json(silent=True) or {}
-        result = sync_order(payload)
+        result = sync_order(payload, source_site=source_site)
         return jsonify({"ok": True, "result": result})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -206,7 +222,7 @@ def order_cloud_sync_order():
 
 @b2_test_bp.route("/api/order-cloud/debug/order/<path:order_number>", methods=["GET"])
 def order_cloud_debug_order(order_number):
-    auth_error = _order_cloud_auth_error()
+    _source_site, auth_error = _order_cloud_auth_source()
     if auth_error:
         return auth_error
     try:
@@ -218,3 +234,82 @@ def order_cloud_debug_order(order_number):
         return jsonify({"ok": True, "order": result})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/debug/customer/<path:customer_key>", methods=["GET"])
+def order_cloud_debug_customer(customer_key):
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_service import get_customer_space
+        result = get_customer_space(customer_key)
+        if result is None:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        return jsonify({"ok": True, "space": result})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/share/create", methods=["POST"])
+def order_cloud_create_share():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_service import create_live_share
+        payload = request.get_json(silent=True) or {}
+        result = create_live_share(
+            payload.get("customer_key"),
+            source_site=source_site,
+            expires_hours=payload.get("expires_hours", 24),
+            permanent=bool(payload.get("permanent", False)),
+        )
+        token = result.pop("token")
+        expires_at = result.get("expires_at")
+        result["expires_at"] = expires_at.isoformat() if expires_at else None
+        result["share_url"] = request.host_url.rstrip("/") + "/share/" + token
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/share/revoke", methods=["POST"])
+def order_cloud_revoke_share():
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_service import revoke_live_share
+        payload = request.get_json(silent=True) or {}
+        changed = revoke_live_share(payload.get("token"))
+        return jsonify({"ok": True, "revoked": changed})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/share/<token>", methods=["GET"])
+def order_cloud_public_share(token):
+    """Public customer entry point. Token is the only credential."""
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_service import get_customer_space, resolve_live_share
+        share, state = resolve_live_share(token)
+        if state == "not_found":
+            return Response("Enlace no encontrado.", status=404, mimetype="text/plain")
+        if state == "expired":
+            return Response("Este enlace ha expirado.", status=410, mimetype="text/plain")
+        if state == "revoked":
+            return Response("Este enlace ya no está disponible.", status=410, mimetype="text/plain")
+        space = get_customer_space(share.get("customer_key"))
+        if not space:
+            return Response("No hay información disponible.", status=404, mimetype="text/plain")
+        return render_template("customer_share_live.html", space=space, share=share)
+    except Exception:
+        # Public route deliberately hides infrastructure/database details.
+        return Response("Servicio temporalmente no disponible.", status=503, mimetype="text/plain")
