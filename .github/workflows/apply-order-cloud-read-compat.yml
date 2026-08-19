@@ -1,0 +1,39 @@
+name: Apply ORDER cloud read compatibility
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'Install ORDER cloud read compatibility') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Patch shared ORDER routes
+        run: python scripts/patch_order_cloud_read_compat.py
+      - name: Compile provider modules
+        run: |
+          python -m py_compile order_tracking/data_provider.py
+          python -m py_compile services/order_tracking_render_provider.py
+      - name: Commit and push
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git add order_tracking/__init__.py
+          git commit -m "Install ORDER cloud read compatibility"
+          git push
