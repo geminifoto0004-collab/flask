@@ -1,0 +1,30 @@
+name: Render ORDER Smoke
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests
+      - name: Wait for Render deploy and verify ORDER
+        shell: bash
+        run: |
+          for i in $(seq 1 30); do
+            echo "Render ORDER smoke attempt $i/30"
+            if python scripts/check_render_order_ready.py; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Render ORDER did not become ready within 10 minutes"
+          exit 1
