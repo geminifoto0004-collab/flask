@@ -1,0 +1,668 @@
+/* 用戶管理頁面樣式 - 電腦端優化 */
+.user-management-container {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 1.5rem 2rem;
+    box-sizing: border-box;
+}
+
+/* 頁面標題 */
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 2px solid var(--border);
+}
+
+.header-left {
+    flex: 1;
+}
+
+.page-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 0.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.page-title svg {
+    color: var(--blue);
+}
+
+.page-subtitle {
+    color: var(--text-2);
+    font-size: 0.95rem;
+    margin: 0;
+}
+
+.header-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.user-management-container .btn,
+.user-management-modal .btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.user-management-container .btn-primary,
+.user-management-modal .btn-primary {
+    background: linear-gradient(135deg, #ee4d5a 0%, #d73a47 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(238, 77, 90, 0.3);
+}
+
+.user-management-container .btn-primary:hover,
+.user-management-modal .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(238, 77, 90, 0.4);
+}
+
+/* 搜索和篩選欄 */
+.filter-bar {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+}
+
+.user-management-container .search-box {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    transition: all 0.3s;
+}
+
+.user-management-container .search-box:focus-within {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.1);
+}
+
+.user-management-container .search-box svg {
+    color: var(--text-2);
+    margin-right: 0.75rem;
+    flex-shrink: 0;
+}
+
+.user-management-container .search-box input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 0.95rem;
+    color: var(--text);
+    background: transparent;
+}
+
+.user-management-container .search-box input::placeholder {
+    color: var(--text-3);
+}
+
+.user-management-container .filter-group {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.user-management-container .filter-select {
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: white;
+    color: var(--text);
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    min-width: 140px;
+}
+
+.user-management-container .filter-select:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.1);
+}
+
+/* 用戶表格容器 - 橫向滾動支持 */
+.users-table-wrapper {
+    width: 100%;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+}
+
+.users-table-container {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+}
+
+.users-table {
+    width: 100%;
+    min-width: 1400px;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.users-table thead {
+    background: var(--gray-bg);
+    border-bottom: 2px solid var(--border);
+}
+
+.users-table th {
+    padding: 1rem 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    background: var(--gray-bg);
+    z-index: 10;
+    box-sizing: border-box;
+}
+
+.users-table td {
+    padding: 0.875rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.9375rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+.users-table tbody tr {
+    transition: background 0.2s;
+}
+
+.users-table tbody tr:hover {
+    background: var(--bg-hover);
+}
+
+.users-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* 狀態和角色徽章 */
+.status-badge,
+.role-badge {
+    display: inline-block;
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+
+.status-badge.status-pending {
+    background: rgba(255, 149, 0, 0.1);
+    color: #ff9500;
+}
+
+.status-badge.status-active {
+    background: rgba(0, 200, 83, 0.1);
+    color: #00c853;
+}
+
+.status-badge.status-rejected {
+    background: rgba(211, 47, 47, 0.1);
+    color: #d32f2f;
+}
+
+.role-badge.role-admin {
+    background: rgba(238, 77, 90, 0.1);
+    color: #ee4d5a;
+}
+
+.role-badge.role-sales {
+    background: rgba(0, 200, 83, 0.1);
+    color: #00c853;
+}
+
+.role-badge.role-viewer {
+    background: rgba(153, 153, 153, 0.1);
+    color: #999999;
+}
+
+/* 操作按鈕 */
+.user-management-container .actions-cell {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.user-management-container .action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.user-management-container .btn-action,
+.user-management-container .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+    color: var(--text);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.user-management-container .btn-action:hover,
+.user-management-container .action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.user-management-container .btn-action.btn-approve,
+.user-management-container .action-btn.approve {
+    border-color: var(--status-success);
+    color: var(--status-success);
+}
+
+.user-management-container .btn-action.btn-approve:hover,
+.user-management-container .action-btn.approve:hover {
+    background: var(--status-success);
+    color: white;
+}
+
+.user-management-container .btn-action.btn-reject,
+.user-management-container .btn-action.btn-suspend,
+.user-management-container .action-btn.reject,
+.user-management-container .action-btn.suspend {
+    border-color: var(--status-danger);
+    color: var(--status-danger);
+}
+
+.user-management-container .btn-action.btn-reject:hover,
+.user-management-container .btn-action.btn-suspend:hover,
+.user-management-container .action-btn.reject:hover,
+.user-management-container .action-btn.suspend:hover {
+    background: var(--status-danger);
+    color: white;
+}
+
+.user-management-container .btn-action.btn-restore,
+.user-management-container .action-btn.restore {
+    border-color: #2196F3;
+    color: #2196F3;
+}
+
+.user-management-container .btn-action.btn-restore:hover,
+.user-management-container .action-btn.restore:hover {
+    background: #2196F3;
+    color: white;
+}
+
+.user-management-container .btn-action.btn-reset,
+.user-management-container .action-btn.reset {
+    border-color: var(--status-warning);
+    color: var(--status-warning);
+}
+
+.user-management-container .btn-action.btn-reset:hover,
+.user-management-container .action-btn.reset:hover {
+    background: var(--status-warning);
+    color: white;
+}
+
+.user-management-container .action-btn.delete {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.user-management-container .action-btn.delete:hover {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+.status-cell {
+    position: relative;
+}
+
+.role-text {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.875rem;
+    letter-spacing: 0.5px;
+}
+
+/* 內聯編輯樣式 */
+.inline-edit {
+    transition: all 0.2s;
+}
+
+.inline-edit:hover {
+    border-color: var(--blue) !important;
+    background: var(--bg-hover) !important;
+}
+
+.inline-edit:focus {
+    border-color: var(--blue) !important;
+    background: white !important;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(255, 36, 66, 0.1);
+}
+
+.inline-edit-select {
+    transition: all 0.2s;
+}
+
+.inline-edit-select:hover {
+    border-color: var(--blue) !important;
+    background: var(--bg-hover) !important;
+}
+
+.inline-edit-select:focus {
+    border-color: var(--blue) !important;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(255, 36, 66, 0.1);
+}
+
+.status-select {
+    font-weight: 500;
+}
+
+.status-select option[value="active"] {
+    color: var(--text-3);
+}
+
+.status-select option[value="pending"] {
+    color: var(--status-warning);
+}
+
+.status-select option[value="rejected"] {
+    color: var(--status-danger);
+}
+
+.user-management-container .btn-icon {
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: all 0.3s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.user-management-container .btn-icon:hover {
+    background: var(--bg-hover);
+    border-color: var(--blue);
+    color: var(--blue);
+    transform: translateY(-1px);
+}
+
+.user-management-container .btn-icon.btn-approve {
+    border-color: var(--status-success);
+    color: var(--status-success);
+}
+
+.user-management-container .btn-icon.btn-approve:hover {
+    background: var(--status-success);
+    color: white;
+}
+
+.user-management-container .btn-icon.btn-reject {
+    border-color: var(--status-danger);
+    color: var(--status-danger);
+}
+
+.user-management-container .btn-icon.btn-reject:hover {
+    background: var(--status-danger);
+    color: white;
+}
+
+.user-management-container .btn-icon.btn-edit {
+    border-color: var(--blue);
+    color: var(--blue);
+}
+
+.user-management-container .btn-icon.btn-edit:hover {
+    background: var(--blue);
+    color: white;
+}
+
+.user-management-container .btn-icon.btn-reset {
+    border-color: var(--status-warning);
+    color: var(--status-warning);
+}
+
+.user-management-container .btn-icon.btn-reset:hover {
+    background: var(--status-warning);
+    color: white;
+}
+
+/* Modal 樣式 */
+.user-management-modal.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.user-management-modal.modal-overlay.show {
+    display: flex;
+}
+
+.user-management-modal .modal-content {
+    max-width: 500px;
+    width: 90%;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.user-management-modal .modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.user-management-modal .modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--text);
+}
+
+.user-management-modal .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-2);
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.3s;
+}
+
+.user-management-modal .modal-close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.user-management-modal .modal-body {
+    padding: 1.5rem;
+}
+
+.user-management-modal .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.user-management-modal .form-group {
+    margin-bottom: 1.25rem;
+}
+
+.user-management-modal .form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: var(--text);
+    font-size: 0.9rem;
+}
+
+.user-management-modal .form-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    color: var(--text);
+    background: white;
+    transition: all 0.3s;
+}
+
+.user-management-modal .form-input:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.1);
+}
+
+.user-management-modal .approve-user-info {
+    background: var(--gray-bg);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.user-management-modal .info-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.user-management-modal .info-item:last-child {
+    border-bottom: none;
+}
+
+.user-management-modal .info-label {
+    font-weight: 600;
+    color: var(--text-2);
+}
+
+.user-management-modal .info-value {
+    color: var(--text);
+    font-weight: 500;
+}
+
+.user-management-modal .modal-footer {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    padding: 1.5rem;
+    border-top: 1px solid var(--border);
+}
+
+.user-management-modal .btn-secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.user-management-modal .btn-secondary:hover {
+    background: var(--bg-hover);
+    border-color: var(--blue);
+    color: var(--blue);
+}
+
+.user-management-modal .btn-danger {
+    background: var(--status-danger);
+    color: white;
+    border: 1px solid var(--status-danger);
+}
+
+.user-management-modal .btn-danger:hover {
+    background: #d32f2f;
+    border-color: #d32f2f;
+}
+
+/* 響應式設計 */
+@media (max-width: 1024px) {
+    .users-table {
+        font-size: 0.875rem;
+    }
+    
+    .users-table th,
+    .users-table td {
+        padding: 0.75rem 0.5rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .user-management-container {
+        padding: 1rem;
+    }
+    
+    .page-header {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .filter-bar {
+        flex-direction: column;
+    }
+    
+    .filter-group {
+        width: 100%;
+    }
+    
+    .filter-select {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .users-table-container {
+        overflow-x: auto;
+    }
+    
+    .users-table {
+        min-width: 800px;
+    }
+}

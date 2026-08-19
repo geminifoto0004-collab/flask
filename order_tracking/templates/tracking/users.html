@@ -1,0 +1,369 @@
+{% extends "tracking/base.html" %}
+
+{% block title %}用户管理{% endblock %}
+
+{% block content %}
+<div class="user-management-container user-management-page">
+    <!-- 頁面標題和操作欄 -->
+    <div class="page-header">
+        <div class="header-left">
+            <h1 class="page-title">用户管理</h1>
+            <p class="page-subtitle">管理系统用户账号和权限 - 共 <strong id="total-count">0</strong> 个用户</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-primary" onclick="openNewUserModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                新增用户
+            </button>
+        </div>
+    </div>
+
+    <!-- 搜索和篩選欄 -->
+    <div class="filter-bar">
+        <div class="search-box">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input type="text" id="search-input" placeholder="搜索用户名或姓名..." oninput="filterUsers()">
+        </div>
+        <div class="filter-group">
+            <select id="status-filter" class="filter-select" onchange="filterUsers()">
+                <option value="">所有状态</option>
+                <option value="pending">待审核</option>
+                <option value="active">已审核</option>
+                <option value="rejected">已拒绝</option>
+                <option value="suspended">已停权</option> 
+            </select>
+            <select id="role-filter" class="filter-select" onchange="filterUsers()">
+                <option value="">所有角色</option>
+                <option value="admin">主管</option>
+                <option value="sales">業務員</option>
+                <option value="viewer">查看者</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 用戶列表表格 -->
+    <div class="users-table-wrapper">
+        <div class="users-table-container">
+            <table class="users-table">
+                <colgroup>
+                    <col style="width: 80px;">
+                    <col style="width: 100px;">
+                    <col style="width: 150px;">
+                    <col style="width: 120px;">
+                    <col style="width: 100px;">
+                    <col style="width: 100px;">
+                    <col style="width: 160px;">
+                    <col style="width: 240px;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>员工ID</th>
+                        <th>用户名</th>
+                        <th>姓名</th>
+                        <th>角色</th>
+                        <th>状态</th>
+                        <th>注册时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+            <tbody id="users-table-body">
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-2);">加载中...</td>
+                </tr>
+            </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 新增/編輯用戶 Modal -->
+<div class="modal-overlay user-management-modal" id="newUserModal" onclick="if(event.target === this) closeModal()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="userModalTitle">新增用户</h3>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <form id="newUserForm">
+                <div class="form-group">
+                    <label class="form-label">用户名（登录账号）<span style="color: var(--status-danger);">*</span></label>
+                    <input type="text" name="username" class="form-input" required>
+                </div>
+                <div class="form-group" id="passwordField">
+                    <label class="form-label">密码 <span style="color: var(--status-danger);">*</span></label>
+                    <input type="password" name="password" class="form-input" required minlength="6">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">姓名 <span style="color: var(--status-danger);">*</span></label>
+                    <input type="text" name="real_name" class="form-input" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">角色 <span style="color: var(--status-danger);">*</span></label>
+                        <select name="role" class="form-input" id="edit-role">
+                            <option value="sales">业务员 (SALES)</option>
+                            <option value="admin">主管 (ADMIN)</option>
+                            <option value="viewer">查看者 (VIEWER)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">狀態 <span style="color: var(--status-danger);">*</span></label>
+                        <select name="status" class="form-input" id="edit-status">
+                            <option value="active">已审核</option>
+                            <option value="pending">待审核</option>
+                            <option value="rejected">已拒绝</option>
+                        </select>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="submitUserForm()" id="submitUserBtn">创建</button>
+        </div>
+    </div>
+</div>
+
+<!-- 審核用戶 Modal -->
+<div class="modal-overlay user-management-modal" id="approveUserModal" onclick="if(event.target === this) closeApproveModal()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>审核用户</h3>
+            <button class="modal-close" onclick="closeApproveModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="approve-user-info">
+                <div class="info-item">
+                    <span class="info-label">用户名：</span>
+                    <span class="info-value" id="approve-username">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">姓名：</span>
+                    <span class="info-value" id="approve-real-name">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">注册时间：</span>
+                    <span class="info-value" id="approve-created-at">-</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">设置角色 <span style="color: var(--status-danger);">*</span></label>
+                <select id="approve-role" class="form-input">
+                    <option value="sales">业务员 (SALES)</option>
+                    <option value="admin">主管 (ADMIN)</option>
+                    <option value="viewer">查看者 (VIEWER)</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeApproveModal()">取消</button>
+            <button type="button" class="btn btn-danger" onclick="confirmRejectUser()" id="reject-btn">拒绝</button>
+            <button type="button" class="btn btn-primary" onclick="confirmApproveUser()">通过审核</button>
+        </div>
+    </div>
+</div>
+
+<!-- 停權確認 Modal -->
+<div class="modal-overlay user-management-modal" id="suspendConfirmModal" onclick="if(event.target === this) closeSuspendConfirmModal()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px; color: #ef4444;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                确认停权用户
+            </h3>
+            <button class="modal-close" onclick="closeSuspendConfirmModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="confirm-message">
+                <p>确定要停权用户 <strong id="suspend-username">-</strong> 吗？</p>
+                <p style="color: var(--text-2); margin-top: 0.5rem;">停权后该用户将无法登录系统</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeSuspendConfirmModal()">取消</button>
+            <button type="button" class="btn btn-danger" onclick="confirmSuspendUser()">确认停权</button>
+        </div>
+    </div>
+</div>
+
+<!-- 恢復確認 Modal -->
+<div class="modal-overlay user-management-modal" id="restoreConfirmModal" onclick="if(event.target === this) closeRestoreConfirmModal()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px; color: #2196F3;">
+                    <path d="M21 12a9 9 0 11-6.219-8.56"></path>
+                    <polyline points="18 4 22 8 18 12"></polyline>
+                </svg>
+                确认恢复用户
+            </h3>
+            <button class="modal-close" onclick="closeRestoreConfirmModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="confirm-message">
+                <p>确定要恢复用户 <strong id="restore-username">-</strong> 吗？</p>
+                <p style="color: var(--text-2); margin-top: 0.5rem;">恢复后该用户可以正常登录系统</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeRestoreConfirmModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="confirmRestoreUser()">确认恢复</button>
+        </div>
+    </div>
+</div>
+
+<!-- 重設密碼 Modal -->
+<div class="modal-overlay user-management-modal" id="resetPasswordModal" onclick="if(event.target === this) closeResetPasswordModal()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px; color: #f59e0b;">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                重置密码
+            </h3>
+            <button class="modal-close" onclick="closeResetPasswordModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="reset-password-info">
+                <div class="info-item">
+                    <span class="info-label">用户名：</span>
+                    <span class="info-value" id="reset-username">-</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">姓名：</span>
+                    <span class="info-value" id="reset-real-name">-</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">新密碼 <span style="color: var(--status-danger);">*</span></label>
+                <input type="text" id="reset-new-password" class="form-input" placeholder="至少 6 个字符" minlength="6">
+                <p class="form-hint">留空则自动生成随机密码</p>
+            </div>
+            <div class="form-group">
+                <label class="form-checkbox">
+                    <input type="checkbox" id="reset-require-change" checked>
+                    <span>要求用户下次登录时修改密码</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeResetPasswordModal()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="confirmResetPassword()">确认重置</button>
+        </div>
+    </div>
+</div>
+
+<!-- 删除用户 Modal -->
+<div class="modal-overlay user-management-modal" id="deleteUserModal" onclick="if(event.target === this) closeDeleteUserModal()">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px; color: #ef4444;">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                    <path d="M10 11v6"></path>
+                    <path d="M14 11v6"></path>
+                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+                </svg>
+                确认删除用户
+            </h3>
+            <button class="modal-close" onclick="closeDeleteUserModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="confirm-message">
+                <p>确定要删除用户 <strong id="delete-username">-</strong> 吗？</p>
+                <p style="color: var(--text-2); margin-top: 0.5rem;">此操作不可恢复，请谨慎操作。</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeDeleteUserModal()">取消</button>
+            <button type="button" class="btn btn-danger" id="deleteConfirmBtn" onclick="confirmDeleteUser()">确认删除</button>
+        </div>
+    </div>
+</div>
+
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/user-management.css') }}">
+<script>
+    window.USER_ROLE_OPTIONS = {{ (PERMISSION_MATRIX.keys() | list if PERMISSION_MATRIX is defined else ['admin','sales','viewer']) | tojson }};
+</script>
+<script src="{{ url_for('tracking_bp.static', filename='js/user-management.js') }}"></script>
+
+<!-- 🔧 強制顯示欄位的修復腳本 -->
+<script>
+(function() {
+    'use strict';
+    
+    console.log('🔧 [欄位修復] 開始監控和修復隱藏欄位...');
+    
+    // 立即執行一次修復
+    function forceShowColumns() {
+        const table = document.querySelector('.users-table');
+        if (!table) return;
+        
+        let fixedCount = 0;
+        
+        // 強制顯示所有 th 和 td
+        table.querySelectorAll('th, td').forEach(cell => {
+            if (cell.style.display === 'none') {
+                cell.style.display = '';
+                fixedCount++;
+            }
+        });
+        
+        if (fixedCount > 0) {
+            console.log(`[欄位修復] 已修復 ${fixedCount} 個被隱藏的欄位`);
+        }
+    }
+    
+    // 頁面載入後立即執行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', forceShowColumns);
+    } else {
+        forceShowColumns();
+    }
+    
+    // 定期檢查（防止被其他腳本再次隱藏）
+    setInterval(forceShowColumns, 500);
+    
+    // 監聽 DOM 變化
+    const observer = new MutationObserver((mutations) => {
+        let needsFix = false;
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                const target = mutation.target;
+                if ((target.tagName === 'TH' || target.tagName === 'TD') && 
+                    target.style.display === 'none' &&
+                    target.closest('.users-table')) {
+                    needsFix = true;
+                }
+            }
+        });
+        
+        if (needsFix) {
+            console.warn('[欄位修復] 檢測到欄位被隱藏，正在修復...');
+            forceShowColumns();
+        }
+    });
+    
+    // 開始監聽
+    const config = { attributes: true, subtree: true, attributeFilter: ['style'] };
+    const targetNode = document.body;
+    observer.observe(targetNode, config);
+    
+    console.log('[欄位修復] 監控已啟動');
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,1252 @@
+{% extends "tracking/base.html" %}
+
+{% block title %}订单管理{% endblock %}
+
+{% block extra_css %}
+<!-- Admin Orders 页面专用样式 -->
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/admin-orders.css') }}">
+<style>
+/* 立即覆盖 base.html 的全局样式 */
+body {
+    text-align: left !important;
+}
+.admin-orders-page {
+    text-align: left !important;
+}
+.admin-orders-page * {
+    text-align: left !important;
+}
+
+/* 表格固定布局 - 最高优先级 */
+.admin-orders-page .admin-orders-table-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    max-height: 600px !important;
+}
+
+.admin-orders-page .admin-orders-table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+}
+
+.admin-orders-page .admin-orders-table th,
+.admin-orders-page .admin-orders-table td {
+    text-align: left !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    padding: 12px 8px !important;
+}
+
+.admin-orders-page .admin-orders-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.admin-orders-page .admin-orders-table th.sortable .sort-indicator {
+    margin-left: 4px;
+    font-size: 0.75rem;
+    color: #6b7280;
+}
+
+/* 列宽设置（按 Tab 单独控制，避免空白大） */
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(1),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(1) { width: 36px !important; min-width: 36px !important; max-width: 36px !important; text-align: center !important; }
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(2),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(2) { width: 90px !important; min-width: 90px !important; max-width: 90px !important; }
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(3),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(3) { width: 110px !important; min-width: 110px !important; max-width: 110px !important; }
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(4),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(4) { width: 140px !important; min-width: 140px !important; max-width: 140px !important; }
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(5),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(5) { width: 90px !important; min-width: 90px !important; max-width: 90px !important; }
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(6),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(6) { width: 90px !important; min-width: 90px !important; max-width: 90px !important; }
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(7),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(7) { width: 80px !important; min-width: 80px !important; max-width: 80px !important; }
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(8),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(8) { width: 200px !important; min-width: 200px !important; max-width: 200px !important; white-space: normal !important; }
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(9),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(9) { width: 260px !important; min-width: 260px !important; max-width: 260px !important; white-space: normal !important; }
+
+/* 全部订单号：操作按钮允许换行，避免被裁切 */
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(9) .action-buttons {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    align-items: center !important;
+}
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(9) .action-buttons .btn {
+    padding: 6px 10px !important;
+}
+
+/* Tab: 我的项目（创建时间在最左） */
+.admin-orders-page #tab-my-projects .admin-orders-table th:nth-child(1),
+.admin-orders-page #tab-my-projects .admin-orders-table td:nth-child(1) { width: 140px !important; min-width: 140px !important; max-width: 140px !important; }
+
+.admin-orders-page #tab-my-projects .admin-orders-table th:nth-child(2),
+.admin-orders-page #tab-my-projects .admin-orders-table td:nth-child(2) { width: 140px !important; min-width: 140px !important; max-width: 140px !important; }
+
+.admin-orders-page #tab-my-projects .admin-orders-table th:nth-child(3),
+.admin-orders-page #tab-my-projects .admin-orders-table td:nth-child(3) { width: 200px !important; min-width: 200px !important; max-width: 200px !important; }
+
+.admin-orders-page #tab-my-projects .admin-orders-table th:nth-child(4),
+.admin-orders-page #tab-my-projects .admin-orders-table td:nth-child(4) { width: 160px !important; min-width: 160px !important; max-width: 160px !important; }
+
+/* Tab: 未解锁订单 */
+.admin-orders-page #tab-unlocked .admin-orders-table th:nth-child(1),
+.admin-orders-page #tab-unlocked .admin-orders-table td:nth-child(1) { width: 36px !important; min-width: 36px !important; max-width: 36px !important; text-align: center !important; }
+.admin-orders-page #tab-unlocked .admin-orders-table th:nth-child(2),
+.admin-orders-page #tab-unlocked .admin-orders-table td:nth-child(2) { width: 160px !important; min-width: 160px !important; max-width: 160px !important; }
+.admin-orders-page #tab-unlocked .admin-orders-table th:nth-child(3),
+.admin-orders-page #tab-unlocked .admin-orders-table td:nth-child(3) { width: 140px !important; min-width: 140px !important; max-width: 140px !important; }
+.admin-orders-page #tab-unlocked .admin-orders-table th:nth-child(4),
+.admin-orders-page #tab-unlocked .admin-orders-table td:nth-child(4) { width: 180px !important; min-width: 180px !important; max-width: 180px !important; }
+
+/* Tab: 已解锁订单 */
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(1),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(1) { width: 36px !important; min-width: 36px !important; max-width: 36px !important; text-align: center !important; }
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(2),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(2) { width: 120px !important; min-width: 120px !important; max-width: 120px !important; }
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(3),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(3) { width: 110px !important; min-width: 110px !important; max-width: 110px !important; }
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(4),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(4) { width: 180px !important; min-width: 180px !important; max-width: 180px !important; }
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(5),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(5) { width: 120px !important; min-width: 120px !important; max-width: 120px !important; }
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(6),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(6) { width: 120px !important; min-width: 120px !important; max-width: 120px !important; }
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(7),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(7) { width: 72px !important; min-width: 72px !important; max-width: 72px !important; text-align: center !important; }
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(8),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(8) { width: 220px !important; min-width: 220px !important; max-width: 220px !important; white-space: normal !important; word-break: break-word !important; }
+.admin-orders-page #tab-locked .admin-orders-table th:nth-child(9),
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(9) { width: 260px !important; min-width: 260px !important; max-width: 260px !important; white-space: normal !important; }
+
+/* 已解锁订单：操作按钮允许换行，避免被裁切 */
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(9) .action-buttons {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    align-items: center !important;
+}
+.admin-orders-page #tab-locked .admin-orders-table td:nth-child(9) .action-buttons .btn {
+    padding: 6px 10px !important;
+}
+
+/* Tab: 跳号管理 */
+.admin-orders-page #tab-skip .admin-orders-table th:nth-child(1),
+.admin-orders-page #tab-skip .admin-orders-table td:nth-child(1) { width: 36px !important; min-width: 36px !important; max-width: 36px !important; text-align: center !important; }
+.admin-orders-page #tab-skip .admin-orders-table th:nth-child(2),
+.admin-orders-page #tab-skip .admin-orders-table td:nth-child(2) { width: 160px !important; min-width: 160px !important; max-width: 160px !important; }
+.admin-orders-page #tab-skip .admin-orders-table th:nth-child(3),
+.admin-orders-page #tab-skip .admin-orders-table td:nth-child(3) { width: 140px !important; min-width: 140px !important; max-width: 140px !important; }
+.admin-orders-page #tab-skip .admin-orders-table th:nth-child(4),
+.admin-orders-page #tab-skip .admin-orders-table td:nth-child(4) { width: 160px !important; min-width: 160px !important; max-width: 160px !important; }
+
+/* 只有特定元素居中 */
+.admin-orders-page .stat-item,
+.admin-orders-page .stat-label,
+.admin-orders-page .stat-value,
+.admin-orders-page .text-center {
+    text-align: center !important;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container admin-orders-page">
+    <!-- Tab 切換 -->
+    <div class="tabs">
+        {% if perm.can('view', 'user') %}
+        <button class="tab-btn active" data-tab="all-orders">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            全部订单号
+        </button>
+        <button class="tab-btn" data-tab="unlocked">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #f59e0b;">
+                <rect x="11" y="11" width="10" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            未解锁订单
+        </button>
+        <button class="tab-btn" data-tab="locked">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #22c55e;">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+                <path d="M9 16l2 2 4-4"></path>
+            </svg>
+            已解锁订单
+        </button>
+        <button class="tab-btn" data-tab="skip">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+            跳号管理
+        </button>
+        <button class="tab-btn" data-tab="my-projects">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <path d="M8 10h8M8 14h6"></path>
+            </svg>
+            我的项目
+        </button>
+        {% else %}
+        <button class="tab-btn active" data-tab="available-orders">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            可创建项目的订单
+        </button>
+        <button class="tab-btn" data-tab="my-projects">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <path d="M7 12h10"></path>
+                <path d="M7 8h10"></path>
+                <path d="M7 16h6"></path>
+            </svg>
+            我的项目
+        </button>
+        {% endif %}
+
+    </div>
+
+    {% if perm.can('view', 'user') %}
+    <!-- 统计條（Tab 1、2、3 共用） -->
+    <div class="stats-bar" id="shared-stats-bar">
+        <div class="stat-item">
+            <span class="stat-label">未解锁</span>
+            <span class="stat-value" id="stat-unlocked">0</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">已启用</span>
+            <span class="stat-value" id="stat-active">0</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">跳号</span>
+            <span class="stat-value" id="stat-skipped">0</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">总计</span>
+            <span class="stat-value" id="stat-total">0</span>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not perm.can('view', 'user') %}
+    <!-- Tab: 可创建项目的订单（业务员） -->
+    <div class="tab-content active" id="tab-available-orders">
+        <div class="section-card table-section">
+            <div class="section-header">
+                <h2>可创建项目的订单（已解锁）</h2>
+            </div>
+            <div class="section-hint sales-hint">
+                💡 这些订单已由主管解锁，等待您创建项目流程
+                <span class="sales-hint-divider">·</span>
+                💡 每个订单可以创建多个项目
+            </div>
+            <div class="table-toolbar">
+                <div class="toolbar-right">
+                    <input type="text" id="available-search" placeholder="搜索订单号或客户名称..." onkeyup="handleAvailableSearch()">
+                </div>
+            </div>
+            <div class="admin-orders-table-container">
+                <table class="admin-orders-table no-checkbox no-row-light">
+                    <colgroup>
+                        <col class="col-create">
+                        <col class="col-order-number">
+                        <col class="col-customer-name">
+                        <col class="col-project-count">
+                        <col class="col-unlock-time">
+                        <col class="col-notes">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th class="col-create"></th>
+                            <th class="col-order-number sortable" data-sort="order_number">订单号 <span class="sort-indicator"></span></th>
+                            <th class="col-customer-name sortable" data-sort="customer_name">客户名称 <span class="sort-indicator"></span></th>
+                            <th class="col-project-count sortable" data-sort="project_count">已有项目 <span class="sort-indicator"></span></th>
+                            <th class="col-unlock-time sortable" data-sort="unlocked_at">解锁时间 <span class="sort-indicator"></span></th>
+                            <th class="col-notes">备注</th>
+                        </tr>
+                    </thead>
+                    <tbody id="available-orders-table-body">
+                        <tr>
+                            <td colspan="6" class="text-center">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination" id="available-orders-pagination"></div>
+        </div>
+    </div>
+
+    <!-- Tab: 我的项目（业务员） -->
+    <div class="tab-content" id="tab-my-projects">
+        <div class="section-card table-section">
+            <div class="section-header">
+                <h2>我的项目（我创建的流程）</h2>
+            </div>
+            <div class="table-toolbar">
+                <div class="toolbar-left">
+                    <select id="my-projects-status" onchange="loadMyProjects(1)">
+                        <option value="all">全部</option>
+                        <option value="in_progress">进行中</option>
+                        <option value="completed">已完成</option>
+                        <option value="cancelled">已取消</option>
+                    </select>
+                </div>
+                <div class="toolbar-right">
+                    <input type="text" id="my-projects-search" placeholder="搜索流程号或客户名称..." onkeyup="handleMyProjectsSearch()">
+                </div>
+            </div>
+            <div class="admin-orders-table-container">
+                <table class="admin-orders-table no-checkbox no-row-light">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="created_at">创建时间 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="workflow_number">流程号 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="customer_name">客户名称 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="status">当前状态 <span class="sort-indicator"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="my-projects-table-body">
+                        <tr>
+                            <td colspan="4" class="text-center">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination" id="my-projects-pagination"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if perm.can('view', 'user') %}
+    <!-- Tab 1: 全部订单号 -->
+    <div class="tab-content active" id="tab-all-orders">
+        <div class="section-card table-section">
+            <div class="section-header">
+                <!-- <div class="section-header-left">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                    <h2>全部订单号</h2>
+                </div> -->
+                <div class="actions">
+                    <button class="btn btn-danger" onclick="batchDeleteOrders()" id="batch-delete-btn" style="display: none;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        批量删除
+                    </button>
+                </div>
+            </div>
+            <!-- <p class="section-hint">查看所有订单号（包括未解锁、已解锁、跳号）：生成号段、检测缺号、查看状态</p> -->
+
+            <!-- 工具列 -->
+            <div class="table-toolbar">
+                <div class="toolbar-left">
+                    <button class="btn btn-secondary" onclick="openBatchCreateModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 5v14M5 12h14"></path>
+                        </svg>
+                        生成号段
+                    </button>
+                    <button class="btn btn-secondary" onclick="openMissingCheckModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 11l3 3L22 4"></path>
+                            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                        </svg>
+                        缺号检测
+                    </button>
+                    <select id="status-filter-all" onchange="loadAllOrders()">
+                        <option value="">全部状态</option>
+                        <option value="UNLOCKED">未解锁</option>
+                        <option value="ACTIVE">已启用</option>
+                        <option value="CANCELLED">已取消</option>
+                        <option value="SKIPPED">跳号</option>
+                    </select>
+                    <select id="filter-no-projects" onchange="loadAllOrders(1)">
+                        <option value="0">全部项目</option>
+                        <option value="1">仅看已解锁无项目</option>
+                    </select>
+                    <select id="prefix-filter-all" onchange="loadAllOrders(1)">
+                        <option value="all">全部类型</option>
+                        <option value="numeric">国外订单</option>
+                        <option value="KC">KC</option>
+                        <option value="G">G</option>
+                    </select>
+                    <select id="page-size-all" onchange="setAllOrdersPageSize(this.value)">
+                        <option value="50">每页 50</option>
+                        <option value="100">每页 100</option>
+                        <option value="200">每页 200</option>
+                        <option value="500">每页 500</option>
+                    </select>
+                </div>
+                <div class="toolbar-right">
+                    <input type="text" id="search-input-all" placeholder="搜索订单号或客户名称..." onkeyup="searchAllOrders()">
+                </div>
+            </div>
+            <div id="all-orders-truncated-hint" class="search-truncated-hint" style="display:none;"></div>
+
+            <div class="admin-orders-table-container">
+                <table class="admin-orders-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-orders" onchange="toggleSelectAllOrders()"></th>
+                            <th class="sortable" data-sort="order_date">订单日期 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="order_number">订单号 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="customer_name">客户名称 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="status">状态 <span class="sort-indicator"></span></th>
+                            <th>可见性</th>
+                            <th class="sortable" data-sort="project_count">项目数 <span class="sort-indicator"></span></th>
+                            <th>备注</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="all-orders-table-body">
+                        <tr>
+                            <td colspan="9" class="text-center">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="all-orders-pagination"></div>
+        </div>
+    </div>
+
+    <!-- Tab 2: 未解锁订单 -->
+    <div class="tab-content" id="tab-unlocked">
+        <div class="section-card table-section">
+            <div class="section-header">
+                <!-- <div class="section-header-left">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #f59e0b;">
+                        <rect x="11" y="11" width="10" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <h2>未解锁订单</h2>
+                </div> -->
+                <div class="actions">
+                    <button class="btn btn-danger" onclick="batchDeleteUnlockedOrders()" id="batch-delete-unlocked-btn" style="display: none;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        批量删除
+                    </button>
+                </div>
+            </div>
+            <!-- <p class="section-hint">这些订单已创建但尚未解锁，业务员无法看到</p> -->
+
+            <div class="table-toolbar">
+                <div class="toolbar-left">
+                    <select id="unlocked-prefix-filter" onchange="loadAdminUnlockedOrders(1)">
+                        <option value="all">全部类型</option>
+                        <option value="numeric">国外订单</option>
+                        <option value="KC">KC</option>
+                        <option value="G">G</option>
+                    </select>
+                    <select id="unlocked-page-size" onchange="setUnlockedPageSize(this.value)">
+                        <option value="50">每页 50</option>
+                        <option value="100">每页 100</option>
+                        <option value="200">每页 200</option>
+                    </select>
+                </div>
+                <div class="toolbar-right">
+                    <input type="text" id="unlocked-search" placeholder="搜索订单号或客户名称..." onkeyup="handleUnlockedSearch()">
+                </div>
+            </div>
+
+            <div class="admin-orders-table-container">
+                <table class="admin-orders-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-unlocked" onchange="toggleSelectAllUnlocked()"></th>
+                            <th class="sortable" data-sort="order_number">订单号 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="created_at">创建时间 <span class="sort-indicator"></span></th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="unlocked-table-body">
+                        <tr>
+                            <td colspan="4" class="text-center">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="unlocked-pagination"></div>
+        </div>
+    </div>
+
+    <!-- Tab 3: 已解锁订单 -->
+    <div class="tab-content" id="tab-locked">
+        <div class="section-card table-section">
+            <div class="section-header">
+                <!-- <div class="section-header-left">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #22c55e;">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                        <path d="M9 16l2 2 4-4"></path>
+                    </svg>
+                    <h2>已解锁订单</h2>
+                </div> -->
+                <div class="actions">
+                    <button class="btn btn-danger" onclick="batchDeleteLockedOrders()" id="batch-delete-locked-btn" style="display: none;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        批量删除
+                    </button>
+                </div>
+            </div>
+            <!-- <p class="section-hint">这些订单已解锁，业务员可以看到并使用</p> -->
+
+            <div class="table-toolbar">
+                <div class="toolbar-left">
+                    <select id="locked-page-size" onchange="setLockedPageSize(this.value)">
+                        <option value="50">每页 50</option>
+                        <option value="100">每页 100</option>
+                        <option value="200">每页 200</option>
+                    </select>
+                    <select id="locked-prefix-filter" onchange="loadLockedOrders(1)">
+                        <option value="all">全部类型</option>
+                        <option value="numeric">国外订单</option>
+                        <option value="KC">KC</option>
+                        <option value="G">G</option>
+                    </select>
+                    <select id="locked-status-filter" onchange="loadLockedOrders(1)">
+                        <option value="">全部状态</option>
+                        <option value="ACTIVE">已启用</option>
+                        <option value="CANCELLED">已取消</option>
+                    </select>
+                    <select id="locked-project-filter" onchange="loadLockedOrders(1)">
+                        <option value="0">全部项目</option>
+                        <option value="1">仅看已解锁无项目</option>
+                    </select>
+                </div>
+                <div class="toolbar-right">
+                    <input type="text" id="locked-search" placeholder="搜索订单号或客户名称..." onkeyup="handleLockedSearch()">
+                </div>
+            </div>
+
+            <div class="admin-orders-table-container">
+                <table class="admin-orders-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-locked" onchange="toggleSelectAllLocked()"></th>
+                            <th class="sortable" data-sort="order_date">订单日期 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="order_number">订单号 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="customer_name">客户名称 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="status">状态 <span class="sort-indicator"></span></th>
+                            <th>可见性</th>
+                            <th class="sortable" data-sort="project_count">项目数 <span class="sort-indicator"></span></th>
+                            <th>备注</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="locked-table-body">
+                        <tr>
+                            <td colspan="9" class="text-center">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="locked-pagination"></div>
+        </div>
+    </div>
+
+    <!-- Tab 3: 跳号管理 -->
+    <div class="tab-content" id="tab-skip">
+        <div class="section-card table-section">
+            <div class="section-header">
+                <!-- <div class="section-header-left">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #ef4444;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                    <h2>跳号管理</h2>
+                </div> -->
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="openAddSkipModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 5v14M5 12h14"></path>
+                        </svg>
+                        新增跳号
+                    </button>
+                    <button class="btn btn-danger" onclick="batchDeleteSkip()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        批量删除
+                    </button>
+                </div>
+            </div>
+
+            <!-- 统计條 -->
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <span class="stat-label">跳号总数</span>
+                    <span class="stat-value" id="skip-total">0</span>
+                </div>
+            </div>
+
+            <!-- 工具列 -->
+            <div class="table-toolbar">
+                <div class="toolbar-left">
+                    <select id="skip-page-size" onchange="setSkipPageSize(this.value)">
+                        <option value="50">每页 50</option>
+                        <option value="100">每页 100</option>
+                        <option value="200">每页 200</option>
+                        <option value="500">每页 500</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="loadSkipNumbers()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                        </svg>
+                        刷新
+                    </button>
+                </div>
+                <div class="toolbar-right">
+                    <input type="text" id="skip-search-input" placeholder="搜索号码..." onkeyup="handleSkipSearch()">
+                </div>
+            </div>
+
+            <!-- 跳号列表 -->
+            <div class="admin-orders-table-container">
+                <table class="admin-orders-table">
+                    <thead>
+                        <tr>
+                            <th>
+                                <input type="checkbox" id="skip-select-all" onchange="toggleAllSkip(this)">
+                            </th>
+                            <th>订单号码</th>
+                            <th>标记时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="skip-table-body">
+                        <tr>
+                            <td colspan="4" class="text-center">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 分页 -->
+            <div class="pagination" id="skip-pagination"></div>
+        </div>
+    </div>
+
+    <!-- Tab: 我的项目（管理员） -->
+    <div class="tab-content" id="tab-my-projects">
+        <div class="section-card table-section">
+            <div class="section-header">
+                <h2>我的项目（我创建的流程）</h2>
+            </div>
+            <div class="table-toolbar">
+                <div class="toolbar-right">
+                    <input type="text" id="my-projects-search" placeholder="搜索流程号或客户名称..." onkeyup="handleMyProjectsSearch()">
+                </div>
+            </div>
+            <div class="admin-orders-table-container">
+                <table class="admin-orders-table no-checkbox no-row-light">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="created_at">创建时间 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="workflow_number">流程号 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="customer_name">客户名称 <span class="sort-indicator"></span></th>
+                            <th class="sortable" data-sort="status">当前状态 <span class="sort-indicator"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="my-projects-table-body">
+                        <tr>
+                            <td colspan="4" class="text-center">加载中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination" id="my-projects-pagination"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    </div>
+</div>
+
+<!-- 右侧抽屉 - 订单详情和文件管理 -->
+<div class="drawer-overlay" id="adminDetailDrawerOverlay" onclick="handleAdminDrawerOverlayClick(event)" style="pointer-events: none;"></div>
+<div class="detail-drawer" id="adminDetailDrawer" style="pointer-events: auto;">
+    <!-- 图片预览区域（左侧） -->
+    <div class="drawer-preview" id="adminDrawerPreview" style="display: none;">
+        <div class="drawer-preview-header">
+            <div class="drawer-preview-title-group">
+                <span class="drawer-preview-title">图片预览</span>
+                <span class="drawer-preview-counter" id="adminDrawerPreviewCounter">1 / 1</span>
+            </div>
+            <button class="drawer-preview-close" onclick="closeAdminDrawerPreview()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="drawer-preview-body" id="adminDrawerPreviewBody">
+            <button class="drawer-preview-nav drawer-preview-nav-left" id="adminDrawerPreviewPrev" onclick="prevAdminDrawerImage()" title="上一张">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </button>
+            <div class="drawer-preview-image-container" id="adminDrawerPreviewImageContainer" onclick="toggleAdminDrawerFullscreen()">
+                <img id="adminDrawerPreviewImage" src="" alt="预览图片" style="max-width: 100%; max-height: 100%; object-fit: contain; transition: transform 0.3s ease; cursor: zoom-in;">
+                <div class="drawer-preview-zoom-hint" id="adminDrawerPreviewZoomHint">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        <line x1="11" y1="8" x2="11" y2="14"></line>
+                        <line x1="8" y1="11" x2="14" y2="11"></line>
+                    </svg>
+                    <span>点击放大</span>
+                </div>
+            </div>
+            <button class="drawer-preview-nav drawer-preview-nav-right" id="adminDrawerPreviewNext" onclick="nextAdminDrawerImage()" title="下一张">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+        </div>
+    </div>
+    
+    <!-- 全屏图片预览 -->
+    <div class="drawer-preview-fullscreen" id="adminDrawerPreviewFullscreen" style="display: none;">
+        <div class="drawer-preview-fullscreen-header" onclick="event.stopPropagation()">
+            <span class="drawer-preview-fullscreen-title" id="adminDrawerPreviewFullscreenTitle">图片预览</span>
+            <button class="drawer-preview-fullscreen-close" onclick="closeAdminDrawerFullscreen(); event.stopPropagation();">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="drawer-preview-fullscreen-body" onclick="event.stopPropagation()">
+            <button class="drawer-preview-fullscreen-nav drawer-preview-fullscreen-nav-left" onclick="prevAdminDrawerImage(); event.stopPropagation();" title="上一张">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </button>
+            <img id="adminDrawerPreviewFullscreenImage" src="" alt="全屏预览" style="max-width: 100%; max-height: 100%; object-fit: contain;" onclick="event.stopPropagation()">
+            <button class="drawer-preview-fullscreen-nav drawer-preview-fullscreen-nav-right" onclick="nextAdminDrawerImage(); event.stopPropagation();" title="下一张">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+        </div>
+    </div>
+    
+    <!-- 主要内容区域（右侧） -->
+    <div class="drawer-content">
+        <div class="drawer-header">
+            <div class="drawer-header-main">
+                <div class="drawer-order-badge">订单详情</div>
+                <button class="drawer-close" onclick="closeAdminDetailDrawer()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="drawer-main-info">
+                <div class="main-info-item">
+                    <span class="main-info-label">订单号</span>
+                    <span class="main-info-value">
+                        <span class="order-hash">#</span>
+                        <span id="adminDrawerOrderNumber">-</span>
+                    </span>
+                </div>
+                <div class="main-info-item" id="adminDrawerCustomerNameContainer">
+                    <span class="main-info-label">客户</span>
+                    <div class="main-info-value-container">
+                        <span class="main-info-value" id="adminDrawerCustomerNameDisplay">-</span>
+                        <input type="text" 
+                               id="adminDrawerCustomerNameInput" 
+                               class="main-info-input" 
+                               style="display: none; width: 100%; padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 0.9rem;"
+                               placeholder="请输入客户名称">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="drawer-body">
+            <!-- 订单备注区块 -->
+            <div class="drawer-section notes-section">
+                <div class="section-header">
+                    <div class="section-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                    </div>
+                    <div class="section-title">订单备注</div>
+                    <button class="btn-small btn-secondary" onclick="toggleAdminDrawerEditMode(this)" id="adminDrawerEditBtn" style="display: none;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        编辑
+                    </button>
+                </div>
+                <div class="drawer-order-notes-compact" id="adminDrawerNotesContainer" data-order-number="">
+                    <div class="drawer-notes-display" id="adminDrawerNotesDisplay">
+                        <div class="notes-content" id="adminDrawerNotesContent" style="padding: 1rem; background: #f9fafb; border-radius: 8px; min-height: 60px; color: #374151; white-space: pre-wrap; word-wrap: break-word;">
+                            <span class="drawer-notes-text" id="adminDrawerNotesText">-</span>
+                        </div>
+                    </div>
+                    <div class="drawer-notes-edit" id="adminDrawerNotesEdit" style="display: none;">
+                        <textarea class="drawer-notes-input" id="adminDrawerNotesInput" rows="4" placeholder="輸入備註..." style="width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.875rem; resize: vertical; min-height: 80px;"></textarea>
+                        <div class="notes-edit-actions" style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+                            <button class="notes-save-btn" onclick="saveAdminDrawerAll(this)">保存</button>
+                            <button class="notes-cancel-btn" onclick="cancelAdminDrawerEdit(this)">取消</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 订单文件管理区块 -->
+            <div class="drawer-section files-section">
+                <div class="section-header">
+                    <div class="section-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                            <polyline points="13 2 13 9 20 9"></polyline>
+                        </svg>
+                    </div>
+                    <div class="section-title">订单文件</div>
+                    <button class="btn-small btn-icon"
+                            onclick="openAdminDrawerUploadModal()"
+                            style="display: none;"
+                            id="adminDrawerUploadBtn">
+                    
+                        <svg width="14" height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round">
+                        
+                            <!-- 托盤（圓角、細線） -->
+                            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                        
+                            <!-- 箭頭 -->
+                            <path d="M12 4v10" />
+                            <path d="M8.5 7.5L12 4l3.5 3.5" />
+                       
+                       </svg>
+                       
+                    
+                        <!-- 上传 -->
+                    </button>
+            
+                </div>
+                
+                <div id="adminDrawerFileList" class="file-list">
+                    <!-- 文件列表由 JS 动态生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 上传文件 Modal -->
+<div class="modal-overlay" id="adminDrawerUploadModal" style="display: none;" onclick="if(event.target === this) closeAdminDrawerUploadModal()">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+        <div class="modal-header">
+            <h3>上传订单文件</h3>
+            <button class="close-btn" type="button" onclick="closeAdminDrawerUploadModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>上传文件（图片或文档）</label>
+                <div class="file-upload-area" id="adminDrawer-file-upload-area">
+                    <input type="file" id="adminDrawer-file-input" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display: none;">
+                    <div class="file-upload-dropzone" id="adminDrawer-file-dropzone">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #9ca3af; margin-bottom: 1rem;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p style="font-size: 1rem; font-weight: 500; color: #374151; margin-bottom: 0.5rem;">拖拽文件到这里或点击选择</p>
+                        <p style="font-size: 0.875rem; color: #6b7280;">支持图片（JPG, PNG, GIF）和文档（PDF, DOC, XLS等）</p>
+                        <button type="button" class="btn btn-primary" style="margin-top: 1rem;" onclick="document.getElementById('adminDrawer-file-input').click()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            选择文件
+                        </button>
+                    </div>
+                    <div class="file-upload-list" id="adminDrawer-file-list" style="display: none; margin-top: 1rem;">
+                        <div class="file-list-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                            <span style="font-weight: 500; color: #374151;">已选择的文件 (<span id="adminDrawer-file-count">0</span>)</span>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button type="button" class="btn btn-sm btn-primary" onclick="document.getElementById('adminDrawer-file-input').click()" style="padding: 0.25rem 0.75rem; font-size: 0.875rem;">添加更多</button>
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="clearAdminDrawerFiles()" style="padding: 0.25rem 0.75rem; font-size: 0.875rem;">清空</button>
+                            </div>
+                        </div>
+                        <div id="adminDrawer-file-items" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeAdminDrawerUploadModal()">取消</button>
+            <button class="btn btn-primary" onclick="submitAdminDrawerUploadFiles()">上传</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: 生成号段 -->
+<div class="modal-overlay" id="generateModal">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>生成订单号段</h3>
+            <button class="close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>号段类型 *</label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary" type="button" id="generate-type-numeric" onclick="setGenerateType('numeric')">国外订单</button>
+                    <button class="btn btn-secondary" type="button" id="generate-type-kc" onclick="setGenerateType('KC')">KC</button>
+                    <button class="btn btn-secondary" type="button" id="generate-type-g" onclick="setGenerateType('G')">G</button>
+                </div>
+            </div>
+
+            <div id="generate-numeric-fields">
+                <div class="form-group">
+                    <label>起始号码 *</label>
+                    <input type="number" id="start-number" placeholder="例如：1007001">
+                </div>
+                <div class="form-group">
+                    <label>结束号码 *</label>
+                    <input type="number" id="end-number" placeholder="例如：1007100">
+                </div>
+                <p class="hint">将生成从起始到结束的所有号码（最多 10000 个）</p>
+            </div>
+
+            <div id="generate-prefix-fields" style="display: none;">
+                <div class="form-group">
+                    <label>年份（后2位）*</label>
+                    <input type="text" id="generate-year" maxlength="2" placeholder="例如：26" oninput="updateGeneratePreview()">
+                </div>
+                <div class="form-group">
+                    <label>数量 *</label>
+                    <input type="number" id="generate-quantity" min="1" max="999" value="1" oninput="updateGeneratePreview()">
+                </div>
+                <p class="hint" id="generate-preview">预览：-</p>
+            </div>
+
+            <div class="form-group">
+                <input type="hidden" id="generate-mode" value="numeric">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" id="generateModalCancel">取消</button>
+            <button class="btn btn-primary" type="button" id="generateModalConfirm">生成</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: 生成結果 -->
+<div class="modal-overlay" id="generateResultModal">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>生成結果</h3>
+            <button class="close-btn" type="button" onclick="closeAdminModal('generateResultModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="result-success" style="display: none; text-align: center; margin-bottom: 1.5rem;">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" style="margin: 0 auto;">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+            </div>
+
+            <div class="result-stats" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                <div style="background: #ecfdf5; padding: 1rem; border-radius: 8px; text-align: center;">
+                    <div style="font-size: 0.875rem; color: #047857;">新增号碼</div>
+                    <div style="font-size: 2rem; font-weight: 600; color: #10b981;" id="result-created">0</div>
+                </div>
+                <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; text-align: center;">
+                    <div style="font-size: 0.875rem; color: #92400e;">已存在（跳過）</div>
+                    <div style="font-size: 2rem; font-weight: 600; color: #f59e0b;" id="result-skipped">0</div>
+                </div>
+            </div>
+
+            <div id="result-skipped-section" style="display: none;">
+                <h4 style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.5rem;">已存在的号碼：</h4>
+                <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem; max-height: 200px; overflow-y: auto;">
+                    <div id="result-skipped-numbers" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.5rem; font-family: monospace;"></div>
+                </div>
+                <p id="result-more-hint" style="display: none; font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem; text-align: center;">
+                    ...還有更多（僅顯示部分）
+                </p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" type="button" onclick="closeAdminModal('generateResultModal')">確定</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: 标记号碼 -->
+<div class="modal-overlay" id="markModal">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="mark-modal-title">标记号碼</h3>
+            <button class="close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>号碼（多個用逗号、空格或換行分隔）</label>
+                <textarea id="mark-numbers" rows="6" placeholder="例如：1007001,1007005 1007010"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" id="markModalCancel">取消</button>
+            <button class="btn btn-primary" type="button" id="markModalConfirm">确认标记</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: 解锁订单 -->
+<div class="modal-overlay" id="unlockModal">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+        <div class="modal-header">
+            <h3>解锁订单</h3>
+            <button class="close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>订单号</label>
+                <input type="text" id="unlock-order-number" readonly>
+            </div>
+            <div class="form-group">
+                <label>客户名称 *</label>
+                <div class="customer-autocomplete">
+                    <input type="text" id="unlock-customer-name" placeholder="请输入客户名称" autocomplete="off">
+                    <div id="unlock-customer-suggestions" class="customer-suggestions" style="display:none;"></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>订单日期</label>
+                <input type="date" id="unlock-order-date" readonly>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea id="unlock-notes" rows="3" placeholder="选填"></textarea>
+            </div>
+            
+            <!-- 文件上傳區域 -->
+            <div class="form-group">
+                <label>上传文件（图片或文档）<span class="unlock-file-badge" id="unlock-file-badge" style="display:none;"></span></label>
+                <div class="file-upload-area" id="unlock-file-upload-area">
+                    <input type="file" id="unlock-file-input" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display: none;">
+                    
+                    <!-- 已选文件区（选了文件后显示，替代大dropzone） -->
+                    <div class="unlock-files-panel" id="unlock-files-panel" style="display:none;">
+                        <div class="unlock-files-header" id="unlock-files-header"></div>
+                        <div class="unlock-files-grid" id="unlock-file-items"></div>
+                        <!-- 迷你拖拽区（继续添加文件） -->
+                        <div class="file-upload-dropzone-mini" id="unlock-file-dropzone-mini" onclick="document.getElementById('unlock-file-input').click()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            点击或拖拽继续添加文件
+                        </div>
+                    </div>
+
+                    <!-- 初始大dropzone（没有文件时显示） -->
+                    <div class="file-upload-dropzone" id="unlock-file-dropzone">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #9ca3af; margin-bottom: 1rem;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p style="font-size: 1rem; font-weight: 500; color: #374151; margin-bottom: 0.5rem;">拖拽文件到这里或点击选择</p>
+                        <p style="font-size: 0.875rem; color: #6b7280;">支持图片（JPG, PNG, GIF）和文档（PDF, DOC, XLS等）</p>
+                        <button type="button" class="btn btn-primary" style="margin-top: 1rem;" onclick="document.getElementById('unlock-file-input').click()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            选择文件
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" id="unlockModalCancel">取消</button>
+            <button class="btn btn-primary" type="button" id="unlockModalConfirm">解锁</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: 缺号檢測 -->
+<div class="modal-overlay" id="diffModal">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>缺号檢測</h3>
+            <button class="close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group" id="diff-prefix-group" style="display: none;">
+                <label>訂單類型</label>
+                <select id="diff-prefix-select"></select>
+            </div>
+            <div id="diff-year-tabs-wrap" style="display: none; margin: 0.25rem 0 0.75rem;">
+                <div style="font-size: 0.82rem; color: #6b7280; margin-bottom: 0.45rem;">年份</div>
+                <div id="diff-year-tabs" style="display: flex; gap: 0.45rem; flex-wrap: wrap;"></div>
+            </div>
+            <p class="hint" id="diff-range-hint" style="display: none; margin-bottom: 0.75rem;"></p>
+            <div class="form-row" id="diff-manual-range-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label>起始号碼（可手動修改）</label>
+                    <input type="text" id="diff-start-number" placeholder="例如：1007500 / G26001 / KC26001">
+                </div>
+                <div class="form-group">
+                    <label>結束号碼（可手動修改）</label>
+                    <input type="text" id="diff-end-number" placeholder="例如：1008225 / G26140 / KC26117">
+                </div>
+            </div>
+            <p class="hint" id="diff-rule-hint" style="margin-top: 0.75rem;">國外訂單最低從 1007500 開始；當最大號碼超過 1000 號範圍後，自動改為「最大號碼 - 1000」開始檢測。</p>
+            
+            <div id="diff-result" style="display: none; margin-top: 1.5rem;">
+                <div class="result-summary" style="background: #f3f4f6; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem;">
+                        <div>
+                            <div style="font-size: 0.875rem; color: #6b7280;">總範圍</div>
+                            <div style="font-size: 1.5rem; font-weight: 600;" id="diff-total">0</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.875rem; color: #6b7280;">已存在</div>
+                            <div style="font-size: 1.5rem; font-weight: 600; color: #22c55e;" id="diff-existing">0</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.875rem; color: #6b7280;">已排除</div>
+                            <div style="font-size: 1.5rem; font-weight: 600; color: #6b7280;" id="diff-excluded">0</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.875rem; color: #6b7280;">未解鎖</div>
+                            <div style="font-size: 1.5rem; font-weight: 600; color: #f59e0b;" id="diff-unlocked">0</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.875rem; color: #6b7280;">缺號（含未解鎖）</div>
+                            <div style="font-size: 1.5rem; font-weight: 600; color: #ef4444;" id="diff-missing">0</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="diff-missing-list" style="display: none;">
+                    <h4 style="margin-bottom: 0.5rem; font-size: 0.875rem; color: #6b7280;">缺號清單（含未解鎖）：</h4>
+                    <div style="max-height: 300px; overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                        <div id="diff-missing-numbers" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.5rem;"></div>
+                    </div>
+                </div>
+
+                <div id="diff-unlocked-list" style="display: none; margin-top: 1rem;">
+                    <h4 style="margin-bottom: 0.5rem; font-size: 0.875rem; color: #92400e;">其中未解鎖的号碼：</h4>
+                    <div style="max-height: 300px; overflow-y: auto; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 1rem;">
+                        <div id="diff-unlocked-numbers" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.5rem;"></div>
+                    </div>
+                </div>
+                
+                <div id="diff-no-missing" style="display: none; text-align: center; padding: 2rem; color: #22c55e;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 1rem;">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    <div style="font-size: 1.125rem; font-weight: 600;">沒有缺号！</div>
+                    <div style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;">指定範圍內沒有真正缺號，也沒有未解鎖號碼</div>
+                </div>
+
+                <div id="diff-error" style="display: none; text-align: center; padding: 2rem; color: #ef4444;">
+                    <div style="font-size: 1.125rem; font-weight: 600;">檢測失敗</div>
+                    <div style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;" id="diff-error-message">請稍後重試</div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content: space-between;">
+            <button class="btn btn-secondary" type="button" id="diffModalClearTodayIgnore" title="清除本瀏覽器今天的缺號提醒忽略狀態">取消今日忽略</button>
+            <button class="btn btn-primary" type="button" id="diffModalPerform">開始檢測</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: 新增跳号 -->
+<div class="modal-overlay" id="addSkipModal">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3>新增跳号</h3>
+            <button class="close-btn" type="button">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>号碼（多個用逗号、空格或換行分隔）</label>
+                <textarea id="skip-numbers-input" rows="5" placeholder="例如：1007001,1007005 1007010"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" type="button" id="addSkipModalCancel">取消</button>
+            <button class="btn btn-primary" type="button" id="addSkipModalConfirm">确认新增</button>
+        </div>
+    </div>
+</div>
+
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/file-management.css') }}">
+<script src="{{ url_for('tracking_bp.static', filename='js/admin-orders.js') }}?v={{ STATIC_VER }}"></script>
+{% endblock %}

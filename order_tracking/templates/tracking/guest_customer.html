@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex,nofollow,noarchive">
+    <title>{{ customer_name }} · Pedidos</title>
+    <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest.css') }}?v={{ STATIC_VER }}">
+    <script>
+    // Guest pages manage Back/edge-swipe restoration themselves. Safari's automatic
+    // restoration can race our masonry layout and jump to the wrong position.
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    // Guest pages share the exact same language storage key as the logged-in app (no
+    // separate state) — but a customer scanning this link for the first time on their own
+    // phone has no saved preference yet, and this page is customer-facing/Spanish-first.
+    // So: only on a device that has never chosen a language do we seed that shared key to
+    // 'es', BEFORE ui_i18n.js reads it below. Any existing choice (e.g. staff's own phone
+    // already set to 中文) is left alone.
+    try {
+        if (!localStorage.getItem('tracking_ui_language')) localStorage.setItem('tracking_ui_language', 'es');
+    } catch (_) {}
+    </script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
+</head>
+<body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}">
+<div class="guest-shell">
+    <header class="guest-head">
+        <div class="guest-brand">
+            <div class="guest-logo" aria-hidden="true">KC</div>
+            <div class="guest-title">
+                <h1>{{ customer_name }}</h1>
+                <p data-i18n="guest.subtitle">Consulta temporal · solo sus pedidos</p>
+            </div>
+        </div>
+        <button type="button" class="guest-lang-toggle" data-lang-toggle data-lang-display="current" onclick="toggleTrackingLanguage()" aria-label="Cambiar idioma" title="Cambiar idioma">ES</button>
+        <button type="button" class="guest-theme-toggle" data-theme-toggle onclick="toggleTrackingTheme()" aria-label="Cambiar tema" title="Cambiar tema">
+            <span class="theme-icon-stack" aria-hidden="true">
+                <svg class="theme-svg theme-svg-moon" data-theme-icon-moon viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8a8.6 8.6 0 1 0 11.4 11.4Z"></path>
+                </svg>
+                <svg class="theme-svg theme-svg-sun" data-theme-icon-sun viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3.8"></circle>
+                    <path d="M12 2.2v2.1M12 19.7v2.1M4.3 12H2.2M21.8 12h-2.1M5.1 5.1l1.5 1.5M17.4 17.4l1.5 1.5M18.9 5.1l-1.5 1.5M6.6 17.4l-1.5 1.5"></path>
+                </svg>
+            </span>
+        </button>
+        <button type="button" class="guest-top-queue-btn" id="guestReportQueueButton" aria-label="Informes" title="Informes" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18H6z"></path><path d="M9 8h6M9 12h6M9 16h4"></path></svg>
+            <span id="guestReportQueueBadge" hidden>0</span>
+        </button>
+        <div class="guest-expiry">
+            {% if is_permanent %}
+            <span data-guest-zh="永久客户入口" data-guest-es="Acceso permanente">Acceso permanente</span>
+            <strong>∞</strong>
+            {% else %}
+            <span data-i18n="guest.expiry_label">Este acceso caduca automáticamente</span>
+            <strong id="guestExpiry" data-expiry="{{ expires_at_epoch }}">--:--</strong>
+            {% endif %}
+        </div>
+    </header>
+
+    <div class="guest-count">
+        <h2 data-i18n="guest.orders_heading">Pedidos</h2>
+        <span id="guestVisibleCount" data-guest-zh="{{ orders|length }} 个订单" data-guest-es="{{ orders|length }} pedido{% if orders|length != 1 %}s{% endif %}">{{ orders|length }} pedido{% if orders|length != 1 %}s{% endif %}</span>
+    </div>
+
+    {% if orders %}
+    <div class="guest-status-filter" id="guestStatusFilter" aria-label="Filtrar pedidos por estado">
+        <div class="guest-status-filter-label" data-i18n="guest.status_filter_label">Estado</div>
+        <div class="guest-status-filter-row" id="guestStatusFilterRow">
+            <button type="button" class="guest-status-chip active" data-guest-status-filter="all" aria-pressed="true">
+                <span data-i18n="guest.status_all">Todos</span><small>{{ orders|length }}</small>
+            </button>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if allow_pdf_download and pdf_count > 0 %}
+    <a class="guest-pdf-bundle" href="{{ url_for('tracking_bp.local_guest_pdf_bundle', token=token) }}">
+        <span class="guest-pdf-bundle-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v11"></path><path d="m8 10 4 4 4-4"></path><path d="M5 18v2h14v-2"></path>
+            </svg>
+        </span>
+        <span class="guest-pdf-bundle-copy">
+            <strong data-i18n="guest.pdf_zip_title">Descargar PDF en ZIP</strong>
+            <small data-guest-zh="{{ pdf_count }} 个文件 · 链接有效期内可下载" data-guest-es="{{ pdf_count }} archivo{% if pdf_count != 1 %}s{% endif %} · disponible hasta que caduque este acceso">{{ pdf_count }} archivo{% if pdf_count != 1 %}s{% endif %} · disponible hasta que caduque este acceso</small>
+        </span>
+        <span class="guest-pdf-bundle-arrow" aria-hidden="true">›</span>
+    </a>
+    {% endif %}
+
+    {% if allow_report_pdf_download %}
+    <button type="button" class="guest-pdf-bundle guest-report-download guest-report-pdf" data-guest-report-create="pdf" data-estimate-url="{{ url_for('tracking_bp.local_guest_report_estimate', token=token, report_format='pdf') }}">
+        <span class="guest-pdf-bundle-icon" aria-hidden="true">PDF</span>
+        <span class="guest-pdf-bundle-copy">
+            <strong data-i18n="guest.report_pdf_title">Preparar informe PDF</strong>
+            <small data-guest-report-estimate="pdf" data-i18n="guest.report_pdf_calculating">Calculando tamaño y tiempo aproximado…</small>
+        </span>
+        <span class="guest-pdf-bundle-arrow" aria-hidden="true">›</span>
+    </button>
+    {% endif %}
+
+    {% if orders %}
+    <main class="guest-grid" id="guestGrid">
+        {% for order in orders %}
+        {% set card_loop = loop %}
+        <a class="guest-card" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-status-key="{{ order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}">
+            <div class="guest-cover">
+                {% if order.images %}
+                    {# UI-only ordering: salesperson/workflow real images first, then supervisor/order images, PDF pages last. #}
+                    {% set workflow_images = order.images | selectattr('_source_kind', 'equalto', 'workflow') | selectattr('media_type', 'equalto', 'image') | list %}
+                    {% set order_images = order.images | selectattr('_source_kind', 'equalto', 'order') | selectattr('media_type', 'equalto', 'image') | list %}
+                    {% set workflow_pdf = order.images | selectattr('_source_kind', 'equalto', 'workflow') | selectattr('media_type', 'equalto', 'pdf_page') | list %}
+                    {% set order_pdf = order.images | selectattr('_source_kind', 'equalto', 'order') | selectattr('media_type', 'equalto', 'pdf_page') | list %}
+                    {% set display_images = workflow_images + order_images + workflow_pdf + order_pdf %}
+                    <div class="guest-cover-track" data-guest-carousel data-image-count="{{ display_images|length }}">
+                        {% for image in display_images %}
+                        <span class="guest-cover-slide">
+                            <img {% if loop.first %}src="{{ image.preview_url or image.url }}"{% else %}data-src="{{ image.preview_url or image.url }}"{% endif %}
+                                 alt="{{ order.order_number }} · {{ loop.index }}/{{ display_images|length }}"
+                                 loading="{% if loop.first and card_loop.index <= 4 %}eager{% else %}lazy{% endif %}"
+                                 decoding="async"{% if loop.first and card_loop.index <= 2 %} fetchpriority="high"{% endif %}>
+                            {% if image.media_type == 'pdf_page' %}
+                            <span class="guest-cover-pdf">PDF {{ image.pdf_page_number }}/{{ image.pdf_page_count }}</span>
+                            {% endif %}
+                        </span>
+                        {% endfor %}
+                    </div>
+                    {% if display_images|length > 1 %}
+                    <button type="button" class="guest-web-nav guest-web-nav-prev" data-guest-nav="-1" aria-label="Previous image">‹</button>
+                    <button type="button" class="guest-web-nav guest-web-nav-next" data-guest-nav="1" aria-label="Next image">›</button>
+                    <span class="guest-image-count" data-guest-image-count>1/{{ display_images|length }}</span>
+                    <span class="guest-cover-dots" aria-hidden="true">
+                        {% for image in display_images %}<i class="{% if loop.first %}active{% endif %}" data-guest-dot="{{ loop.index0 }}"></i>{% endfor %}
+                    </span>
+                    {% endif %}
+                {% else %}
+                    <div class="guest-cover-empty" data-i18n="guest.no_image">Sin imagen</div>
+                {% endif %}
+            </div>
+            <div class="guest-card-body">
+                <span class="guest-card-status" data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</span>
+                <div class="guest-card-number">{{ order.workflow_number or order.order_number }}</div>
+                {% if order.product_name or order.production_type or order.product_code %}
+                <div class="guest-card-product">{{ order.product_name or order.production_type }}{% if order.product_code %} · {{ order.product_code }}{% endif %}</div>
+                {% endif %}
+                {% if order.order_date %}<div class="guest-card-date">{{ order.order_date }}</div>{% endif %}
+            </div>
+        </a>
+        {% endfor %}
+    </main>
+    {% else %}
+        <div class="guest-empty" data-i18n="guest.empty">No hay pedidos disponibles.</div>
+    {% endif %}
+</div>
+
+<!-- Desktop WEB only: Xiaohongshu-style in-place order detail. Mobile keeps normal page navigation. -->
+<div class="guest-desktop-detail-overlay" id="guestDesktopDetailOverlay" hidden aria-hidden="true">
+    <div class="guest-desktop-detail-panel" role="dialog" aria-modal="true" aria-label="Detalle del pedido">
+        <button type="button" class="guest-desktop-detail-close" id="guestDesktopDetailClose" aria-label="Cerrar">×</button>
+        <div class="guest-desktop-detail-loading" id="guestDesktopDetailLoading">Cargando…</div>
+        <div class="guest-desktop-detail-layout" id="guestDesktopDetailLayout" hidden>
+            <div class="guest-desktop-detail-media" id="guestDesktopDetailMedia"></div>
+            <div class="guest-desktop-detail-info" id="guestDesktopDetailInfo"></div>
+        </div>
+    </div>
+</div>
+<script>
+// Real waterfall columns, built in JS instead of CSS `column-count`.
+// CSS multi-column balances height on first paint and can slice the first card of a new
+// column mid-content (cover shows, order number/status below it gets clipped) even with
+// break-inside:avoid — this is a known WebKit/Blink limitation, not fixable with tuning.
+// Moving existing card nodes into real column containers avoids that class of bug entirely,
+// and since the cards keep their identity (same elements, same data-* attributes), every
+// script below that queries [data-guest-card] / [data-guest-carousel] still works unchanged.
+(function () {
+    const grid = document.getElementById('guestGrid');
+    if (!grid) return;
+    const cards = Array.from(grid.children).filter(function (node) {
+        return node.matches && node.matches('[data-guest-card]');
+    });
+    if (!cards.length) return;
+
+    function columnCountForWidth() {
+        // Keep the existing phone/tablet behavior, but let desktop WEB use the available
+        // width like a content wall instead of staying trapped in the mobile-sized shell.
+        if (window.innerWidth >= 1500) return 5;
+        if (window.innerWidth >= 1024) return 4;
+        return window.innerWidth >= 680 ? 3 : 2;
+    }
+
+    function distribute() {
+        const count = columnCountForWidth();
+        const existingCols = Array.from(grid.querySelectorAll('.guest-grid-col'));
+        if (existingCols.length === count) return; // already correct shape, avoid needless DOM churn
+        const cols = [];
+        for (let i = 0; i < count; i++) {
+            const col = document.createElement('div');
+            col.className = 'guest-grid-col';
+            cols.push(col);
+        }
+        // Round-robin placement: cover heights are uniform (fixed aspect-ratio), so this
+        // reads as a natural waterfall without needing a height-measurement pass.
+        cards.forEach(function (card, index) {
+            cols[index % count].appendChild(card);
+        });
+        grid.replaceChildren.apply(grid, cols);
+    }
+
+    distribute();
+    let resizeTimer = null;
+    window.addEventListener('resize', function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(distribute, 150);
+    }, {passive: true});
+})();
+</script>
+<script>
+// Guest pages follow whatever language the rest of the app is on (window.getTrackingLanguage,
+// shared via the same 'tracking_ui_language' localStorage key from ui_i18n.js) — no separate
+// state. Any element carrying both data-guest-zh and data-guest-es gets its text swapped here;
+// data-i18n elements are already handled by ui_i18n.js's own apply(). Both run off the same
+// 'tracking:languagechange' event so everything on the page switches together.
+function guestApplyBilingualText() {
+    const lang = (typeof window.getTrackingLanguage === 'function') ? window.getTrackingLanguage() : 'es';
+    document.querySelectorAll('[data-guest-zh][data-guest-es]').forEach(function (el) {
+        el.textContent = lang === 'zh_cn' ? el.dataset.guestZh : el.dataset.guestEs;
+    });
+}
+document.addEventListener('tracking:languagechange', guestApplyBilingualText);
+guestApplyBilingualText();
+
+(function () {
+    const el = document.getElementById('guestExpiry');
+    if (!el) return;
+    const end = Number(el.dataset.expiry || 0) * 1000;
+    function expiredText() {
+        return (typeof window.trackingT === 'function') ? window.trackingT('guest.expired') : 'Caducado';
+    }
+    function tick() {
+        const left = Math.max(0, end - Date.now());
+        if (!left) { el.textContent = expiredText(); setTimeout(() => location.reload(), 800); return; }
+        const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+        el.textContent = `${m}:${String(s).padStart(2,'0')}`;
+    }
+    tick(); setInterval(tick, 1000);
+})();
+
+// Exact-status filters for the temporary guest customer wall.
+// The order/media list itself is still rebuilt from current database/file rows on each page load;
+// this only hides/shows cards already authorized for this token/customer.
+(function () {
+    const guestToken = {{ token|tojson }};
+    const row = document.getElementById('guestStatusFilterRow');
+    const countNode = document.getElementById('guestVisibleCount');
+    const cards = Array.from(document.querySelectorAll('[data-guest-card]'));
+    if (!row || !cards.length) return;
+
+    function currentLang() {
+        return (typeof window.getTrackingLanguage === 'function') ? window.getTrackingLanguage() : 'es';
+    }
+    function countLabel(n) {
+        return currentLang() === 'zh_cn' ? (n + ' 个订单') : (n + (n === 1 ? ' pedido' : ' pedidos'));
+    }
+
+    const counts = new Map();
+    cards.forEach(function (card) {
+        const key = String(card.dataset.guestStatusKey || '__order__');
+        const zh = String(card.dataset.guestStatusZh || '订单');
+        const es = String(card.dataset.guestStatusEs || 'Pedido');
+        const item = counts.get(key) || {key:key, zh:zh, es:es, count:0};
+        item.count += 1;
+        counts.set(key, item);
+    });
+
+    Array.from(counts.values()).forEach(function (item) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'guest-status-chip';
+        btn.dataset.guestStatusFilter = item.key;
+        btn.setAttribute('aria-pressed', 'false');
+        const label = document.createElement('span');
+        label.dataset.guestZh = item.zh;
+        label.dataset.guestEs = item.es;
+        label.textContent = currentLang() === 'zh_cn' ? item.zh : item.es;
+        const count = document.createElement('small');
+        count.textContent = String(item.count);
+        btn.append(label, count);
+        row.appendChild(btn);
+    });
+
+    const storageKey = 'trackingGuestStatus:' + guestToken;
+    let selected = 'all';
+    try { selected = sessionStorage.getItem(storageKey) || 'all'; } catch (_) {}
+    if (selected !== 'all' && !counts.has(selected)) selected = 'all';
+
+    function loadFirstVisibleImage(card) {
+        const img = card && card.querySelector('.guest-cover-slide img');
+        if (img && !img.getAttribute('src') && img.dataset.src) {
+            img.src = img.dataset.src;
+            img.removeAttribute('data-src');
+        }
+    }
+
+    function apply(key, options) {
+        key = key || 'all';
+        let visible = 0;
+        cards.forEach(function (card) {
+            const show = key === 'all' || String(card.dataset.guestStatusKey || '') === key;
+            card.hidden = !show;
+            if (show) {
+                visible += 1;
+                loadFirstVisibleImage(card);
+            }
+        });
+        row.querySelectorAll('[data-guest-status-filter]').forEach(function (btn) {
+            const active = String(btn.dataset.guestStatusFilter || '') === key;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        if (countNode) countNode.textContent = countLabel(visible);
+        try { sessionStorage.setItem(storageKey, key); } catch (_) {}
+        if (options && options.scroll) {
+            const filter = document.getElementById('guestStatusFilter');
+            if (filter) filter.scrollIntoView({behavior:'smooth', block:'start'});
+        }
+    }
+
+    row.addEventListener('click', function (event) {
+        const btn = event.target.closest('[data-guest-status-filter]');
+        if (!btn) return;
+        apply(btn.dataset.guestStatusFilter || 'all', {scroll:true});
+    });
+
+    document.addEventListener('tracking:languagechange', function () {
+        apply(row.querySelector('.guest-status-chip.active')?.dataset.guestStatusFilter || selected);
+    });
+
+    apply(selected);
+})();
+
+// Temporary guest customer wall: swipe each order's media without opening the order.
+// A tap still opens order detail; a horizontal swipe only changes the preview image/page.
+(function () {
+    document.querySelectorAll('[data-guest-carousel]').forEach(function (track) {
+        const card = track.closest('[data-guest-card]');
+        const cover = track.closest('.guest-cover');
+        const count = Math.max(1, Number(track.dataset.imageCount || 1));
+        if (!card || !cover || count <= 1) return;
+
+        let startX = 0;
+        let startY = 0;
+        let moved = false;
+        let suppressUntil = 0;
+
+        function loadSlide(index) {
+            if (index < 0 || index >= count) return;
+            const img = track.querySelectorAll('img')[index];
+            if (img && !img.getAttribute('src') && img.dataset.src) {
+                img.src = img.dataset.src;
+                img.removeAttribute('data-src');
+            }
+        }
+
+        function updateIndicator() {
+            const width = track.clientWidth || 1;
+            const index = Math.max(0, Math.min(count - 1, Math.round(track.scrollLeft / width)));
+            loadSlide(index - 1);
+            loadSlide(index);
+            loadSlide(index + 1);
+            const counter = cover.querySelector('[data-guest-image-count]');
+            if (counter) counter.textContent = (index + 1) + '/' + count;
+            cover.querySelectorAll('[data-guest-dot]').forEach(function (dot) {
+                dot.classList.toggle('active', Number(dot.dataset.guestDot) === index);
+            });
+        }
+        track.addEventListener('scroll', updateIndicator, {passive: true});
+        track.addEventListener('touchstart', function (event) {
+            const touch = event.touches && event.touches[0];
+            if (!touch) return;
+            startX = touch.clientX;
+            startY = touch.clientY;
+            moved = false;
+        }, {passive: true});
+        track.addEventListener('touchmove', function (event) {
+            const touch = event.touches && event.touches[0];
+            if (!touch) return;
+            const dx = Math.abs(touch.clientX - startX);
+            const dy = Math.abs(touch.clientY - startY);
+            if (dx > 9 && dx > dy) moved = true;
+        }, {passive: true});
+        track.addEventListener('touchend', function () {
+            if (moved) suppressUntil = Date.now() + 550;
+        }, {passive: true});
+
+        // Desktop WEB: mouse/pen drag must actually move the horizontal scroller.
+        // Touch keeps using the browser's native momentum scrolling above.
+        let pointerDragging = false;
+        let pointerId = null;
+        let pointerStartScrollLeft = 0;
+
+        track.addEventListener('pointerdown', function (event) {
+            if (event.pointerType === 'touch' || event.button !== 0) return;
+            pointerDragging = true;
+            pointerId = event.pointerId;
+            startX = event.clientX;
+            startY = event.clientY;
+            pointerStartScrollLeft = track.scrollLeft;
+            moved = false;
+            track.classList.add('is-pointer-dragging');
+            try { track.setPointerCapture(pointerId); } catch (_) {}
+        });
+
+        track.addEventListener('pointermove', function (event) {
+            if (!pointerDragging || event.pointerId !== pointerId) return;
+            const rawDx = event.clientX - startX;
+            const dx = Math.abs(rawDx);
+            const dy = Math.abs(event.clientY - startY);
+            if (!moved && dx > 6 && dx > dy) moved = true;
+            if (!moved) return;
+            event.preventDefault();
+            track.scrollLeft = pointerStartScrollLeft - rawDx;
+        }, {passive: false});
+
+        function finishPointerDrag(event) {
+            if (!pointerDragging || (event && event.pointerId !== pointerId)) return;
+            const didMove = moved;
+            pointerDragging = false;
+            track.classList.remove('is-pointer-dragging');
+            try { if (pointerId !== null) track.releasePointerCapture(pointerId); } catch (_) {}
+            pointerId = null;
+            if (didMove) {
+                suppressUntil = Date.now() + 550;
+                const width = track.clientWidth || 1;
+                const index = Math.max(0, Math.min(count - 1, Math.round(track.scrollLeft / width)));
+                track.scrollTo({left: index * width, behavior: 'smooth'});
+                loadSlide(index - 1);
+                loadSlide(index);
+                loadSlide(index + 1);
+            }
+        }
+
+        track.addEventListener('pointerup', finishPointerDrag);
+        track.addEventListener('pointercancel', finishPointerDrag);
+        track.addEventListener('lostpointercapture', finishPointerDrag);
+
+        card.addEventListener('click', function (event) {
+            if (Date.now() < suppressUntil || moved) {
+                event.preventDefault();
+                event.stopPropagation();
+                moved = false;
+            }
+        }, true);
+    });
+})();
+
+// Desktop WEB: open order detail in-place, Xiaohongshu-style, instead of leaving the wall.
+// Mobile/touch navigation is deliberately unchanged and continues to use the existing detail page.
+(function () {
+    const desktopQuery = window.matchMedia
+        ? window.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)')
+        : null;
+    const overlay = document.getElementById('guestDesktopDetailOverlay');
+    const panel = overlay?.querySelector('.guest-desktop-detail-panel');
+    const closeButton = document.getElementById('guestDesktopDetailClose');
+    const loading = document.getElementById('guestDesktopDetailLoading');
+    const layout = document.getElementById('guestDesktopDetailLayout');
+    const media = document.getElementById('guestDesktopDetailMedia');
+    const info = document.getElementById('guestDesktopDetailInfo');
+    if (!overlay || !panel || !loading || !layout || !media || !info) return;
+
+    let requestController = null;
+
+    function isDesktop() {
+        return !!(desktopQuery && desktopQuery.matches);
+    }
+
+    function closeDetail() {
+        if (requestController) {
+            try { requestController.abort(); } catch (_) {}
+            requestController = null;
+        }
+        overlay.hidden = true;
+        overlay.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('guest-desktop-detail-open');
+        media.replaceChildren();
+        info.replaceChildren();
+        layout.hidden = true;
+        loading.hidden = false;
+        loading.textContent = 'Cargando…';
+    }
+
+    function initGallery(root) {
+        const gallery = root.querySelector('[data-guest-detail-gallery]');
+        if (!gallery) return;
+        const shell = gallery.closest('.guest-gallery-shell');
+        const prev = shell?.querySelector('[data-detail-nav="-1"]');
+        const next = shell?.querySelector('[data-detail-nav="1"]');
+        const count = Math.max(1, Number(gallery.dataset.imageCount || gallery.children.length || 1));
+        let pointerDown = false;
+        let pointerId = null;
+        let startX = 0;
+        let startScrollLeft = 0;
+        let moved = false;
+
+        function indexNow() {
+            const width = gallery.clientWidth || 1;
+            return Math.max(0, Math.min(count - 1, Math.round(gallery.scrollLeft / width)));
+        }
+        function sync() {
+            const index = indexNow();
+            if (prev) prev.disabled = index <= 0;
+            if (next) next.disabled = index >= count - 1;
+        }
+        function move(delta, event) {
+            if (event) { event.preventDefault(); event.stopPropagation(); }
+            const width = gallery.clientWidth || 1;
+            const target = Math.max(0, Math.min(count - 1, indexNow() + delta));
+            gallery.scrollTo({left: target * width, behavior:'smooth'});
+            window.setTimeout(sync, 260);
+        }
+        prev?.addEventListener('click', event => move(-1, event));
+        next?.addEventListener('click', event => move(1, event));
+        gallery.addEventListener('scroll', sync, {passive:true});
+
+        gallery.addEventListener('pointerdown', function (event) {
+            if (event.pointerType === 'touch' || event.button !== 0) return;
+            pointerDown = true;
+            pointerId = event.pointerId;
+            startX = event.clientX;
+            startScrollLeft = gallery.scrollLeft;
+            moved = false;
+            try { gallery.setPointerCapture(pointerId); } catch (_) {}
+        });
+        gallery.addEventListener('pointermove', function (event) {
+            if (!pointerDown || event.pointerId !== pointerId) return;
+            const dx = event.clientX - startX;
+            if (!moved && Math.abs(dx) > 6) moved = true;
+            if (!moved) return;
+            event.preventDefault();
+            gallery.scrollLeft = startScrollLeft - dx;
+        }, {passive:false});
+        function finish(event) {
+            if (!pointerDown || (event && event.pointerId !== pointerId)) return;
+            pointerDown = false;
+            try { if (pointerId !== null) gallery.releasePointerCapture(pointerId); } catch (_) {}
+            pointerId = null;
+            if (!moved) return;
+            const width = gallery.clientWidth || 1;
+            gallery.scrollTo({left:indexNow() * width, behavior:'smooth'});
+            window.setTimeout(sync, 260);
+        }
+        gallery.addEventListener('pointerup', finish);
+        gallery.addEventListener('pointercancel', finish);
+        gallery.addEventListener('lostpointercapture', finish);
+        sync();
+    }
+
+    async function openDetail(url) {
+        if (!isDesktop() || !url) return;
+        if (requestController) {
+            try { requestController.abort(); } catch (_) {}
+        }
+        requestController = new AbortController();
+        overlay.hidden = false;
+        overlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('guest-desktop-detail-open');
+        layout.hidden = true;
+        loading.hidden = false;
+        loading.textContent = (window.getTrackingLanguage?.() === 'zh_cn') ? '正在读取订单…' : 'Cargando pedido…';
+        media.replaceChildren();
+        info.replaceChildren();
+
+        try {
+            const response = await fetch(url, {
+                credentials:'same-origin',
+                cache:'no-store',
+                signal:requestController.signal,
+                headers:{'X-Requested-With':'XMLHttpRequest'}
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const html = await response.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const orderHead = doc.querySelector('.guest-order-head');
+            const galleryShell = doc.querySelector('.guest-gallery-shell');
+            const panels = Array.from(doc.querySelectorAll('.guest-panel'));
+            if (!orderHead && !galleryShell && !panels.length) throw new Error('Invalid order detail');
+
+            if (galleryShell) media.appendChild(galleryShell.cloneNode(true));
+            else {
+                const empty = document.createElement('div');
+                empty.className = 'guest-desktop-detail-no-media';
+                empty.textContent = (window.getTrackingLanguage?.() === 'zh_cn') ? '此订单没有图片' : 'Este pedido no tiene imágenes';
+                media.appendChild(empty);
+            }
+            if (orderHead) info.appendChild(orderHead.cloneNode(true));
+            panels.forEach(section => info.appendChild(section.cloneNode(true)));
+
+            if (typeof window.applyTrackingLanguage === 'function') window.applyTrackingLanguage(layout);
+            guestApplyBilingualText();
+            initGallery(media);
+            loading.hidden = true;
+            layout.hidden = false;
+            info.scrollTop = 0;
+        } catch (error) {
+            if (error?.name === 'AbortError') return;
+            loading.hidden = false;
+            layout.hidden = true;
+            loading.innerHTML = `<strong>${window.getTrackingLanguage?.() === 'zh_cn' ? '无法读取订单' : 'No se pudo cargar el pedido'}</strong><small>${String(error?.message || error)}</small>`;
+        } finally {
+            requestController = null;
+        }
+    }
+
+    document.querySelectorAll('[data-guest-card]').forEach(function (card) {
+        card.addEventListener('click', function (event) {
+            if (!isDesktop() || event.defaultPrevented) return;
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            if (event.target.closest('[data-guest-nav]')) return;
+            event.preventDefault();
+            event.stopPropagation();
+            openDetail(card.href);
+        }, false);
+    });
+
+    closeButton?.addEventListener('click', closeDetail);
+    overlay.addEventListener('click', function (event) {
+        if (event.target === overlay) closeDetail();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && !overlay.hidden) closeDetail();
+    });
+    desktopQuery?.addEventListener?.('change', function () {
+        if (!isDesktop() && !overlay.hidden) closeDetail();
+    });
+})();
+
+// Guest-only return-position memory.
+// This is intentionally separate from the logged-in mobile UI: the guest viewer is
+// a standalone page, so its Back / iPhone edge-swipe needs its own anchor restore.
+(function () {
+    const guestToken = {{ token|tojson }};
+    const storageKey = 'trackingGuestReturn:' + guestToken;
+    const focusClass = 'guest-return-focus';
+    let restoreTimers = [];
+
+    function safeParse(raw) {
+        try { return JSON.parse(raw || 'null'); } catch (_) { return null; }
+    }
+
+    function currentReturnState() {
+        const state = history.state && history.state.__trackingGuestReturn
+            ? history.state.__trackingGuestReturn
+            : null;
+        if (state && state.token === guestToken) return state;
+        const fallback = safeParse(sessionStorage.getItem(storageKey));
+        return fallback && fallback.token === guestToken ? fallback : null;
+    }
+
+    function saveCardAnchor(card) {
+        if (!card) return;
+        const orderKey = String(card.dataset.guestOrderKey || '').trim();
+        if (!orderKey) return;
+        const rect = card.getBoundingClientRect();
+        const payload = {
+            token: guestToken,
+            orderKey: orderKey,
+            scrollY: Math.max(0, window.scrollY || window.pageYOffset || 0),
+            viewportTop: rect.top,
+            savedAt: Date.now()
+        };
+        try { sessionStorage.setItem(storageKey, JSON.stringify(payload)); } catch (_) {}
+        try {
+            history.replaceState({
+                ...(history.state || {}),
+                __trackingGuestReturn: payload
+            }, '', location.href);
+        } catch (_) {}
+    }
+
+    function findSavedCard(payload) {
+        if (!payload || !payload.orderKey) return null;
+        return Array.from(document.querySelectorAll('[data-guest-card]')).find(function (card) {
+            return String(card.dataset.guestOrderKey || '') === String(payload.orderKey || '');
+        }) || null;
+    }
+
+    function placeSavedCard(payload, emphasize) {
+        if (!payload) return false;
+        const target = findSavedCard(payload);
+        if (!target) {
+            if (Number.isFinite(Number(payload.scrollY))) {
+                window.scrollTo(0, Math.max(0, Number(payload.scrollY)));
+            }
+            return false;
+        }
+
+        const savedTop = Number(payload.viewportTop);
+        const desiredViewportTop = Number.isFinite(savedTop) ? savedTop : 110;
+        const delta = target.getBoundingClientRect().top - desiredViewportTop;
+        if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+
+        if (emphasize) {
+            document.querySelectorAll('.guest-card.' + focusClass).forEach(function (card) {
+                if (card !== target) card.classList.remove(focusClass);
+            });
+            target.classList.add(focusClass);
+        }
+        return true;
+    }
+
+    function restoreSavedCard() {
+        const payload = currentReturnState();
+        if (!payload) return;
+        // Ignore very old stale anchors from a forgotten tab/session.
+        if (Date.now() - Number(payload.savedAt || 0) > 6 * 60 * 60 * 1000) return;
+
+        restoreTimers.forEach(clearTimeout);
+        restoreTimers = [];
+        const passes = [0, 60, 180, 420, 850, 1400];
+        passes.forEach(function (delay, index) {
+            restoreTimers.push(setTimeout(function () {
+                placeSavedCard(payload, index === 0 || index === passes.length - 1);
+            }, delay));
+        });
+    }
+
+    // Capture BEFORE following the detail link, so Back/edge-swipe has an exact card anchor.
+    document.querySelectorAll('[data-guest-card]').forEach(function (card) {
+        card.addEventListener('click', function (event) {
+            // A carousel swipe is prevented by the earlier capture handler; only a real tap reaches here.
+            if (!event.defaultPrevented) saveCardAnchor(card);
+        }, false);
+    });
+
+    // pageshow is the important event for iOS Safari's back-forward cache / edge swipe.
+    window.addEventListener('pageshow', function () {
+        restoreSavedCard();
+    });
+    window.addEventListener('popstate', function () {
+        restoreSavedCard();
+    });
+
+    // Normal navigation fallback (some mobile browsers rebuild the page instead of BFCache).
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', restoreSavedCard, {once:true});
+    } else {
+        restoreSavedCard();
+    }
+})();
+</script>
+<div id="guestReportQueueRoot" class="guest-report-queue-root" aria-live="polite"></div>
+
+<script>
+(function(){
+ document.querySelectorAll('.guest-cover').forEach(function(cover){
+   const track=cover.querySelector('[data-guest-carousel]'); if(!track)return;
+   const prev=cover.querySelector('[data-guest-nav="-1"]'), next=cover.querySelector('[data-guest-nav="1"]');
+   function sync(){const width=track.clientWidth||1,count=Math.max(1,Number(track.dataset.imageCount||1)),idx=Math.max(0,Math.min(count-1,Math.round(track.scrollLeft/width))); if(prev)prev.disabled=idx<=0;if(next)next.disabled=idx>=count-1;}
+   function move(delta,event){if(event){event.preventDefault();event.stopPropagation();} const width=track.clientWidth||1,count=Math.max(1,Number(track.dataset.imageCount||1)),idx=Math.max(0,Math.min(count-1,Math.round(track.scrollLeft/width))),target=Math.max(0,Math.min(count-1,idx+delta)); track.scrollTo({left:target*width,behavior:'smooth'}); setTimeout(sync,260);}
+   prev?.addEventListener('click',e=>move(-1,e)); next?.addEventListener('click',e=>move(1,e)); track.addEventListener('scroll',sync,{passive:true}); sync();
+ });
+})();
+</script>
+<script src="{{ url_for('tracking_bp.static', filename='js/guest_reports.js') }}?v={{ STATIC_VER }}"></script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex,nofollow,noarchive">
+    <title>{{ order.workflow_number or order.order_number }} · {{ customer_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest.css') }}?v={{ STATIC_VER }}">
+    <script>
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    try { if (!localStorage.getItem('tracking_ui_language')) localStorage.setItem('tracking_ui_language', 'es'); } catch (_) {}
+    </script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
+</head>
+<body data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}">
+<div class="guest-shell">
+    <header class="guest-head">
+        <div class="guest-brand">
+            <div class="guest-logo" aria-hidden="true">KC</div>
+            <div class="guest-title">
+                <h1>{{ customer_name }}</h1>
+                <p data-i18n="guest.order_subtitle">Consulta temporal · solo lectura</p>
+            </div>
+        </div>
+        <button type="button" class="guest-lang-toggle" data-lang-toggle data-lang-display="current" onclick="toggleTrackingLanguage()" aria-label="Cambiar idioma" title="Cambiar idioma">ES</button>
+        <button type="button" class="guest-theme-toggle" data-theme-toggle onclick="toggleTrackingTheme()" aria-label="Cambiar tema" title="Cambiar tema">
+            <span class="theme-icon-stack" aria-hidden="true">
+                <svg class="theme-svg theme-svg-moon" data-theme-icon-moon viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8a8.6 8.6 0 1 0 11.4 11.4Z"></path></svg>
+                <svg class="theme-svg theme-svg-sun" data-theme-icon-sun viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.8"></circle><path d="M12 2.2v2.1M12 19.7v2.1M4.3 12H2.2M21.8 12h-2.1M5.1 5.1l1.5 1.5M17.4 17.4l1.5 1.5M18.9 5.1l-1.5 1.5M6.6 17.4l-1.5 1.5"></path></svg>
+            </span>
+        </button>
+        <button type="button" class="guest-top-queue-btn" id="guestReportQueueButton" aria-label="Informes" title="Informes" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18H6z"></path><path d="M9 8h6M9 12h6M9 16h4"></path></svg>
+            <span id="guestReportQueueBadge" hidden>0</span>
+        </button>
+        <div class="guest-expiry">
+            {% if is_permanent %}<span data-guest-zh="永久客户入口" data-guest-es="Acceso permanente">Acceso permanente</span><strong>∞</strong>{% else %}
+            <span data-i18n="guest.expiry_label">Caduca automáticamente</span><strong id="guestExpiry" data-expiry="{{ expires_at_epoch }}">--:--</strong>{% endif %}
+        </div>
+    </header>
+
+    <a class="guest-back" id="guestBackToOrders" href="{{ url_for('tracking_bp.local_guest_customer', token=token) }}"><span>‹</span> <b data-i18n="guest.back_orders">Volver a pedidos</b></a>
+
+    <section class="guest-order-head">
+        <h1>{{ order.workflow_number or order.order_number }}</h1>
+        <p data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</p>
+    </section>
+
+    {% if order.images %}
+    <div class="guest-gallery-shell">
+        <div class="guest-gallery" aria-label="Imágenes del pedido" data-guest-detail-gallery data-image-count="{{ order.images|length }}">
+            {% for image in order.images %}
+            <div class="guest-slide">
+                <img src="{{ image.url }}" alt="{{ image.name }}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}">
+                {% if image.media_type == 'pdf_page' %}<span class="guest-pdf-badge">PDF {{ image.pdf_page_number }}/{{ image.pdf_page_count }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% if order.images|length > 1 %}<button type="button" class="guest-web-nav guest-detail-prev" data-detail-nav="-1" aria-label="Previous image">‹</button><button type="button" class="guest-web-nav guest-detail-next" data-detail-nav="1" aria-label="Next image">›</button>{% endif %}
+    </div>
+    {% endif %}
+
+    <section class="guest-panel">
+        <h2 data-i18n="guest.order_info">Información del pedido</h2>
+        <div class="guest-info">
+            <div class="guest-info-item"><span data-i18n="guest.field.order">Pedido</span><strong>{{ order.workflow_number or order.order_number }}</strong></div>
+            <div class="guest-info-item"><span data-i18n="guest.field.status">Estado</span><strong data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</strong></div>
+            {% if order.order_date %}<div class="guest-info-item"><span data-i18n="guest.field.date">Fecha</span><strong>{{ order.order_date }}</strong></div>{% endif %}
+            {% if order.expected_delivery_date %}<div class="guest-info-item"><span data-i18n="guest.field.delivery">Entrega estimada</span><strong>{{ order.expected_delivery_date }}</strong></div>{% endif %}
+            {% if order.product_name or order.production_type %}<div class="guest-info-item"><span data-i18n="guest.field.product">Producto</span><strong>{{ order.product_name or order.production_type }}</strong></div>{% endif %}
+            {% if order.product_code %}<div class="guest-info-item"><span data-i18n="guest.field.code">Código</span><strong>{{ order.product_code }}</strong></div>{% endif %}
+            {% if order.quantity %}<div class="guest-info-item"><span data-i18n="guest.field.quantity">Cantidad</span><strong>{{ order.quantity }}</strong></div>{% endif %}
+        </div>
+    </section>
+
+    {% if timeline_stages %}
+    <section class="guest-panel guest-progress-panel">
+        <h2 data-i18n="guest.progress">Progreso</h2>
+        <div class="guest-stage-timeline" role="list" aria-label="Progreso del pedido">
+            {% for stage in timeline_stages %}
+            <div class="guest-stage {{ stage.state }}" role="listitem">
+                <div class="guest-stage-dot">{% if stage.state == 'done' %}✓{% else %}{{ loop.index }}{% endif %}</div>
+                <div class="guest-stage-line" aria-hidden="true"></div>
+                <strong data-i18n="guest.stage.{{ stage.key }}">{{ stage.label_es }}</strong>
+                <time>{{ stage.date or '—' }}</time>
+            </div>
+            {% endfor %}
+        </div>
+        {% if history %}
+        <details class="guest-history-details">
+            <summary data-i18n="guest.history_detail">Ver historial detallado</summary>
+            <ol class="guest-history-list">
+                {% for item in history %}
+                <li><time>{{ item.date }}</time><strong data-guest-zh="{{ item.status_zh }}" data-guest-es="{{ item.status_es }}">{{ item.status_es }}</strong></li>
+                {% endfor %}
+            </ol>
+        </details>
+        {% endif %}
+    </section>
+    {% endif %}
+</div>
+<script>
+(function () {
+    const el = document.getElementById('guestExpiry');
+    if (!el) return;
+    const end = Number(el.dataset.expiry || 0) * 1000;
+    function tick() {
+        const left = Math.max(0, end - Date.now());
+        if (!left) { el.textContent = (window.trackingT ? window.trackingT('guest.expired') : 'Caducado'); setTimeout(() => location.reload(), 800); return; }
+        const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+        el.textContent = `${m}:${String(s).padStart(2,'0')}`;
+    }
+    tick(); setInterval(tick, 1000);
+})();
+
+function guestOrderApplyBilingualText() {
+    const lang = (typeof window.getTrackingLanguage === 'function') ? window.getTrackingLanguage() : 'es';
+    document.querySelectorAll('[data-guest-zh][data-guest-es]').forEach(function (el) {
+        el.textContent = lang === 'zh_cn' ? el.dataset.guestZh : el.dataset.guestEs;
+    });
+}
+document.addEventListener('tracking:languagechange', guestOrderApplyBilingualText);
+guestOrderApplyBilingualText();
+// Prefer the real history entry so the guest wall can restore the exact card position.
+(function () {
+    const back = document.getElementById('guestBackToOrders');
+    if (!back) return;
+    const guestToken = {{ token|tojson }};
+    const storageKey = 'trackingGuestReturn:' + guestToken;
+    back.addEventListener('click', function (event) {
+        let hasAnchor = false;
+        try { hasAnchor = !!sessionStorage.getItem(storageKey); } catch (_) {}
+        if (hasAnchor && history.length > 1) {
+            event.preventDefault();
+            history.back();
+        }
+    });
+})();
+
+
+// Desktop WEB gallery drag: same interaction as the customer-wall carousel.
+// Mobile/touch remains native horizontal scrolling.
+(function () {
+    const gallery = document.querySelector('.guest-gallery');
+    if (!gallery || gallery.children.length <= 1) return;
+
+    let dragging = false;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let moved = false;
+
+    gallery.addEventListener('pointerdown', function (event) {
+        if (event.pointerType === 'touch' || event.button !== 0) return;
+        dragging = true;
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        startScrollLeft = gallery.scrollLeft;
+        moved = false;
+        gallery.classList.add('is-pointer-dragging');
+        try { gallery.setPointerCapture(pointerId); } catch (_) {}
+    });
+
+    gallery.addEventListener('pointermove', function (event) {
+        if (!dragging || event.pointerId !== pointerId) return;
+        const rawDx = event.clientX - startX;
+        const dx = Math.abs(rawDx);
+        const dy = Math.abs(event.clientY - startY);
+        if (!moved && dx > 6 && dx > dy) moved = true;
+        if (!moved) return;
+        event.preventDefault();
+        gallery.scrollLeft = startScrollLeft - rawDx;
+    }, {passive: false});
+
+    function finish(event) {
+        if (!dragging || (event && event.pointerId !== pointerId)) return;
+        const didMove = moved;
+        dragging = false;
+        gallery.classList.remove('is-pointer-dragging');
+        try { if (pointerId !== null) gallery.releasePointerCapture(pointerId); } catch (_) {}
+        pointerId = null;
+        if (!didMove) return;
+
+        const firstSlide = gallery.querySelector('.guest-slide');
+        const step = firstSlide ? (firstSlide.getBoundingClientRect().width + 8) : (gallery.clientWidth || 1);
+        const maxIndex = Math.max(0, gallery.children.length - 1);
+        const index = Math.max(0, Math.min(maxIndex, Math.round(gallery.scrollLeft / Math.max(1, step))));
+        gallery.scrollTo({left: index * step, behavior: 'smooth'});
+    }
+
+    gallery.addEventListener('pointerup', finish);
+    gallery.addEventListener('pointercancel', finish);
+    gallery.addEventListener('lostpointercapture', finish);
+})();
+
+</script>
+<div id="guestReportQueueRoot" class="guest-report-queue-root" aria-live="polite"></div>
+
+<script>
+(function(){
+ const gallery=document.querySelector('[data-guest-detail-gallery]'); if(!gallery)return; const shell=gallery.closest('.guest-gallery-shell');
+ const prev=shell?.querySelector('[data-detail-nav="-1"]'),next=shell?.querySelector('[data-detail-nav="1"]'),count=Math.max(1,Number(gallery.dataset.imageCount||1));
+ function sync(){const width=gallery.clientWidth||1,idx=Math.max(0,Math.min(count-1,Math.round(gallery.scrollLeft/width)));if(prev)prev.disabled=idx<=0;if(next)next.disabled=idx>=count-1;}
+ function move(delta){const width=gallery.clientWidth||1,idx=Math.max(0,Math.min(count-1,Math.round(gallery.scrollLeft/width))),target=Math.max(0,Math.min(count-1,idx+delta));gallery.scrollTo({left:target*width,behavior:'smooth'});setTimeout(sync,260);}
+ prev?.addEventListener('click',e=>{e.preventDefault();move(-1)});next?.addEventListener('click',e=>{e.preventDefault();move(1)});gallery.addEventListener('scroll',sync,{passive:true});sync();
+})();
+</script>
+<script src="{{ url_for('tracking_bp.static', filename='js/guest_reports.js') }}?v={{ STATIC_VER }}"></script>
+</body>
+</html>

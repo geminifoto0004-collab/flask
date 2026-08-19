@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>{{ customer_name }} · Acceso protegido</title>
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest.css') }}?v={{ STATIC_VER }}">
+<script src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
+<script src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
+</head>
+<body class="guest-unlock-page">
+<div class="guest-unlock-tools">
+<button type="button" class="guest-lang-toggle" data-lang-toggle data-lang-display="current" onclick="toggleTrackingLanguage()">ES</button>
+<button type="button" class="guest-theme-toggle" data-theme-toggle onclick="toggleTrackingTheme()" aria-label="Theme">
+<span class="theme-icon-stack" aria-hidden="true">
+<svg class="theme-svg" data-theme-icon-moon viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8a8.6 8.6 0 1 0 11.4 11.4Z"></path></svg>
+<svg class="theme-svg" data-theme-icon-sun viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3.8"></circle><path d="M12 2.2v2.1M12 19.7v2.1M4.3 12H2.2M21.8 12h-2.1M5.1 5.1l1.5 1.5M17.4 17.4l1.5 1.5M18.9 5.1l-1.5 1.5M6.6 17.4l-1.5 1.5"></path></svg>
+</span></button>
+</div>
+<main class="guest-unlock-card">
+<div class="guest-logo">KC</div>
+<h1 data-guest-zh="客户订单受保护" data-guest-es="Pedidos protegidos">Pedidos protegidos</h1>
+<p>{{ customer_name }}</p>
+<p class="guest-unlock-hint" data-guest-zh="请输入访问密码后查看订单。" data-guest-es="Ingrese la contraseña para ver los pedidos.">Ingrese la contraseña para ver los pedidos.</p>
+{% if password_kind == 'phone' %}<p class="guest-unlock-phone" data-guest-zh="提示：密码为客户手机号码" data-guest-es="Pista: la contraseña es el teléfono del cliente">Pista: la contraseña es el teléfono del cliente</p>{% endif %}
+{% if error_message %}<div class="guest-unlock-error">{{ error_message }}</div>{% endif %}
+<form method="post" action="{{ url_for('tracking_bp.local_guest_unlock', token=token) }}">
+<input type="password" name="password" autocomplete="current-password" required autofocus placeholder="Contraseña / 密码">
+<button type="submit" data-guest-zh="进入" data-guest-es="Entrar">Entrar</button>
+</form>
+</main>
+<script>
+(function(){
+ function apply(){ const lang=window.getTrackingLanguage?window.getTrackingLanguage():'es'; document.querySelectorAll('[data-guest-zh][data-guest-es]').forEach(el=>{el.textContent=lang==='zh_cn'?el.dataset.guestZh:el.dataset.guestEs;}); }
+ document.addEventListener('DOMContentLoaded',apply); document.addEventListener('tracking:languagechange',apply); apply();
+})();
+</script>
+</body></html>

@@ -1,0 +1,661 @@
+/* ========================================================================== 
+   order_tracking shared Light / Dark theme architecture (2026-08-17)
+   Loaded after page-specific CSS so one theme layer can cover the full app.
+   ========================================================================== */
+
+/* Theme switching is atomic. The dashboard has many `transition: all` rules;
+   suspending transitions for two animation frames prevents mixed light/dark
+   surfaces when the toggle is clicked repeatedly. */
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+    transition: none !important;
+}
+
+
+.tracking-theme-toggle {
+    width: 34px;
+    min-width: 34px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid rgba(255, 36, 66, .18);
+    border-radius: 999px;
+    background: rgba(255,255,255,.86);
+    color: #4c4e54;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 34px;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+    transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease;
+}
+.tracking-theme-toggle:hover { background: #fff0f2; color: var(--blue, #ff2442); }
+.tracking-theme-toggle:active { transform: scale(.94); }
+.tracking-theme-toggle [data-theme-icon] {
+    display: inline-block;
+    font-size: 18px;
+    line-height: 1;
+    transform: translateY(-.5px);
+}
+
+.theme-icon-stack {
+    position: relative;
+    width: 19px;
+    height: 19px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.theme-svg {
+    position: absolute;
+    inset: 0;
+    width: 19px;
+    height: 19px;
+    display: block;
+}
+.theme-svg[hidden] { display: none !important; }
+.sidebar-user-theme .theme-icon-stack,
+.sidebar-user-theme .theme-svg {
+    width: 18px;
+    height: 18px;
+}
+.desktop-theme-toggle { margin-left: auto; }
+.desktop-theme-toggle + .desktop-language-toggle { margin-left: 0; }
+
+html[data-theme="dark"] {
+    --bg: #101114;
+    --card: #191b20;
+    --text: #f2f3f5;
+    --text-2: #b2b5bd;
+    --text-3: #81858e;
+    --border: #30333a;
+    --red-bg: #30161c;
+    --yellow-bg: #312716;
+    --green-bg: #13291d;
+    --gray-bg: #1b1d22;
+    --bg-primary: #101114;
+    --bg-secondary: #191b20;
+    --bg-hover: #24262c;
+    --text-primary: #f2f3f5;
+    --text-secondary: #b2b5bd;
+    --text-muted: #81858e;
+    --border-color: #30333a;
+}
+
+html[data-theme="dark"] body {
+    background: linear-gradient(135deg, #0e0f12 0%, #15171c 100%);
+    color: var(--text, #f2f3f5);
+}
+
+html[data-theme="dark"] .header,
+html[data-theme="dark"] .main-content,
+html[data-theme="dark"] .dashboard,
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .table-container,
+html[data-theme="dark"] .table-wrapper,
+html[data-theme="dark"] .modal-content,
+html[data-theme="dark"] .settings-modal,
+html[data-theme="dark"] .settings-content,
+html[data-theme="dark"] .settings-sidebar,
+html[data-theme="dark"] .notification-panel,
+html[data-theme="dark"] .mobile-nav-sheet,
+html[data-theme="dark"] .workspace-drawer,
+html[data-theme="dark"] .drawer-content {
+    background-color: var(--card, #191b20);
+    color: var(--text, #f2f3f5);
+    border-color: var(--border, #30333a);
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+    background-color: #202228;
+    color: #f2f3f5;
+    border-color: #363942;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder { color: #767a84; }
+
+html[data-theme="dark"] table,
+html[data-theme="dark"] th,
+html[data-theme="dark"] td {
+    border-color: #30333a;
+}
+html[data-theme="dark"] thead,
+html[data-theme="dark"] th { background-color: #202228; color: #dfe1e5; }
+html[data-theme="dark"] tbody tr { background-color: #191b20; color: #e9eaed; }
+html[data-theme="dark"] tbody tr:hover { background-color: #22252b; }
+
+html[data-theme="dark"] .tracking-language-toggle,
+html[data-theme="dark"] .tracking-theme-toggle {
+    background: #24262c;
+    border-color: #393c45;
+    color: #f0f1f3;
+}
+html[data-theme="dark"] .tracking-language-toggle:hover,
+html[data-theme="dark"] .tracking-theme-toggle:hover { background: #2c2f36; }
+html[data-theme="dark"] .sidebar { box-shadow: 3px 0 18px rgba(0,0,0,.32); }
+
+/* Desktop dashboard theme completion. Several legacy dashboard widgets used
+   hard-coded #fff backgrounds, so dark mode left the KPI cards bright white. */
+@media (min-width: 769px) {
+    html[data-theme="dark"] .light-filters.light-cards .light-filter-btn,
+    html[data-theme="dark"] .light-team-card {
+        background: #191b20 !important;
+        border-color: #343740 !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,.22) !important;
+        color: #f2f3f5;
+    }
+
+    html[data-theme="dark"] .light-filters.light-cards .light-filter-btn:hover,
+    html[data-theme="dark"] .light-filters.light-cards .light-filter-btn.active {
+        background: #202329 !important;
+        border-color: #454953 !important;
+        box-shadow: 0 10px 28px rgba(0,0,0,.28) !important;
+    }
+
+    html[data-theme="dark"] .light-filters.light-cards .light-label,
+    html[data-theme="dark"] .light-team-card .team-title {
+        color: #aeb2bb !important;
+    }
+
+    html[data-theme="dark"] .light-team-card .team-search {
+        background: #22252b !important;
+        border-color: #41454f !important;
+        color: #f2f3f5 !important;
+    }
+    html[data-theme="dark"] .light-team-card .team-search::placeholder { color: #858a94; }
+    html[data-theme="dark"] .light-team-card .team-tag {
+        background: #22252b;
+        border-color: #41454f;
+        color: #c9ccd2;
+    }
+    html[data-theme="dark"] .light-team-card .team-tag:hover {
+        background: #2b2e35;
+        border-color: #5a5f6b;
+    }
+
+    /* Desktop stage-bar search: keep the entire pill on the dark surface.
+       The legacy outer .search-box stayed light while the generic dark input
+       rule made only the inner input dark, producing a split white/black pill. */
+    html[data-theme="dark"] .stage-filters .search-box.customer-search-box {
+        background: #202228 !important;
+        border-color: #3a3d45 !important;
+        box-shadow: none !important;
+        color: #f2f3f5;
+    }
+    html[data-theme="dark"] .stage-filters .search-box.customer-search-box:focus-within {
+        background: #24272d !important;
+        border-color: #ff536d !important;
+        box-shadow: 0 0 0 2px rgba(255,36,66,.12) !important;
+        transform: none;
+    }
+    html[data-theme="dark"] .stage-filters .search-box.customer-search-box input {
+        background: transparent !important;
+        color: #f2f3f5 !important;
+    }
+    html[data-theme="dark"] .stage-filters .search-box.customer-search-box input::placeholder {
+        color: #8b8f99 !important;
+    }
+    html[data-theme="dark"] .stage-filters .search-box.customer-search-box .search-icon-btn,
+    html[data-theme="dark"] .stage-filters .search-box.customer-search-box .search-clear-btn {
+        color: #a8acb5;
+    }
+    html[data-theme="dark"] .customer-search-suggestions {
+        background: #202228;
+        border-color: #3a3d45;
+        box-shadow: 0 12px 30px rgba(0,0,0,.34);
+        color: #f2f3f5;
+    }
+    html[data-theme="dark"] .customer-search-suggestion {
+        color: #e7e9ed;
+    }
+    html[data-theme="dark"] .customer-search-suggestion:hover,
+    html[data-theme="dark"] .customer-search-suggestion.active {
+        background: #2a2d34;
+    }
+
+    html[data-theme="dark"] .table-pagination .page-btn {
+        background: #202228;
+        color: #d9dbe0;
+        border-color: #3a3d45;
+    }
+    html[data-theme="dark"] .table-pagination .page-btn:hover:not(:disabled) { background: #2a2d34; }
+    html[data-theme="dark"] .table-pagination .page-btn.active {
+        background: #ff2442;
+        border-color: #ff2442;
+        color: #fff;
+    }
+
+    /* Explicit light rules make returning from dark mode deterministic even
+       after rapid toggles or a browser bfcache restore. */
+    html[data-theme="light"] body {
+        background: linear-gradient(135deg, #fff5f5 0%, #ffeef0 100%);
+        color: #1a1a1a;
+    }
+    html[data-theme="light"] .light-filters.light-cards .light-filter-btn,
+    html[data-theme="light"] .light-team-card {
+        background: #fff !important;
+        border-color: #f3d6d6 !important;
+        color: #1a1a1a;
+    }
+    html[data-theme="light"] .light-team-card .team-search,
+    html[data-theme="light"] .table-pagination .page-btn {
+        background: #fff !important;
+        color: #1a1a1a;
+    }
+    html[data-theme="light"] .stage-filters .search-box.customer-search-box {
+        background: #fffafa !important;
+        border-color: var(--border, #ffe0e0) !important;
+        color: #1a1a1a;
+    }
+    html[data-theme="light"] .stage-filters .search-box.customer-search-box input {
+        background: transparent !important;
+        color: #1a1a1a !important;
+    }
+    html[data-theme="light"] thead,
+    html[data-theme="light"] th {
+        background-color: #fff5f5 !important;
+        color: #666 !important;
+        border-color: #ffe0e0 !important;
+    }
+    html[data-theme="light"] tbody tr {
+        background-color: #fff !important;
+        color: #1a1a1a !important;
+    }
+    html[data-theme="light"] .table-wrapper,
+    html[data-theme="light"] .table-container,
+    html[data-theme="light"] .table-pagination {
+        background-color: #fff !important;
+        border-color: #ffe0e0 !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .desktop-theme-toggle { display: none !important; }
+    .mobile-theme-toggle {
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        flex-basis: 36px;
+        border-color: #e5e5e8;
+        background: #fff;
+    }
+
+    html[data-theme="dark"],
+    html[data-theme="dark"] body,
+    html[data-theme="dark"] .app-layout,
+    html[data-theme="dark"] .app-layout.collapsed,
+    html[data-theme="dark"] .main-content,
+    html[data-theme="dark"] .app-layout.collapsed .main-content {
+        background: #101114;
+        color: #f2f3f5;
+    }
+    html[data-theme="dark"] .mobile-app-header {
+        background: rgba(25,27,32,.98);
+        border-bottom-color: #2d3037;
+        box-shadow: 0 1px 10px rgba(0,0,0,.24);
+    }
+
+    /* Mobile dark mode: keep the whole search/filter/results canvas on the
+       same deep surface.  Previously the area behind the filter chips fell
+       back to the light mobile page background (#f6f6f7), which produced a
+       large washed-out gray block between the header and the order list. */
+    html[data-theme="dark"] .index-page-container,
+    html[data-theme="dark"] .mobile-order-ui,
+    html[data-theme="dark"] .mobile-filter-block,
+    html[data-theme="dark"] .mobile-result-bar,
+    html[data-theme="dark"] .mobile-list-panel {
+        background: #17181d !important;
+    }
+    html[data-theme="dark"] .mobile-app-brand-copy strong,
+    html[data-theme="dark"] .mobile-order-primary strong,
+    html[data-theme="dark"] .mobile-customer-heading strong,
+    html[data-theme="dark"] .mobile-order-detail-title strong,
+    html[data-theme="dark"] .mobile-profile-nav-copy strong,
+    html[data-theme="dark"] .mobile-customer-order-number,
+    html[data-theme="dark"] .mobile-customer-order-note,
+    html[data-theme="dark"] .mobile-order-notes-full,
+    html[data-theme="dark"] .mobile-detail-item strong { color: #f2f3f5; }
+
+    html[data-theme="dark"] .mobile-app-brand-copy small,
+    html[data-theme="dark"] .mobile-order-secondary,
+    html[data-theme="dark"] .mobile-customer-secondary,
+    html[data-theme="dark"] .mobile-result-bar,
+    html[data-theme="dark"] .mobile-filter-label,
+    html[data-theme="dark"] .mobile-detail-section-title,
+    html[data-theme="dark"] .mobile-order-detail-title small,
+    html[data-theme="dark"] .mobile-order-detail-kicker,
+    html[data-theme="dark"] .mobile-detail-item span,
+    html[data-theme="dark"] .mobile-timeline-step small { color: #979ba5; }
+
+    html[data-theme="dark"] .mobile-search-shell,
+    html[data-theme="dark"] .mobile-list,
+    html[data-theme="dark"] .mobile-order-row,
+    html[data-theme="dark"] .mobile-customer-row,
+    html[data-theme="dark"] .mobile-chip,
+    html[data-theme="dark"] .mobile-load-more,
+    html[data-theme="dark"] .mobile-order-detail-hero,
+    html[data-theme="dark"] .mobile-detail-section,
+    html[data-theme="dark"] .mobile-customer-detail-head,
+    html[data-theme="dark"] .mobile-profile-nav-main,
+    html[data-theme="dark"] .mobile-customer-order-tile,
+    html[data-theme="dark"] .mobile-customer-order-body,
+    html[data-theme="dark"] .mobile-theme-toggle {
+        background: #191b20;
+        border-color: #30333a;
+        color: #f2f3f5;
+    }
+    html[data-theme="dark"] .mobile-order-row,
+    html[data-theme="dark"] .mobile-customer-row { border-bottom-color: #2a2d33; }
+    html[data-theme="dark"] .mobile-order-row:active,
+    html[data-theme="dark"] .mobile-customer-row:active { background: #22242a; }
+    html[data-theme="dark"] .mobile-search-shell input { color: #f2f3f5; }
+    html[data-theme="dark"] .mobile-search-clear { background: #2a2d33; color: #b6b9c0; }
+    html[data-theme="dark"] .mobile-view-toggle { background: #23262c; }
+    html[data-theme="dark"] .mobile-view-toggle button { color: #a6aab2; }
+    html[data-theme="dark"] .mobile-view-toggle button.active {
+        background: #343740;
+        color: #ff6279;
+        box-shadow: 0 1px 5px rgba(0,0,0,.24);
+    }
+    html[data-theme="dark"] .mobile-chip.active {
+        background: #321a20;
+        border-color: #61303a;
+        color: #ff6279;
+    }
+    html[data-theme="dark"] .mobile-customer-status-filter-label { color: #8f939c; }
+    html[data-theme="dark"] .mobile-customer-status-chip small { background: rgba(255,255,255,.075); }
+    html[data-theme="dark"] .mobile-order-avatar { background: #2b2e35; color: #c6c9cf; }
+    html[data-theme="dark"] .light-red .mobile-order-avatar { background:#351a21; color:#ff6279; }
+    html[data-theme="dark"] .light-yellow .mobile-order-avatar { background:#362b18; color:#ffb54a; }
+    html[data-theme="dark"] .light-green .mobile-order-avatar { background:#173122; color:#44cf7c; }
+    html[data-theme="dark"] .mobile-customer-count { background:#2b2e35; color:#c1c4ca; }
+    html[data-theme="dark"] .mobile-customer-count.red { background:#351a21; color:#ff6279; }
+    html[data-theme="dark"] .mobile-customer-count.yellow { background:#362b18; color:#ffb54a; }
+    html[data-theme="dark"] .mobile-customer-count.green { background:#173122; color:#44cf7c; }
+    html[data-theme="dark"] .mobile-customer-order-cover,
+    html[data-theme="dark"] .mobile-customer-order-carousel-slide { background: linear-gradient(145deg,#24262c,#191b20); }
+    html[data-theme="dark"] .mobile-customer-order-cover-fallback { color:#a2a6af; }
+    html[data-theme="dark"] .mobile-customer-order-cover-fallback small { color:#7f838c; }
+    html[data-theme="dark"] .mobile-customer-order-status { background:#2b2e35; color:#b9bcc4; }
+    html[data-theme="dark"] .mobile-customer-order-status.light-red { background:#351a21; color:#ff6279; }
+    html[data-theme="dark"] .mobile-customer-order-status.light-yellow { background:#362b18; color:#ffb54a; }
+    html[data-theme="dark"] .mobile-customer-order-status.light-green { background:#173122; color:#44cf7c; }
+    html[data-theme="dark"] .mobile-detail-item { border-right-color:#292c32; border-bottom-color:#292c32; }
+    html[data-theme="dark"] .mobile-detail-section-title { border-bottom-color:#2b2e35; }
+    html[data-theme="dark"] .mobile-timeline-node { background:#4b4e56; border-color:#191b20; box-shadow:0 0 0 1px #5a5d65; }
+    html[data-theme="dark"] .mobile-timeline-line { background:#373a42; }
+    html[data-theme="dark"] .mobile-timeline-step strong { color:#b6bac2; }
+    html[data-theme="dark"] .mobile-order-status-pill.status-none { background:#2b2e35; color:#c2c5cb; }
+    html[data-theme="dark"] .mobile-order-status-pill.status-red { background:#351a21; color:#ff6279; }
+    html[data-theme="dark"] .mobile-order-status-pill.status-yellow { background:#362b18; color:#ffb54a; }
+    html[data-theme="dark"] .mobile-order-status-pill.status-green { background:#173122; color:#44cf7c; }
+    html[data-theme="dark"] .mobile-nav-backdrop { background: rgba(0,0,0,.62); }
+    html[data-theme="dark"] .mobile-nav-item,
+    html[data-theme="dark"] .mobile-nav-logout { border-color:#2b2e35; color:#e8e9ec; }
+    html[data-theme="dark"] .mobile-nav-item.active { color:#ff6279; }
+}
+
+/* Login page also uses the same persisted preference. */
+.login-theme-toggle {
+    position: fixed;
+    top: 18px;
+    right: 76px;
+    z-index: 50;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 36, 66, .18);
+    background: rgba(255,255,255,.94);
+    color: #4c4e54;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,.06);
+}
+.login-theme-toggle [data-theme-icon] { font-size: 18px; line-height: 1; }
+.login-theme-toggle:active { transform: translateY(1px); }
+
+html[data-theme="dark"] .login-body { background: #101114; color: #f2f3f5; }
+html[data-theme="dark"] .login-panel { background: #191b20; box-shadow: 0 14px 48px rgba(0,0,0,.38); }
+html[data-theme="dark"] .panel-form { background: #191b20; color: #f2f3f5; }
+html[data-theme="dark"] .form-title,
+html[data-theme="dark"] .login-title,
+html[data-theme="dark"] label { color: #f2f3f5; }
+html[data-theme="dark"] .form-subtitle,
+html[data-theme="dark"] .login-subtitle,
+html[data-theme="dark"] .remember-label { color: #a9adb5; }
+html[data-theme="dark"] .form-input,
+html[data-theme="dark"] .login-body input[type="text"],
+html[data-theme="dark"] .login-body input[type="password"] { background:#23262c; color:#f2f3f5; border-color:#363942; }
+html[data-theme="dark"] .login-language-toggle,
+html[data-theme="dark"] .login-theme-toggle { background:rgba(31,33,39,.96); border-color:#3a3d45; color:#f2f3f5; box-shadow:0 4px 14px rgba(0,0,0,.22); }
+
+@media (max-width: 768px) {
+    .login-theme-toggle {
+        top: max(12px, env(safe-area-inset-top));
+        right: 66px;
+        width: 32px;
+        min-width: 32px;
+        height: 32px;
+    }
+}
+
+/* ========================================================================== 
+   Mobile dark customer PERFIL continuity fix (2026-08-17)
+   The customer detail view had two legacy white containers that were not
+   covered by the first dark-theme pass: the unified profile nav shell and
+   the report/token action strip. Keep the whole PERFIL canvas continuous.
+   ========================================================================== */
+@media (max-width: 768px) {
+    html[data-theme="dark"] .mobile-order-ui.customer-detail-open,
+    html[data-theme="dark"] .mobile-customer-detail,
+    html[data-theme="dark"] #mobileCustomerDetailContent {
+        background: #17181d !important;
+        color: #f2f3f5;
+    }
+
+    html[data-theme="dark"] .mobile-profile-nav-shell {
+        background: #17181d !important;
+        border-bottom-color: #2a2d33 !important;
+    }
+
+    html[data-theme="dark"] .mobile-profile-nav-back {
+        background: #2a2d33;
+        color: #f5f6f7;
+        box-shadow: none;
+    }
+
+    html[data-theme="dark"] .mobile-profile-nav-back:active {
+        background: #343740;
+    }
+
+    html[data-theme="dark"] .mobile-customer-actions,
+    html[data-theme="dark"] .mobile-customer-profile-actions {
+        background: #17181d !important;
+        border-left-color: #2a2d33 !important;
+        border-right-color: #2a2d33 !important;
+    }
+
+    html[data-theme="dark"] .mobile-secondary-action {
+        background: #202228 !important;
+        border-color: #343740 !important;
+        color: #d6d8dd !important;
+    }
+
+    html[data-theme="dark"] .mobile-secondary-action small {
+        color: #979ba5;
+    }
+
+    html[data-theme="dark"] .mobile-customer-gallery-heading {
+        background: #17181d !important;
+        color: #f0f1f3 !important;
+    }
+
+    html[data-theme="dark"] .mobile-customer-gallery-heading strong {
+        color: #f0f1f3 !important;
+    }
+
+    html[data-theme="dark"] .mobile-customer-gallery-heading span {
+        color: #9498a2 !important;
+    }
+}
+
+/* ========================================================================== 
+   2026-08-18 UI-only dark-mode repair
+   IMPORTANT: visual layer only. Do not change share/report behavior or DOM layout.
+   - Keep Light and Dark on the exact same geometry/layout.
+   - Fix customer-report select chevron repeating across the field.
+   - Make the desktop share-manager shell fully dark instead of white/gray mixed surfaces.
+   ========================================================================== */
+
+/* The wide WEB report rules use `background:#fff` shorthand, which resets
+   background-repeat to `repeat`. Dark mode then restores only background-image,
+   producing a row of repeated chevrons. Re-assert the complete select icon layer. */
+.customer-report-select {
+    background-repeat: no-repeat !important;
+    background-position: right 9px center !important;
+    background-size: 15px 15px !important;
+}
+html[data-theme="light"] .customer-report-select {
+    background-color: #fff !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888e99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+}
+html[data-theme="dark"] .customer-report-select {
+    background-color: #252931 !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa1ac' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+}
+
+/* Desktop share manager: dark mode is color-only. Geometry comes entirely from
+   the same base desktop-share-manager rules used by Light mode. Explicit shell
+   surfaces here prevent a white header/tab strip and gray body from leaking in
+   through later/global theme rules. */
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-panel {
+    background: #17191e !important;
+    color: #f2f3f5 !important;
+    border-color: #30343b !important;
+    box-shadow: 0 32px 100px rgba(0,0,0,.58) !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-head,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-tabs,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-body {
+    background: #17191e !important;
+    color: #f2f3f5 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-head,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-tabs {
+    border-color: #2d3138 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-head h3,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-tabs button.active {
+    color: #f2f3f5 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-head p {
+    color: #a5acb8 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-head > button {
+    background: #24262c !important;
+    color: #c9ccd2 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-tabs button {
+    color: #9aa0aa !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-manager-tabs span {
+    background: #262a31 !important;
+    color: #aeb3bc !important;
+}
+
+/* Main cards/surfaces stay in the same grid positions and sizes as Light mode. */
+html[data-theme="dark"] .desktop-share-manager .desktop-share-section,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-card,
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-active-row {
+    background: #1e2127 !important;
+    border-color: #343941 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-field-head > span,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-card-title strong,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-duration-copy strong,
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-switch-row strong,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-active-toolbar > div:first-child strong {
+    color: #eceef2 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-field-head > small,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-card-title small,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-duration-copy small,
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-switch-row small,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-active-toolbar > div:first-child small {
+    color: #989faa !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-mode-choices > button,
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-switch-row,
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-segments button,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-password {
+    background: #22252b !important;
+    border-color: #373c45 !important;
+    color: #e9ebef !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-mode-choices > button.active,
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-segments button.active {
+    background: rgba(255,36,66,.10) !important;
+    border-color: rgba(255,82,107,.42) !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-mode-icon {
+    background: #2c3037 !important;
+    color: #aeb5bf !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-mode-choices > button.active .desktop-share-mode-icon {
+    background: #ff3651 !important;
+    color: #fff !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-mode-icon.cloud {
+    background: #213042 !important;
+    color: #8cb2e0 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-duration-box,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-create-footer,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-active-toolbar {
+    border-color: #323740 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-scope-preview,
+html[data-theme="dark"] .desktop-share-manager .desktop-share-security-note {
+    background: #202228 !important;
+    border-color: #343840 !important;
+    color: #aeb2ba !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-deployment-status {
+    color: #a7adb7 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-share-deployment-status > span:nth-child(2) {
+    color: #e5e7eb !important;
+}
+
+/* Customer search within the share manager. */
+html[data-theme="dark"] .desktop-share-manager #desktopGuestCustomerSearch {
+    background: #20242b !important;
+    border-color: #373d47 !important;
+    color: #eef1f5 !important;
+}
+html[data-theme="dark"] .desktop-share-manager #desktopGuestCustomerSearch::placeholder {
+    color: #818995 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-customer-results {
+    background: #1c2026 !important;
+    border-color: #383e48 !important;
+    box-shadow: 0 14px 35px rgba(0,0,0,.45) !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-customer-results button {
+    color: #eef1f5 !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-customer-results button:hover,
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-customer-results button.is-keyboard-active {
+    background: #29313d !important;
+}
+html[data-theme="dark"] .desktop-share-manager .desktop-guest-customer-results button small {
+    color: #969eaa !important;
+}

@@ -1,0 +1,164 @@
+{% extends "tracking/base.html" %}
+
+{% block title %}客户分享管理{% endblock %}
+
+{% block extra_css %}
+<style>
+.share-admin-page{height:100%;min-height:0;padding:20px 24px;display:flex;flex-direction:column;gap:14px;overflow:hidden;color:var(--text,#1f2937)}
+.share-admin-page *{box-sizing:border-box}
+.share-admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex:0 0 auto}
+.share-admin-title{margin:0;font-size:24px;line-height:1.2;font-weight:900;letter-spacing:-.02em;color:var(--text,#20242c)}
+.share-admin-subtitle{margin:6px 0 0;color:var(--text-2,#6b7280);font-size:12px}
+.share-admin-create{height:40px;padding:0 18px;border:0;border-radius:11px;background:#ff2442;color:#fff;font:inherit;font-size:12px;font-weight:850;cursor:pointer;display:inline-flex;align-items:center;gap:7px;text-decoration:none;box-shadow:0 6px 18px rgba(255,36,66,.16)}
+.share-admin-create:hover{background:#e6203c;transform:translateY(-1px)}
+.share-admin-create svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
+.share-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;flex:0 0 auto}
+.share-stat{min-width:0;padding:12px 14px;border:1px solid var(--border,#e5e7eb);border-radius:13px;background:var(--card,#fff);box-shadow:0 2px 9px rgba(26,32,44,.035)}
+.share-stat-label{display:flex;align-items:center;gap:6px;color:var(--text-2,#6b7280);font-size:10.5px;font-weight:800}
+.share-stat-dot{width:7px;height:7px;border-radius:999px;background:#ff2442}.share-stat:nth-child(2) .share-stat-dot{background:#8b5cf6}.share-stat:nth-child(3) .share-stat-dot{background:#f59e0b}.share-stat:nth-child(4) .share-stat-dot{background:#10b981}.share-stat:nth-child(5) .share-stat-dot{background:#3b82f6}
+.share-stat-value{margin-top:4px;font-size:22px;line-height:1;font-weight:900;color:var(--text,#20242c);font-variant-numeric:tabular-nums}
+.share-filterbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;border:1px solid var(--border,#e5e7eb);border-radius:13px;background:var(--card,#fff);flex:0 0 auto}
+.share-search{position:relative;flex:1 1 260px;min-width:220px;max-width:380px}
+.share-search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;fill:none;stroke:#9097a3;stroke-width:2;pointer-events:none}
+.share-filterbar input,.share-filterbar select{height:36px;border:1px solid #dfe3e9;border-radius:9px;background:var(--card,#fff);color:var(--text,#20242c);font:inherit;font-size:11px;outline:none}
+.share-filterbar input{width:100%;padding:0 11px 0 34px}.share-filterbar select{padding:0 28px 0 10px;cursor:pointer}
+.share-filterbar input:focus,.share-filterbar select:focus{border-color:#ff5a70;box-shadow:0 0 0 3px rgba(255,36,66,.07)}
+.share-filter-btn{height:36px;padding:0 14px;border:1px solid #dfe3e9;border-radius:9px;background:var(--card,#fff);color:var(--text-2,#626b76);font-size:11px;font-weight:800;cursor:pointer}
+.share-filter-btn:hover{border-color:#ff6a7e;color:#e6203c;background:rgba(255,36,66,.035)}
+.share-table-shell{min-height:0;flex:1 1 auto;border:1px solid var(--border,#e5e7eb);border-radius:14px;background:var(--card,#fff);overflow:auto;position:relative}
+.share-table{width:100%;border-collapse:separate;border-spacing:0;font-size:11px;min-width:1000px}
+.share-table thead{position:sticky;top:0;z-index:3}
+.share-table th{height:40px;padding:0 12px;text-align:left;background:var(--bg,#fff8f8);color:var(--text-2,#59616d);font-size:10px;font-weight:900;border-bottom:1px solid var(--border,#e5e7eb);white-space:nowrap}
+.share-table td{padding:10px 12px;border-bottom:1px solid #f0f2f5;color:var(--text,#2a3038);vertical-align:middle}
+.share-table tbody tr:hover{background:rgba(255,36,66,.025)}
+.share-customer{font-size:11.5px;font-weight:900;color:var(--text,#20242c);max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.share-subline{margin-top:3px;color:var(--text-3,#9299a4);font-size:9.5px;white-space:nowrap}
+.share-badge{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:22px;padding:0 8px;border-radius:999px;font-size:9px;font-weight:900}
+.share-badge.lan{background:#eaf8f1;color:#2c8b63}.share-badge.render{background:#eaf2ff;color:#356da9}.share-badge.permanent{margin-left:5px;background:#f1ebff;color:#7955aa}
+.share-status{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800}.share-status:before{content:"";width:7px;height:7px;border-radius:99px}.share-status.active{color:#25855d}.share-status.active:before{background:#27c083}.share-status.expired{color:#8a919c}.share-status.expired:before{background:#aeb4bd}.share-status.revoked{color:#d6455b}.share-status.revoked:before{background:#ff5d73}
+.share-action-group{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.share-btn{height:30px;padding:0 10px;border-radius:8px;font-size:10px;font-weight:850;cursor:pointer;border:1px solid #dce1e7;background:var(--card,#fff);color:#4f5864}.share-btn:hover{border-color:#ff7b8d;color:#d91f3c;background:rgba(255,36,66,.035)}
+.share-btn.danger{border-color:#ffc1ca;color:#df2744;background:#fff8f9}.share-btn.danger:hover{background:#ff2442;border-color:#ff2442;color:#fff}.share-btn:disabled{opacity:.42;cursor:not-allowed}
+.share-empty{padding:70px 20px;text-align:center;color:var(--text-3,#999)}
+.share-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 auto;padding:0 2px;color:var(--text-2,#6b7280);font-size:10.5px}.share-page-actions{display:flex;align-items:center;gap:7px}.share-page-actions button{height:32px;padding:0 12px;border:1px solid #dfe3e9;border-radius:8px;background:var(--card,#fff);color:var(--text-2,#5f6772);font-size:10px;font-weight:800;cursor:pointer}.share-page-actions button:disabled{opacity:.4;cursor:not-allowed}
+.share-detail-backdrop{position:fixed;inset:0;z-index:4000;background:rgba(15,23,42,.22);backdrop-filter:blur(2px);display:none}.share-detail-backdrop.show{display:block}
+.share-detail-drawer{position:fixed;top:0;right:0;z-index:4001;width:min(470px,42vw);height:100vh;background:var(--card,#fff);border-left:1px solid var(--border,#e5e7eb);box-shadow:-18px 0 55px rgba(15,23,42,.16);transform:translateX(102%);transition:transform .2s ease;display:flex;flex-direction:column;color:var(--text,#20242c)}
+.share-detail-drawer.show{transform:translateX(0)}
+.share-detail-head{min-height:78px;padding:17px 18px;border-bottom:1px solid var(--border,#e5e7eb);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.share-detail-head h2{margin:0;font-size:17px;font-weight:900}.share-detail-head p{margin:4px 0 0;color:var(--text-2,#6b7280);font-size:10.5px}.share-detail-close{width:34px;height:34px;border:0;border-radius:10px;background:var(--bg,#f6f7f9);color:var(--text-2,#69717c);font-size:20px;cursor:pointer}.share-detail-close:hover{background:#ffeef1;color:#e6203c}
+.share-detail-body{padding:16px 18px 22px;overflow:auto;min-height:0;flex:1}.share-detail-entry{display:grid;grid-template-columns:108px minmax(0,1fr);gap:12px;align-items:center;padding:12px;border:1px solid var(--border,#e5e7eb);border-radius:13px;background:var(--bg,#fafbfc)}
+.share-detail-qr{width:108px;height:108px;border-radius:9px;background:#fff;object-fit:contain;border:1px solid #edf0f3}.share-detail-noqr{width:108px;height:108px;border:1px dashed #d7dce3;border-radius:9px;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;color:#9aa1aa;font-size:9px}
+.share-detail-url-label{display:block;margin-bottom:5px;color:var(--text-2,#69717c);font-size:9.5px;font-weight:800}.share-detail-url{width:100%;height:34px;padding:0 9px;border:1px solid #dce1e7;border-radius:8px;background:var(--card,#fff);color:var(--text,#2a3038);font-family:'JetBrains Mono',monospace;font-size:9.5px}
+.share-detail-entry-actions{display:flex;gap:7px;margin-top:8px}.share-detail-entry-actions button{height:31px;padding:0 11px;border-radius:8px;font-size:9.5px;font-weight:850;cursor:pointer}.share-copy{border:1px solid #dce1e7;background:var(--card,#fff);color:#4e5762}.share-open{border:1px solid #ff2442;background:#ff2442;color:#fff}
+.share-detail-section{margin-top:14px;padding:0 2px}.share-detail-section-title{margin:0 0 8px;color:var(--text-2,#6b7280);font-size:9.5px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.share-detail-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border,#e5e7eb);border-radius:12px;overflow:hidden}.share-detail-cell{min-height:58px;padding:9px 11px;border-right:1px solid var(--border,#e5e7eb);border-bottom:1px solid var(--border,#e5e7eb)}.share-detail-cell:nth-child(2n){border-right:0}.share-detail-cell:nth-last-child(-n+2){border-bottom:0}.share-detail-cell small{display:block;color:var(--text-3,#9299a4);font-size:9px;font-weight:700}.share-detail-cell strong{display:block;margin-top:4px;color:var(--text,#252b33);font-size:10.5px;font-weight:850;overflow-wrap:anywhere}.share-detail-foot{display:flex;gap:8px;margin-top:15px}.share-detail-foot button{height:38px;border-radius:9px;font-size:10.5px;font-weight:850;cursor:pointer}.share-detail-foot .share-detail-revoke{flex:1;border:1px solid #ffc2cb;background:#fff8f9;color:#dc2944}.share-detail-foot .share-detail-revoke:hover{background:#ff2442;color:#fff;border-color:#ff2442}
+.share-loading{position:absolute;inset:40px 0 0;background:rgba(255,255,255,.66);display:none;align-items:center;justify-content:center;color:#7b838e;font-size:11px;z-index:2}.share-loading.show{display:flex}
+html[data-theme="dark"] .share-admin-page{color:#e7eaf0}html[data-theme="dark"] .share-admin-title,html[data-theme="dark"] .share-stat-value,html[data-theme="dark"] .share-customer{color:#f0f2f5}html[data-theme="dark"] .share-stat,html[data-theme="dark"] .share-filterbar,html[data-theme="dark"] .share-table-shell,html[data-theme="dark"] .share-filterbar input,html[data-theme="dark"] .share-filterbar select,html[data-theme="dark"] .share-filter-btn,html[data-theme="dark"] .share-btn,html[data-theme="dark"] .share-page-actions button,html[data-theme="dark"] .share-detail-drawer,html[data-theme="dark"] .share-detail-url,html[data-theme="dark"] .share-copy{background:#1c1f25;border-color:#30353e;color:#e1e4e9}html[data-theme="dark"] .share-table th{background:#20242b;border-color:#30353e;color:#adb4be}html[data-theme="dark"] .share-table td{border-color:#292e36;color:#d9dde3}html[data-theme="dark"] .share-table tbody tr:hover{background:#22262d}html[data-theme="dark"] .share-detail-entry{background:#20242b;border-color:#30353e}html[data-theme="dark"] .share-detail-grid,html[data-theme="dark"] .share-detail-cell{border-color:#30353e}html[data-theme="dark"] .share-detail-cell strong{color:#e9ebef}html[data-theme="dark"] .share-detail-close{background:#272b33;color:#c2c7cf}html[data-theme="dark"] .share-loading{background:rgba(24,27,33,.72)}html[data-theme="dark"] .share-btn.danger,html[data-theme="dark"] .share-detail-foot .share-detail-revoke{background:rgba(255,36,66,.08);border-color:rgba(255,86,112,.35);color:#ff8fa1}
+
+/* 2026-08-19 readability pass: match the main desktop page instead of the old 9–11px micro type. */
+.share-admin-page{font-size:14px}
+.share-admin-subtitle{font-size:13px}.share-admin-create{font-size:13px}
+.share-stat-label{font-size:12px}.share-stat-value{font-size:24px}
+.share-filterbar input,.share-filterbar select,.share-filter-btn{font-size:13px}
+.share-table{font-size:13px}.share-table th{font-size:12px}.share-table td{font-size:13px}
+.share-customer{font-size:14px}.share-subline{font-size:11.5px}.share-badge{font-size:11px}.share-status{font-size:12px}
+.share-btn{font-size:12px}.share-pagination,.share-page-actions button{font-size:12px}
+.share-detail-head h2{font-size:19px}.share-detail-head p{font-size:12px}.share-detail-body{font-size:13px}
+.share-detail-url-label,.share-detail-section-title{font-size:12px}.share-detail-url{font-size:12px}
+.share-detail-entry-actions button,.share-detail-foot button{font-size:12px}
+.share-detail-cell small{font-size:11.5px}.share-detail-cell strong{font-size:13px}
+.share-detail-noqr{font-size:11px}.share-loading{font-size:13px}
+.share-password-editor{margin-top:10px;padding:12px;border:1px solid var(--border,#e5e7eb);border-radius:12px;background:var(--bg,#fafbfc)}
+.share-password-editor-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.share-password-editor-head>div{min-width:0}.share-password-editor-head strong{display:block;font-size:13px;color:var(--text,#252b33)}
+.share-password-editor-head small{display:block;margin-top:3px;font-size:11.5px;color:var(--text-3,#9299a4)}
+.share-password-actions{display:flex;gap:7px;flex:0 0 auto}.share-password-actions button,.share-password-form button{height:34px;padding:0 11px;border-radius:8px;font:inherit;font-size:12px;font-weight:800;cursor:pointer}
+.share-password-edit{border:1px solid #ff9dad;background:#fff8f9;color:#d92742}.share-password-remove{border:1px solid #dce1e7;background:var(--card,#fff);color:var(--text-2,#5f6772)}
+.share-password-form{display:flex;align-items:center;gap:7px;margin-top:10px}.share-password-form[hidden]{display:none!important}.share-password-form input{flex:1;min-width:0;height:36px;padding:0 10px;border:1px solid #dce1e7;border-radius:8px;background:var(--card,#fff);color:var(--text,#252b33);font:inherit;font-size:13px;outline:0}.share-password-form input:focus{border-color:#ff5a70;box-shadow:0 0 0 3px rgba(255,36,66,.07)}
+.share-password-save{border:1px solid #ff2442;background:#ff2442;color:#fff}.share-password-cancel{border:1px solid #dce1e7;background:var(--card,#fff);color:var(--text-2,#5f6772)}
+html[data-theme="dark"] .share-password-edit{background:rgba(255,36,66,.09)}
+
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="share-admin-page">
+  <div class="share-admin-head">
+    <div>
+      <h1 class="share-admin-title">客户分享管理</h1>
+      <p class="share-admin-subtitle">集中管理局网与 Render 客户入口。默认显示简洁列表，需要时再打开详细资料。</p>
+    </div>
+    <button class="share-admin-create" type="button" onclick="openDesktopGuestShareDrawer()">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>建立新分享
+    </button>
+  </div>
+
+  <div class="share-stats">
+    <div class="share-stat"><div class="share-stat-label"><span class="share-stat-dot"></span>目前有效</div><div class="share-stat-value" id="shareStatActive">0</div></div>
+    <div class="share-stat"><div class="share-stat-label"><span class="share-stat-dot"></span>永久分享</div><div class="share-stat-value" id="shareStatPermanent">0</div></div>
+    <div class="share-stat"><div class="share-stat-label"><span class="share-stat-dot"></span>24 小时内到期</div><div class="share-stat-value" id="shareStatExpiring">0</div></div>
+    <div class="share-stat"><div class="share-stat-label"><span class="share-stat-dot"></span>LAN 有效</div><div class="share-stat-value" id="shareStatLan">0</div></div>
+    <div class="share-stat"><div class="share-stat-label"><span class="share-stat-dot"></span>WEB 有效</div><div class="share-stat-value" id="shareStatRender">0</div></div>
+  </div>
+
+  <div class="share-filterbar">
+    <div class="share-search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.8-3.8"></path></svg>
+      <input id="shareSearch" placeholder="搜索客户名称 / 建立者 / 分享编号" autocomplete="off">
+    </div>
+    <select id="shareMode"><option value="all">全部类型</option><option value="lan">LAN</option><option value="render">WEB / Render</option></select>
+    <select id="shareStatus"><option value="active">目前有效</option><option value="all">全部状态</option><option value="expired">已过期</option><option value="revoked">已失效</option></select>
+    <select id="shareDuration"><option value="all">临时 / 永久</option><option value="temporary">临时</option><option value="permanent">永久</option></select>
+    <select id="shareSort"><option value="created_desc">最近建立</option><option value="expires_asc">即将到期</option><option value="customer_asc">客户名称</option><option value="access_desc">访问次数</option></select>
+    <button type="button" class="share-filter-btn" id="shareRefresh">刷新</button><button type="button" class="share-filter-btn" id="shareReset">重置</button>
+  </div>
+
+  <div class="share-table-shell" id="shareTableShell">
+    <div class="share-loading" id="shareLoading">正在读取分享资料…</div>
+    <table class="share-table">
+      <thead><tr><th>客户</th><th>类型</th><th>状态</th><th>有效期</th><th>范围</th><th>建立者</th><th>建立时间</th><th>访问</th><th>操作</th></tr></thead>
+      <tbody id="shareTableBody"><tr><td colspan="9" class="share-empty">正在读取…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="share-pagination">
+    <span id="sharePageSummary">0 条分享</span>
+    <div class="share-page-actions"><button type="button" id="sharePrev">上一页</button><span id="sharePageInfo">第 1 / 1 页</span><button type="button" id="shareNext">下一页</button></div>
+  </div>
+</div>
+
+{% include 'tracking/_desktop_share_manager_modal.html' %}
+
+<div class="share-detail-backdrop" id="shareDetailBackdrop"></div>
+<aside class="share-detail-drawer" id="shareDetailDrawer" aria-hidden="true">
+  <div class="share-detail-head"><div><h2 id="shareDetailTitle">分享详细</h2><p id="shareDetailSubtitle"></p></div><button type="button" class="share-detail-close" id="shareDetailClose" aria-label="关闭">×</button></div>
+  <div class="share-detail-body" id="shareDetailBody"><div class="share-empty">请选择一笔分享</div></div>
+</aside>
+
+<script>
+(() => {
+  const state={page:1,totalPages:1,pageSize:30,loading:false};
+  const $=id=>document.getElementById(id);
+  const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const fmtDate=v=>{if(!v)return '—';const d=new Date(Number(v)*1000);return Number.isNaN(d.getTime())?'—':d.toLocaleString([], {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});};
+  const fmtRemain=x=>{if(x.is_permanent)return '永久';if(x.status==='expired')return '已过期';if(x.status==='revoked')return '已失效';let s=Math.max(0,Number(x.remaining_seconds||0));let m=Math.ceil(s/60);if(m<60)return `剩 ${m} 分`;let d=Math.floor(m/1440);if(d)return `剩 ${d} 天 ${Math.floor((m%1440)/60)} 小时`;return `剩 ${Math.floor(m/60)} 小时 ${m%60} 分`;};
+  const statusLabel=s=>s==='active'?'有效':s==='expired'?'已过期':'已失效';
+  const scopeLabel=s=>({current:'目前','6m':'半年','12m':'一年',all:'全部历史'}[s]||s||'目前');
+  function params(){const p=new URLSearchParams({page:String(state.page),page_size:String(state.pageSize),q:$('shareSearch').value.trim(),mode:$('shareMode').value,status:$('shareStatus').value,duration:$('shareDuration').value,sort:$('shareSort').value});return p.toString();}
+  async function load(page=state.page,forceRefresh=false){if(state.loading)return;const shell=$('shareTableShell');const requestedPage=Math.max(1,page);const preserveScroll=requestedPage===state.page;const savedTop=preserveScroll?(shell?.scrollTop||0):0;state.loading=true;state.page=requestedPage;$('shareLoading').classList.add('show');try{const query=params()+ (forceRefresh?'&refresh=1':'');const r=await fetch(`/tracking/api/admin/customer-shares?${query}`,{credentials:'same-origin',cache:'no-store'});const p=await r.json();if(!r.ok||!p.success)throw new Error(p.error||`HTTP ${r.status}`);state.page=p.page;state.totalPages=p.total_pages;renderStats(p.stats||{});renderRows(p.data||[]);$('sharePageSummary').textContent=`${p.total||0} 条分享`; $('sharePageInfo').textContent=`第 ${state.page} / ${state.totalPages} 页`; $('sharePrev').disabled=state.page<=1; $('shareNext').disabled=state.page>=state.totalPages;if(shell)requestAnimationFrame(()=>{shell.scrollTop=preserveScroll?savedTop:0;});}catch(e){$('shareTableBody').innerHTML=`<tr><td colspan="9" class="share-empty">${esc(e.message||'读取失败')}</td></tr>`;}finally{state.loading=false;$('shareLoading').classList.remove('show');}}
+  function renderStats(s){$('shareStatActive').textContent=s.active||0;$('shareStatPermanent').textContent=s.permanent||0;$('shareStatExpiring').textContent=s.expiring_24h||0;$('shareStatLan').textContent=s.lan||0;$('shareStatRender').textContent=s.render||0;}
+  function renderRows(items){const body=$('shareTableBody');if(!items.length){body.innerHTML='<tr><td colspan="9" class="share-empty">没有符合条件的分享</td></tr>';return;}body.innerHTML=items.map(x=>`<tr><td><div class="share-customer" title="${esc(x.customer_name)}">${esc(x.customer_name||'—')}</div><div class="share-subline">#${esc(x.id)}</div></td><td><span class="share-badge ${x.share_mode}">${x.share_mode==='render'?'WEB':'LAN'}</span>${x.is_permanent?'<span class="share-badge permanent">永久</span>':''}</td><td><span class="share-status ${x.status}">${statusLabel(x.status)}</span></td><td><strong>${esc(fmtRemain(x))}</strong><div class="share-subline">${x.is_permanent?'无到期时间':fmtDate(x.expires_at_epoch)}</div></td><td>${esc(scopeLabel(x.history_scope))}${x.include_cancelled?' · 含取消':''}</td><td>${esc(x.created_by_name||'—')}</td><td>${fmtDate(x.created_at_epoch)}</td><td>${Number(x.access_count||0)} 次<div class="share-subline">${x.last_accessed_at_epoch?fmtDate(x.last_accessed_at_epoch):'尚未访问'}</div></td><td><div class="share-action-group"><button type="button" class="share-btn" data-detail-mode="${x.share_mode}" data-detail-id="${esc(x.id)}">详细</button><button type="button" class="share-btn danger" data-revoke-mode="${x.share_mode}" data-revoke-id="${esc(x.id)}" ${x.status!=='active'?'disabled':''}>立即失效</button></div></td></tr>`).join('');}
+  async function openDetail(mode,id){$('shareDetailDrawer').classList.add('show');$('shareDetailBackdrop').classList.add('show');$('shareDetailDrawer').setAttribute('aria-hidden','false');$('shareDetailBody').innerHTML='<div class="share-empty">正在读取详细资料…</div>';try{const r=await fetch(`/tracking/api/admin/customer-shares/${encodeURIComponent(mode)}/${encodeURIComponent(id)}`,{credentials:'same-origin',cache:'no-store'});const p=await r.json();if(!r.ok||!p.success)throw new Error(p.error||'读取失败');renderDetail(p.data);}catch(e){$('shareDetailBody').innerHTML=`<div class="share-empty">${esc(e.message||'读取失败')}</div>`;}}
+  function renderDetail(x){$('shareDetailTitle').textContent=x.customer_name||'分享详细';$('shareDetailSubtitle').textContent=`${x.share_mode==='render'?'WEB / Render':'LAN'} · ${statusLabel(x.status)} · #${x.id}`;const qr=x.qr_data_uri?`<img class="share-detail-qr" src="${esc(x.qr_data_uri)}" alt="QR Code">`:`<div class="share-detail-noqr">旧分享未保存 QR / 原始网址时无法恢复</div>`;const entry=x.url?`<div><small class="share-detail-url-label">客户访问网址</small><input class="share-detail-url" readonly value="${esc(x.url)}"><div class="share-detail-entry-actions"><button type="button" class="share-copy" data-copy="${esc(x.url)}">一键复制</button><button type="button" class="share-open" data-open="${esc(x.url)}">打开网页</button></div></div>`:`<div><small class="share-detail-url-label">客户访问网址</small><div style="font-size:10px;color:#999;line-height:1.5">此分享建立于旧版本，原始网址没有被保存。新的分享会完整保存网址与 QR。</div></div>`;$('shareDetailBody').innerHTML=`<div class="share-detail-entry">${qr}${entry}</div><div class="share-detail-section"><h3 class="share-detail-section-title">分享设置</h3><div class="share-detail-grid"><div class="share-detail-cell"><small>有效期</small><strong>${esc(fmtRemain(x))}</strong></div><div class="share-detail-cell"><small>订单范围</small><strong>${esc(scopeLabel(x.history_scope))}</strong></div><div class="share-detail-cell"><small>包含取消订单</small><strong>${x.include_cancelled?'是':'否'}</strong></div><div class="share-detail-cell"><small>密码保护</small><strong>${x.password_protected?'已设置':'未设置'}</strong></div><div class="share-detail-cell"><small>PDF 拆图</small><strong>${x.show_pdf_pages?'开启':'关闭'}</strong></div><div class="share-detail-cell"><small>PDF 报告</small><strong>${x.allow_report_pdf_download?'允许':'不允许'}</strong></div></div><div class="share-password-editor" data-password-editor data-mode="${esc(x.share_mode)}" data-id="${esc(x.id)}"><div class="share-password-editor-head"><div><strong>${x.password_protected?'已启用密码保护':'目前没有密码'}</strong><small>${x.password_protected?'可以更换新密码，或直接取消密码':'可以随时替这条现有分享补上密码，不需要重新建立链接'}</small></div><div class="share-password-actions"><button type="button" class="share-password-edit" data-password-edit>${x.password_protected?'更换密码':'设置密码'}</button>${x.password_protected?'<button type="button" class="share-password-remove" data-password-remove>取消密码</button>':''}</div></div><div class="share-password-form" data-password-form hidden><input type="password" data-password-input autocomplete="new-password" minlength="4" placeholder="输入新密码（至少 4 位）"><button type="button" class="share-password-save" data-password-save>保存</button><button type="button" class="share-password-cancel" data-password-cancel>取消</button></div></div></div><div class="share-detail-section"><h3 class="share-detail-section-title">使用记录</h3><div class="share-detail-grid"><div class="share-detail-cell"><small>建立者</small><strong>${esc(x.created_by_name||'—')}</strong></div><div class="share-detail-cell"><small>建立时间</small><strong>${fmtDate(x.created_at_epoch)}</strong></div><div class="share-detail-cell"><small>访问次数</small><strong>${Number(x.access_count||0)} 次</strong></div><div class="share-detail-cell"><small>最后访问</small><strong>${x.last_accessed_at_epoch?fmtDate(x.last_accessed_at_epoch):'尚未访问'}</strong></div></div></div><div class="share-detail-foot"><button type="button" class="share-detail-revoke" data-revoke-mode="${x.share_mode}" data-revoke-id="${esc(x.id)}" ${x.status!=='active'?'disabled':''}>立即失效</button></div>`;}
+  async function updateSharePassword(editor, enabled){
+    if(!editor)return;const mode=editor.dataset.mode||'';const id=editor.dataset.id||'';const input=editor.querySelector('[data-password-input]');const password=String(input?.value||'').trim();
+    if(enabled&&password.length<4){alert('密码至少需要 4 个字符');input?.focus();return;}
+    const controls=editor.querySelectorAll('button,input');controls.forEach(el=>el.disabled=true);
+    try{const r=await fetch(`/tracking/api/admin/customer-shares/${encodeURIComponent(mode)}/${encodeURIComponent(id)}/password`,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!!enabled,password:enabled?password:''})});const p=await r.json().catch(()=>({}));if(!r.ok||p.success===false)throw new Error(p.error||'密码设置失败');if(typeof showToast==='function')showToast('已更新',enabled?'已设置分享密码':'已取消分享密码','success');await openDetail(mode,id);load(state.page);}catch(e){alert(e.message||'密码设置失败');controls.forEach(el=>el.disabled=false);}}
+  function closeDetail(){$('shareDetailDrawer').classList.remove('show');$('shareDetailBackdrop').classList.remove('show');$('shareDetailDrawer').setAttribute('aria-hidden','true');}
+  async function copyText(v){try{await navigator.clipboard.writeText(v);if(typeof showToast==='function')showToast('已复制','分享链接已复制','success');}catch(e){const i=document.createElement('input');i.value=v;document.body.appendChild(i);i.select();document.execCommand('copy');i.remove();}}
+  async function revoke(mode,id,btn){if(!confirm('确定要让这个分享立即失效吗？此操作不会删除历史记录。'))return;if(btn)btn.disabled=true;try{const endpoint=mode==='render'?`/tracking/api/public-guest-links/${encodeURIComponent(id)}`:`/tracking/api/local-guest-links/${encodeURIComponent(id)}`;const r=await fetch(endpoint,{method:'DELETE',credentials:'same-origin'});const p=await r.json().catch(()=>({}));if(!r.ok||p.success===false)throw new Error(p.error||'操作失败');if(typeof showToast==='function')showToast('已失效','该分享已立即关闭','success');closeDetail();load(state.page);}catch(e){alert(e.message||'操作失败');if(btn)btn.disabled=false;}}
+  let searchTimer=null;$('shareSearch').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>load(1),250)});['shareMode','shareStatus','shareDuration','shareSort'].forEach(id=>$(id).addEventListener('change',()=>load(1)));$('shareRefresh').onclick=()=>load(state.page,true);$('shareReset').onclick=()=>{$('shareSearch').value='';$('shareMode').value='all';$('shareStatus').value='active';$('shareDuration').value='all';$('shareSort').value='created_desc';load(1)};$('sharePrev').onclick=()=>load(state.page-1);$('shareNext').onclick=()=>load(state.page+1);$('shareDetailClose').onclick=closeDetail;$('shareDetailBackdrop').onclick=closeDetail;document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDetail()});
+  document.addEventListener('click',e=>{const detail=e.target.closest('[data-detail-id]');if(detail){openDetail(detail.dataset.detailMode,detail.dataset.detailId);return;}const rev=e.target.closest('[data-revoke-id]');if(rev&&!rev.disabled){revoke(rev.dataset.revokeMode,rev.dataset.revokeId,rev);return;}const cp=e.target.closest('[data-copy]');if(cp){copyText(cp.dataset.copy||'');return;}const op=e.target.closest('[data-open]');if(op){const v=op.dataset.open||'';if(v)window.open(v,'_blank','noopener');return;}const editor=e.target.closest('[data-password-editor]');if(!editor)return;const form=editor.querySelector('[data-password-form]');if(e.target.closest('[data-password-edit]')){form.hidden=false;const input=editor.querySelector('[data-password-input]');if(input){input.value='';setTimeout(()=>input.focus(),0);}return;}if(e.target.closest('[data-password-cancel]')){form.hidden=true;return;}if(e.target.closest('[data-password-save]')){updateSharePassword(editor,true);return;}if(e.target.closest('[data-password-remove]')){if(confirm('确定取消这条分享的密码保护吗？取消后客户打开链接将不再需要密码。'))updateSharePassword(editor,false);return;}});
+  load(1,true);
+})();
+</script>
+{% endblock %}

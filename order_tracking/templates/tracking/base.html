@@ -1,0 +1,1014 @@
+{% import 'macros/permissions.html' as perm %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}订单流程追踪系统{% endblock %}</title>
+    <script src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
+       <!-- 本地样式（包含字体定义）-->
+
+       <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/tracking.css') }}?v={{ STATIC_VER }}">
+       <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/WORKSPACE_drawer.css') }}?v={{ STATIC_VER }}">
+      
+       {% block extra_css %}{% endblock %}
+       <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/theme.css') }}?v={{ STATIC_VER }}">
+
+
+    
+</head>
+<body data-raw-role="{{ session.get('role', '') }}"
+      data-user-id="{{ session.get('user_id', '') }}"
+      data-permission-matrix='{{ (PERMISSION_MATRIX if PERMISSION_MATRIX is defined else {}) | tojson }}'
+      data-can-view-user="{{ 'true' if perm.can('view', 'user') else 'false' }}"
+      data-can-edit-workflow="{{ 'true' if perm.can('edit', 'workflow') else 'false' }}"
+      data-can-create-workflow="{{ 'true' if perm.can('create', 'workflow') else 'false' }}"
+      data-cloud-mode="{{ 'true' if cloud_mode else 'false' }}"
+      data-cloud-read-only="{{ 'true' if cloud_read_only else 'false' }}"
+      data-cloud-provider-ready="{{ 'true' if cloud_provider_ready else 'false' }}">
+    <div class="app-layout" id="appLayout">
+        <script>
+            // 首屏先套用上次的側邊欄狀態，避免「先展開再折疊」閃動
+            (function() {
+                try {
+                    const appLayout = document.getElementById('appLayout');
+                    if (!appLayout) return;
+                    appLayout.classList.add('sidebar-state-init');
+                    const savedState = localStorage.getItem('sidebarCollapsed');
+                    if (savedState === 'true') {
+                        appLayout.classList.add('collapsed');
+                    } else if (savedState === 'false') {
+                        appLayout.classList.remove('collapsed');
+                    }
+                } catch (e) {
+                    // ignore storage access errors
+                }
+            })();
+        </script>
+
+        <!-- 手機專用頂部列：桌面仍使用原側邊欄 -->
+        <header class="mobile-app-header">
+            <div class="mobile-app-brand">
+                <a class="mobile-app-mark mobile-app-mark-home" href="{{ url_for('tracking_bp.index') }}" aria-label="首页" title="首页">KC</a>
+                <span class="mobile-app-brand-copy">
+                    <strong data-i18n="system.name">订单追踪</strong>
+                    <small data-i18n="company">杭州可成有限公司</small>
+                </span>
+            </div>
+            <div class="mobile-header-actions">
+                <button type="button" class="mobile-report-queue-btn" onclick="openReportQueueDrawer()" aria-label="报告队列" title="报告队列">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"></path>
+                        <path d="M9 8h6M9 12h6M9 16h4"></path>
+                    </svg>
+                    <span class="mobile-report-queue-badge" id="mobileReportQueueBadge">0</span>
+                </button>
+                <button type="button" class="tracking-theme-toggle mobile-theme-toggle" data-theme-toggle onclick="toggleTrackingTheme()" aria-label="切换深色模式" title="深色模式">
+                    <span class="theme-icon-stack" aria-hidden="true">
+                        <svg class="theme-svg theme-svg-moon" data-theme-icon-moon viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8a8.6 8.6 0 1 0 11.4 11.4Z"></path>
+                        </svg>
+                        <svg class="theme-svg theme-svg-sun" data-theme-icon-sun viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3.8"></circle>
+                            <path d="M12 2.2v2.1M12 19.7v2.1M4.3 12H2.2M21.8 12h-2.1M5.1 5.1l1.5 1.5M17.4 17.4l1.5 1.5M18.9 5.1l-1.5 1.5M6.6 17.4l-1.5 1.5"></path>
+                        </svg>
+                    </span>
+                </button>
+                <button type="button" class="tracking-language-toggle mobile-language-toggle" data-lang-toggle onclick="toggleTrackingLanguage()" aria-label="切换语言">ES</button>
+                <button type="button" class="mobile-menu-btn" onclick="openMobileNavMenu()" aria-label="打开菜单">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="mobile-nav-backdrop" id="mobileNavBackdrop" onclick="closeMobileNavMenu()"></div>
+        <nav class="mobile-nav-sheet" id="mobileNavSheet" aria-hidden="true">
+            <div class="mobile-nav-head">
+                <div>
+                    <strong>{{ session.get('display_name', '用户') }}</strong>
+                    <span data-i18n="system.name">订单追踪系统</span>
+                </div>
+                <button type="button" onclick="closeMobileNavMenu()" aria-label="關閉選單">×</button>
+            </div>
+            <a href="{{ url_for('tracking_bp.index') }}" class="mobile-nav-item {{ 'active' if request.endpoint == 'tracking_bp.index' else '' }}">
+                <span data-i18n="nav.home">首页</span><span>›</span>
+            </a>
+            {# 手机端只保留手机原生页面入口。不要从手机菜单跳回桌面 Modal / 管理页。 #}
+            <a href="{{ url_for('tracking_bp.logout') }}" class="mobile-nav-item mobile-nav-logout"><span data-i18n="nav.logout">登出</span><span>↗</span></a>
+        </nav>
+
+        <!-- 左侧边栏 -->
+        <aside class="sidebar">
+            <!-- 側邊欄標題 -->
+            <div class="sidebar-header sidebar-header--title">
+                <div class="title" data-i18n="company">杭州可成有限公司</div>
+                <button class="sidebar-toggle" 
+                        onclick="toggleSidebar()" 
+                        title="折叠/展开侧边栏"
+                        aria-label="切换侧边栏">
+                    <span class="toggle-icon">☰</span>
+                </button>
+            </div>
+
+            <div class="sidebar-menu">
+                {% call perm.menu_item('主页', url_for('tracking_bp.index'), item_class="sidebar-item " + ("active" if request.endpoint == 'tracking_bp.index' else "")) %}
+                    <span class="sidebar-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                    </span>
+                {% endcall %}
+                
+                <!-- 建立业务流程按钮 -->
+                {% if perm.can('create', 'workflow') %}
+                <button class="sidebar-item sidebar-button" 
+                        onclick="openNewWorkflowModal()"
+                        data-tooltip="建立业务流程">
+                    <span class="sidebar-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </span>
+                    <span class="sidebar-text">建立业务流程</span>
+                </button>
+                {% endif %}
+                
+                {% if not cloud_mode %}
+                {% call perm.menu_item('订单管理', url_for('tracking_bp.admin_orders'), required_permission='order:view', item_class="sidebar-item " + ("active" if request.endpoint == 'tracking_bp.admin_orders' else "")) %}
+                    <span class="sidebar-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="3" x2="9" y2="21"></line>
+                        </svg>
+                    </span>
+                {% endcall %}
+                {% endif %}
+
+                {% if not cloud_mode %}
+                <a href="javascript:void(0)"
+                   class="sidebar-item {{ 'active' if request.endpoint == 'tracking_bp.factory_visit' else '' }}"
+                   data-tooltip="工厂考察"
+                   data-ajax-page="factory-visit"
+                   data-url="{{ url_for('tracking_bp.factory_visit') }}"
+                   onclick="return window.loadAjaxPageFromSidebar(event, this);">
+                    <span class="sidebar-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 21h18"></path>
+                            <path d="M5 21V9l5 3V9l5 3V5l4 2v14"></path>
+                            <path d="M9 21v-4h2v4"></path>
+                            <path d="M15 21v-4h2v4"></path>
+                        </svg>
+                    </span>
+                    <span class="sidebar-text">工厂考察</span>
+                </a>
+                {% endif %}
+
+                {% if not cloud_mode %}
+                {% call perm.menu_item('用户管理', url_for('tracking_bp.admin_users'), required_permission='user:view', item_class="sidebar-item " + ("active" if request.endpoint == 'tracking_bp.admin_users' else "")) %}
+                    <span class="sidebar-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                    </span>
+                {% endcall %}
+                {% endif %}
+
+                {% if session.get('role') == 'admin' %}
+                <a href="{{ url_for('tracking_bp.admin_customer_shares') }}"
+                   class="sidebar-item {{ 'active' if request.endpoint == 'tracking_bp.admin_customer_shares' else '' }}"
+                   data-tooltip="客户分享">
+                    <span class="sidebar-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="18" cy="5" r="3"></circle>
+                            <circle cx="6" cy="12" r="3"></circle>
+                            <circle cx="18" cy="19" r="3"></circle>
+                            <path d="m8.7 10.7 6.6-4.4"></path>
+                            <path d="m8.7 13.3 6.6 4.4"></path>
+                        </svg>
+                    </span>
+                    <span class="sidebar-text">客户分享</span>
+                </a>
+                {% endif %}
+
+                {% if not cloud_mode %}
+                {% call perm.menu_item('通知记录', url_for('tracking_bp.admin_notifications'), required_permission='user:view', item_class="sidebar-item " + ("active" if request.endpoint == 'tracking_bp.admin_notifications' else "")) %}
+                    <span class="sidebar-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                            <line x1="1" y1="1" x2="23" y2="23" stroke-width="1.5" opacity="0.4"></line>
+                        </svg>
+                    </span>
+                {% endcall %}
+                {% endif %}
+
+                {% if developer_tools_admin_visible %}
+                <a href="{{ url_for('tracking_bp.admin_diagnostics') }}"
+                   class="sidebar-item {{ 'active' if request.endpoint == 'tracking_bp.admin_diagnostics' else '' }}"
+                   data-tooltip="系统诊断">
+                    <span class="sidebar-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
+                            <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path>
+                            <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"></path>
+                        </svg>
+                    </span>
+                    <span class="sidebar-text">系统诊断</span>
+                </a>
+                {% endif %}
+            </div>
+            
+            <!-- 侧边栏底部区域 -->
+            <div class="sidebar-bottom">
+                <!-- 通知铃铛（viewer 不显示） -->
+                {% if session.get('role') != 'viewer' and not cloud_mode %}
+                <div class="sidebar-footer">
+                    <button class="sidebar-item sidebar-notification-btn" 
+                            onclick="toggleNotificationPanel()"
+                            data-tooltip="通知"
+                            id="notificationBellBtn">
+                        <span class="sidebar-icon" style="position: relative;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                            </svg>
+                            <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+                        </span>
+                        <span class="sidebar-text">通知</span>
+                    </button>
+                </div>
+                {% endif %}
+
+                <!-- 设置按钮 -->
+                <div class="sidebar-footer">
+                    <button class="sidebar-item sidebar-settings" 
+                            onclick="openSettings()"
+                            data-tooltip="设置">
+                        <span class="sidebar-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                        </span>
+                        <span class="sidebar-text">设置</span>
+                    </button>
+                </div>
+
+                <!-- 用户 | 登出 -->
+                <div class="sidebar-user">
+                    <span class="user-name">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        <span class="user-text">{{ session.get('display_name', '用户') }}</span>
+                    </span>
+                    <span class="sidebar-user-tools">
+                        <button type="button" class="sidebar-user-control sidebar-user-theme" data-theme-toggle onclick="toggleTrackingTheme()" aria-label="切换深色模式" title="深色模式">
+                            <span class="theme-icon-stack" aria-hidden="true">
+                                <svg class="theme-svg theme-svg-moon" data-theme-icon-moon viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8a8.6 8.6 0 1 0 11.4 11.4Z"></path>
+                                </svg>
+                                <svg class="theme-svg theme-svg-sun" data-theme-icon-sun viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="3.8"></circle>
+                                    <path d="M12 2.2v2.1M12 19.7v2.1M4.3 12H2.2M21.8 12h-2.1M5.1 5.1l1.5 1.5M17.4 17.4l1.5 1.5M18.9 5.1l-1.5 1.5M6.6 17.4l-1.5 1.5"></path>
+                                </svg>
+                            </span>
+                        </button>
+                        <button type="button" class="sidebar-user-control sidebar-user-language" data-lang-toggle onclick="toggleTrackingLanguage()" aria-label="切换语言" title="切换语言">
+                            <svg class="sidebar-language-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <path d="M3.5 9h17M3.5 15h17M12 3c2.1 2.35 3.2 5.35 3.2 9S14.1 18.65 12 21M12 3C9.9 5.35 8.8 8.35 8.8 12s1.1 6.65 3.2 9"></path>
+                            </svg>
+                            <span data-lang-label>ES</span>
+                        </button>
+                        <a href="{{ url_for('tracking_bp.logout') }}" class="nav-link sidebar-user-control sidebar-user-logout" aria-label="登出" title="登出">
+                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <path d="M16 17l5-5-5-5"></path>
+                                <path d="M21 12H9"></path>
+                            </svg>
+                        </a>
+                    </span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主內容區 -->
+        <main class="main-content" id="mainContent">
+            {% if cloud_mode %}
+            <div class="cloud-readonly-banner{{ '' if cloud_provider_ready else ' cloud-provider-waiting' }}" id="cloudReadonlyBanner">
+                <div class="cloud-readonly-main">
+                    <span class="cloud-readonly-icon">☁</span>
+                    <div>
+                        <strong data-i18n="cloud.title">云端只读模式</strong>
+                        <span data-i18n="cloud.readonly_desc">此页只能查看；正式修改请回公司系统操作。</span>
+                    </div>
+                </div>
+                <div class="cloud-sync-status" id="cloudSyncStatus">
+                    {% if cloud_provider_ready %}
+                        <span data-i18n="cloud.updated_at">资料更新于：</span><strong id="cloudLastSyncedAt"{% if not cloud_last_synced_at %} data-i18n="cloud.wait_first"{% endif %}>{{ cloud_last_synced_at or '等待首次同步' }}</strong>
+                    {% else %}
+                        <strong data-i18n="cloud.no_data">尚未连接云端订单资料</strong>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- 设置 Modal -->
+    <div id="settingsModal" onclick="if(event.target === this) closeSettingsModal()">
+        <div class="settings-modal" onclick="event.stopPropagation()">
+            <div class="settings-sidebar">
+                <div class="settings-sidebar-header">
+                    <h3>设置</h3>
+                    <button class="settings-close" type="button" onclick="closeSettingsModal()">✕</button>
+                </div>
+                <div class="settings-menu">
+                    <button class="settings-menu-item active" type="button" onclick="showSettingsSection('columns')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="3" x2="9" y2="21"></line>
+                        </svg>
+                        栏位显示
+                    </button>
+                    <button class="settings-menu-item" type="button" onclick="showSettingsSection('password')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        修改密码
+                    </button>
+                </div>
+            </div>
+            <div class="settings-content">
+                <div id="settingsColumns" class="settings-section active">
+                    <h2>栏位显示</h2>
+                    <div class="settings-description">选择要显示/隐藏的表格栏位。</div>
+                    <div class="column-settings-container">
+                        <div id="columnSettingsList" class="column-settings-list"></div>
+                    </div>
+                </div>
+                <div id="settingsPassword" class="settings-section">
+                    <h2>修改密码</h2>
+                    <div class="settings-description">修改您的登录密码，新密码至少6位。</div>
+                    <form id="changePasswordForm" class="change-password-form" onsubmit="return submitChangePassword(event)">
+                        <div class="form-group">
+                            <label class="form-label">旧密码 <span class="required">*</span></label>
+                            <input type="password" id="cpOldPassword" class="form-input" required autocomplete="current-password" placeholder="请输入当前密码">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">新密码 <span class="required">*</span></label>
+                            <input type="password" id="cpNewPassword" class="form-input" required autocomplete="new-password" minlength="6" placeholder="至少6位">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">确认新密码 <span class="required">*</span></label>
+                            <input type="password" id="cpConfirmPassword" class="form-input" required autocomplete="new-password" placeholder="再次输入新密码">
+                        </div>
+                        <div id="cpErrorMsg" class="cp-error-msg" style="display:none;"></div>
+                        <div id="cpSuccessMsg" class="cp-success-msg" style="display:none;"></div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary" id="cpSubmitBtn">确认修改</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 跳过阶段 Modal -->
+    <div class="modal-overlay" id="skipStageModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>跳过当前阶段</h3>
+                <button class="modal-close" onclick="closeSkipStageModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">当前状态</label>
+                    <div id="skipCurrentStatus" style="font-weight: 600; color: var(--blue); font-size: 1.1rem; padding: 0.5rem 0;"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">请选择要跳到的阶段 <span style="color: var(--status-danger);">*</span></label>
+                    <div id="skipStageOptions" class="skip-options-container">
+                        <!-- 动态生成 -->
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">备注（选填）</label>
+                    <textarea id="skipStageNotes" class="form-textarea" rows="3"
+                              placeholder="例如：客户要求加急，跳过打样直接生产"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeSkipStageModal()">取消</button>
+                <button class="btn btn-primary" onclick="confirmSkipStage()">确认跳过</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑/新增订单 Modal -->
+    <div class="modal-overlay" id="editOrderModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="editOrderModalTitle">编辑订单</h3>
+                <button class="modal-close" onclick="closeEditOrderModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="editOrderForm">
+                    <input type="hidden" id="editOrderId">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">订单号 <span style="color: var(--status-danger);">*</span></label>
+                            <input type="text" id="editOrderNumber" class="form-input" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">当前状态</label>
+                            <input type="text" id="editStatus" class="form-input" readonly>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">产品名称</label>
+                            <input type="text" id="editProductName" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">产品代码</label>
+                            <input type="text" id="editProductCode" class="form-input">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row form-row-3">
+                        <div class="form-group">
+                            <label class="form-label">数量</label>
+                            <input type="text" id="editQuantity" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">工厂</label>
+                            <input type="text" id="editFactory" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">预计交货日期</label>
+                            <input type="date" id="editDeliveryDate" class="form-input">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">备注</label>
+                        <textarea id="editOrderNotes" class="form-textarea" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditOrderModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveOrderEdit()">保存更改</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 确认删除 Modal -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>确认删除</h3>
+                <button class="modal-close" onclick="closeDeleteModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 1rem;">确定要删除订单号为 <strong id="deleteOrderNumber"></strong> 的工作流程吗？</p>
+                <p style="color: var(--status-danger); margin-bottom: 0;">此操作无法撤销。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDeleteModal()">取消</button>
+                <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 删除订单 Modal（管理员专用）-->
+    <div class="modal-overlay" id="deleteOrderModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>确认删除订单</h3>
+                <button class="modal-close" onclick="closeDeleteOrderModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 1rem;">确定要删除订单号为 <strong id="deleteOrderNum"></strong> 的订单吗？</p>
+                <p style="color: var(--status-danger); margin-bottom: 0;">此操作无法撤销。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDeleteOrderModal()">取消</button>
+                <button class="btn btn-danger" onclick="confirmDeleteOrder()">确认删除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通用确认 Modal（供 tracking.js / admin-orders.js 使用） -->
+    <div class="modal-overlay" id="confirmModal" onclick="if(event.target === this) closeConfirmModal()">
+        <div class="modal confirm-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title" id="confirmModalTitle">确认操作</div>
+                <button class="modal-close" onclick="closeConfirmModal()">✕</button>
+            </div>
+            <div class="modal-body confirm-modal-body">
+                <div class="confirm-order-info" id="confirmModalOrderInfo" style="display: none;">
+                    订单 <strong id="confirmModalOrderNumber">-</strong>
+                </div>
+                <div class="confirm-status-change" id="confirmModalStatusChange" style="display: none;">
+                    <span class="confirm-status-from" id="confirmModalCurrentStatus"></span>
+                    <span class="confirm-status-arrow">→</span>
+                    <span class="confirm-status-to" id="confirmModalNextStatus"></span>
+                </div>
+                <div class="confirm-message" id="confirmModalMessage"></div>
+                <!-- 安全輸入確認區 -->
+                <div class="confirm-input-area" id="confirmModalInputArea" style="display: none;">
+                    <p class="confirm-input-hint" id="confirmModalInputHint"></p>
+                    <input type="text" class="confirm-input" id="confirmModalInput" autocomplete="off" spellcheck="false" placeholder="">
+                    <p class="confirm-input-error" id="confirmModalInputError" style="display: none;">输入不正确</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn cancel" onclick="closeConfirmModal()">取消</button>
+                <button class="modal-btn confirm" id="confirmModalConfirmBtn">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 上传图纸 Modal -->
+    <div class="modal-overlay" id="drawerUploadModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>上传图纸文件</h3>
+                <button class="modal-close" onclick="closeDrawerUploadModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="file" 
+                       id="drawerFileInput" 
+                       multiple 
+                       accept=".pdf,.png,.jpg,.jpeg,.dwg,.dxf,.step,.stp"
+                       style="margin-bottom: 1rem; padding: 0.5rem; border: 2px dashed var(--gray-300); border-radius: 0.375rem; width: 100%; cursor: pointer;">
+                <div id="drawerFileList" style="margin-top: 1rem; font-size: 0.875rem; color: var(--gray-600);"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDrawerUploadModal()">取消</button>
+                <button class="btn btn-primary" onclick="submitDrawerUploadFiles()">上传</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 建立业务流程 Modal -->
+    <div class="modal-overlay" id="newOrderModal" onclick="if(event.target === this) closeNewWorkflowModal(true)">
+        <div class="modal-content modal-large" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>建立业务流程</h3>
+                <button class="modal-close" onclick="closeNewWorkflowModal(true)">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="newOrderForm">
+                    <div class="form-group">
+                        <label class="form-label">订单号 <span style="color: var(--status-danger);">*</span></label>
+                        <div style="position: relative;">
+                            <input type="text" id="newOrderNumber" class="form-input" placeholder="请输入订单号（如：1007001）" required autocomplete="off">
+                            <div id="orderNumberSuggestions" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #e5e7eb; border-radius: 0.375rem; max-height: 200px; overflow-y: auto; z-index: 1002; display: none; margin-top: 0.25rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);"></div>
+                        </div>
+                        <div class="form-hint" style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">
+                            请输入订单号，系统会自动验证订单是否已解锁
+                        </div>
+                        <div id="selectedOrderInfo" style="margin-top: 0.5rem; padding: 0.75rem; background: #f3f4f6; border-radius: 0.375rem; display: none;">
+                            <div style="font-size: 0.875rem; color: #374151;">
+                                <strong>客户名称：</strong><span id="selectedCustomerName">-</span>
+                            </div>
+                            <div style="font-size: 0.875rem; color: #374151; margin-top: 0.25rem;">
+                                <strong>订单日期：</strong><span id="selectedOrderDate">-</span>
+                            </div>
+                        </div>
+                        <div id="orderNumberError" style="display: none; margin-top: 0.5rem; padding: 0.5rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.375rem; color: #991b1b; font-size: 0.875rem;"></div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">产品类型</label>
+                            <input type="text" id="newProductName" class="form-input" placeholder="选填">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">产品编号</label>
+                            <input type="text" id="newProductCode" class="form-input" placeholder="选填">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row form-row-3">
+                        <div class="form-group">
+                            <label class="form-label">数量</label>
+                            <input type="text" id="newQuantity" class="form-input" placeholder="选填">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">生产工厂</label>
+                            <input type="text" id="newFactory" class="form-input" placeholder="选填">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">预计交货日期</label>
+                            <input type="date" id="newDeliveryDate" class="form-input">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">备注</label>
+                        <textarea id="newOrderNotes" class="form-textarea" rows="3" placeholder="选填"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeNewWorkflowModal(true)">取消</button>
+                <button class="btn btn-primary" onclick="submitNewOrder()">建立流程</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fallback functions - will be overridden by new_order.js when it loads -->
+    <script>
+        // Ensure closeNewWorkflowModal is always available (fallback)
+        if (typeof window.closeNewWorkflowModal === 'undefined') {
+            window.closeNewWorkflowModal = function(forceClose = false) {
+                const modal = document.getElementById('newOrderModal');
+                if (modal) {
+                    modal.classList.remove('show');
+                }
+            };
+        }
+        // Ensure openNewWorkflowModal is always available (fallback)
+        if (typeof window.openNewWorkflowModal === 'undefined') {
+            window.openNewWorkflowModal = function() {
+                const modal = document.getElementById('newOrderModal');
+                if (modal) {
+                    modal.classList.add('show');
+                }
+            };
+        }
+    </script>
+
+    <script>
+        // 设置用户角色与权限到全局（由权限配置驱动）
+        (function() {
+            const rawRole = document.body.dataset.rawRole || '';
+            const userId = document.body.dataset.userId || '';
+            const normalizeRole = (role) => {
+                const roleStr = String(role || '').trim().toLowerCase();
+                if (['administrator', 'admin', 'root', 'superuser', '管理员', '主管'].includes(roleStr)) return 'admin';
+                if (['sales', 'seller', 'biz', 'business', '业务员', '業務員'].includes(roleStr)) return 'sales';
+                if (['viewer', 'view', 'read', 'readonly', '查看者', '只读', '只讀'].includes(roleStr)) return 'viewer';
+                return roleStr || 'viewer';
+            };
+
+            const role = normalizeRole(rawRole);
+            const matrix = JSON.parse(document.body.dataset.permissionMatrix || '{}');
+            const canViewUser = document.body.dataset.canViewUser === 'true';
+            const canEditWorkflow = document.body.dataset.canEditWorkflow === 'true';
+            const canCreateWorkflow = document.body.dataset.canCreateWorkflow === 'true';
+            const canMap = {
+                'user:view': canViewUser,
+                'workflow:edit': canEditWorkflow,
+                'workflow:create': canCreateWorkflow
+            };
+            const can = (action, resource) => {
+                const key = `${resource}:${action}`;
+                if (Object.prototype.hasOwnProperty.call(canMap, key)) {
+                    return !!canMap[key];
+                }
+                const actions = (matrix[role] && matrix[role][resource]) || [];
+                return actions.indexOf(action) >= 0;
+            };
+            const isAdmin = () => canViewUser || can('view', 'user');
+            const isSales = () => !isAdmin() && (canEditWorkflow || can('edit', 'workflow'));
+
+            window.AppPermissions = { role, can, isAdmin, isSales, matrix };
+
+            // 保持旧字段兼容
+            document.body.dataset.userRole = rawRole;
+            document.body.dataset.userRoleNormalized = role;
+            document.body.dataset.userId = userId;
+        })();
+    </script>
+    {% if session.get('role') != 'viewer' %}
+    <!-- 通知面板（viewer 不显示） -->
+    <div class="notification-panel" id="notificationPanel">
+        <div class="notification-panel-header">
+            <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                通知
+            </h3>
+            <div class="notification-panel-actions">
+                <button class="notif-action-btn" onclick="markAllNotificationsRead()" title="全部已读">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                </button>
+                <button class="notif-action-btn" onclick="closeNotificationPanel()" title="关闭">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="notification-panel-tabs">
+            <button class="notif-tab active" data-tab="unread" onclick="switchNotifTab('unread')">未读</button>
+            <button class="notif-tab" data-tab="all" onclick="switchNotifTab('all')">全部</button>
+        </div>
+        <div class="notification-panel-body" id="notificationList">
+            <div class="notification-empty">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <p>暂无通知</p>
+            </div>
+        </div>
+    </div>
+    <div class="notification-panel-backdrop" id="notificationBackdrop" onclick="closeNotificationPanel()"></div>
+    {% endif %}
+
+    <script>window.IS_OVERSEAS = {{ is_overseas | tojson }};</script>
+    <script>
+        (function() {
+            async function loadAjaxPage(link) {
+                const main = document.getElementById('mainContent');
+                if (!main || !link) return;
+
+                const url = link.dataset.url || link.getAttribute('href');
+                main.innerHTML = '<div style="padding:24px;color:#6b7280;">正在读取...</div>';
+
+                const response = await fetch(url, {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const html = await response.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const content = doc.body;
+
+                document.querySelectorAll('[data-ajax-page-element="factory-visit"]').forEach(el => el.remove());
+                document.querySelectorAll('style[data-ajax-page-style="factory-visit"]').forEach(el => el.remove());
+                doc.querySelectorAll('style').forEach(style => {
+                    const cloned = document.createElement('style');
+                    cloned.dataset.ajaxPageStyle = 'factory-visit';
+                    cloned.textContent = style.textContent;
+                    document.head.appendChild(cloned);
+                });
+
+                const scripts = Array.from(doc.body.querySelectorAll('script'));
+                scripts.forEach(script => script.remove());
+                main.innerHTML = content.innerHTML;
+                ['editModal', 'factoryDeleteModal', 'toast'].forEach(id => {
+                    const el = main.querySelector(`#${id}`);
+                    if (el) {
+                        el.dataset.ajaxPageElement = 'factory-visit';
+                        document.body.appendChild(el);
+                    }
+                });
+
+                scripts.forEach(oldScript => {
+                    const script = document.createElement('script');
+                    Array.from(oldScript.attributes).forEach(attr => script.setAttribute(attr.name, attr.value));
+                    script.textContent = oldScript.textContent;
+                    document.body.appendChild(script);
+                    script.remove();
+                });
+
+                document.querySelectorAll('.sidebar-menu .sidebar-item').forEach(item => item.classList.remove('active'));
+                link.classList.add('active');
+            }
+
+            window.loadAjaxPageFromSidebar = function(event, link) {
+                if (event) event.preventDefault();
+                loadAjaxPage(link).catch(err => {
+                    const main = document.getElementById('mainContent');
+                    if (main) main.innerHTML = `<div style="padding:24px;color:#b91c1c;">读取失败：${err.message}</div>`;
+                });
+                return false;
+            };
+
+            document.addEventListener('click', function(event) {
+                if (event.defaultPrevented) return;
+                const link = event.target.closest('a[data-ajax-page]');
+                if (!link) return;
+                event.preventDefault();
+                window.loadAjaxPageFromSidebar(event, link);
+            });
+
+            window.addEventListener('popstate', function(event) {
+                // 手机订单/客户内页使用浏览器历史作为「站内返回」。
+                // 这样 Android / iOS 的边缘返回手势会先回到订单列表或客户页，
+                // 而不是直接离开 order_tracking。
+                if (typeof window.handleTrackingPopState === 'function' && window.handleTrackingPopState(event)) {
+                    return;
+                }
+                location.reload();
+            });
+        })();
+    </script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/STATUS_SYSTEM.js') }}?v={{ STATIC_VER }}"></script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/tracking.js') }}?v={{ STATIC_VER }}"></script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/new_order.js') }}?v={{ STATIC_VER }}"></script>
+    {% if session.get('role') != 'viewer' %}
+    <script src="{{ url_for('tracking_bp.static', filename='js/notifications.js') }}?v={{ STATIC_VER }}"></script>
+    {% endif %}
+    
+    <!-- WORKSPACE 决策工作台抽屉 -->
+    {% include "tracking/WORKSPACE_drawer.html" %}
+    <script src="{{ url_for('tracking_bp.static', filename='js/WORKSPACE_drawer.js') }}?v={{ STATIC_VER }}"></script>
+    <script src="{{ url_for('tracking_bp.static', filename='js/WORKSPACE_drawer_addon.js') }}?v={{ STATIC_VER }}"></script>
+
+    {% block extra_js %}{% endblock %}
+<script>
+(function () {
+    const REMINDER_HOUR = 10;
+    const REMINDER_MINUTE = 30;
+    const STORAGE_KEY = 'orderNumberMissingReminderAck';
+    const CHECK_URL = '/tracking/api/order-number-pool/reminder-check';
+    const ADMIN_ORDERS_URL = '/tracking/admin/orders';
+    let reminderTimer = null;
+    let requestInFlight = false;
+
+    function getTodayKey() {
+        const now = new Date();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${now.getFullYear()}-${month}-${day}`;
+    }
+
+    function getReminderTimeToday() {
+        const target = new Date();
+        target.setHours(REMINDER_HOUR, REMINDER_MINUTE, 0, 0);
+        return target;
+    }
+
+    function readAck() {
+        try {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        } catch (err) {
+            return {};
+        }
+    }
+
+    function isAcknowledged(signature) {
+        const ack = readAck();
+        return ack.date === getTodayKey() && ack.signature === signature && ack.acknowledged === true;
+    }
+
+    function acknowledge(signature) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            date: getTodayKey(),
+            signature: signature,
+            acknowledged: true,
+            acknowledged_at: new Date().toISOString()
+        }));
+    }
+
+    function removeExistingToast() {
+        const oldToast = document.getElementById('missingReminderToast');
+        if (oldToast) oldToast.remove();
+    }
+
+    function openAdminMissingCheck(data) {
+        const startRaw = data.start_number || '1007500';
+        const endRaw = data.end_number || '';
+
+        // 已經在訂單管理頁時不重新跳頁，直接打開 Modal 並自動檢測。
+        if (window.location.pathname === ADMIN_ORDERS_URL && typeof window.openMissingCheckModal === 'function') {
+            window.openMissingCheckModal({
+                startNumber: startRaw,
+                endNumber: endRaw,
+                autoRun: true
+            });
+            return;
+        }
+
+        const start = encodeURIComponent(startRaw);
+        const end = encodeURIComponent(endRaw);
+        window.location.href = `${ADMIN_ORDERS_URL}?openMissingCheck=1&missingStart=${start}&missingEnd=${end}`;
+    }
+
+    function showReminderToast(data) {
+        removeExistingToast();
+
+        const toast = document.createElement('div');
+        toast.id = 'missingReminderToast';
+        toast.style.cssText = [
+            'position:fixed',
+            'right:24px',
+            'top:24px',
+            'z-index:99999',
+            'width:min(420px, calc(100vw - 32px))',
+            'background:#fff',
+            'border:1px solid #fecaca',
+            'border-left:5px solid #ef4444',
+            'border-radius:12px',
+            'box-shadow:0 18px 45px rgba(15,23,42,.18)',
+            'padding:16px',
+            'font-family:inherit',
+            'color:#111827'
+        ].join(';');
+
+        toast.innerHTML = `
+            <div style="display:flex; gap:12px; align-items:flex-start;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto; margin-top:2px;">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path>
+                    <path d="M12 9v4"></path>
+                    <path d="M12 17h.01"></path>
+                </svg>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:800; font-size:15px; margin-bottom:6px;">缺號提醒</div>
+                    <div style="font-size:13px; color:#4b5563; line-height:1.6;">
+                        範圍 ${data.start_number || '-'} ~ ${data.end_number || '-'}，
+                        缺號 <strong style="color:#dc2626;">${data.missing_count || 0}</strong> 筆，
+                        未解鎖 <strong style="color:#c2410c;">${data.unlocked_count || 0}</strong> 筆。
+                    </div>
+                    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+                        <button type="button" data-action="ignore" style="border:1px solid #e5e7eb; background:#fff; color:#374151; border-radius:8px; padding:7px 12px; font-weight:700; cursor:pointer;">今日忽略</button>
+                        <button type="button" data-action="view" style="border:1px solid #ef4444; background:#ef4444; color:#fff; border-radius:8px; padding:7px 12px; font-weight:800; cursor:pointer;">查看明細</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        toast.querySelector('[data-action="ignore"]').addEventListener('click', function () {
+            acknowledge(data.signature);
+            removeExistingToast();
+        });
+
+        toast.querySelector('[data-action="view"]').addEventListener('click', function () {
+            removeExistingToast();
+            openAdminMissingCheck(data);
+        });
+
+        document.body.appendChild(toast);
+    }
+
+    async function checkReminder() {
+        if (requestInFlight) return;
+        requestInFlight = true;
+        try {
+            const response = await fetch(CHECK_URL, { credentials: 'same-origin' });
+            if (!response.ok) return;
+
+            const result = await response.json();
+            const data = result && result.data ? result.data : null;
+            if (!result.success || !data || !data.has_issues || !data.signature) return;
+            if (isAcknowledged(data.signature)) return;
+
+            showReminderToast(data);
+        } catch (err) {
+            console.warn('[MissingReminder] check failed:', err);
+        } finally {
+            requestInFlight = false;
+        }
+    }
+
+    function scheduleReminder() {
+        if (reminderTimer) clearTimeout(reminderTimer);
+
+        // 每次進入頁面先立即掃一次；「今日忽略」仍會阻止相同結果重複跳出。
+        checkReminder();
+
+        // 若頁面長時間保持開啟，仍保留每日 10:30 的再次檢查。
+        const now = new Date();
+        const target = getReminderTimeToday();
+        if (target.getTime() <= now.getTime()) {
+            target.setDate(target.getDate() + 1);
+        }
+        const delay = target.getTime() - now.getTime();
+        reminderTimer = setTimeout(function () {
+            checkReminder();
+            scheduleReminder();
+        }, delay);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', scheduleReminder);
+    } else {
+        scheduleReminder();
+    }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,486 @@
+{% extends "tracking/base.html" %}
+{% block title %}今日動態{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── 整體版面 ── */
+.act-page {
+  display:flex; flex-direction:column; height:100%;
+  background:#f4f5f7; font-size:13px;
+}
+
+/* ── Header ── */
+.act-header {
+  display:flex; align-items:center; gap:10px;
+  padding:8px 16px; background:white;
+  border-bottom:1px solid #e8e8e8; flex-shrink:0;
+  min-height:44px;
+}
+.act-title {
+  font-size:13px; font-weight:700; color:#1a1a1a;
+  display:flex; align-items:center; gap:5px; white-space:nowrap;
+}
+.act-title svg { color:#888; }
+
+/* 日期導覽 */
+.act-date-nav { display:flex; align-items:center; gap:2px; margin:0 4px; }
+.act-date-btn {
+  background:none; border:1px solid #e0e0e0; border-radius:5px;
+  width:24px; height:24px; cursor:pointer; font-size:13px;
+  display:flex; align-items:center; justify-content:center;
+  color:#666; transition:all .12s; padding:0;
+}
+.act-date-btn:hover { background:#f0f0f0; border-color:#ccc; }
+.act-date-btn:disabled { opacity:.3; cursor:default; }
+.act-date-btn.today-btn {
+  width:auto; padding:0 7px; font-size:11px; font-weight:700;
+  background:#f7f7f7;
+}
+.act-date-label {
+  font-size:12px; font-weight:600; color:#333;
+  min-width:88px; text-align:center; cursor:pointer;
+  padding:3px 6px; border-radius:5px; border:1px solid #e8e8e8;
+  background:#fafafa; transition:background .12s;
+}
+.act-date-label:hover { background:#f0f0f0; }
+.act-date-input { display:none; }
+
+/* 篩選 */
+.act-filters { display:flex; gap:3px; }
+.act-filter-btn {
+  border:1px solid #e0e0e0; border-radius:5px;
+  padding:3px 9px; font-size:11px; font-weight:600; cursor:pointer;
+  background:white; color:#666; font-family:inherit;
+  transition:all .12s; white-space:nowrap;
+}
+.act-filter-btn:hover { background:#f5f5f5; border-color:#ccc; }
+.act-filter-btn.active {
+  background:#1a1a1a; color:white; border-color:#1a1a1a;
+}
+
+/* 統計 pills */
+.act-stats { display:flex; gap:4px; margin-left:auto; }
+.act-stat-pill {
+  font-size:11px; font-weight:700;
+  border-radius:4px; padding:2px 7px; white-space:nowrap;
+  cursor:default;
+}
+.act-stat-pill.files  { color:#e53e3e; background:#fff0f0; border:1px solid #ffd0d0; }
+.act-stat-pill.quotes { color:#b7791f; background:#fffbeb; border:1px solid #fde68a; }
+.act-stat-pill.status { color:#6b46c1; background:#f5f3ff; border:1px solid #ddd6fe; }
+
+/* ── 捲動區 ── */
+.act-body {
+  flex:1; overflow-y:auto; padding:10px 14px;
+  display:flex; flex-direction:column; gap:3px;
+}
+
+/* ── 卡片 ── */
+.act-event {
+  background:white; border-radius:7px;
+  border:1px solid #e8e8e8;
+  padding:8px 12px 8px 10px;
+  display:flex; align-items:flex-start; gap:9px;
+  transition:border-color .12s, box-shadow .12s;
+}
+.act-event:hover {
+  border-color:#c8c8c8;
+  box-shadow:0 1px 6px rgba(0,0,0,.07);
+}
+
+/* 圖示 */
+.act-icon {
+  width:28px; height:28px; border-radius:6px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; margin-top:1px;
+}
+.act-icon.image      { background:#fff0f3; color:#e53e3e; }
+.act-icon.pdf        { background:#fff0f0; color:#e53e3e; }
+.act-icon.excel      { background:#f0fff4; color:#38a169; }
+.act-icon.file       { background:#f0f4ff; color:#4a6fa5; }
+.act-icon.quote_new  { background:#fffbeb; color:#b7791f; }
+.act-icon.quote_sent { background:#ebf8ff; color:#2b6cb0; }
+.act-icon.status     { background:#f5f3ff; color:#6b46c1; }
+
+/* 內容 */
+.act-content { flex:1; min-width:0; }
+
+.act-row1 {
+  display:flex; align-items:center; gap:5px;
+  flex-wrap:nowrap; overflow:hidden;
+}
+.act-actor {
+  font-size:12px; font-weight:700; color:#1a1a1a;
+  white-space:nowrap; flex-shrink:0;
+}
+.act-verb {
+  font-size:11px; color:#aaa; white-space:nowrap; flex-shrink:0;
+}
+.act-order-chip {
+  font-size:11px; font-weight:600;
+  background:#f0f0f0; color:#555;
+  border-radius:4px; padding:1px 5px;
+  text-decoration:none; white-space:nowrap; flex-shrink:0;
+  transition:background .12s;
+}
+.act-order-chip:hover { background:#e0e0f0; color:#222; }
+.act-customer {
+  font-size:11px; color:#999; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; min-width:0;
+}
+.act-time {
+  font-size:11px; color:#bbb;
+  margin-left:auto; white-space:nowrap; flex-shrink:0; padding-left:8px;
+}
+
+.act-row2 {
+  margin-top:2px;
+  font-size:12px; color:#555;
+  word-break:break-all; line-height:1.4;
+}
+.act-row2.status-change {
+  display:flex; align-items:center; gap:5px;
+  font-size:12px;
+}
+.act-status-from { color:#999; }
+.act-status-arrow { color:#ccc; font-size:10px; }
+.act-status-to { color:#1a1a1a; font-weight:700; }
+
+.act-extra { font-size:11px; color:#aaa; margin-top:2px; }
+
+/* ── 縮圖 ── */
+.act-img-thumb { margin-top:5px; }
+.act-img-thumb a {
+  display:inline-block; border-radius:5px; overflow:hidden;
+  border:1px solid #e8e8e8; cursor:pointer;
+  transition:border-color .12s, box-shadow .12s;
+}
+.act-img-thumb a:hover { border-color:#bbb; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+.act-img-thumb img {
+  display:block; max-height:100px; max-width:220px;
+  object-fit:contain; background:#f8f8f8;
+}
+
+/* ── PDF 預覽按鈕 ── */
+.act-pdf-thumb {
+  display:inline-flex; align-items:center; gap:4px;
+  margin-top:4px; padding:3px 9px 3px 7px;
+  background:#fff5f5; border:1px solid #fecaca;
+  border-radius:5px; cursor:pointer; transition:all .12s;
+  font-size:11px; font-weight:600; color:#e53e3e; max-width:260px;
+}
+.act-pdf-thumb:hover { background:#fee2e2; border-color:#f87171; }
+.act-pdf-thumb svg { flex-shrink:0; }
+.act-pdf-thumb .pdf-name {
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.act-pdf-thumb .pdf-eye { opacity:.5; flex-shrink:0; margin-left:2px; }
+
+/* ── 空狀態 ── */
+.act-empty {
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; height:200px; color:#ccc;
+  font-size:13px; gap:8px;
+}
+
+/* ── 載入 ── */
+.act-loading {
+  text-align:center; padding:2rem; color:#bbb; font-size:12px;
+}
+
+/* ── Lightbox ── */
+#actLightbox {
+  display:none; position:fixed; inset:0; z-index:99999;
+  background:rgba(0,0,0,.9); backdrop-filter:blur(8px);
+  flex-direction:column; align-items:center; justify-content:center;
+}
+#actLightbox.open { display:flex; }
+.act-lb-header {
+  position:absolute; top:0; left:0; right:0;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 16px;
+  background:linear-gradient(to bottom,rgba(0,0,0,.65),transparent);
+  z-index:2;
+}
+.act-lb-title {
+  color:rgba(255,255,255,.9); font-size:12px; font-weight:600;
+  max-width:calc(100% - 100px); overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap;
+}
+.act-lb-close {
+  width:32px; height:32px; border-radius:50%; border:none;
+  background:rgba(255,255,255,.12); color:white; font-size:16px;
+  cursor:pointer; display:flex; align-items:center; justify-content:center;
+  transition:background .12s;
+}
+.act-lb-close:hover { background:rgba(255,255,255,.25); }
+.act-lb-body {
+  width:100%; height:100%; display:flex;
+  align-items:center; justify-content:center;
+}
+#actLbImg {
+  max-width:92vw; max-height:88vh; object-fit:contain;
+  border-radius:3px; box-shadow:0 4px 40px rgba(0,0,0,.7);
+}
+#actLbPdf { width:90vw; height:90vh; border:none; border-radius:3px; }
+.act-lb-footer {
+  position:absolute; bottom:0; left:0; right:0;
+  display:flex; align-items:center; justify-content:center;
+  padding:10px;
+  background:linear-gradient(to top,rgba(0,0,0,.5),transparent);
+}
+.act-lb-download {
+  display:flex; align-items:center; gap:4px;
+  padding:5px 14px; border-radius:6px; border:none;
+  background:rgba(255,255,255,.15); color:white;
+  font-size:12px; font-weight:600; cursor:pointer;
+  transition:background .12s; font-family:inherit;
+}
+.act-lb-download:hover { background:rgba(255,255,255,.25); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="act-page">
+
+  <div class="act-header">
+    <div class="act-title">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+      今日動態
+    </div>
+
+    <div class="act-date-nav">
+      <button class="act-date-btn" id="prevDayBtn" onclick="changeDay(-1)">‹</button>
+      <span class="act-date-label" id="dateLabelEl" onclick="document.getElementById('datePickerInput').showPicker()"></span>
+      <input type="date" id="datePickerInput" class="act-date-input" onchange="setDate(this.value)">
+      <button class="act-date-btn" id="nextDayBtn" onclick="changeDay(1)">›</button>
+      <button class="act-date-btn today-btn" onclick="setDate(todayStr())">今天</button>
+    </div>
+
+    <div class="act-filters">
+      <button class="act-filter-btn active" data-type="all"    onclick="setFilter('all',this)">全部</button>
+      <button class="act-filter-btn"        data-type="file"   onclick="setFilter('file',this)">檔案</button>
+      <button class="act-filter-btn"        data-type="status" onclick="setFilter('status',this)">狀態</button>
+    </div>
+
+    <div class="act-stats">
+      <span class="act-stat-pill files"  id="statFiles">檔案 0</span>
+      <span class="act-stat-pill quotes" id="statQuotes">報價 0</span>
+      <span class="act-stat-pill status" id="statStatus">狀態 0</span>
+    </div>
+  </div>
+
+  <div class="act-body" id="actBody">
+    <div class="act-loading">載入中…</div>
+  </div>
+
+</div>
+
+<!-- Lightbox -->
+<div id="actLightbox" onclick="actLbClose(event)">
+  <div class="act-lb-header">
+    <span class="act-lb-title" id="actLbTitle"></span>
+    <button class="act-lb-close" onclick="actLbClose()">✕</button>
+  </div>
+  <div class="act-lb-body" onclick="event.stopPropagation()">
+    <img id="actLbImg" src="" alt="" style="display:none">
+    <iframe id="actLbPdf" src="" style="display:none"></iframe>
+  </div>
+  <div class="act-lb-footer">
+    <button class="act-lb-download" onclick="actLbDownload()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      下載
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+'use strict';
+let _allEvents = [];
+let _curDate   = todayStr();
+let _curFilter = 'all';
+
+function todayStr() { return new Date().toISOString().slice(0,10); }
+
+function formatDateLabel(d) {
+  const today = todayStr();
+  const yest  = new Date(Date.now()-86400000).toISOString().slice(0,10);
+  if (d === today) return '今天 ' + d;
+  if (d === yest)  return '昨天 ' + d;
+  return d;
+}
+function formatTime(ts) {
+  if (!ts) return '';
+  try { return ts.slice(11,16); } catch { return ''; }
+}
+
+// ── 日期 ──
+function setDate(d) {
+  _curDate = d;
+  document.getElementById('dateLabelEl').textContent = formatDateLabel(d);
+  document.getElementById('datePickerInput').value   = d;
+  document.getElementById('nextDayBtn').disabled     = (d >= todayStr());
+  loadActivity();
+}
+function changeDay(delta) {
+  const d = new Date(_curDate); d.setDate(d.getDate()+delta);
+  setDate(d.toISOString().slice(0,10));
+}
+
+// ── 篩選 ──
+function setFilter(type, btn) {
+  _curFilter = type;
+  document.querySelectorAll('.act-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderEvents();
+}
+function filteredEvents() {
+  if (_curFilter === 'file')   return _allEvents.filter(e => ['image','pdf','excel','file'].includes(e.event_type));
+  if (_curFilter === 'status') return _allEvents.filter(e => e.event_type === 'status');
+  return _allEvents;
+}
+
+// ── 載入 ──
+async function loadActivity() {
+  document.getElementById('actBody').innerHTML = '<div class="act-loading">載入中…</div>';
+  try {
+    const res  = await fetch(`/tracking/api/activity?date=${_curDate}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    _allEvents = data.events || [];
+    updateStats();
+    renderEvents();
+  } catch(e) {
+    document.getElementById('actBody').innerHTML =
+      `<div class="act-empty">⚠️ 載入失敗：${e.message}</div>`;
+  }
+}
+
+function updateStats() {
+  const files   = _allEvents.filter(e => ['image','pdf','excel','file'].includes(e.event_type)).length;
+  const quotes  = _allEvents.filter(e => ['quote_new','quote_sent'].includes(e.event_type)).length;
+  const statuses= _allEvents.filter(e => e.event_type === 'status').length;
+  document.getElementById('statFiles').textContent  = `檔案 ${files}`;
+  document.getElementById('statQuotes').textContent = `報價 ${quotes}`;
+  document.getElementById('statStatus').textContent = `狀態 ${statuses}`;
+}
+
+// ── 渲染 ──
+function renderEvents() {
+  const events = filteredEvents();
+  const body   = document.getElementById('actBody');
+  if (!events.length) {
+    body.innerHTML = '<div class="act-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>這天沒有動態記錄</div>';
+    return;
+  }
+  body.innerHTML = events.map(renderCard).join('');
+}
+
+const ICONS = {
+  image:      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
+  pdf:        `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+  excel:      `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
+  file:       `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+  quote_new:  `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`,
+  quote_sent: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+  status:     `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
+};
+const VERBS = {
+  image:'上傳圖片', pdf:'上傳PDF', excel:'上傳Excel',
+  file:'上傳檔案', quote_new:'新增報價', quote_sent:'發送報價', status:'狀態更新',
+};
+
+function _e(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderCard(ev) {
+  const idx = _allEvents.indexOf(ev);
+  const orderHref = ev.order_number ? `/tracking/?order=${encodeURIComponent(ev.order_number)}` : '#';
+  const chip    = ev.order_number ? `<a class="act-order-chip" href="${orderHref}" target="_blank">${_e(ev.order_number)}</a>` : '';
+  const customer= ev.customer_name ? `<span class="act-customer">${_e(ev.customer_name)}</span>` : '';
+
+  // 第二行：根據類型差異化顯示
+  let row2 = '';
+  if (ev.event_type === 'status') {
+    const parts = (ev.summary || '').split(' → ');
+    const from = _e(parts[0] || '');
+    const to   = _e(parts[1] || ev.summary || '');
+    row2 = `<div class="act-row2 status-change">
+      <span class="act-status-from">${from}</span>
+      <span class="act-status-arrow">▶</span>
+      <span class="act-status-to">${to}</span>
+    </div>`;
+  } else if (ev.event_type === 'image' && ev.file_url) {
+    row2 = `<div class="act-img-thumb">
+      <a class="act-lb-trigger" data-idx="${idx}" data-type="image" title="點擊預覽">
+        <img src="${_e(ev.file_url)}"
+             onerror="this.closest('.act-img-thumb').style.display='none'">
+      </a>
+    </div>`;
+  } else if (ev.event_type === 'pdf' && ev.file_url) {
+    row2 = `<div class="act-pdf-thumb act-lb-trigger" data-idx="${idx}" data-type="pdf">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="pdf-name">${_e(ev.summary)}</span>
+      <svg class="pdf-eye" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    </div>`;
+  } else {
+    row2 = `<div class="act-row2">${_e(ev.summary)}</div>`;
+  }
+
+  // 報價附主旨
+  const extra = (ev.event_type === 'quote_sent' && ev.extra?.subject)
+    ? `<div class="act-extra">${_e(ev.extra.subject)}</div>` : '';
+
+  return `<div class="act-event">
+  <div class="act-icon ${ev.event_type}">${ICONS[ev.event_type]||ICONS.file}</div>
+  <div class="act-content">
+    <div class="act-row1">
+      <span class="act-actor">${_e(ev.actor)}</span>
+      <span class="act-verb">${VERBS[ev.event_type]||ev.event_type}</span>
+      ${chip}${customer}
+      <span class="act-time">${formatTime(ev.created_at)}</span>
+    </div>
+    ${row2}${extra}
+  </div>
+</div>`;
+}
+
+// ── Lightbox ──
+let _lbDl = '';
+function actLbOpen(previewUrl, downloadUrl, filename, type) {
+  _lbDl = downloadUrl || previewUrl;
+  const img = document.getElementById('actLbImg');
+  const pdf = document.getElementById('actLbPdf');
+  document.getElementById('actLbTitle').textContent = filename || '';
+  if (type === 'image') {
+    img.src = previewUrl; img.style.display = ''; pdf.style.display = 'none'; pdf.src = '';
+  } else {
+    pdf.src = previewUrl; pdf.style.display = ''; img.style.display = 'none'; img.src = '';
+  }
+  document.getElementById('actLightbox').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function actLbClose(e) {
+  if (e && e.target !== document.getElementById('actLightbox')) return;
+  document.getElementById('actLightbox').classList.remove('open');
+  document.getElementById('actLbImg').src = '';
+  document.getElementById('actLbPdf').src = '';
+  document.body.style.overflow = '';
+}
+function actLbDownload() { if (_lbDl) window.open(_lbDl, '_blank'); }
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('.act-lb-trigger');
+  if (!t) return;
+  const ev = _allEvents[+t.dataset.idx];
+  if (ev) actLbOpen(ev.file_url, ev.download_url||ev.file_url, ev.summary, t.dataset.type);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') actLbClose({ target: document.getElementById('actLightbox') });
+});
+
+document.addEventListener('DOMContentLoaded', () => setDate(todayStr()));
+</script>
+{% endblock %}

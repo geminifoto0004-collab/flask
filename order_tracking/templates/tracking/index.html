@@ -1,0 +1,1259 @@
+{% extends "tracking/base.html" %}
+{% import 'macros/permissions.html' as perm %}
+
+{% block title %}订单流程追踪系统{% endblock %}
+
+{% block content %}
+
+{# ====== 根据后端资料先算好各類统计，方便套進 v10 版面 ====== #}
+{# 使用后端传入的状态列表，与 STATUS_SYSTEM.js 保持一致 #}
+{% set completed_status = '已完成' %}
+{% set cancelled_status = '已取消' %}
+{% set active_orders = all_orders
+    | rejectattr('current_status', 'in', [completed_status, cancelled_status])
+    | list %}
+{# completed/cancelled counts are computed on the client from table data #}
+
+{% set draft_orders = all_orders | selectattr('current_status', 'in', draft_statuses) | list %}
+{% set sampling_orders = all_orders | selectattr('current_status', 'in', sampling_statuses) | list %}
+{% set production_orders = all_orders | selectattr('current_status', 'in', production_statuses) | list %}
+
+<div class="container index-page-container">
+    <!-- ====== 统计區（版面同 v10） ====== -->
+    <div class="stats" style="display: none;">
+        <div class="stat">
+            <div class="stat-icon"></div>
+            <div>
+                <div class="stat-label">进行中</div>
+                <div class="stat-value" id="totalOrders">{{ active_orders|length }}</div>
+            </div>
+        </div>
+
+        <div class="stat green">
+            <div class="stat-icon"></div>
+            <div>
+                <div class="stat-label">正常</div>
+                <div class="stat-value" id="greenOrders">{{ light_stats.get('green', 0) }}</div>
+            </div>
+        </div>
+
+        <div class="stat yellow">
+            <div class="stat-icon"></div>
+            <div>
+                <div class="stat-label">需注意</div>
+                <div class="stat-value" id="yellowOrders">{{ light_stats.get('yellow', 0) }}</div>
+            </div>
+        </div>
+        
+        <div class="stat red">
+            <div class="stat-icon"></div>
+            <div>
+                <div class="stat-label">逾期</div>
+                <div class="stat-value" id="redOrders">{{ light_stats.get('red', 0) }}</div>
+            </div>
+        </div>
+
+
+        
+ 
+    </div>
+    
+
+    <!-- ====== 手機版專用：CC 規格的列表 / 客戶模式 ====== -->
+    <section class="mobile-order-ui" id="mobileOrderUi" aria-label="手機版訂單瀏覽">
+        <div class="mobile-search-shell">
+            <span class="mobile-search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <path d="m20 20-3.8-3.8"></path>
+                </svg>
+            </span>
+            <input id="mobileSearchInput" type="search" placeholder="搜索客户名称或订单号" data-i18n-placeholder="mobile.search"
+                   autocomplete="off" oninput="mobileSearchInputChanged(this.value)"
+                   onfocus="updateMobileSearchSuggestions(this.value)"
+                   onkeydown="mobileSearchKeydown(event)"
+                   onblur="setTimeout(hideMobileSearchSuggestions, 140)">
+            <button type="button" class="mobile-search-clear" id="mobileSearchClear"
+                    aria-label="清除搜索" data-i18n-aria="mobile.clear_search" onclick="clearMobileSearch()">×</button>
+            <div class="mobile-search-suggestions" id="mobileSearchSuggestions" role="listbox" aria-label="搜索建议"></div>
+        </div>
+
+        <div class="mobile-view-toggle" role="tablist" aria-label="浏览模式" data-i18n-aria="mobile.browse_mode">
+            <button type="button" class="active" id="mobileModeOrders" onclick="setMobileBrowseMode('orders')" role="tab" data-i18n="mobile.by_order">按订单</button>
+            <button type="button" id="mobileModeCustomers" onclick="setMobileBrowseMode('customers')" role="tab" data-i18n="mobile.by_customer">按客户</button>
+        </div>
+
+        <div class="mobile-filter-block" id="mobilePrimaryFilters">
+            <div class="mobile-filter-title-row">
+                <div class="mobile-filter-label" data-i18n="filter.stage">阶段</div>
+                <button type="button" class="mobile-filter-expand-btn" id="mobileFilterExpandBtn" onclick="toggleMobileExtraFilters()">展开全部</button>
+            </div>
+            <div class="mobile-chip-row" id="mobileStageFilters">
+                <button type="button" class="mobile-chip active" data-mobile-stage="all" onclick="mobileSetStage('all', this)" data-i18n="filter.all">全部</button>
+                <button type="button" class="mobile-chip" data-mobile-stage="draft" onclick="mobileSetStage('draft', this)" data-i18n="filter.draft">图稿</button>
+                <button type="button" class="mobile-chip" data-mobile-stage="sampling" onclick="mobileSetStage('sampling', this)" data-i18n="filter.sample">打样</button>
+                <button type="button" class="mobile-chip" data-mobile-stage="production" onclick="mobileSetStage('production', this)" data-i18n="filter.production">生产</button>
+                <button type="button" class="mobile-chip" data-mobile-stage="shipping" onclick="mobileSetStage('shipping', this)" data-i18n="filter.shipping">出货</button>
+            </div>
+
+            <div class="mobile-order-view-controls" id="mobileHomeMultiSort">
+                <div class="mobile-order-control-row mobile-order-control-row-combined">
+                    <span class="home-multi-sort-label">显示</span>
+                    <button type="button" class="home-sort-choice" data-mobile-order-type="all" onclick="mobileSetOrderTypeAll()">全部</button>
+                    <button type="button" class="home-sort-choice" data-mobile-order-type="order" onclick="mobileToggleOrderType('order')">订单</button>
+                    <button type="button" class="home-sort-choice" data-mobile-order-type="kc" onclick="mobileToggleOrderType('kc')">KC</button>
+                    <button type="button" class="home-sort-choice" data-mobile-order-type="g" onclick="mobileToggleOrderType('g')">G</button>
+                    <span class="home-multi-sort-label mobile-order-sort-label">排序</span>
+                    <button type="button" class="home-sort-dir mobile-order-main-direction" id="mobileOrderSortDirection" onclick="mobileToggleOrderSortDirection()" title="由大到小">↓</button>
+                    <button type="button" class="home-sort-choice" data-mobile-order-sort-mode="elapsed" onclick="mobileSetOrderSortMode('elapsed')">历时</button>
+                    <button type="button" class="home-sort-choice" data-mobile-order-sort-mode="date" onclick="mobileSetOrderSortMode('date')">日期</button>
+                </div>
+            </div>
+
+            <div class="mobile-extra-filters collapsed" id="mobileExtraFilters">
+                {% if perm.can('view', 'user') %}
+                <div class="mobile-filter-label mobile-sales-label" data-i18n="filter.salesperson">业务员</div>
+                <div class="mobile-chip-row" id="mobileSalesFilters">
+                    <button type="button" class="mobile-chip active" onclick="mobileSetSalesperson('', this)" data-i18n="filter.all_salespeople">全部业务员</button>
+                </div>
+                {% endif %}
+
+                <div class="mobile-filter-label" data-i18n="filter.light">灯号</div>
+                <div class="mobile-chip-row mobile-light-chips" id="mobileLightFilters">
+                    <button type="button" class="mobile-chip active" data-mobile-light="all" onclick="mobileSetLight('all', this)" data-i18n="filter.all">全部</button>
+                    <button type="button" class="mobile-chip" data-mobile-light="green" onclick="mobileSetLight('green', this)"><span class="mobile-dot green"></span><span data-i18n="light.normal">正常</span></button>
+                    <button type="button" class="mobile-chip" data-mobile-light="yellow" onclick="mobileSetLight('yellow', this)"><span class="mobile-dot yellow"></span><span data-i18n="light.warning">需注意</span></button>
+                    <button type="button" class="mobile-chip" data-mobile-light="red" onclick="mobileSetLight('red', this)"><span class="mobile-dot red"></span><span data-i18n="light.overdue">逾期</span></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="mobile-result-bar" id="mobileResultBar">
+            <span id="mobileResultCount">0 筆訂單</span>
+            <span id="mobileResultHint" data-i18n="mobile.click_detail">点击可查看详情</span>
+        </div>
+
+        <div class="mobile-list-panel" id="mobileOrdersPanel">
+            <div class="mobile-list" id="mobileOrdersList">
+                <div class="mobile-list-loading" data-i18n="mobile.loading">正在载入订单资料…</div>
+            </div>
+            <button type="button" class="mobile-load-more" id="mobileLoadMoreBtn" onclick="mobileLoadMore()" style="display:none;" data-i18n="mobile.more">显示更多</button>
+        </div>
+
+        <div class="mobile-list-panel" id="mobileCustomersPanel" hidden>
+            <div class="mobile-list" id="mobileCustomersList"></div>
+        </div>
+
+        <div class="mobile-order-detail" id="mobileOrderDetail" hidden>
+            <div id="mobileOrderDetailContent"></div>
+        </div>
+
+        <div class="mobile-customer-detail" id="mobileCustomerDetail" hidden>
+            <div id="mobileCustomerDetailContent"></div>
+        </div>
+
+        {% if perm.can('view', 'user') %}
+        <div class="mobile-sheet-backdrop" id="mobileSalesSheetBackdrop" onclick="closeMobileSalesSheet()"></div>
+        <div class="mobile-bottom-sheet" id="mobileSalesSheet" aria-hidden="true">
+            <div class="mobile-sheet-handle"></div>
+            <div class="mobile-sheet-header">
+                <div>
+                    <strong data-i18n="mobile.select_salesperson">选择业务员</strong>
+                    <span data-i18n="mobile.select_salesperson_hint">选择后立即套用筛选</span>
+                </div>
+                <button type="button" onclick="closeMobileSalesSheet()" aria-label="关闭" data-i18n-aria="mobile.close">×</button>
+            </div>
+            <div class="mobile-sheet-options" id="mobileSalesSheetOptions"></div>
+        </div>
+        {% endif %}
+
+        <!-- 手機原生报告面板：不再开启桌面 customer report Modal -->
+        <div class="mobile-sheet-backdrop" id="mobileReportSheetBackdrop" onclick="closeMobileReportSheet()"></div>
+        <div class="mobile-bottom-sheet mobile-report-sheet" id="mobileReportSheet" aria-hidden="true">
+            <div class="mobile-sheet-handle"></div>
+            <div class="mobile-sheet-header">
+                <div>
+                    <strong id="mobileReportSheetTitle" data-i18n="mobile.report.title">客户完整报告</strong>
+                    <span id="mobileReportSheetSubtitle" data-i18n="mobile.report.subtitle">PDF 会在本地服务器生成</span>
+                </div>
+                <button type="button" onclick="closeMobileReportSheet()" aria-label="关闭" data-i18n-aria="mobile.close">×</button>
+            </div>
+            <div class="mobile-report-body" id="mobileReportBody"></div>
+        </div>
+
+        <!-- 手機图片预览器：留在站内，不跳 Workspace / 新页面 -->
+        <div class="mobile-image-viewer" id="mobileImageViewer" aria-hidden="true">
+            <div class="mobile-image-viewer-bar">
+                <button type="button" onclick="closeMobileImageViewer()" aria-label="关闭" data-i18n-aria="mobile.close">×</button>
+                <span id="mobileImageViewerTitle"></span>
+                <span id="mobileImageViewerCount"></span>
+            </div>
+            <div class="mobile-image-viewer-stage" onclick="closeMobileImageViewer()">
+                <button type="button" class="mobile-image-nav prev" onclick="event.stopPropagation(); mobileStepImage(-1)" aria-label="上一张">‹</button>
+                <img id="mobileImageViewerImg" alt="">
+                <button type="button" class="mobile-image-nav next" onclick="event.stopPropagation(); mobileStepImage(1)" aria-label="下一张">›</button>
+            </div>
+        </div>
+    </section>
+
+    <div class="desktop-filter-details" id="desktopFilterDetails">
+    <!-- ====== 燈號篩選（紅綠黃燈） ====== -->
+        <div class="light-filters light-cards desktop-order-ui">
+        <button class="light-filter-btn" id="lightFilterRed" data-light="red" onclick="toggleLightFilter('red', this)">
+            <span class="light-emoji">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="7" fill="#EF4444" stroke="#DC2626" stroke-width="1"/>
+                </svg>
+            </span>
+            <span class="light-label" data-i18n="light.overdue">逾期</span>
+            <span class="light-count" id="lightCountRed">{{ light_stats.get('red', 0) }}</span>
+        </button>
+        <button class="light-filter-btn" id="lightFilterYellow" data-light="yellow" onclick="toggleLightFilter('yellow', this)">
+            <span class="light-emoji">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="7" fill="#F59E0B" stroke="#D97706" stroke-width="1"/>
+                </svg>
+            </span>
+            <span class="light-label" data-i18n="light.warning">需注意</span>
+            <span class="light-count" id="lightCountYellow">{{ light_stats.get('yellow', 0) }}</span>
+        </button>
+        <button class="light-filter-btn" id="lightFilterGreen" data-light="green" onclick="toggleLightFilter('green', this)">
+            <span class="light-emoji">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="7" fill="#22C55E" stroke="#16A34A" stroke-width="1"/>
+                </svg>
+            </span>
+            <span class="light-label" data-i18n="light.normal">正常</span>
+            <span class="light-count" id="lightCountGreen">{{ light_stats.get('green', 0) }}</span>
+        </button>
+        {% if perm.can('view', 'user') %}
+        <div class="light-team-card" id="teamFilterCard">
+            <input type="text" class="team-search" id="teamSalesSearch" placeholder="搜索" data-i18n-placeholder="search.salesperson" oninput="filterTeamSalesTags()">
+            <div class="team-tags" id="teamSalesTags">
+                <span class="team-placeholder">暂无成员</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ====== 流程阶段筛选列（版面同 v10） ====== -->
+    <div class="stage-filters desktop-order-ui">
+        <button class="stage-btn active" data-stage-group="all" onclick="filterByStageGroup('all', this)">
+            <span data-i18n="filter.all">全部</span>
+            <span class="stage-count" id="allCount">{{ active_orders|length }}</span>
+        </button>
+        
+        <!-- 新订单/询价阶段 -->
+        <div class="stage-filter">
+            <button class="stage-btn" data-stage-group="new_and_quote" onclick="toggleSubstatus('new_and_quote', this)">
+                <span data-i18n="stage.new_quote">新订单/询价</span>
+                <span class="stage-count" id="newAndQuoteCount">
+                </span>
+                <span style="font-size: 0.7rem;">▼</span>
+            </button>
+            <div class="substatus-dropdown" id="dropdown-new_and_quote">
+                
+                <div class="substatus-option active" onclick="filterBySubstatus('new_and_quote', 'all', this)">
+                    <span data-i18n="filter.all">全部</span>
+                    <span class="count" id="new_and_quote-all-count">
+                        {{ all_orders | selectattr('current_status','in',new_and_quote_statuses) | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('new_and_quote', '{{ STATUS.NEW_ORDER }}', this)">
+                    <span data-status-key="NEW_ORDER">新订单</span>
+                    <span class="count" id="new_and_quote-new-count">
+                        {{ all_orders | selectattr('current_status','equalto',STATUS.NEW_ORDER) | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('new_and_quote', '报价待确认', this)">
+                    <span data-status-key="QUOTE_CONFIRMING">报价待确认</span>
+                    <span class="count" id="new_and_quote-quoting-count">
+                        {{ all_orders | selectattr('current_status','equalto','报价待确认') | list | length }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 图稿阶段 -->
+        <div class="stage-filter">
+            <button class="stage-btn" data-stage-group="draft" onclick="toggleSubstatus('draft', this)">
+                <span data-i18n="stage.draft">图稿阶段</span>
+                <span class="stage-count" id="draftCount">
+                    {{ all_orders | selectattr('current_status','in',['图稿制作中','图稿待确认','图稿修改中']) | list | length }}
+                </span>
+                <span style="font-size: 0.7rem;">▼</span>
+            </button>
+            <div class="substatus-dropdown" id="dropdown-draft">
+                
+                <div class="substatus-option active" onclick="filterBySubstatus('draft', 'all', this)">
+                    <span data-i18n="filter.all">全部</span>
+                    <span class="count" id="draft-all-count">
+                        {{ all_orders | selectattr('current_status','in',['图稿制作中','图稿待确认','图稿修改中']) | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('draft', '图稿制作中', this)">
+                    <span data-status-key="DRAFT_MAKING">图稿制作中</span>
+                    <span class="count" id="draft-making-count">
+                        {{ all_orders | selectattr('current_status','equalto','图稿制作中') | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('draft', '图稿待确认', this)">
+                    <span data-status-key="DRAFT_CONFIRMING">图稿待确认</span>
+                    <span class="count" id="draft-confirm-count">
+                        {{ all_orders | selectattr('current_status','equalto','图稿待确认') | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('draft', '图稿修改中', this)">
+                    <span data-status-key="DRAFT_REVISING">图稿修改中</span>
+                    <span class="count" id="draft-revise-count">
+                        {{ all_orders | selectattr('current_status','equalto','图稿修改中') | list | length }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 打样阶段 -->
+        <div class="stage-filter">
+            <button class="stage-btn" data-stage-group="sampling" onclick="toggleSubstatus('sampling', this)">
+                <span data-i18n="stage.sample">打样阶段</span>
+                <span class="stage-count" id="samplingCount">
+                    {{ all_orders | selectattr('current_status','in',sampling_statuses) | list | length }}
+                </span>
+                <span style="font-size: 0.7rem;">▼</span>
+            </button>
+            <div class="substatus-dropdown" id="dropdown-sampling">
+                
+                <div class="substatus-option active" onclick="filterBySubstatus('sampling', 'all', this)">
+                    <span data-i18n="filter.all">全部</span>
+                    <span class="count" id="sampling-all-count">{{ all_orders | selectattr('current_status','in',['待打样','打样中','打样待确认','打样修改中']) | list | length }}</span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('sampling', '待打样', this)">
+                    <span data-status-key="PENDING_SAMPLE">待打样</span>
+                    <span class="count" id="sampling-pending-count">
+                        {{ all_orders | selectattr('current_status','equalto','待打样') | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('sampling', '打样中', this)">
+                    <span data-status-key="SAMPLING">打样中</span>
+                    <span class="count" id="sampling-making-count">
+                        {{ all_orders | selectattr('current_status','equalto','打样中') | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('sampling', '打样待确认', this)">
+                    <span data-status-key="SAMPLE_CONFIRMING">打样待确认</span>
+                    <span class="count" id="sampling-confirm-count">
+                        {{ all_orders | selectattr('current_status','equalto','打样待确认') | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('sampling', '打样修改中', this)">
+                    <span data-status-key="SAMPLE_REVISING">打样修改中</span>
+                    <span class="count" id="sampling-revise-count">
+                        {{ all_orders | selectattr('current_status','equalto','打样修改中') | list | length }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 生产阶段 -->
+        <div class="stage-filter">
+            <button class="stage-btn" data-stage-group="production" onclick="toggleSubstatus('production', this)">
+                <span data-i18n="stage.production">生产阶段</span>
+                <span class="stage-count" id="productionCount">{{ all_orders | selectattr('current_status','in',production_statuses) | list | length }}</span>
+                <span style="font-size: 0.7rem;">▼</span>
+            </button>
+            <div class="substatus-dropdown" id="dropdown-production">
+                
+                <div class="substatus-option active" onclick="filterBySubstatus('production', 'all', this)">
+                    <span data-i18n="filter.all">全部</span>
+                    <span class="count" id="production-all-count">{{ all_orders | selectattr('current_status','in',production_statuses) | list | length }}</span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('production', '待生产', this)">
+                    <span data-status-key="PENDING_PRODUCTION">待生产</span>
+                    <span class="count" id="production-pending-count">
+                        {% set pending_prod_list = [] %}
+                        {% if STATUS_KEYS %}{% set _ = pending_prod_list.append(STATUS_KEYS.PENDING_PRODUCTION) %}{% endif %}
+                        {% set _ = pending_prod_list.append('待生产') %}
+                        {{ all_orders | selectattr('current_status','in',pending_prod_list) | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('production', '生产中', this)">
+                    <span data-status-key="PRODUCING">生产中</span>
+                    <span class="count" id="production-making-count">
+                        {% set producing_list = [] %}
+                        {% if STATUS_KEYS %}{% set _ = producing_list.append(STATUS_KEYS.PRODUCING) %}{% endif %}
+                        {% set _ = producing_list.append('生产中') %}
+                        {{ all_orders | selectattr('current_status','in',producing_list) | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('production', 'PRODUCTION_DONE', this)">
+                    <span data-status-key="PRODUCTION_DONE">生产完成</span>
+                    <span class="count" id="production-done-count">
+                        {% set prod_done_list = ['PRODUCTION_DONE', '生产完成'] %}
+                        {{ all_orders | selectattr('current_status','in',prod_done_list) | list | length }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 出货阶段 -->
+        <div class="stage-filter">
+            <button class="stage-btn" data-stage-group="shipping" onclick="toggleSubstatus('shipping', this)">
+                <span data-i18n="stage.shipping">出货阶段</span>
+                <span class="stage-count" id="shippingCount">{{ all_orders | selectattr('current_status','in',shipping_statuses) | list | length }}</span>
+                <span style="font-size: 0.7rem;">▼</span>
+            </button>
+            <div class="substatus-dropdown" id="dropdown-shipping">
+                <div class="substatus-option active" onclick="filterBySubstatus('shipping', 'all', this)">
+                    <span data-i18n="filter.all">全部</span>
+                    <span class="count" id="shipping-all-count">{{ all_orders | selectattr('current_status','in',shipping_statuses) | list | length }}</span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('shipping', 'PARTIAL_SHIPPED', this)">
+                    <span data-status-key="PARTIAL_SHIPPED">出货一部份</span>
+                    <span class="count" id="shipping-partial-count">
+                        {% set partial_list = ['PARTIAL_SHIPPED', '出货一部份'] %}
+                        {{ all_orders | selectattr('current_status','in',partial_list) | list | length }}
+                    </span>
+                </div>
+                <div class="substatus-option" onclick="filterBySubstatus('shipping', 'ALL_SHIPPED', this)">
+                    <span data-status-key="ALL_SHIPPED">已全部出货</span>
+                    <span class="count" id="shipping-all-shipped-count">
+                        {% set all_shipped_list = ['ALL_SHIPPED', '已全部出货'] %}
+                        {{ all_orders | selectattr('current_status','in',all_shipped_list) | list | length }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 等国外确认 -->
+        <button class="stage-btn pending" data-stage-group="waiting_confirm" onclick="filterByStageGroup('waiting_confirm', this)">
+             <span data-i18n="stage.waiting_confirm">等国外确认</span>
+            <span class="stage-count" id="waitingConfirmCount">{{ quote_orders|length }}</span>
+        </button>
+        
+        <!-- 已完成 / 已取消 -->
+        <button class="stage-btn filter-toggle active" id="toggleCompletedBtn" data-stage-group="completed"
+                onclick="toggleCompletedOrders(this)">
+            <span data-i18n="stage.completed">已完成</span> <span class="stage-count" id="completedCount">0</span>
+        </button>
+        
+        <button class="stage-btn filter-toggle" id="toggleCancelledBtn" data-stage-group="cancelled"
+                onclick="toggleCancelledOrders(this)">
+            <span data-i18n="stage.cancelled">已取消</span> <span class="stage-count" id="cancelledCount">0</span>
+        </button>
+        
+        <button class="stage-btn filter-toggle" id="toggleNoWorkflowBtn" data-stage-group="no_workflow"
+                onclick="toggleNoWorkflowOrders(this)">
+            <span data-i18n="stage.no_workflow">无流程</span> <span class="stage-count" id="noWorkflowCount">0</span>
+        </button>
+        
+            <div class="search-box customer-search-box" style="min-width:160px; max-width:240px; margin-left:auto;">
+                <button class="search-icon-btn" type="button" onclick="openAdvancedFilterModal()" title="高级筛选" aria-label="高级筛选">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="M21 21l-4.35-4.35"></path>
+                    </svg>
+                </button>
+                <input type="text" id="searchInput" placeholder="搜索订单号、客户名称..." data-i18n-placeholder="search.desktop" value="" autocomplete="off">
+                <button class="search-clear-btn" id="searchClearBtn" type="button" onclick="clearSearchInput()" title="清除" style="opacity:0;pointer-events:none;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+                <div class="customer-search-suggestions" id="customerSearchSuggestions" role="listbox" aria-label="客户名称建议"></div>
+            </div>
+            <div class="home-view-switch" id="homeOrderViewSwitch" role="group" aria-label="订单显示模式">
+                <button type="button" class="active" id="homeViewTableBtn" data-home-view-mode="table" onclick="setHomeOrderViewMode('table')" title="表格模式" aria-label="表格模式">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"></path><path d="M8 3v18M16 3v18"></path></svg>
+                </button>
+                <button type="button" id="homeViewCardsBtn" data-home-view-mode="cards" onclick="setHomeOrderViewMode('cards')" title="卡片模式" aria-label="卡片模式">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"></rect><rect x="13" y="3" width="8" height="8" rx="2"></rect><rect x="3" y="13" width="8" height="8" rx="2"></rect><rect x="13" y="13" width="8" height="8" rx="2"></rect></svg>
+                </button>
+            </div>
+            <!-- 原本的订单状况 Excel 导出：保持原功能不变 -->
+            <button class="btn btn-secondary icon-only" onclick="exportData()" title="导出订单状况 Excel" aria-label="导出订单状况 Excel">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+            </button>
+            {% if perm.can('view', 'user') and (local_guest_sharing_enabled or render_public_guest_enabled) %}
+            <!-- WEB / ADMIN 客户分享管理：与手机现有分享 API 共用 -->
+            <button class="btn btn-secondary icon-only" type="button"
+                    onclick="openDesktopGuestShareDrawer()" title="客户分享管理" aria-label="客户分享管理">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="18" cy="5" r="3"></circle>
+                    <circle cx="6" cy="12" r="3"></circle>
+                    <circle cx="18" cy="19" r="3"></circle>
+                    <path d="m8.7 10.7 6.6-3.9M8.7 13.3l6.6 3.9"></path>
+                </svg>
+            </button>
+            {% endif %}
+            <!-- 客户报告：与原本 Excel 下载按钮同尺寸同形状，只使用不同 SVG -->
+            <button class="btn btn-secondary icon-only" type="button"
+                    onclick="openCustomerReportModal(event)" title="导出客户报告" aria-label="导出客户报告">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="8" y1="13" x2="16" y2="13"></line>
+                    <line x1="8" y1="17" x2="13" y2="17"></line>
+                </svg>
+            </button>
+    </div>
+    </div>
+    
+    <!-- ====== 订单表格（表頭風格同 v10；资料來自后端） ====== -->
+    <div class="table-wrapper no-row-light desktop-order-ui" id="desktopOrderTableView">
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th data-column-key="expand"></th>
+                        <th data-column-key="light"></th>
+                        <th class="sortable order-date-col" data-sort="order_date" data-column-key="order_date">
+                            <span data-i18n="table.order_date">订单日期</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        {% if perm.can('view', 'user') %}
+                        <th class="sortable order-age-col" data-sort="order_age" data-column-key="order_age" title="距下单日（今天 - 订单日期）">
+                            <span data-i18n="table.elapsed">历时</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        {% endif %}
+                        <th class="sortable" data-sort="order_number" data-column-key="order_number">
+                            <span data-i18n="table.order_number">订单號</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="customer_name" data-column-key="customer_name">
+                            <span data-i18n="table.customer">客户名称</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="production_type" data-column-key="production_type">
+                            <span data-i18n="table.product_type">产品类型</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="product_code" data-column-key="product_code">
+                            <span data-i18n="table.product_code">产品编号</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="quantity" data-column-key="quantity">
+                            <span data-i18n="table.quantity">数量</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="factory" data-column-key="factory">
+                            <span data-i18n="table.factory">生产工厂</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="current_status" data-column-key="current_status">
+                            <span data-i18n="table.status">阶段 / 状态</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="status_days" data-column-key="status_days" title="当前阶段等待天数（今天 - 最后一次状态变更日期）">
+                            <span data-i18n="table.elapsed">历时</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="expected_delivery_date" data-column-key="expected_delivery_date">
+                            <span data-i18n="table.delivery">交期</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        <th class="sortable" data-sort="notes" data-column-key="notes" width="250">
+                            <span data-i18n="table.notes">备注</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        {% if perm.can('view', 'user') %}
+                        <th class="sortable handler-name" data-sort="handler_name" data-column-key="handler_name" style="width: 100px; min-width: 100px;">
+                            <span data-i18n="table.salesperson">业务员</span> <span class="sort-icon">⇅</span>
+                        </th>
+                        {% endif %}
+                        <th data-column-key="actions" data-i18n="table.actions">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="ordersTableBody">
+                    <tr id="homeOrdersLoadingRow" class="home-orders-loading-row">
+                        <td colspan="{{ 16 if perm.can('view', 'user') else 14 }}">
+                            <div class="home-orders-loading">
+                                <span class="home-orders-loading-spinner"></span>
+                                <span data-i18n="table.loading">正在载入订单资料...</span>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        {% if false %}
+        <!-- 业务员空状态提示 -->
+        <div class="empty-state" style="text-align: center; padding: 3rem 1rem;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">📋</div>
+            <h3 style="color: var(--text-1); margin-bottom: 0.5rem;">您还没有建立任何业务流程</h3>
+            {% if available_orders_count > 0 %}
+            <p style="color: var(--text-2); margin-bottom: 1.5rem;">
+                目前有 <strong style="color: var(--blue);">{{ available_orders_count }}</strong> 个已解锁的订单可供建立流程
+            </p>
+            {% if perm.can('create', 'workflow') %}
+            <button class="btn btn-primary" onclick="openNewWorkflowModal()" style="font-size: 1rem; padding: 0.75rem 1.5rem;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                建立业务流程
+            </button>
+            {% endif %}
+            {% else %}
+            <p style="color: var(--text-2); margin-bottom: 1.5rem;">
+                目前没有可用的已解锁订单，请联系管理员解锁订单
+            </p>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <div class="empty-state" id="emptyState"
+             style="display: none; padding: 3rem; text-align: center; color: var(--text-2);">
+            <p>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 8px;">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span data-empty-message>沒有找到符合條件的訂單</span>
+            </p>
+        </div>
+
+        <div class="table-pagination" id="tablePagination">
+            <div class="page-info" id="paginationInfo">显示 0 到 0 共 0 条结果</div>
+            <div class="page-controls" id="paginationControls"></div>
+        </div>
+    </div>
+
+    <section class="home-card-view" id="homeOrderCardView" hidden aria-label="订单卡片模式">
+        <div class="home-card-wall" id="homeCardWall">
+            <div class="home-card-empty">正在载入订单资料…</div>
+        </div>
+        <div class="table-pagination home-card-pagination" id="homeCardPagination">
+            <div class="page-info" id="homeCardPaginationInfo">显示 0 到 0 共 0 条结果</div>
+            <div class="page-controls" id="homeCardPaginationControls"></div>
+        </div>
+    </section>
+</div>
+
+<!-- Desktop card-mode focus modal: image-first order review with a compact management rail. -->
+<div class="home-card-focus-overlay" id="homeCardFocusModal" hidden aria-hidden="true">
+    <section class="home-card-focus-modal" role="dialog" aria-modal="true" aria-labelledby="homeCardFocusOrderNumber">
+        <button type="button" class="home-card-focus-close" id="homeCardFocusClose" aria-label="关闭">×</button>
+
+        <div class="home-card-focus-loading" id="homeCardFocusLoading">
+            <span class="home-orders-loading-spinner"></span>
+            <span>正在读取订单…</span>
+        </div>
+
+        <div class="home-card-focus-layout" id="homeCardFocusLayout" hidden>
+            <div class="home-card-focus-media" id="homeCardFocusMedia">
+                <div class="home-card-focus-stage" id="homeCardFocusStage">
+                    <img id="homeCardFocusImage" alt="订单图片" draggable="false">
+                    <div class="home-card-focus-no-image" id="homeCardFocusNoImage" hidden>此订单没有图片</div>
+                    <button type="button" class="home-card-focus-nav prev" id="homeCardFocusPrev" aria-label="上一张">‹</button>
+                    <button type="button" class="home-card-focus-nav next" id="homeCardFocusNext" aria-label="下一张">›</button>
+                    <div class="home-card-focus-media-badge" id="homeCardFocusMediaBadge" hidden>
+                        <span id="homeCardFocusMediaSource"></span>
+                        <span id="homeCardFocusMediaCounter"></span>
+                    </div>
+                </div>
+                <div class="home-card-focus-caption" id="homeCardFocusCaption"></div>
+            </div>
+
+            <aside class="home-card-focus-rail" id="homeCardFocusRail">
+                <header class="home-card-focus-head">
+                    <div>
+                        <span class="home-card-focus-kicker">订单状况</span>
+                        <h2 id="homeCardFocusOrderNumber">—</h2>
+                        <p id="homeCardFocusCustomer">—</p>
+                    </div>
+                    <span class="home-card-focus-status" id="homeCardFocusStatus">—</span>
+                </header>
+
+                <div class="home-card-focus-scroll">
+                    <!-- Desktop card mode only: order information belongs directly under the order/workflow number. -->
+                    <section class="home-card-focus-section home-card-focus-section-meta">
+                        <div class="home-card-focus-section-title">
+                            <strong>订单信息</strong>
+                        </div>
+                        <div class="home-card-focus-meta" id="homeCardFocusMeta"></div>
+                    </section>
+
+                    <div class="home-card-focus-workflows" id="homeCardFocusWorkflows" hidden></div>
+
+                    <section class="home-card-focus-section home-card-focus-notes">
+                        <div class="home-card-focus-section-title">
+                            <strong>备注</strong>
+                        </div>
+                        <article class="home-card-focus-note-box admin">
+                            <div class="home-card-focus-note-head"><span>主管备注</span><button type="button" class="home-card-focus-note-edit-icon" data-focus-note-edit="admin" aria-label="编辑主管备注" title="编辑"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button></div>
+                            <p id="homeCardFocusAdminNote">暂无备注</p>
+                            <div class="home-card-focus-note-editor" data-focus-note-editor="admin" hidden>
+                                <textarea id="homeCardFocusAdminNoteInput" rows="4"></textarea>
+                                <div><button type="button" data-focus-note-cancel="admin">取消</button><button type="button" class="primary" data-focus-note-save="admin">保存</button></div>
+                            </div>
+                        </article>
+                        <article class="home-card-focus-note-box sales">
+                            <div class="home-card-focus-note-head"><span>业务备注</span><button type="button" class="home-card-focus-note-edit-icon" data-focus-note-edit="sales" aria-label="编辑业务备注" title="编辑"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button></div>
+                            <p id="homeCardFocusSalesNote">暂无备注</p>
+                            <div class="home-card-focus-note-editor" data-focus-note-editor="sales" hidden>
+                                <textarea id="homeCardFocusSalesNoteInput" rows="4"></textarea>
+                                <div><button type="button" data-focus-note-cancel="sales">取消</button><button type="button" class="primary" data-focus-note-save="sales">保存</button></div>
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="home-card-focus-section" id="homeCardFocusTimelineSection">
+                        <div class="home-card-focus-section-title">
+                            <strong>最近流程</strong>
+                            <button type="button" class="home-card-focus-timeline-toggle" id="homeCardFocusTimelineToggle" hidden aria-expanded="false">展开</button>
+                        </div>
+                        <div class="home-card-focus-timeline" id="homeCardFocusTimeline"></div>
+                    </section>
+
+                    <!-- Functional controls stay complete, but live at the bottom of the rail. -->
+                    <section class="home-card-focus-section home-card-focus-section-actions" id="homeCardFocusActionSection">
+                        <div class="home-card-focus-section-title">
+                            <strong>功能区</strong>
+                        </div>
+                        <div class="home-card-focus-actions" id="homeCardFocusActions"></div>
+                    </section>
+                </div>
+            </aside>
+        </div>
+    </section>
+</div>
+
+<!-- Desktop card image fullscreen. Kept top-level to match WORKSPACE drawer preview behavior. -->
+<div class="home-card-image-zoom" id="homeCardImageZoom" hidden aria-hidden="true">
+    <div class="home-card-image-zoom-header">
+        <span class="home-card-image-zoom-title" id="homeCardImageZoomTitle">图片预览</span>
+        <button type="button" class="home-card-image-zoom-close" id="homeCardImageZoomClose" aria-label="关闭大图">×</button>
+    </div>
+    <div class="home-card-image-zoom-body">
+        <button type="button" class="home-card-image-zoom-nav prev" id="homeCardImageZoomPrev" aria-label="上一张">‹</button>
+        <img id="homeCardImageZoomImage" alt="全屏预览" class="home-card-image-zoom-image" draggable="false">
+        <div class="home-card-image-zoom-meta" id="homeCardImageZoomMeta">-</div>
+        <button type="button" class="home-card-image-zoom-nav next" id="homeCardImageZoomNext" aria-label="下一张">›</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="advancedFilterModal">
+    <div class="filter-card" onclick="event.stopPropagation()">
+        <div class="header">
+            <h3>高级筛选</h3>
+            <span class="close" onclick="closeAdvancedFilterModal()">✕</span>
+        </div>
+
+        <div class="body">
+            <div class="input-row">
+                <input type="text" class="main-in in-order" id="advancedOrderNumber" placeholder="订单号 / 关键字">
+                <input type="text" class="main-in in-name" id="advancedCustomerName" placeholder="客户名称">
+            </div>
+
+            {% if perm.can('view', 'user') %}
+            <div class="admin-only">
+                <div class="section-header">
+                    <span class="section-title">
+                        选择业务员
+                        <span class="admin-tag">主管/管理员</span>
+                    </span>
+                    <input type="text" class="mini-search" id="advancedSalesSearch" placeholder="搜索" oninput="filterAdvancedSales()">
+                </div>
+                <div class="tag-pool" id="advancedSalesTags">
+                    <div class="tag all active" data-value="all" onclick="toggleAdvancedSales(this)">全部</div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="logic-card">
+                <div class="status-row">
+                    <div class="s-btn active" data-status="ongoing" onclick="toggleAdvancedStatus(this)">进行中</div>
+                    <div class="s-btn" data-status="completed" onclick="toggleAdvancedStatus(this)">已完成</div>
+                    <div class="s-btn" data-status="cancelled" onclick="toggleAdvancedStatus(this)">已取消</div>
+                </div>
+
+                <div class="status-hint" id="advancedStatusHint">
+                    选"已完成"时，必须展开下方"指定时间范围"
+                </div>
+
+                <div class="time-box">
+                    <div class="time-toggle" id="advancedTimeToggle" onclick="toggleAdvancedTime()">
+                        <span>指定时间范围 (可选)</span>
+                        <small>▼</small>
+                    </div>
+
+                    <div class="time-detail" id="advancedTimeDetail">
+                        <div class="quick-row">
+                            <div class="q-tag" data-range="today" onclick="setAdvancedQuickRange(this)">今天</div>
+                            <div class="q-tag" data-range="week" onclick="setAdvancedQuickRange(this)">本周</div>
+                            <div class="q-tag" data-range="month" onclick="setAdvancedQuickRange(this)">本月</div>
+                            <div class="q-tag" data-range="last-month" onclick="setAdvancedQuickRange(this)">上月</div>
+                        </div>
+                        <div class="quick-row" id="advancedQuickYears">
+                            <div class="q-tag" data-range="last-3-months" onclick="setAdvancedQuickRange(this)">最近3个月</div>
+                        </div>
+                        <div class="date-row">
+                            <input type="date" id="advancedDateFrom">
+                            <span>-</span>
+                            <input type="date" id="advancedDateTo">
+                        </div>
+                    </div>
+
+                    <span class="hint">不展开时间 = 只查询进行中的订单</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <span class="footer-tip">至少填一项条件</span>
+            <button class="btn btn-reset" onclick="resetAdvancedFilters()">重置</button>
+            <button class="btn btn-submit" onclick="applyAdvancedFilters()">开始查询</button>
+        </div>
+    </div>
+</div>
+
+<!-- ====== v10 的操作 / 詳情 / 备注 / 退回 / 取消 等 Modal（ID 保持与 tracking.js 一致） ====== -->
+
+<!-- Action Modal -->
+<div class="modal-overlay" id="actionModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title" id="modalTitle">确认操作</div>
+        </div>
+        <div class="modal-body">
+            <div class="modal-info">
+                <span class="modal-info-text" id="modalInfo">將订单從 "當前状态" 变更為 "下一状态"</span>
+            </div>
+            
+            <div class="modal-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                备注（可選）
+            </div>
+            <textarea class="modal-textarea" id="modalNote" placeholder="记录相关信息..."></textarea>
+            <div class="modal-hint">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                可以记录客户要求、注意事项等
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn cancel" onclick="closeModal()">取消</button>
+            <button class="modal-btn confirm" id="confirmBtn" onclick="confirmAction()">✓ 确认</button>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Action Modal (用于悬停按钮快速操作) -->
+<div class="modal-overlay" id="quickActionModal" onclick="if(event.target === this) closeQuickActionModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <div class="modal-title" id="quickActionTitle">确认操作</div>
+            <button class="modal-close" onclick="closeQuickActionModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="modal-info">
+                <div class="status-change" style="display: flex; align-items: center; gap: 0.5rem; justify-content: center; padding: 1rem;">
+                    <span id="quickActionCurrentStatus" style="font-weight: 600; color: var(--text-1);"></span>
+                    <span class="status-arrow" style="font-size: 1.2rem; color: var(--text-2);">→</span>
+                    <span id="quickActionNextStatus" style="font-weight: 600; color: var(--blue);"></span>
+                </div>
+                <div style="text-align: center; font-size: 0.85rem; color: var(--text-2); margin-top: 0.5rem;">
+                    订单 <strong id="quickActionOrderNumber">-</strong>
+                </div>
+            </div>
+            
+            <div class="modal-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                备注（可選）
+            </div>
+            <textarea class="modal-textarea" id="quickActionNote" placeholder="记录相关信息，例如：客户要求、注意事项等..."></textarea>
+            <div class="modal-hint">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                日期将自动使用今天：<span id="quickActionDate"></span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn cancel" onclick="closeQuickActionModal()">取消</button>
+            <button class="modal-btn confirm" id="quickActionConfirmBtn" onclick="confirmQuickAction()">✓ 确认</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- 出货日期 Modal：只在部分出货 / 全部出货 / 确认出货完成时出现 -->
+<div class="modal-overlay" id="shippingActionModal" aria-hidden="true" onclick="if(event.target === this) closeShippingActionModal(null)">
+    <div class="modal shipping-action-modal" role="dialog" aria-modal="true" aria-labelledby="shippingActionTitle" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <div>
+                <div class="modal-title" id="shippingActionTitle">记录出货日期</div>
+                <div class="shipping-action-order">流程 <strong id="shippingActionOrderNumber">-</strong></div>
+            </div>
+            <button class="modal-close" type="button" onclick="closeShippingActionModal(null)">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="shipping-action-status">
+                <span id="shippingActionCurrentStatus">-</span>
+                <span class="shipping-action-arrow">→</span>
+                <strong id="shippingActionNextStatus">-</strong>
+            </div>
+
+            <label class="shipping-action-field" for="shippingActionDate">
+                <span>实际出货日期</span>
+                <input class="form-input" id="shippingActionDate" type="date" required>
+                <small>预设今天，可补登记昨天或更早的实际出货日。</small>
+            </label>
+
+            <label class="shipping-action-field" for="shippingActionNotes">
+                <span>这次出货备注（可选）</span>
+                <textarea class="modal-textarea" id="shippingActionNotes" placeholder="例如：第一批出货、短装下批补齐……"></textarea>
+                <small>这笔备注会跟这次状态历史一起保存，不会覆盖订单便利贴。</small>
+            </label>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn cancel" type="button" onclick="closeShippingActionModal(null)">取消</button>
+            <button class="modal-btn confirm" type="button" onclick="confirmShippingActionModal()">确认出货记录</button>
+        </div>
+    </div>
+</div>
+
+<!-- 舊的订单操作選單已移除，現在使用右側抽屜进行订单管理 -->
+
+<!-- 退回步骤 Modal -->
+<div class="modal-overlay" id="backStepModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">选择要退回的步骤</div>
+        </div>
+        <div class="modal-body">
+            <div class="modal-info">
+                <span class="modal-info-text">當前状态：<strong id="currentStatusText">样品待确认</strong></span>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <div style="font-size: 0.8rem; color: var(--text-3); margin-bottom: 0.75rem;">选择要退回到的步骤：</div>
+                
+                <label class="back-step-option">
+                    <input type="radio" name="backStep" value="打样中">
+                    <div class="back-step-info">
+                        <div class="back-step-name">打样中</div>
+                        <div class="back-step-desc">重新制作样品</div>
+                    </div>
+                </label>
+                
+                <label class="back-step-option">
+                    <input type="radio" name="backStep" value="待打样">
+                    <div class="back-step-info">
+                        <div class="back-step-name">准备打样</div>
+                        <div class="back-step-desc">重新准备打样</div>
+                    </div>
+                </label>
+                
+                <label class="back-step-option">
+                    <input type="radio" name="backStep" value="图稿制作中">
+                    <div class="back-step-info">
+                        <div class="back-step-name">图稿制作中</div>
+                        <div class="back-step-desc">重新制作图稿</div>
+                    </div>
+                </label>
+            </div>
+            
+            <div class="modal-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                退回原因（建议填写）
+            </div>
+            <textarea class="modal-textarea" id="backStepNote" placeholder="说明为什么要退回..."></textarea>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn cancel" onclick="closeModal()">← 返回</button>
+            <button class="modal-btn confirm" onclick="confirmBackStep()">✓ 确认退回</button>
+        </div>
+    </div>
+</div>
+
+<!-- 备注 Modal -->
+<div class="modal-overlay" id="noteModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">添加备注</div>
+        </div>
+        <div class="modal-body">
+            <div class="modal-info">
+                <span class="modal-info-text">订单 <strong id="noteOrderId">-</strong></span>
+            </div>
+            
+            <div class="modal-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                备注內容
+            </div>
+            <textarea class="modal-textarea" id="noteText" placeholder="输入备注信息..."></textarea>
+            <div class="modal-hint">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                备注会显示在时间轴上
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn cancel" onclick="closeModal()">← 返回</button>
+            <button class="modal-btn confirm" onclick="confirmAddNote()">✓ 添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- 设置交货日期 Modal -->
+<div class="modal-overlay" id="deliveryDateModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">设置交货日期</div>
+        </div>
+        <div class="modal-body">
+            <div class="modal-info">
+                <span class="modal-info-text">订单 <strong id="deliveryOrderId">-</strong></span>
+            </div>
+            
+            <div class="modal-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                预计交货日期
+            </div>
+            <input type="date" class="modal-textarea" id="deliveryDate" style="min-height: auto; padding: 0.75rem;">
+            <div class="modal-hint">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                可以随时修改
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn cancel" onclick="closeModal()">← 返回</button>
+            <button class="modal-btn confirm" onclick="confirmDeliveryDate()">✓ 设置</button>
+        </div>
+    </div>
+</div>
+
+<!-- 跳过打样 Modal -->
+<div class="modal-overlay" id="skipSamplingModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                确认跳过打样阶段
+            </div>
+        </div>
+        <div class="modal-body">
+            <div class="modal-info">
+                <div style="color: var(--text-2);">
+                    將直接從 <strong>图稿待确认</strong> 进入
+                    <strong style="color: var(--blue);">待生产</strong>
+                </div>
+            </div>
+            
+            <div class="modal-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                跳过原因（可选）
+            </div>
+            <textarea class="modal-textarea" id="skipReason" placeholder="例如：老客户重複订单..."></textarea>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn cancel" onclick="closeModal()">← 返回</button>
+            <button class="modal-btn confirm" onclick="confirmSkipSampling()">✓ 确认跳过</button>
+        </div>
+    </div>
+</div>
+
+<!-- 取消订单 Modal -->
+<div class="modal-overlay" id="cancelOrderModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                确认取消订单
+            </div>
+        </div>
+        <div class="modal-body">
+            <div class="modal-info" style="background: var(--red-bg); border-left: 3px solid var(--red);">
+                <span style="color: var(--red); font-weight: 600;">此操作不可恢復！</span>
+            </div>
+            
+            <div class="modal-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                取消原因（必填）
+            </div>
+            <textarea class="modal-textarea" id="cancelReason" placeholder="请说明取消原因..." required></textarea>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn cancel" onclick="closeModal()">← 返回</button>
+            <button class="modal-btn danger" onclick="confirmCancelOrder()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                确认取消订单
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- 客户订单报告 Modal -->
+<div class="customer-report-overlay" id="customerReportModal" aria-hidden="true" onclick="customerReportBackdropClick(event)">
+    <div class="customer-report-modal" role="dialog" aria-modal="true" aria-labelledby="customerReportTitle" onclick="event.stopPropagation()">
+        <div class="customer-report-header">
+            <h3 id="customerReportTitle">导出客户报告</h3>
+            <div class="customer-report-header-actions">
+                <button type="button" class="customer-report-close" onclick="closeCustomerReportModal()" aria-label="关闭">×</button>
+            </div>
+        </div>
+
+        <p class="customer-report-summary" id="customerReportSummary">已选取 0 笔订单</p>
+
+        <div class="customer-report-options-grid">
+        <div class="customer-report-section">
+            <p class="customer-report-label">格式</p>
+            <div class="customer-report-format-grid">
+                <button type="button" class="customer-report-option active" data-report-format="pdf" onclick="selectCustomerReportFormat('pdf')">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l4 4v16H6z"></path><path d="M14 2v5h5"></path><text x="8" y="17">PDF</text></svg>
+                    <span>PDF</span>
+                </button>
+                <button type="button" class="customer-report-option" data-report-format="docx" onclick="selectCustomerReportFormat('docx')">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l4 4v16H6z"></path><path d="M14 2v5h5"></path><text x="8" y="17">DOC</text></svg>
+                    <span>Word</span>
+                </button>
+                <button type="button" class="customer-report-option" data-report-format="xlsx" onclick="selectCustomerReportFormat('xlsx')">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l4 4v16H6z"></path><path d="M14 2v5h5"></path><text x="8" y="17">XLS</text></svg>
+                    <span>Excel</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="customer-report-section">
+            <p class="customer-report-label">语言</p>
+            <div class="customer-report-language-grid">
+                <button type="button" class="customer-report-choice active" data-report-language="zh_cn" onclick="selectCustomerReportLanguage('zh_cn')">中文</button>
+                <button type="button" class="customer-report-choice" data-report-language="es" onclick="selectCustomerReportLanguage('es')">Español</button>
+            </div>
+        </div>
+
+        <div class="customer-report-section">
+            <p class="customer-report-label">图片来源</p>
+            <select id="customerReportImageSource" class="customer-report-select" onchange="customerReportOptionChanged()">
+                <option value="both">主管参考图 + 业务员附件图</option>
+                <option value="order">只要主管参考图</option>
+                <option value="workflow">只要业务员附件图</option>
+                <option value="none">不要图片</option>
+            </select>
+        </div>
+
+        <div class="customer-report-section">
+            <p class="customer-report-label">图片数量</p>
+            <div class="customer-report-language-grid">
+                <button type="button" class="customer-report-choice" data-report-image-count="representative" onclick="selectCustomerReportImageCount('representative')">每笔 1 张代表图</button>
+                <button type="button" class="customer-report-choice active" data-report-image-count="all" onclick="selectCustomerReportImageCount('all')">全部图片</button>
+            </div>
+        </div>
+
+        <div class="customer-report-section" id="customerReportImageOrderSection">
+            <p class="customer-report-label">图片顺序</p>
+            <div class="customer-report-order-grid">
+                <button type="button" class="customer-report-choice active" data-report-image-order="order_first" onclick="selectCustomerReportImageOrder('order_first')">主管参考图优先</button>
+                <button type="button" class="customer-report-choice" data-report-image-order="workflow_first" onclick="selectCustomerReportImageOrder('workflow_first')">业务员附件图优先</button>
+                <button type="button" class="customer-report-choice" data-report-image-order="newest" onclick="selectCustomerReportImageOrder('newest')">最新上传优先</button>
+            </div>
+        </div>
+
+        <div class="customer-report-section" id="customerReportPdfAttachmentSection">
+            <p class="customer-report-label">PDF 附件</p>
+            <div class="customer-report-language-grid">
+                <button type="button" class="customer-report-choice active" data-report-pdf-mode="pages" onclick="selectCustomerReportPdfAttachmentMode('pages')">逐页拆成图片加入</button>
+                <button type="button" class="customer-report-choice" data-report-pdf-mode="skip" onclick="selectCustomerReportPdfAttachmentMode('skip')">不加入 PDF 附件</button>
+            </div>
+            <p class="customer-report-option-hint" id="customerReportPdfAttachmentHint">检测到 PDF 附件时才会使用此选项；原始 PDF 不会被修改。</p>
+        </div>
+        </div>
+
+        <div class="customer-report-warning" id="customerReportWarning" style="display:none;">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3z"></path><path d="M12 9v5"></path><circle cx="12" cy="17.5" r=".7"></circle></svg>
+            <p id="customerReportWarningText"></p>
+        </div>
+
+        <div class="customer-report-downloads" id="customerReportDownloadLinks" style="display:none;"></div>
+
+        <div class="customer-report-actions">
+            <button type="button" class="customer-report-cancel" onclick="closeCustomerReportModal()">取消</button>
+            <button type="button" class="customer-report-generate" id="customerReportGenerateBtn" onclick="generateCustomerReport(event)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+                <span id="customerReportGenerateText">加入生成队列</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+{% if perm.can('view', 'user') %}
+{% include 'tracking/_desktop_share_manager_modal.html' %}
+{% endif %}
+
+<!-- 客户报告后台生成队列 -->
+<div class="report-queue-fab" id="reportQueueFab" aria-label="报告生成队列">
+    <button type="button" class="report-queue-fab-main" onclick="openReportQueueDrawer()" aria-label="打开报告生成队列" title="报告生成队列">
+        <span class="report-queue-fab-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"></path><path d="M9 8h6M9 12h6M9 16h4"></path></svg>
+        </span>
+        <span class="report-queue-fab-copy">
+            <strong>报告队列</strong>
+            <small id="reportQueueFabStatus">准备就绪</small>
+        </span>
+        <span class="report-queue-badge" id="reportQueueBadge">0</span>
+    </button>
+    <button type="button" class="report-queue-fab-close" onclick="closeReportQueueFab(event)" aria-label="关闭报告队列提示" title="关闭">×</button>
+</div>
+
+<div class="report-queue-backdrop" id="reportQueueBackdrop" onclick="closeReportQueueDrawer()"></div>
+<aside class="report-queue-drawer" id="reportQueueDrawer" aria-hidden="true">
+    <div class="report-queue-drawer-header">
+        <div>
+            <p>后台任务</p>
+            <h3>客户报告队列</h3>
+        </div>
+        <button type="button" onclick="closeReportQueueDrawer()" aria-label="关闭">×</button>
+    </div>
+    <div class="report-queue-drawer-subtitle">报告会在后台依序生成，你可以继续筛选客户、录入订单或处理其他工作。</div>
+    <div class="report-queue-list" id="reportQueueList">
+        <div class="report-queue-empty">目前没有报告任务</div>
+    </div>
+</aside>
+
+
+{% endblock %}

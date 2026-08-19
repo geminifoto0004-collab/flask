@@ -1,0 +1,182 @@
+/* ==================== 文件管理区块 ==================== */
+
+.files-section {
+    margin-top: 16px;
+    padding: 16px;
+    background: white;
+    border-radius: 8px;
+}
+
+.files-section .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.files-section .section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #212121;
+    margin: 0;
+}
+
+.files-section .section-icon {
+    color: #666;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* 文件列表 */
+.file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #f9fafb;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    transition: all 0.2s;
+}
+
+.file-item:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+}
+
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.file-info svg {
+    flex-shrink: 0;
+    color: #6b7280;
+}
+
+.file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+}
+
+.file-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.file-size, .file-date {
+    white-space: nowrap;
+}
+
+.file-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: 12px;
+}
+
+.btn-icon {
+    padding: 6px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-icon:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+}
+
+.btn-icon.btn-danger {
+    color: #ef4444;
+}
+
+.btn-icon.btn-danger:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+}
+
+/* 空状态 */
+.file-list-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    color: #9ca3af;
+    text-align: center;
+}
+
+.file-list-empty svg {
+    margin-bottom: 8px;
+    opacity: 0.5;
+}
+
+.file-list-empty p {
+    margin: 0;
+    font-size: 13px;
+}
+
+/* 表单提示 */
+.form-hint {
+    margin-top: 6px;
+    margin-bottom: 0;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+/* 文件输入框 */
+input[type="file"] {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    border: 2px dashed #d1d5db;
+    border-radius: 6px;
+    background: #f9fafb;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 13px;
+}
+
+input[type="file"]:hover {
+    border-color: #9ca3af;
+    background: #f3f4f6;
+}
+
+input[type="file"]:focus {
+    outline: none;
+    border-color: #3b82f6;
+    background: white;
+}
+

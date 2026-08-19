@@ -1,0 +1,1984 @@
+/* ==================== Admin Orders Overrides ==================== */
+.admin-orders-page {
+    text-align: left !important;
+}
+
+.admin-orders-page .stat-item,
+.admin-orders-page .stat-label,
+.admin-orders-page .stat-value {
+    text-align: center !important;
+}
+
+.admin-orders-page .text-center {
+    text-align: center !important;
+}
+
+/* 业务员 Tab: 我的项目 表格栏位 */
+.admin-orders-page #tab-my-projects .admin-orders-table :is(th, td):nth-child(1) {
+    width: 140px !important;
+}
+
+.admin-orders-page #tab-my-projects .admin-orders-table :is(th, td):nth-child(2) {
+    width: 160px !important;
+}
+
+.admin-orders-page #tab-my-projects .admin-orders-table :is(th, td):nth-child(3) {
+    width: 200px !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+}
+
+.admin-orders-page #tab-my-projects .admin-orders-table :is(th, td):nth-child(4),
+.admin-orders-page #tab-my-projects .admin-orders-table :is(th, td):nth-child(5) {
+    width: 140px !important;
+}
+
+/* ==========================================
+   以下是原有样式
+   ========================================== */
+
+/* Admin 订单管理页面样式 */
+
+/* 悬停按钮樣式 */
+.order-row {
+    position: relative;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+}
+
+.order-row:hover {
+    background-color: #f9fafb;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.hover-btn {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.order-row:hover .hover-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+    margin-bottom: 0.25rem;
+    border-bottom: 2px solid #e5e7eb;
+    background: #f9fafb;
+    padding: 0.5rem 0.5rem 0;
+    border-radius: 8px 8px 0 0;
+}
+
+.tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #6b7280;
+    transition: all 0.2s;
+    border-radius: 6px 6px 0 0;
+}
+
+.tab-btn svg {
+    transition: transform 0.2s;
+}
+
+.tab-btn:hover {
+    color: #ff2442;
+    background: #fff0f0;
+}
+
+.tab-btn:hover svg {
+    transform: translateY(-1px);
+}
+
+.tab-btn.active {
+    color: #ff2442;
+    background: white;
+    border-bottom-color: #ff2442;
+    font-weight: 600;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Section Card */
+.section-card {
+    background: white;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    padding: 2rem;
+    margin-top: 0;
+}
+
+.main-content .container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0rem;
+    padding: 1.5rem;
+    box-sizing: border-box;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+.section-card.table-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.section-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+}
+
+.section-hint {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin: -0.5rem 0 1.5rem 28px;
+}
+
+.sales-hint {
+    margin: -0.25rem 0 1.25rem 0;
+    padding: 0.75rem 1rem;
+    background: #f8fafc;
+    border: 1px dashed #e5e7eb;
+    border-radius: 8px;
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.sales-hint-divider {
+    margin: 0 0.5rem;
+    color: #cbd5f5;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.status-pill.red {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.status-pill.yellow {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-pill.green {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.form-hint {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: #9ca3af;
+}
+
+.required {
+    color: #ef4444;
+}
+
+.section-header .actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+/* 統計條 */
+.stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 8px;
+    margin-bottom: 0rem;
+    border: 1px solid #e5e7eb;
+}
+
+.stat-item {
+    text-align: center;
+    padding: 0.75rem;
+    background: white;
+    border-radius: 6px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #3b82f6;
+}
+
+/* 篩選器 */
+.table-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.toolbar-left {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.toolbar-left select {
+    min-width: 140px;
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.95rem;
+}
+
+.toolbar-right {
+    margin-left: auto;
+}
+
+.toolbar-right input {
+    width: 220px;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+/* 表格 - 确保只影响 admin 页面，不被 tracking.css 影响 */
+.admin-orders-page .admin-orders-table-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 600px !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    margin-bottom: 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.admin-orders-page .section-card.table-section .admin-orders-table-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.section-card.table-section .pagination {
+    margin-top: 0;
+    padding-top: 1rem;
+    flex-shrink: 0;
+}
+
+
+/* 業務員 Tab 1 欄位寬度控制 */
+.admin-orders-page .col-order-number {
+    width: 160px;
+}
+.admin-orders-page .col-create {
+    width: 52px;
+}
+.admin-orders-page .col-customer-name {
+    width: 220px;
+}
+.admin-orders-page .col-project-count {
+    width: 120px;
+}
+.admin-orders-page .col-unlock-time {
+    width: 180px;
+}
+.admin-orders-page .col-notes {
+    width: 220px;
+}
+
+.admin-orders-page .col-create-cell {
+    text-align: center !important;
+}
+
+.admin-orders-page .create-project-btn {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid #ff2442;
+    background: #ff2442;
+    color: #ffffff;
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.admin-orders-page .create-project-btn:hover {
+    background: #e01e3a;
+    border-color: #e01e3a;
+    box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
+}
+
+
+.admin-orders-page .admin-orders-table-container thead th {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 2;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* 覆盖 tracking.css 的全局 thead 规则，同时保留表格容器滚动 */
+.admin-orders-page thead {
+    position: static !important;
+    top: auto !important;
+    background: transparent !important;
+    z-index: auto !important;
+}
+
+
+
+
+/* 狀態標籤 */
+.status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.status-available {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.status-used {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.status-reserved {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.status-legacy {
+    background: #f3e5f5;
+    color: #6a1b9a;
+}
+
+.status-skip {
+    background: #fce4ec;
+    color: #c2185b;
+}
+
+.status-completed {
+    background: #e3f2fd;
+    color: #1565c0;
+    font-weight: 600;
+}
+
+.status-cancelled {
+    background: #fdecea;
+    color: #c62828;
+    font-weight: 600;
+}
+
+/* 已完成（锁定）行 - 轻微灰底 */
+.order-locked {
+    background-color: #f8f9fa !important;
+}
+.order-locked td {
+    color: #6c757d;
+}
+.order-locked td strong {
+    color: #495057;
+}
+
+/* 按钮 */
+.btn {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    font-family: inherit;
+}
+
+.btn svg {
+    transition: transform 0.2s;
+}
+
+.btn:hover svg {
+    transform: scale(1.1);
+}
+
+.btn-primary {
+    background: #ff2442;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #e01e3a;
+    box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
+}
+
+.btn-secondary {
+    background: white;
+    color: #374151;
+    border: 1.5px solid #e0e0e0;
+}
+
+.btn-secondary:hover {
+    background: #f9fafb;
+    border-color: #bbb;
+}
+
+.btn-success {
+    background: #10b981;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #059669;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.btn-warning:hover {
+    background: #d97706;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.btn-danger {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-info {
+    background: #6b7280;
+    color: white;
+}
+
+.btn-info:hover {
+    background: #4b5563;
+    box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
+}
+
+.btn-sm {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.78rem;
+    border-radius: 6px;
+}
+
+/* 分頁 */
+.pagination {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.pagination .pagination-summary {
+    margin-right: auto;
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.pagination button {
+    padding: 0.45rem 0.75rem;
+    border: 1.5px solid #e0e0e0;
+    background: white;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+    font-weight: 500;
+    font-size: 0.85rem;
+    font-family: inherit;
+}
+
+.pagination button:hover:not(:disabled) {
+    background: #f5f5f5;
+}
+
+.pagination button.active {
+    background: #ff2442;
+    color: white;
+    border-color: #ff2442;
+}
+
+.pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pagination .pagination-ellipsis {
+    display: inline-flex;
+    align-items: center;
+    color: #6b7280;
+    padding: 0 0.25rem;
+}
+
+.search-truncated-hint {
+    margin: 0.5rem 0 0.75rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: 8px;
+    background: #fff7ed;
+    color: #9a3412;
+    border: 1px solid #fdba74;
+    font-size: 0.9rem;
+}
+
+/* ==================== Admin Modal 样式 ==================== */
+
+/* 确保 admin modal 的 z-index 比其他元素高 */
+#generateModal,
+#markModal,
+#unlockModal,
+#diffModal,
+#addSkipModal,
+#generateResultModal {
+    z-index: 10000;
+}
+
+/* Admin modal 通用美化 */
+.admin-orders-page .modal-content {
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+}
+
+.admin-orders-page .modal-content .modal-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fafafa;
+}
+
+.admin-orders-page .modal-content .modal-header h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin: 0;
+}
+
+.admin-orders-page .modal-content .modal-body {
+    padding: 1.5rem;
+}
+
+.admin-orders-page .modal-content .modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #f0f0f0;
+    background: #fafafa;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+/* Admin modal 按钮统一 */
+.admin-orders-page .modal-footer .btn-primary,
+.admin-orders-page .modal-footer .btn-success {
+    border-radius: 10px;
+    padding: 0.6rem 1.5rem;
+    font-weight: 600;
+}
+
+.admin-orders-page .modal-footer .btn-secondary {
+    border-radius: 10px;
+    padding: 0.6rem 1.5rem;
+}
+
+/* 大尺寸 modal */
+#diffModal .modal-content {
+    max-width: 800px;
+}
+
+#unlockModal .modal-content {
+    max-width: 900px;
+}
+
+/* Form */
+.form-group {
+    margin-bottom: 1.25rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-2, #555);
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group input[type="date"],
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 0.6rem 0.85rem;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    background: #fff;
+    color: var(--text, #333);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="number"]:focus,
+.form-group input[type="date"]:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    border-color: #ff2442;
+    box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.08);
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+    color: #bbb;
+}
+
+.form-group textarea {
+    resize: vertical;
+    font-family: inherit;
+    min-height: 60px;
+}
+
+.form-group select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2rem;
+}
+
+.hint {
+    color: #888;
+    font-size: 0.8rem;
+    margin-top: 0.4rem;
+    line-height: 1.4;
+}
+
+/* 響應式 */
+@media (max-width: 1024px) {
+    .section-card {
+        padding: 1.5rem;
+    }
+
+    .tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tab-btn {
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 768px) {
+    .section-card {
+        padding: 1rem;
+        border-radius: 0;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .section-header .actions {
+        width: 100%;
+    }
+
+    .section-header .actions button {
+        flex: 1;
+    }
+
+    .stats-bar {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        padding: 1rem;
+    }
+
+    .modal-content {
+        width: 95%;
+        max-height: 95vh;
+    }
+
+    .modal-header,
+    .modal-body,
+    .modal-footer {
+        padding: 1rem 1.5rem;
+    }
+}
+
+/* ?�件上傳?�?�樣�?*/
+.file-upload-area {
+    margin-top: 0.5rem;
+}
+
+.file-upload-dropzone {
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    background: #f9fafb;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.file-upload-dropzone:hover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.file-upload-dropzone.drag-over {
+    border-color: #3b82f6;
+    background: #dbeafe;
+    border-style: solid;
+}
+
+.file-upload-list {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+}
+
+.file-item {
+    position: relative;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+}
+
+.file-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.file-item-preview {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #f3f4f6;
+}
+
+.file-item-icon {
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f3f4f6;
+    border-radius: 4px;
+    color: #6b7280;
+}
+
+.file-item-name {
+    font-size: 0.75rem;
+    color: #374151;
+    text-align: center;
+    word-break: break-all;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-item-size {
+    font-size: 0.7rem;
+    color: #6b7280;
+}
+
+.file-item-remove {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #ef4444;
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    line-height: 1;
+    transition: all 0.2s;
+}
+
+.file-item-remove:hover {
+    background: #dc2626;
+    transform: scale(1.1);
+}
+
+/* Admin orders 表格专用样式 */
+.admin-orders-page .admin-orders-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+}
+
+.admin-orders-page .admin-orders-table th {
+    padding: 0.85rem 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #374151;
+    border-bottom: 2px solid #d1d5db;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-orders-page .admin-orders-table td {
+    padding: 0.85rem 0.75rem;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 0.9rem;
+    color: #1f2937;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-orders-page .admin-orders-table thead {
+    background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+}
+
+.admin-orders-page .admin-orders-table tbody tr {
+    transition: all 0.2s;
+}
+
+.admin-orders-page .admin-orders-table tbody tr:hover {
+    background: #f9fafb;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.admin-orders-page .admin-orders-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.admin-orders-page .admin-orders-table.no-checkbox thead th:first-child,
+.admin-orders-page .admin-orders-table.no-checkbox tbody td:first-child {
+    width: auto !important;
+    min-width: 140px !important;
+    max-width: none !important;
+}
+
+.admin-orders-page .admin-orders-table.no-checkbox thead th:nth-child(2),
+.admin-orders-page .admin-orders-table.no-checkbox tbody td:nth-child(2) {
+    min-width: 140px !important;
+}
+
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(8),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(8),
+.admin-orders-page #tab-all-orders .admin-orders-table th:nth-child(9),
+.admin-orders-page #tab-all-orders .admin-orders-table td:nth-child(9) {
+    width: 250px !important;
+    max-width: 250px !important;
+    min-width: 250px !important;
+    overflow: hidden;
+    box-sizing: border-box;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.admin-orders-page #tab-unlocked .admin-orders-table th:last-child,
+.admin-orders-page #tab-unlocked .admin-orders-table td:last-child,
+.admin-orders-page #tab-locked .admin-orders-table th:last-child,
+.admin-orders-page #tab-locked .admin-orders-table td:last-child {
+    width: 200px !important;
+    max-width: 200px !important;
+    min-width: 200px !important;
+    box-sizing: border-box;
+}
+
+.admin-orders-page #tab-available-orders .admin-orders-table :is(th, td):nth-child(1) {
+    width: 52px;
+    min-width: 52px;
+}
+
+.admin-orders-page #tab-available-orders .admin-orders-table :is(th, td):nth-child(2) {
+    width: 160px;
+    min-width: 160px;
+}
+
+.admin-orders-page #tab-available-orders .admin-orders-table :is(th, td):nth-child(3) {
+    width: 220px;
+    min-width: 220px;
+}
+
+.admin-orders-page #tab-available-orders .admin-orders-table :is(th, td):nth-child(4) {
+    width: 120px;
+    min-width: 120px;
+}
+
+.admin-orders-page #tab-available-orders .admin-orders-table :is(th, td):nth-child(5) {
+    width: 180px;
+    min-width: 180px;
+}
+
+.admin-orders-page #tab-available-orders .admin-orders-table :is(th, td):nth-child(6) {
+    width: 220px;
+    min-width: 220px;
+}
+
+/* ==================== Customer autocomplete (Unlock modal) ==================== */
+.customer-autocomplete {
+    position: relative;
+}
+
+.customer-suggestions {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.customer-suggestion-item {
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #111827;
+    font-size: 0.95rem;
+}
+
+.customer-suggestion-item:hover,
+.customer-suggestion-item.active {
+    background: #f3f4f6;
+}
+
+.customer-suggestions-empty {
+    padding: 10px 12px;
+    color: #6b7280;
+    font-size: 0.875rem;
+}
+
+/* ==================== Unlock modal: upload file panel ==================== */
+
+/* label 旁边的小圆圈徽章 */
+.unlock-file-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    margin-left: 8px;
+    border-radius: 999px;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+/* 文件面板整体 */
+.unlock-files-panel {
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+    transition: box-shadow 0.3s;
+}
+
+.unlock-files-panel.uf-flash {
+    animation: ufFlash 0.9s ease-out;
+}
+
+@keyframes ufFlash {
+    0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.45); }
+    30%  { box-shadow: 0 0 0 5px rgba(34,197,94,0.25); }
+    100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
+
+/* 顶部绿色成功提示栏 */
+.unlock-files-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    border-bottom: 1px solid #bbf7d0;
+}
+
+.uf-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: #166534;
+}
+
+.uf-check-icon {
+    color: #16a34a;
+    flex-shrink: 0;
+}
+
+.uf-header-size {
+    color: #4ade80;
+    font-size: 0.82rem;
+}
+
+.uf-header-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.uf-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.uf-btn:active { transform: scale(0.97); }
+
+.uf-btn-add {
+    background: #3b82f6;
+    color: #fff;
+}
+.uf-btn-add:hover { background: #2563eb; }
+
+.uf-btn-clear {
+    background: #f3f4f6;
+    color: #374151;
+}
+.uf-btn-clear:hover { background: #e5e7eb; }
+
+/* 文件缩略图网格 */
+.unlock-files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+    padding: 12px 14px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+/* 迷你拖拽添加区 */
+.file-upload-dropzone-mini {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px;
+    margin: 0 14px 12px;
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    background: #f9fafb;
+    color: #6b7280;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.file-upload-dropzone-mini:hover,
+.file-upload-dropzone-mini.drag-over {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #3b82f6;
+}
+
+/* 可编辑文件名 */
+.file-item-name-edit {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    width: 100%;
+    min-width: 0;
+}
+
+.uf-name-input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 0.72rem;
+    color: #374151;
+    background: transparent;
+    text-align: center;
+    transition: border-color 0.15s, background 0.15s;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.uf-name-input:hover {
+    border-color: #d1d5db;
+    background: #f9fafb;
+}
+
+.uf-name-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    background: #fff;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+}
+
+.uf-name-ext {
+    font-size: 0.7rem;
+    color: #9ca3af;
+    flex-shrink: 0;
+}
+
+/* 图片缩略图可点击 */
+.file-item-preview.uf-clickable {
+    cursor: zoom-in;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.file-item-preview.uf-clickable:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+/* ======== Lightbox 图片放大预览 ======== */
+.uf-lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: rgba(0,0,0,0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    backdrop-filter: blur(4px);
+}
+
+.uf-lightbox-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.uf-lightbox-inner {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.uf-lightbox-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
+}
+
+.uf-lightbox-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #111827;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+    margin-right: 12px;
+}
+
+.uf-lightbox-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: #f3f4f6;
+    border-radius: 8px;
+    font-size: 1.25rem;
+    color: #6b7280;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+}
+
+.uf-lightbox-close:hover {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.uf-lightbox-body {
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    min-height: 200px;
+}
+
+.uf-lightbox-img {
+    max-width: 80vw;
+    max-height: 75vh;
+    object-fit: contain;
+    border-radius: 6px;
+}
+
+/* ==================== Admin 抽屉样式 ==================== */
+/* 确保只影响 admin 抽屉，不影响其他页面的抽屉 */
+
+#adminDetailDrawerOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    backdrop-filter: none;
+    z-index: 998;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+    will-change: opacity, visibility;
+}
+
+#adminDetailDrawerOverlay.show {
+    opacity: 0;
+    visibility: visible;
+    pointer-events: none;
+    cursor: default;
+}
+
+#adminDetailDrawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 460px;
+    height: 100vh;
+    background: #FAFAFA;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    transform: translateX(100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 999;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    border-left: 1px solid rgba(0, 0, 0, 0.08);
+    will-change: transform;
+    backface-visibility: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* 预览模式：抽屉宽度扩展到 1380px（预览区域 920px + 内容区域 460px） */
+#adminDetailDrawer.has-preview {
+    width: 1380px; /* 预览区域(920px) + 内容区域(460px) */
+}
+
+/* 确保预览区域和内容区域并排显示 */
+#adminDetailDrawer.has-preview #adminDrawerPreview {
+    display: flex !important;
+    order: 1;
+}
+
+#adminDetailDrawer.has-preview .drawer-content {
+    display: flex !important;
+    order: 2;
+    width: 460px !important;
+    flex-shrink: 0 !important;
+}
+
+#adminDetailDrawer.show {
+    transform: translateX(0);
+}
+
+/* 预览区域 */
+#adminDrawerPreview {
+    width: 920px;
+    height: 100vh;
+    background: #000000;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#adminDrawerPreview .drawer-preview-header {
+    background: rgba(0, 0, 0, 0.8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+#adminDrawerPreview .drawer-preview-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+#adminDrawerPreview .drawer-preview-title {
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#adminDrawerPreview .drawer-preview-counter {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+}
+
+#adminDrawerPreview .drawer-preview-close {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #FFFFFF;
+}
+
+#adminDrawerPreview .drawer-preview-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#adminDrawerPreview .drawer-preview-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow: hidden;
+    background: #1a1a1a;
+    position: relative;
+}
+
+#adminDrawerPreview .drawer-preview-image-container {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    position: relative;
+    cursor: zoom-in;
+}
+
+#adminDrawerPreview .drawer-preview-image-container:hover .drawer-preview-zoom-hint {
+    opacity: 1;
+}
+
+#adminDrawerPreview .drawer-preview-zoom-hint {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: #FFFFFF;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 16px 24px;
+    border-radius: 8px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+}
+
+#adminDrawerPreview .drawer-preview-zoom-hint svg {
+    width: 32px;
+    height: 32px;
+}
+
+#adminDrawerPreview .drawer-preview-zoom-hint span {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+#adminDrawerPreview .drawer-preview-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #FFFFFF;
+    z-index: 10;
+    backdrop-filter: blur(4px);
+}
+
+#adminDrawerPreview .drawer-preview-nav:hover {
+    background: rgba(0, 0, 0, 0.8);
+    transform: translateY(-50%) scale(1.1);
+}
+
+#adminDrawerPreview .drawer-preview-nav-left {
+    left: 16px;
+}
+
+#adminDrawerPreview .drawer-preview-nav-right {
+    right: 16px;
+}
+
+#adminDrawerPreview .drawer-preview-image-container::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+#adminDrawerPreview .drawer-preview-image-container::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#adminDrawerPreview .drawer-preview-image-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+}
+
+#adminDrawerPreview .drawer-preview-image-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* 全屏预览 */
+#adminDrawerPreviewFullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #000000;
+    z-index: 99999 !important;
+    display: flex;
+    flex-direction: column;
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-header {
+    background: rgba(0, 0, 0, 0.8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-title {
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-close {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #FFFFFF;
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #FFFFFF;
+    z-index: 10;
+    backdrop-filter: blur(4px);
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-nav:hover {
+    background: rgba(0, 0, 0, 0.8);
+    transform: translateY(-50%) scale(1.1);
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-nav-left {
+    left: 24px;
+}
+
+#adminDrawerPreviewFullscreen .drawer-preview-fullscreen-nav-right {
+    right: 24px;
+}
+
+/* 内容区域 - 确保预览时仍然可见 */
+#adminDetailDrawer .drawer-content {
+    width: 460px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    background: #FAFAFA;
+    overflow: hidden;
+}
+
+#adminDetailDrawer .drawer-header {
+    background: #FFFFFF;
+    border-bottom: 1px solid #F0F0F0;
+    padding: 16px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#adminDetailDrawer .drawer-header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0;
+}
+
+#adminDetailDrawer .drawer-main-info {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #F0F0F0;
+}
+
+#adminDetailDrawer .main-info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+#adminDetailDrawer .main-info-label {
+    color: #999999;
+    font-weight: 500;
+    font-size: 11px;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+#adminDetailDrawer .main-info-value {
+    color: #212121;
+    font-weight: 700;
+    text-align: left;
+    font-size: 18px;
+    line-height: 1.3;
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    word-break: break-word;
+}
+
+#adminDetailDrawer .main-info-value .order-hash {
+    color: #FF2442;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+#adminDetailDrawer .main-info-value-container {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+#adminDetailDrawer .main-info-input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    font-size: 18px;
+    font-weight: 700;
+    color: #212121;
+    background: #fff;
+    box-sizing: border-box;
+}
+
+#adminDetailDrawer .main-info-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+#adminDetailDrawer .drawer-order-badge {
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #999999;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    text-transform: uppercase;
+}
+
+#adminDetailDrawer .drawer-close {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #999999;
+}
+
+#adminDetailDrawer .drawer-close:hover {
+    background: #F5F5F5;
+    color: #212121;
+    transform: none;
+}
+
+#adminDetailDrawer .drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    background: #FFFFFF;
+}
+
+#adminDetailDrawer .drawer-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+#adminDetailDrawer .drawer-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#adminDetailDrawer .drawer-body::-webkit-scrollbar-thumb {
+    background: #DDDDDD;
+    border-radius: 3px;
+}
+
+#adminDetailDrawer .drawer-section {
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    margin-bottom: 20px;
+    border: none;
+    border-bottom: 1px solid #F0F0F0;
+    padding-bottom: 16px;
+}
+
+#adminDetailDrawer .drawer-section:last-of-type {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+#adminDetailDrawer .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+#adminDetailDrawer .section-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #FF2442;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+#adminDetailDrawer .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #666666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#adminDetailDrawer .drawer-order-notes-compact {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #FAFAFA;
+    border-radius: 6px;
+    border-left: 2px solid #FF2442;
+    font-size: 12px;
+    line-height: 1.4;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#adminDetailDrawer .drawer-notes-display {
+    flex: 1;
+    min-width: 0;
+}
+
+#adminDetailDrawer .drawer-notes-text {
+    color: #374151;
+    word-break: break-word;
+}
+
+#adminDetailDrawer .drawer-notes-edit {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+    max-width: none;
+}
+
+#adminDetailDrawer .drawer-notes-input {
+    width: 100%;
+    min-width: 300px;
+    max-width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 60px;
+    box-sizing: border-box;
+}
+
+#adminDetailDrawer .drawer-notes-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+#adminDetailDrawer .notes-edit-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+#adminDetailDrawer .notes-save-btn,
+#adminDetailDrawer .notes-cancel-btn {
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#adminDetailDrawer .notes-save-btn {
+    background: #3b82f6;
+    color: #FFFFFF;
+    border-color: #3b82f6;
+}
+
+#adminDetailDrawer .notes-save-btn:hover:not(:disabled) {
+    background: #2563eb;
+    border-color: #2563eb;
+}
+
+#adminDetailDrawer .notes-save-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#adminDetailDrawer .notes-cancel-btn {
+    background: #FFFFFF;
+    color: #374151;
+    border-color: #e5e7eb;
+}
+
+#adminDetailDrawer .notes-cancel-btn:hover {
+    background: #f9fafb;
+    border-color: #d1d5db;
+}
+
+/* 按钮样式 */
+#adminDetailDrawer .btn-small {
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid #e5e7eb;
+    background: #FFFFFF;
+    color: #374151;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#adminDetailDrawer .btn-small:hover {
+    background: #f9fafb;
+    border-color: #d1d5db;
+}
+
+#adminDetailDrawer .btn-small.btn-secondary {
+    background: #FFFFFF;
+    color: #374151;
+}
+
+#adminDetailDrawer .btn-small.btn-icon {
+    padding: 6px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#adminDetailDrawer .btn-small.btn-icon:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+}

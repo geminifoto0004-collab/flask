@@ -1,0 +1,448 @@
+<!-- 
+  WORKSPACE 决策工作台 - HTML 模板（修复版）
+  修复内容：
+  1. TAB 内容添加底部间距，避免被固定按钮遮挡
+  2. 移除 TAB 2 中的快速操作和订单管理按钮（已移到底部固定栏）
+  3. 底部暂停按钮改为跳过阶段
+  4. 添加取消订单按钮（右上角菜单）
+-->
+
+<!-- 背景遮罩 -->
+<div id="wsOverlay" 
+     class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300">
+</div>
+
+<!-- 主容器 -->
+<div id="wsContainer" 
+     class="fixed top-0 bottom-0 right-0 flex translate-x-full"
+     style="transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); z-index: 10004;">
+    
+    <!-- 左侧预览面板 -->
+    <div id="wsPreviewPanel" 
+         class="w-0 bg-slate-900 overflow-hidden flex flex-col shadow-2xl relative opacity-0"
+         style="transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;">
+        
+        <div class="ws-preview-header">
+            <div class="ws-preview-title-group">
+                <span class="ws-preview-title">附件预览</span>
+                <span id="wsPreviewCounter" class="ws-preview-counter">0 / 0</span>
+            </div>
+            <button id="wsPreviewCloseBtn"
+                    class="ws-preview-close">
+                <span class="material-symbols-rounded">close</span>
+            </button>
+        </div>
+        
+        <div class="ws-preview-body">
+            <button id="wsPreviewPrev" class="ws-preview-nav ws-preview-nav-left" title="上一张">
+                <span class="material-symbols-rounded">chevron_left</span>
+            </button>
+            <div id="wsPreviewImageContainer" class="ws-preview-image-container">
+                <img id="wsPreviewImg" src="" class="ws-preview-image" alt="预览图片">
+                <div id="wsPreviewMeta" class="ws-preview-meta">-</div>
+                <div id="wsPreviewZoomHint" class="ws-preview-zoom-hint">
+                    <span class="material-symbols-rounded">zoom_in</span>
+                    <span>点击放大</span>
+                </div>
+            </div>
+            <button id="wsPreviewNext" class="ws-preview-nav ws-preview-nav-right" title="下一张">
+                <span class="material-symbols-rounded">chevron_right</span>
+            </button>
+        </div>
+        
+        <div class="p-8 bg-black/50 border-t border-white/10 text-white">
+            <h4 id="wsPreviewName" class="font-bold text-lg mb-1 truncate">-</h4>
+            <p class="text-white/40 text-10px uppercase font-black italic tracking-widest">Standards Review</p>
+            <button id="wsPreviewDownloadBtn"
+                    class="mt-4 w-full py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all">
+                <span class="material-symbols-rounded">download</span> 下载附件
+            </button>
+        </div>
+    </div>
+
+    <!-- 全屏预览 -->
+    <div id="wsPreviewFullscreen" class="ws-preview-fullscreen hidden">
+        <div class="ws-preview-fullscreen-header">
+            <span id="wsPreviewFullscreenTitle" class="ws-preview-fullscreen-title">预览</span>
+            <button id="wsPreviewFullscreenClose" class="ws-preview-fullscreen-close">
+                <span class="material-symbols-rounded">close</span>
+            </button>
+        </div>
+        <div class="ws-preview-fullscreen-body">
+            <button id="wsPreviewFullscreenPrev" class="ws-preview-fullscreen-nav ws-preview-fullscreen-nav-left" title="上一张">
+                <span class="material-symbols-rounded">chevron_left</span>
+            </button>
+            <img id="wsPreviewFullscreenImage" src="" alt="全屏预览" class="ws-preview-fullscreen-image">
+            <div id="wsPreviewFullscreenMeta" class="ws-preview-fullscreen-meta">-</div>
+            <button id="wsPreviewFullscreenNext" class="ws-preview-fullscreen-nav ws-preview-fullscreen-nav-right" title="下一张">
+                <span class="material-symbols-rounded">chevron_right</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 右侧主面板 -->
+    <div class="w-600px bg-white shadow-2xl flex flex-col h-full border-l border-slate-100 relative">
+        
+        <!-- Header -->
+        <header class="p-6 border-b border-slate-100 bg-white shrink-0">
+            <div class="flex justify-between items-start mb-6">
+                <div>
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-10px font-black bg-brand-50 text-brand-600 px-2 py-0.5 rounded tracking-tighter uppercase">Work Order</span>
+                        <h1 id="wsOrderNumber" class="text-3xl font-black text-slate-800 tracking-tight">-</h1>
+                        <!-- 訂金徽章，由 JS wsShowDepositBadge() 控制顯示 -->
+                        <span id="wsDepositBadge"
+                              style="display:none;align-items:center;gap:3px;
+                                     padding:2px 10px 2px 6px;border-radius:999px;
+                                     border:1.5px solid #fde047;background:#fef9c3;
+                                     color:#854d0e;font-size:12px;font-weight:800;
+                                     white-space:nowrap;">
+                            <svg id="wsDepositCoin" class="ws-coin-pulse" viewBox="0 0 20 20" width="16" height="16" style="flex-shrink:0;">
+                                <circle cx="10" cy="10" r="9" fill="#fbbf24" stroke="#d97706" stroke-width="1.2"/>
+                                <text x="10" y="14.5" text-anchor="middle" font-size="10" font-weight="900" fill="#92400e" font-family="Arial,sans-serif">$</text>
+                            </svg>
+                            <span id="wsDepositAmount"></span>
+                        </span>
+                    </div>
+                    <p class="text-slate-400 text-sm">客户：<span id="wsCustomerName" class="text-slate-900 font-bold underline">-</span>
+                        {% if is_overseas %}
+                        <span id="wsWaBtn" title="" onclick="wsOpenWhatsApp()" style="display:inline-flex;align-items:center;margin-left:6px;cursor:pointer;vertical-align:middle">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                        </span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="flex gap-2">
+                    <!-- 关闭按钮 -->
+                    <button id="wsCloseBtn"
+                            class="w-12 h-12 flex items-center justify-center rounded-2xl hover:bg-slate-100 text-slate-400 transition-all">
+                        <span class="material-symbols-rounded text-2xl">close</span>
+                    </button>
+                </div>
+            </div>
+
+        </header>
+
+        <!-- 工作流卡片区域 -->
+        <section class="px-6 py-5 bg-slate-50/50 border-b border-slate-100 shrink-0">
+            <h3 class="text-10px font-black text-slate-400 uppercase tracking-widest mb-4 px-1">
+                工作流管道 (並行流程)
+            </h3>
+            <div class="ws-workflow-carousel">
+                <button id="wsWorkflowPrev" class="ws-workflow-nav ws-workflow-prev" type="button" aria-label="上一组工作流">‹</button>
+            <div id="wsWorkflowCard" class="flex gap-4 overflow-x-auto hide-scrollbar pb-1">
+                <!-- 由 JS 生成 -->
+                </div>
+                <button id="wsWorkflowNext" class="ws-workflow-nav ws-workflow-next" type="button" aria-label="下一组工作流">›</button>
+            </div>
+        </section>
+
+        <!-- TAB 导航 -->
+        <nav class="flex px-6 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur-md z-10 shrink-0">
+            <button id="wsTabAdminRef"
+                    class="ws-tab flex-1 py-5 text-sm font-bold tab-active flex items-center justify-center gap-2">
+                <span class="material-symbols-rounded text-xl">verified_user</span> 主管参考
+            </button>
+            <button id="wsTabProcess"
+                    class="ws-tab flex-1 py-5 text-sm font-bold text-slate-400 flex items-center justify-center gap-2">
+                <span class="material-symbols-rounded text-xl">timeline</span> 流程进度
+            </button>
+            <button id="wsTabFiles"
+                    class="ws-tab flex-1 py-5 text-sm font-bold text-slate-400 flex items-center justify-center gap-2">
+                <span class="material-symbols-rounded text-xl">folder_shared</span> 业务附件
+            </button>
+        </nav>
+
+        <!-- TAB 内容区域（可滚动，添加底部间距避免被固定按钮遮挡）-->
+        <main class="flex-1 overflow-y-auto custom-scroll" style="padding-bottom: 120px;">
+            
+            <!-- TAB 1: 主管参考 -->
+            <div id="wsContentAdminRef" class="p-8 space-y-10">
+                
+                <!-- 主管备注 -->
+                <div class="bg-purple-50 border border-purple-100 rounded-2xl p-6 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2 text-purple-700">
+                            <span class="material-symbols-rounded font-bold">campaign</span>
+                            <h4 class="text-11px font-black uppercase tracking-widest">主管备注</h4>
+                        </div>
+                        <button id="wsAdminRemarkEditBtn" class="ws-edit-icon hidden" title="编辑主管备注">
+                            <span class="material-symbols-rounded">edit</span>
+                        </button>
+                    </div>
+                    <p id="wsAdminRemark" class="text-sm text-purple-900 leading-relaxed font-semibold">
+                        暂无备注
+                    </p>
+                    <div id="wsAdminRemarkEdit" class="ws-remark-edit hidden">
+                        <textarea id="wsAdminRemarkInput" class="ws-remark-input" rows="4" placeholder="输入主管备注..."></textarea>
+                        <div class="ws-remark-actions">
+                            <button id="wsAdminRemarkSaveBtn" class="ws-remark-save-btn">保存</button>
+                            <button id="wsAdminRemarkCancelBtn" class="ws-remark-cancel-btn">取消</button>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center gap-2 text-10px text-purple-400 font-bold uppercase italic">
+                        <span class="material-symbols-rounded text-xs">history</span> 
+                        <span id="wsAdminRemarkTime">-</span>
+                    </div>
+                </div>
+
+                <!-- 标准图纸 -->
+                <div>
+                    <div class="flex items-center justify-between mb-5 px-1">
+                        <h4 class="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-brand-600"></span> 标准图纸 / 参考图
+                        </h4>
+                        <div class="flex items-center gap-2">
+                            <button id="wsAdminDateToggleBtn" class="ws-toggle-btn" title="日期显示切换">
+                                <span class="material-symbols-rounded">visibility</span>
+                            </button>
+                            <button id="wsAdminSelectBtn" class="ws-select-btn hidden" title="选择删除">
+                                <span class="material-symbols-rounded">check_box</span>
+                            </button>
+                            <button id="wsAdminDeleteBtn" class="ws-delete-btn hidden" title="删除所选">
+                                <span class="material-symbols-rounded">delete</span>
+                            </button>
+                            <button id="wsAdminUploadBtn" class="ws-upload-btn hidden" title="上传图片或文件">
+                                <span class="material-symbols-rounded">upload</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="wsAdminImageGrid" class="ws-image-scroll">
+                        <!-- 由 JS 生成 -->
+                    </div>
+                </div>
+
+                <!-- 官方文件 -->
+                <div>
+                    <h4 class="text-xs font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2 px-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-brand-600"></span> 文件
+                    </h4>
+                    <div id="wsAdminFileList" class="space-y-3">
+                        <!-- 由 JS 生成 -->
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- TAB 2: 流程进度（移除了快速操作按钮）-->
+            <div id="wsContentProcess" class="p-8 space-y-8 hidden">
+                
+                <!-- 业务员备注 -->
+                <div class="bg-blue-50/50 border border-blue-100/50 rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-11px font-black text-brand-600 uppercase tracking-widest">业务员当前进度回报</h4>
+                        <div class="flex items-center gap-2">
+                            <button id="wsTransferBtn" class="ws-transfer-btn hidden" title="转移负责人">
+                                <span class="material-symbols-rounded">swap_horiz</span>
+                            </button>
+                            <button id="wsSalesRemarkEditBtn" class="ws-edit-icon hidden" title="编辑业务员备注">
+                                <span class="material-symbols-rounded">edit</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex gap-4">
+                        <div id="wsSalesAvatar" 
+                             class="w-10 h-10 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm font-bold shrink-0 shadow-lg shadow-brand-100">
+                            -
+                        </div>
+                        <div class="bg-white border border-blue-100 p-4 rounded-2xl rounded-tl-none shadow-sm flex-1">
+                            <p id="wsSalesRemark" class="text-xs text-slate-700 leading-relaxed italic font-medium">
+                                暂无备注
+                            </p>
+                            <div id="wsSalesRemarkEdit" class="ws-remark-edit hidden">
+                                <textarea id="wsSalesRemarkInput" class="ws-remark-input" rows="4" placeholder="输入业务员备注..."></textarea>
+                                <div class="ws-remark-actions">
+                                    <button id="wsSalesRemarkSaveBtn" class="ws-remark-save-btn">保存</button>
+                                    <button id="wsSalesRemarkCancelBtn" class="ws-remark-cancel-btn">取消</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 时间轴 -->
+                <div class="pt-8 border-t border-slate-100">
+                    <div class="flex items-center gap-2 mb-4 px-1">
+                        <span class="material-symbols-rounded text-slate-600 text-lg">timeline</span>
+                        <h4 class="text-xs font-black text-slate-800 uppercase tracking-widest">流程时间轴</h4>
+                    </div>
+                    <div id="wsTimelineContainer">
+                        <!-- 由 JS 生成 -->
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- TAB 3: 业务附件 -->
+            <div id="wsContentFiles" class="p-8 hidden space-y-10">
+                <div class="flex items-center justify-between">
+                    <h4 class="text-xs font-black text-slate-800 uppercase tracking-widest">业务执行相关附件</h4>
+                    <div class="flex items-center gap-2">
+                        <button id="wsSalesDateToggleBtn" class="ws-toggle-btn" title="日期显示切换">
+                            <span class="material-symbols-rounded">visibility</span>
+                        </button>
+                        <button id="wsSalesSelectBtn" class="ws-select-btn hidden" title="选择删除">
+                            <span class="material-symbols-rounded">check_box</span>
+                        </button>
+                        <button id="wsSalesDeleteBtn" class="ws-delete-btn hidden" title="删除所选">
+                            <span class="material-symbols-rounded">delete</span>
+                        </button>
+                        <button id="wsSalesUploadBtn" class="ws-upload-btn hidden" title="上传图片或文件">
+                            <span class="material-symbols-rounded">upload</span>
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-xs font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2 px-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-brand-600"></span> 标准图纸 / 参考图
+                    </h4>
+                    <div id="wsSalesImageGrid" class="ws-image-scroll">
+                        <!-- 由 JS 生成 -->
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-xs font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2 px-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-brand-600"></span> 规范文件
+                    </h4>
+                    <div id="wsSalesFileList" class="space-y-3">
+                        <!-- 由 JS 生成 -->
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- 底部固定操作栏（显示快速操作按钮）-->
+        <footer id="wsFooter" class="ws-footer">
+            <div class="ws-footer-content">
+                <!-- 主要操作按钮（由 JS 动态生成快速操作）-->
+                <button id="wsQuickActionBtn" class="ws-footer-btn-primary">
+                    <span id="wsQuickActionText" class="ws-footer-btn-text">进入下一阶段</span>
+                    <span class="material-symbols-rounded ws-footer-btn-icon">arrow_forward</span>
+                </button>
+                <!-- 跳过阶段按钮 -->
+                <button id="wsSkipBtn" class="ws-footer-btn-secondary" title="跳过阶段">
+                    <span class="material-symbols-rounded">double_arrow</span>
+                </button>
+            </div>
+        </footer>
+
+        <!-- 上传文件 Modal（仅右侧抽屉内部） -->
+        <div id="wsUploadModal" class="ws-upload-modal hidden" onclick="if(event.target === this) WorkspaceDrawer.closeUploadModal()">
+            <div class="ws-upload-modal-content" onclick="event.stopPropagation()">
+                <div class="ws-upload-modal-header">
+                    <h3 id="wsUploadModalTitle">上传文件</h3>
+                    <button class="ws-upload-modal-close" onclick="WorkspaceDrawer.closeUploadModal()">
+                        <span class="material-symbols-rounded">close</span>
+                    </button>
+                </div>
+                <div class="ws-upload-modal-body">
+                    <form id="wsUploadForm">
+                        <div class="ws-upload-form-group">
+                            <label>选择文件（图片或文档）</label>
+                            <div id="wsUploadDropzone" class="ws-upload-dropzone">
+                                <span class="material-symbols-rounded">cloud_upload</span>
+                                <span>拖曳文件到这里或点击选择</span>
+                                <input type="file" id="wsUploadFiles" name="files" multiple accept="*/*">
+                            </div>
+                            <p class="ws-upload-form-hint">可以选择多个文件，支持批量上传</p>
+                            <div id="wsUploadFileList" class="ws-upload-file-list hidden"></div>
+                        </div>
+                    </form>
+                </div>
+                <div class="ws-upload-modal-footer">
+                    <button class="ws-upload-btn-secondary" onclick="WorkspaceDrawer.closeUploadModal()">取消</button>
+                    <button class="ws-upload-btn-primary" onclick="WorkspaceDrawer.submitUploadFiles()">上传</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 转移负责人 Modal -->
+        <div id="wsTransferModal" class="ws-upload-modal hidden" onclick="if(event.target === this) WorkspaceDrawer.closeTransferModal()">
+            <div class="ws-upload-modal-content" onclick="event.stopPropagation()">
+                <div class="ws-upload-modal-header">
+                    <h3>转移负责人</h3>
+                    <button class="ws-upload-modal-close" onclick="WorkspaceDrawer.closeTransferModal()">
+                        <span class="material-symbols-rounded">close</span>
+                    </button>
+                </div>
+                <div class="ws-upload-modal-body">
+                    <div class="ws-upload-form-group">
+                        <label>转移给</label>
+                        <input id="wsTransferUserSearch" class="ws-transfer-search" type="text" placeholder="搜尋姓名 / 帳號" autocomplete="off" list="wsTransferUserOptions">
+                        <datalist id="wsTransferUserOptions"></datalist>
+                        <input type="hidden" id="wsTransferUserId" value="">
+                        <p class="ws-upload-form-hint">仅显示可转移且已审核的用户</p>
+                    </div>
+                </div>
+                <div class="ws-upload-modal-footer">
+                    <button class="ws-upload-btn-secondary" onclick="WorkspaceDrawer.closeTransferModal()">取消</button>
+                    <button id="wsTransferConfirmBtn" class="ws-upload-btn-primary">确认转移</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<style>
+/* Material Icons */
+.material-symbols-rounded {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Scrollbar */
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.custom-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+
+.custom-scroll::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+/* TAB 激活状态 */
+.ws-tab.active,
+.ws-tab.tab-active {
+    color: #ff2442;
+    border-bottom: 3px solid #ff2442;
+    background: #fff0f3;
+    border-radius: 0.75rem;
+}
+
+/* 工作流卡片激活状态 */
+.ws-workflow-card.active {
+    border-color: #ff2442;
+    background-color: #fff0f3;
+    box-shadow: 0 4px 12px -2px rgba(255, 36, 66, 0.1);
+}
+
+/* 时间轴连线 */
+.ws-timeline-item::before {
+    content: '';
+    position: absolute;
+    left: 19px;
+    top: 35px;
+    bottom: -15px;
+    width: 2px;
+    background: #f1f5f9;
+}
+
+.ws-timeline-item:last-child::before {
+    display: none;
+}
+
+/* 訂金金幣閃爍動畫 */
+@keyframes wsCoinGlow {
+    0%, 100% { opacity: 1;   transform: scale(1); }
+    50%       { opacity: 0.55; transform: scale(0.88); }
+}
+.ws-coin-pulse {
+    animation: wsCoinGlow 1.8s ease-in-out infinite;
+}
+</style>

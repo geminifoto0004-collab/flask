@@ -1,0 +1,310 @@
+{% extends "tracking/base.html" %}
+
+{% block title %}系统诊断{% endblock %}
+
+{% block extra_css %}
+<style>
+.diag-page { padding: 1.5rem 2rem 2.5rem; height: 100%; overflow: auto; background: #fafafa; }
+.diag-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.diag-title { margin: 0; font-size: 1.5rem; font-weight: 750; color: #171717; }
+.diag-subtitle { margin-top: 5px; color: #8a8a8a; font-size: .82rem; }
+.diag-readonly { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; background: #eef8f0; color: #287a3d; border: 1px solid #d7eedc; font-size: .78rem; font-weight: 650; }
+.diag-refresh { border: 1px solid #e5e5e5; background: #fff; color: #444; padding: 8px 13px; border-radius: 9px; cursor: pointer; font-size: .8rem; }
+.diag-refresh:hover { border-color: #ff2442; color: #ff2442; }
+.diag-header-actions { display: flex; align-items: center; gap: 8px; }
+
+.diag-tabs { display: flex; gap: 6px; flex-wrap: wrap; padding: 5px; background: #fff; border: 1px solid #ededed; border-radius: 12px; margin-bottom: 1rem; position: sticky; top: 0; z-index: 4; }
+.diag-tab { border: 0; background: transparent; color: #666; padding: 8px 13px; border-radius: 8px; font-size: .82rem; cursor: pointer; }
+.diag-tab:hover { background: #fff6f7; color: #e31e3c; }
+.diag-tab.active { background: #ff2442; color: #fff; font-weight: 650; }
+.diag-panel { display: none; }
+.diag-panel.active { display: block; }
+
+.diag-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.diag-card { background: #fff; border: 1px solid #ececec; border-radius: 13px; padding: 15px 16px; min-width: 0; }
+.diag-card-label { color: #888; font-size: .76rem; margin-bottom: 5px; }
+.diag-card-value { color: #222; font-size: 1.3rem; font-weight: 750; line-height: 1.2; overflow-wrap: anywhere; }
+.diag-card-value.small { font-size: .95rem; font-weight: 650; }
+.diag-card-note { margin-top: 6px; color: #aaa; font-size: .72rem; line-height: 1.45; }
+.diag-card.warning .diag-card-value { color: #d97706; }
+.diag-card.danger .diag-card-value { color: #dc2626; }
+.diag-card.good .diag-card-value { color: #238a43; }
+
+.diag-section { background: #fff; border: 1px solid #ececec; border-radius: 13px; margin-bottom: 14px; overflow: hidden; }
+.diag-section-head { padding: 13px 16px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.diag-section-title { font-size: .92rem; font-weight: 700; color: #222; }
+.diag-section-note { color: #999; font-size: .72rem; }
+.diag-table-wrap { width: 100%; overflow: auto; }
+.diag-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.diag-table th { padding: 9px 12px; background: #fafafa; color: #666; font-weight: 650; text-align: left; border-bottom: 1px solid #ededed; white-space: nowrap; }
+.diag-table td { padding: 9px 12px; color: #333; border-bottom: 1px solid #f3f3f3; vertical-align: middle; }
+.diag-table tbody tr:last-child td { border-bottom: 0; }
+.diag-table tbody tr:hover { background: #fffafb; }
+.diag-num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.diag-path { font-family: Consolas, "Courier New", monospace; font-size: .75rem; color: #555; overflow-wrap: anywhere; }
+.diag-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; font-size: .7rem; font-weight: 650; }
+.diag-badge.good { background: #eaf7ee; color: #287a3d; }
+.diag-badge.warn { background: #fff5df; color: #a96300; }
+.diag-badge.bad { background: #fdecee; color: #c32339; }
+.diag-list { margin: 0; padding: 8px 16px 12px 34px; color: #555; font-size: .8rem; line-height: 1.7; }
+.diag-kv { display: grid; grid-template-columns: 190px minmax(0, 1fr); border-bottom: 1px solid #f1f1f1; }
+.diag-kv:last-child { border-bottom: 0; }
+.diag-kv-key, .diag-kv-value { padding: 10px 14px; font-size: .8rem; }
+.diag-kv-key { color: #777; background: #fafafa; font-weight: 600; }
+.diag-kv-value { color: #333; overflow-wrap: anywhere; }
+.diag-empty { padding: 2rem; text-align: center; color: #aaa; font-size: .82rem; }
+
+@media (max-width: 1100px) { .diag-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) {
+  .diag-page { padding: 1rem; }
+  .diag-header { flex-direction: column; }
+  .diag-grid { grid-template-columns: 1fr; }
+  .diag-kv { grid-template-columns: 1fr; }
+  .diag-kv-key { padding-bottom: 3px; }
+  .diag-kv-value { padding-top: 3px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="diag-page">
+    <div class="diag-header">
+        <div>
+            <h1 class="diag-title">系统诊断</h1>
+            <div class="diag-subtitle">只读 · 数据生成时间 {{ diagnostics.generated_at }} · 仅在 config 开启时对管理员显示</div>
+        </div>
+        <div class="diag-header-actions">
+            <span class="diag-readonly">✓ 只读诊断</span>
+            <button class="diag-refresh" type="button" onclick="location.reload()">刷新数据</button>
+        </div>
+    </div>
+
+    <div class="diag-tabs" role="tablist">
+        <button class="diag-tab active" data-tab="overview">数据库概况</button>
+        <button class="diag-tab" data-tab="tables">数据表容量</button>
+        <button class="diag-tab" data-tab="logs">日志 / 历史</button>
+        <button class="diag-tab" data-tab="health">数据健康</button>
+        <button class="diag-tab" data-tab="snapshots">安全快照</button>
+        <button class="diag-tab" data-tab="system">系统信息</button>
+    </div>
+
+    <section class="diag-panel active" id="diag-overview">
+        {% set db = diagnostics.database %}
+        <div class="diag-grid">
+            <div class="diag-card">
+                <div class="diag-card-label">tracking.db 文件大小</div>
+                <div class="diag-card-value">{{ '%.1f'|format(db.file_size_bytes / 1048576) }} MB</div>
+                <div class="diag-card-note">Windows 看到的主数据库文件</div>
+            </div>
+            <div class="diag-card {{ 'warning' if db.free_bytes > 10485760 else '' }}">
+                <div class="diag-card-label">SQLite 空闲页</div>
+                <div class="diag-card-value">{{ '%.1f'|format(db.free_bytes / 1048576) }} MB</div>
+                <div class="diag-card-note">{{ db.freelist_count }} 页；这是 VACUUM 可能回收的一部分空间，不会自动执行</div>
+            </div>
+            <div class="diag-card">
+                <div class="diag-card-label">WAL 文件</div>
+                <div class="diag-card-value">{{ '%.1f'|format(db.wal_size_bytes / 1048576) }} MB</div>
+                <div class="diag-card-note">journal mode：{{ db.journal_mode or '-' }}</div>
+            </div>
+            <div class="diag-card">
+                <div class="diag-card-label">数据表数量</div>
+                <div class="diag-card-value">{{ db.table_count }}</div>
+                <div class="diag-card-note">不包含 SQLite 内部系统表</div>
+            </div>
+        </div>
+
+        <div class="diag-section">
+            <div class="diag-section-head">
+                <div class="diag-section-title">数据库文件结构</div>
+                <div class="diag-section-note">不会修改数据库</div>
+            </div>
+            <div class="diag-kv"><div class="diag-kv-key">数据库路径</div><div class="diag-kv-value diag-path">{{ db.path }}</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">Page Size</div><div class="diag-kv-value">{{ db.page_size }} bytes</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">Page Count</div><div class="diag-kv-value">{{ db.page_count }}</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">SQLite 分配页容量</div><div class="diag-kv-value">{{ '%.2f'|format(db.allocated_bytes / 1048576) }} MB</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">已使用页估算</div><div class="diag-kv-value">{{ '%.2f'|format(db.used_page_bytes / 1048576) }} MB</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">Auto Vacuum</div><div class="diag-kv-value">{{ db.auto_vacuum }}</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">SHM 文件</div><div class="diag-kv-value">{{ '%.3f'|format(db.shm_size_bytes / 1048576) }} MB</div></div>
+        </div>
+    </section>
+
+    <section class="diag-panel" id="diag-tables">
+        <div class="diag-section">
+            <div class="diag-section-head">
+                <div class="diag-section-title">各数据表占用空间</div>
+                <div class="diag-section-note">
+                    {% if diagnostics.database.storage_exact %}大小包含该表索引，按 SQLite dbstat 统计{% else %}当前 SQLite 未提供 dbstat，仅显示笔数{% endif %}
+                </div>
+            </div>
+            <div class="diag-table-wrap">
+                <table class="diag-table">
+                    <thead><tr><th>#</th><th>数据表</th><th class="diag-num">笔数</th><th class="diag-num">占用 MB</th><th class="diag-num">占 DB</th></tr></thead>
+                    <tbody>
+                    {% for item in diagnostics.tables %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td><strong>{{ item.name }}</strong></td>
+                            <td class="diag-num">{{ item.rows if item.rows is not none else '-' }}</td>
+                            <td class="diag-num">{{ '%.3f'|format(item.size_bytes / 1048576) if item.size_bytes is not none else '-' }}</td>
+                            <td class="diag-num">
+                                {% if item.size_bytes is not none and diagnostics.database.file_size_bytes %}
+                                    {{ '%.1f'|format(item.size_bytes * 100 / diagnostics.database.file_size_bytes) }}%
+                                {% else %}-{% endif %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="diag-empty">没有可显示的数据表</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="diag-panel" id="diag-logs">
+        <div class="diag-section">
+            <div class="diag-section-head">
+                <div class="diag-section-title">日志 / 历史数据增长</div>
+                <div class="diag-section-note">用来判断 90 MB 是否主要来自操作信息</div>
+            </div>
+            <div class="diag-table-wrap">
+                <table class="diag-table">
+                    <thead><tr><th>用途</th><th>数据表</th><th class="diag-num">总笔数</th><th class="diag-num">最近 7 天</th><th class="diag-num">最近 30 天</th><th>最早</th><th>最新</th></tr></thead>
+                    <tbody>
+                    {% for item in diagnostics.logs %}
+                        <tr>
+                            <td>{{ item.label }}</td>
+                            <td><strong>{{ item.table }}</strong></td>
+                            <td class="diag-num">{{ item.total if item.total is not none else '-' }}</td>
+                            <td class="diag-num">{{ item.last_7_days if item.last_7_days is not none else '-' }}</td>
+                            <td class="diag-num">{{ item.last_30_days if item.last_30_days is not none else '-' }}</td>
+                            <td>{{ item.oldest or '-' }}</td>
+                            <td>{{ item.newest or '-' }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="7" class="diag-empty">没有找到日志 / 历史表</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="diag-panel" id="diag-health">
+        {% set health = diagnostics.health %}
+        <div class="diag-grid">
+            <div class="diag-card {{ 'good' if health.quick_check_ok else 'danger' }}">
+                <div class="diag-card-label">SQLite Quick Check</div>
+                <div class="diag-card-value small">{{ 'OK' if health.quick_check_ok else '异常' }}</div>
+                <div class="diag-card-note">只读快速完整性检查</div>
+            </div>
+            <div class="diag-card {{ 'good' if health.foreign_key_issue_count == 0 else 'danger' }}">
+                <div class="diag-card-label">Foreign Key 异常</div>
+                <div class="diag-card-value">{{ health.foreign_key_issue_count if health.foreign_key_issue_count >= 0 else '?' }}</div>
+                <div class="diag-card-note">PRAGMA foreign_key_check</div>
+            </div>
+            {% for check in health.checks[:2] %}
+            <div class="diag-card {{ 'good' if check.value == 0 else 'warning' }}">
+                <div class="diag-card-label">{{ check.label }}</div>
+                <div class="diag-card-value">{{ check.value }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="diag-section">
+            <div class="diag-section-head"><div class="diag-section-title">业务数据检查</div><div class="diag-section-note">只显示数量，不自动修复</div></div>
+            <div class="diag-table-wrap">
+                <table class="diag-table">
+                    <thead><tr><th>检查项目</th><th class="diag-num">异常数量</th><th>判断</th></tr></thead>
+                    <tbody>
+                    {% for check in health.checks %}
+                        <tr>
+                            <td>{{ check.label }}</td>
+                            <td class="diag-num">{{ check.value }}</td>
+                            <td>{% if check.value == 0 %}<span class="diag-badge good">正常</span>{% else %}<span class="diag-badge warn">需查看</span>{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if not health.quick_check_ok %}
+        <div class="diag-section">
+            <div class="diag-section-head"><div class="diag-section-title">Quick Check 信息</div></div>
+            <ul class="diag-list">{% for msg in health.quick_check_messages %}<li>{{ msg }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="diag-panel" id="diag-snapshots">
+        {% set snap = diagnostics.snapshots %}
+        <div class="diag-grid">
+            <div class="diag-card {{ 'good' if snap.enabled else 'warning' }}">
+                <div class="diag-card-label">自动快照</div>
+                <div class="diag-card-value small">{{ '已开启' if snap.enabled else '已关闭' }}</div>
+                <div class="diag-card-note">{{ snap.schedule }}</div>
+            </div>
+            <div class="diag-card">
+                <div class="diag-card-label">现有快照</div>
+                <div class="diag-card-value">{{ snap.count }}</div>
+                <div class="diag-card-note">总计 {{ '%.1f'|format(snap.total_bytes / 1048576) }} MB</div>
+            </div>
+            <div class="diag-card {{ 'warning' if snap.tmp_count else 'good' }}">
+                <div class="diag-card-label">残留 .tmp</div>
+                <div class="diag-card-value">{{ snap.tmp_count }}</div>
+                <div class="diag-card-note">正常完成后应为 0</div>
+            </div>
+            <div class="diag-card">
+                <div class="diag-card-label">保留规则</div>
+                <div class="diag-card-value small">{{ snap.retention_days }} 天 / {{ snap.retention_count }} 份</div>
+            </div>
+        </div>
+
+        <div class="diag-section">
+            <div class="diag-section-head"><div class="diag-section-title">最近安全快照</div><div class="diag-section-note diag-path">{{ snap.directory }}</div></div>
+            {% if snap.recent %}
+            <div class="diag-table-wrap">
+                <table class="diag-table">
+                    <thead><tr><th>文件</th><th>时间</th><th class="diag-num">大小 MB</th></tr></thead>
+                    <tbody>
+                    {% for item in snap.recent %}
+                        <tr><td class="diag-path">{{ item.name }}</td><td>{{ item.modified_at }}</td><td class="diag-num">{{ '%.2f'|format(item.size_bytes / 1048576) }}</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+                <div class="diag-empty">目前还没有安全快照</div>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="diag-panel" id="diag-system">
+        {% set sys = diagnostics.system %}
+        <div class="diag-section">
+            <div class="diag-section-head"><div class="diag-section-title">运行环境</div><div class="diag-section-note">不会显示密码、Secret Key 等敏感配置</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">DATA_DIR</div><div class="diag-kv-value diag-path">{{ sys.data_dir }}</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">Python</div><div class="diag-kv-value">{{ sys.python_version }}</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">Python Executable</div><div class="diag-kv-value diag-path">{{ sys.python_executable }}</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">Flask</div><div class="diag-kv-value">{{ sys.flask_version }}</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">SQLite</div><div class="diag-kv-value">{{ sys.sqlite_version }}</div></div>
+            <div class="diag-kv"><div class="diag-kv-key">平台</div><div class="diag-kv-value">{{ sys.platform }}</div></div>
+        </div>
+    </section>
+</div>
+
+<script>
+(function () {
+    const tabs = document.querySelectorAll('.diag-tab');
+    const panels = document.querySelectorAll('.diag-panel');
+    tabs.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const name = btn.dataset.tab;
+            tabs.forEach(x => x.classList.toggle('active', x === btn));
+            panels.forEach(panel => panel.classList.toggle('active', panel.id === 'diag-' + name));
+        });
+    });
+})();
+</script>
+{% endblock %}

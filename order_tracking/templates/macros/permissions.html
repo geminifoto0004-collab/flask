@@ -1,0 +1,70 @@
+{# 权限宏（配置驱动） #}
+
+{% macro can(action, resource_type, resource=None) -%}
+    {%- set ctx_role = (current_user_context.get('role') if current_user_context is defined and current_user_context else None) -%}
+    {%- set role = (ctx_role if ctx_role is not none else session.get('role', 'viewer')) | string | trim | lower -%}
+    {%- if role in ['administrator', 'admin', 'root', 'superuser', '管理员', '主管'] -%}
+        {%- set role = 'admin' -%}
+    {%- elif role in ['sales', 'seller', 'biz', 'business', '业务员', '業務員'] -%}
+        {%- set role = 'sales' -%}
+    {%- elif role in ['viewer', 'view', 'read', 'readonly', '查看者', '只读', '只讀'] -%}
+        {%- set role = 'viewer' -%}
+    {%- endif -%}
+    {%- set pm = PERMISSION_MATRIX if PERMISSION_MATRIX is defined else {} -%}
+    {%- set orules = OWNERSHIP_RULES if OWNERSHIP_RULES is defined else {} -%}
+    {%- set srules = STATUS_RULES if STATUS_RULES is defined else {} -%}
+    {%- if not pm -%}
+        {%- set pm = {
+            'admin': {'order': ['view'], 'workflow': ['create', 'edit'], 'user': ['view']},
+            'sales': {'order': ['view'], 'workflow': ['create', 'edit']},
+            'viewer': {}
+        } -%}
+    {%- endif -%}
+    {%- set allowed = action in (pm.get(role, {}).get(resource_type, []) or []) -%}
+    {%- if allowed -%}
+        {%- set ownership = orules.get(role, {}).get(resource_type, 'owner_only') -%}
+        {%- if resource and ownership == 'owner_only' -%}
+            {%- if resource_type == 'workflow' -%}
+                {%- set owner_id = resource.handler_id if resource.handler_id is not none else (resource.created_by_id if resource.created_by_id is not none else resource.created_by) -%}
+            {%- else -%}
+                {%- set owner_id = resource.created_by_id if resource.created_by_id is not none else (resource.handler_id if resource.handler_id is not none else resource.created_by) -%}
+            {%- endif -%}
+            {%- set owner_id_str = owner_id|string -%}
+            {%- set session_id_str = (session.get('user_id') if session.get('user_id') is not none else '')|string -%}
+            {%- if owner_id_str and owner_id_str == session_id_str -%}
+                {%- set lock_rule = srules.get(role, {}).get(resource_type, {}).get(action, 'respect_lock') -%}
+                {%- if not (resource and resource.is_locked and lock_rule == 'respect_lock') -%}1{%- endif -%}
+            {%- endif -%}
+        {%- else -%}
+            {%- set lock_rule = srules.get(role, {}).get(resource_type, {}).get(action, 'respect_lock') -%}
+            {%- if not (resource and resource.is_locked and lock_rule == 'respect_lock') -%}1{%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
+
+{% macro action_button(action, resource_type, resource, label, onclick, btn_class='') -%}
+    {% if can(action, resource_type, resource) %}
+        <button class="btn {{ btn_class }}" onclick="{{ onclick }}">
+            {{ label }}
+        </button>
+    {% endif %}
+{%- endmacro %}
+
+
+{% macro menu_item(label, url, required_permission=None, item_class='sidebar-item') -%}
+    {%- set show_item = true -%}
+    {%- if required_permission -%}
+        {%- set parts = required_permission.split(':') -%}
+        {%- if parts|length == 2 -%}
+            {%- set show_item = can(parts[1], parts[0]) -%}
+        {%- endif -%}
+    {%- endif -%}
+    {% if show_item %}
+        <a href="{{ url }}" class="{{ item_class }}" data-tooltip="{{ label }}">
+            {{ caller() }}
+            <span class="sidebar-text">{{ label }}</span>
+        </a>
+    {% endif %}
+{%- endmacro %}
+

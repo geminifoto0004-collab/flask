@@ -1,0 +1,149 @@
+<!-- WEB / ADMIN：客户分享管理。只做 UI/授权编排；Cloud Provider 仍由服务器安全闸门控制。 -->
+<div class="desktop-guest-share desktop-share-manager" id="desktopGuestShareDrawer" aria-hidden="true"
+     data-local-enabled="{{ '1' if local_guest_sharing_enabled else '0' }}"
+     data-local-permanent-enabled="{{ '1' if local_guest_permanent_enabled else '0' }}"
+     data-render-enabled="{{ '1' if render_public_guest_enabled else '0' }}"
+     data-render-permanent-enabled="{{ '1' if permanent_public_guest_enabled else '0' }}"
+     data-public-provider-ready="{{ '1' if public_share_provider_ready else '0' }}">
+    <div class="desktop-guest-share-backdrop" onclick="closeDesktopGuestShareDrawer()"></div>
+    <section class="desktop-share-manager-panel" role="dialog" aria-modal="true" aria-labelledby="desktopGuestShareTitle">
+        <header class="desktop-share-manager-head">
+            <div>
+                <span>ADMIN</span>
+                <h3 id="desktopGuestShareTitle">客户分享管理</h3>
+                <p>建立局网临时链接或 Render 长期客户入口</p>
+            </div>
+            <button type="button" onclick="closeDesktopGuestShareDrawer()" aria-label="关闭">×</button>
+        </header>
+        <nav class="desktop-share-manager-tabs">
+            <button type="button" class="active" data-share-tab="create" onclick="desktopGuestSetTab('create')">建立分享</button>
+            <button type="button" data-share-tab="active" onclick="desktopGuestSetTab('active')">有效分享 <span id="desktopGuestActiveCount">0</span></button>
+        </nav>
+        <div class="desktop-share-manager-body">
+            <section data-share-panel="create">
+                <div class="desktop-share-section customer-section">
+                    <div class="desktop-guest-field desktop-guest-customer-field wide">
+                        <div class="desktop-share-field-head">
+                            <span>客户</span>
+                            <small id="desktopGuestPageCandidateHint">主頁未搜尋時不預載客戶；直接輸入可搜尋全部客戶</small>
+                        </div>
+                        <div class="desktop-guest-customer-search" id="desktopGuestCustomerSearchBox">
+                            <div class="desktop-guest-customer-input-wrap">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.8-3.8"></path></svg>
+                                <input id="desktopGuestCustomerSearch" type="text" autocomplete="off" spellcheck="false"
+                                       aria-label="搜索客户"
+                                       oninput="desktopGuestFilterCustomers()" onfocus="desktopGuestFilterCustomers()"
+                                       onkeydown="desktopGuestCustomerSearchKeydown(event)">
+                                <button type="button" class="desktop-guest-customer-clear" id="desktopGuestCustomerClear" onclick="desktopGuestClearCustomerSearch()" aria-label="清空">×</button>
+                            </div>
+                            <div class="desktop-guest-customer-results" id="desktopGuestCustomerResults" hidden></div>
+                        </div>
+                        <select id="desktopGuestCustomerSelect" hidden aria-hidden="true"></select>
+                        <div class="desktop-guest-customer-selected" id="desktopGuestCustomerSelected" hidden></div>
+                        <div class="desktop-guest-existing-links" id="desktopGuestExistingLinks" hidden></div>
+                    </div>
+                </div>
+
+                <div class="desktop-share-section mode-section">
+                    <div class="desktop-share-field-head">
+                        <span>分享方式</span>
+                        <small>局网只做短时查看；Render 才提供长时与永久入口</small>
+                    </div>
+                    <div class="desktop-share-mode-choices" id="desktopGuestMode">
+                        <button type="button" data-share-mode="lan" class="active" {% if not local_guest_sharing_enabled %}disabled title="此部署未开放局网分享"{% endif %}>
+                            <span class="desktop-share-mode-icon">LAN</span>
+                            <span><strong>局网</strong><small>公司 Wi‑Fi / 内网</small></span>
+                            {% if not local_guest_sharing_enabled %}<em>未开放</em>{% endif %}
+                        </button>
+                        <button type="button" data-share-mode="render" {% if not render_public_guest_enabled or not public_share_provider_ready %}class="is-unavailable" disabled title="Render/B2 Provider 尚未授权或未连接"{% endif %}>
+                            <span class="desktop-share-mode-icon cloud">WEB</span>
+                            {% if not render_public_guest_enabled or not public_share_provider_ready %}
+                            <span><strong class="desktop-share-mode-lock">🔒 Render 公网</strong><small>尚未开通・联系管理员开通后可用</small></span>
+                            {% else %}
+                            <span><strong>Render 公网</strong><small>外网长期客户入口</small></span>
+                            {% endif %}
+                        </button>
+                    </div>
+                    <div class="desktop-share-duration-box">
+                        <div class="desktop-share-duration-copy">
+                            <strong id="desktopGuestDurationTitle">局网有效时间</strong>
+                            <small id="desktopGuestDurationHint">到期后链接自动失效，不可延长</small>
+                        </div>
+                        <div class="desktop-guest-segments three" id="desktopGuestLanDuration">
+                            <button type="button" data-minutes="30">30 分</button>
+                            <button type="button" data-minutes="60" class="active">1 小时</button>
+                            <button type="button" data-minutes="240">4 小时</button>
+                        </div>
+                        <div class="desktop-guest-segments four" id="desktopGuestRenderDuration" hidden>
+                            <button type="button" data-minutes="1440" class="active">1 天</button>
+                            <button type="button" data-minutes="10080">7 天</button>
+                            <button type="button" data-minutes="20160">14 天</button>
+                            <button type="button" data-permanent="1" {% if not permanent_public_guest_enabled %}disabled{% endif %}>永久</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="desktop-share-settings-grid">
+                    <div class="desktop-share-card scope-card">
+                        <div class="desktop-share-card-title"><strong>订单范围</strong><small>永久入口会按此规则持续重新计算内容</small></div>
+                        <div class="desktop-guest-segments four" id="desktopGuestScope">
+                            <button type="button" data-scope="current" class="active">目前</button>
+                            <button type="button" data-scope="6m">半年</button>
+                            <button type="button" data-scope="12m">一年</button>
+                            <button type="button" data-scope="all">全部历史</button>
+                        </div>
+                        <label class="desktop-guest-switch-row compact"><span><strong>包含取消订单</strong><small>关闭后，取消订单不会显示给客户</small></span><input type="checkbox" id="desktopGuestIncludeCancelled" onchange="desktopGuestPreviewScope()"><i></i></label>
+                        <div class="desktop-guest-scope-preview" id="desktopGuestScopePreview">请先选择客户</div>
+                    </div>
+                    <div class="desktop-share-card access-card">
+                        <div class="desktop-share-card-title"><strong>访问保护</strong><small>永久 Render 链接建议设置密码</small></div>
+                        <div class="desktop-guest-segments three" id="desktopGuestPasswordKind">
+                            <button type="button" data-password-kind="none" class="active">不设密码</button>
+                            <button type="button" data-password-kind="phone" {% if not is_overseas %}disabled{% endif %}>客户手机</button>
+                            <button type="button" data-password-kind="custom">自定义</button>
+                        </div>
+                        <input class="desktop-share-password" id="desktopGuestCustomPassword" type="password" autocomplete="new-password" placeholder="输入自定义密码（至少 4 位）" hidden>
+                        <div class="desktop-share-password-hint" id="desktopGuestPasswordHint">此链接不要求密码</div>
+                        <div class="desktop-share-inline-options">
+                            <label class="desktop-guest-switch-row"><span><strong>PDF 拆图</strong><small>在客户页面显示 PDF 页预览</small></span><input type="checkbox" id="desktopGuestShowPdfPages" checked><i></i></label>
+                            <label class="desktop-guest-switch-row"><span><strong>PDF 报告</strong><small>允许准备及下载完整报告</small></span><input type="checkbox" id="desktopGuestAllowReportPdf"><i></i></label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="desktop-share-create-footer">
+                    <div class="desktop-share-deployment-status"><span class="dot"></span><span>{{ '海外主机' if is_overseas else '本地主机' }}</span><small>Cloud 权限由服务器安全闸门与环境凭证控制</small></div>
+                    <button type="button" class="desktop-guest-generate" id="desktopGuestGenerateBtn" onclick="desktopGuestGenerateLink()">建立局网分享链接</button>
+                </div>
+                <div class="desktop-guest-result" id="desktopGuestResult" hidden>
+                    <div class="desktop-guest-result-title">
+                        <strong id="desktopGuestResultTitle">客户访问入口</strong>
+                        <small>复制网址、扫码或直接打开即可进入</small>
+                    </div>
+                    <div class="desktop-guest-qr"><img id="desktopGuestQr" alt="QR Code"><small id="desktopGuestExpiry"></small></div>
+                    <div class="desktop-guest-url"><input id="desktopGuestUrl" readonly><button onclick="desktopGuestCopyLink()">复制</button><button class="primary" onclick="desktopGuestOpenLink()">新分頁打开</button></div>
+                    <button type="button" class="desktop-guest-revoke-current" onclick="desktopGuestRevokeCurrent()">立即失效</button>
+                </div>
+            </section>
+            <section data-share-panel="active" hidden>
+                <div class="desktop-share-active-toolbar">
+                    <div class="desktop-share-active-toolbar-title"><strong>目前有效分享</strong><small>快速管理有效链接；默认保持精简，需要时一次展开本页详细</small></div>
+                    <div class="desktop-share-active-toolbar-actions">
+                        <a class="desktop-share-manage-all" href="{{ url_for('tracking_bp.admin_customer_shares') }}">管理全部分享</a>
+                    </div>
+                </div>
+                <div class="desktop-share-active-controls">
+                    <label class="desktop-share-active-search">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.8-3.8"></path></svg>
+                        <input id="desktopGuestActiveSearch" type="search" autocomplete="off" placeholder="输入客户名称搜索" oninput="desktopGuestActiveSearchChanged(this.value)">
+                    </label>
+                    <div class="desktop-share-active-filter"><button class="active" data-active-mode="all">全部</button><button data-active-mode="lan">LAN</button><button data-active-mode="render">WEB</button></div>
+                    <button type="button" class="desktop-share-active-detail-toggle" id="desktopGuestActiveDetailToggle" onclick="desktopGuestToggleAllDetails()">显示详细</button>
+                </div>
+                <div class="desktop-share-active-table-head" aria-hidden="true"><span>客户</span><span>类型</span><span>有效期</span><span>操作</span></div>
+                <div id="desktopGuestActiveList"><div class="desktop-guest-active-empty">正在读取…</div></div>
+                <div class="desktop-share-active-pagination" id="desktopGuestActivePagination" hidden></div>
+            </section>
+        </div>
+    </section>
+</div>
