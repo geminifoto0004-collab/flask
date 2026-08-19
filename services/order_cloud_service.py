@@ -5,6 +5,7 @@ Design rules:
 - Render is the only cloud gateway.
 - Clients do not send trusted source identity; the API layer supplies it.
 - B2 remains a private object store and is added in the asset phase.
+- ORDER rows mirror local SQLite presence: deleted local rows are hard-deleted here.
 """
 from datetime import datetime, timedelta
 import hashlib
@@ -143,19 +144,60 @@ def _upsert_customer(cur, key, name, source_site):
         )
 
 
+def _delete_order_exact(cur, order_number):
+    """Hard-delete one cloud ORDER tree so TiDB presence matches local SQLite."""
+    cur.execute("SELECT customer_key FROM cloud_orders WHERE order_number=?", (order_number,))
+    row = cur.fetchone()
+    data = get_row_dict(row, cur) if row else {}
+    customer_key = str((data or {}).get("customer_key") or "").strip()
+
+    # Child rows first; no FK cascade is assumed.
+    cur.execute("DELETE FROM cloud_workflow_history WHERE order_number=?", (order_number,))
+    cur.execute("DELETE FROM cloud_workflows WHERE order_number=?", (order_number,))
+    cur.execute("DELETE FROM cloud_orders WHERE order_number=?", (order_number,))
+    deleted = bool(cur.rowcount)
+
+    # cloud_customers is derived from orders. Remove it when the customer has no
+    # remaining local-mirrored orders. Share tokens can remain; they simply resolve
+    # to no customer space after the last order disappears.
+    if customer_key:
+        cur.execute("SELECT 1 FROM cloud_orders WHERE customer_key=? LIMIT 1", (customer_key,))
+        if not cur.fetchone():
+            cur.execute("DELETE FROM cloud_customers WHERE customer_key=?", (customer_key,))
+    return deleted
+
+
 def sync_order(payload, source_site=None):
-    """Upsert one complete customer-safe ORDER snapshot.
+    """Upsert one complete customer-safe ORDER snapshot, or hard-delete it.
 
     Unknown fields are ignored on purpose. In particular, notes, phones, deposits,
     payment information, internal handler/factory details and arbitrary metadata are
     never written by this function.
     """
     order_number = str(payload.get("order_number") or "").strip()
+    if not order_number:
+        raise ValueError("order_number is required")
+
+    # The same protected sync endpoint carries deletion events. Deletion is hard,
+    # not active=FALSE, because TiDB is intended to mirror local SQLite presence.
+    if bool(payload.get("_deleted")):
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            deleted = _delete_order_exact(cur, order_number)
+            conn.commit()
+            return {"order_number": order_number, "deleted": deleted}
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     customer_name = str(payload.get("customer_name") or "").strip()
     customer_key = str(payload.get("customer_key") or customer_name).strip()
     source_site = (str(source_site or "").strip().upper()[:16] or None)
-    if not order_number or not customer_name or not customer_key:
-        raise ValueError("order_number and customer_name are required")
+    if not customer_name or not customer_key:
+        raise ValueError("customer_name is required")
 
     workflows = payload.get("workflows") or []
     if not isinstance(workflows, list):
@@ -293,20 +335,21 @@ def sync_order(payload, source_site=None):
                         history_values,
                     )
 
-        # Full snapshots determine logical visibility. B2 cleanup is separate/later.
-        cur.execute("SELECT workflow_key FROM cloud_workflows WHERE order_number=? AND active=TRUE", (order_number,))
-        for row in cur.fetchall():
-            data = get_row_dict(row, cur) or {}
-            key = str(data.get("workflow_key") or "")
-            if key and key not in seen_workflows:
-                cur.execute("UPDATE cloud_workflows SET active=FALSE, updated_at=CURRENT_TIMESTAMP WHERE workflow_key=?", (key,))
-
-        cur.execute("SELECT history_key FROM cloud_workflow_history WHERE order_number=? AND active=TRUE", (order_number,))
+        # Each payload is a complete snapshot of this order. Rows absent from the
+        # local snapshot are hard-deleted so TiDB mirrors SQLite, not a soft-delete log.
+        cur.execute("SELECT history_key FROM cloud_workflow_history WHERE order_number=?", (order_number,))
         for row in cur.fetchall():
             data = get_row_dict(row, cur) or {}
             key = str(data.get("history_key") or "")
             if key and key not in seen_history:
-                cur.execute("UPDATE cloud_workflow_history SET active=FALSE, updated_at=CURRENT_TIMESTAMP WHERE history_key=?", (key,))
+                cur.execute("DELETE FROM cloud_workflow_history WHERE history_key=?", (key,))
+
+        cur.execute("SELECT workflow_key FROM cloud_workflows WHERE order_number=?", (order_number,))
+        for row in cur.fetchall():
+            data = get_row_dict(row, cur) or {}
+            key = str(data.get("workflow_key") or "")
+            if key and key not in seen_workflows:
+                cur.execute("DELETE FROM cloud_workflows WHERE workflow_key=?", (key,))
 
         conn.commit()
         return {
