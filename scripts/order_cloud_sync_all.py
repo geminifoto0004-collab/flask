@@ -11,7 +11,9 @@ Important safety properties:
   modified or locked by the sync process.
 
 First run uploads all current orders. Later runs hash the same safe payload and
-send only new/changed orders.
+send only new/changed orders. Orders present in the previous successful local
+index but no longer present in SQLite are hard-deleted from TiDB so cloud presence
+matches local SQLite rather than accumulating soft-deleted rows.
 """
 from __future__ import annotations
 
@@ -136,14 +138,19 @@ def sync_all(db_path: str | None, state_path: Path, full: bool, quiet: bool, min
     conn = one._open_read_only(db)
     try:
         numbers = _order_numbers(conn)
+        current_numbers = set(numbers)
         if not quiet:
             print(f"ORDER SQLite: {db}")
             print(f"Orders scanned: {len(numbers)}")
             print("Images/PDF/Access: NOT READ / NOT SENT")
 
         fingerprints: Dict[str, str] = dict(state.get("fingerprints") or {})
+        previous_numbers = set(fingerprints)
+        deleted_numbers = sorted(previous_numbers - current_numbers)
+
         sent = 0
         unchanged = 0
+        deleted = 0
         failed = 0
 
         for pos, order_number in enumerate(numbers, start=1):
@@ -173,6 +180,26 @@ def sync_all(db_path: str | None, state_path: Path, full: bool, quiet: bool, min
                 if not quiet:
                     print(f"SYNC {pos}/{len(numbers)} FAILED: {order_number}: {type(exc).__name__}: {exc}")
 
+        # Deletions are sent only after the local orders table was read successfully.
+        # The server hard-deletes that order's cloud order/workflow/history tree.
+        for pos, order_number in enumerate(deleted_numbers, start=1):
+            try:
+                body = one._request_json(
+                    "POST",
+                    "/api/order-cloud/sync/order",
+                    json={"order_number": order_number, "_deleted": True},
+                )
+                if not body.get("ok"):
+                    raise one.SyncError(str(body.get("error") or "Render rejected ORDER deletion"))
+                fingerprints.pop(order_number, None)
+                deleted += 1
+                if not quiet:
+                    print(f"DELETE {pos}/{len(deleted_numbers)} OK: {order_number}")
+            except Exception as exc:
+                failed += 1
+                if not quiet:
+                    print(f"DELETE {pos}/{len(deleted_numbers)} FAILED: {order_number}: {type(exc).__name__}: {exc}")
+
         state["fingerprints"] = fingerprints
         state["last_attempt_at"] = datetime.now(timezone.utc).isoformat()
         if failed == 0:
@@ -182,7 +209,10 @@ def sync_all(db_path: str | None, state_path: Path, full: bool, quiet: bool, min
         _save_state(state_path, state)
 
         if not quiet:
-            print(f"ORDER CLOUD SYNC SUMMARY: sent={sent} unchanged={unchanged} failed={failed}")
+            print(
+                f"ORDER CLOUD SYNC SUMMARY: sent={sent} unchanged={unchanged} "
+                f"deleted={deleted} failed={failed}"
+            )
         return sent, unchanged, failed
     finally:
         conn.close()
