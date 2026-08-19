@@ -23,7 +23,6 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-import time
 from typing import Dict, Tuple
 
 import order_cloud_sync_real_order as one
@@ -126,6 +125,12 @@ def sync_all(db_path: str | None, state_path: Path, full: bool, quiet: bool, min
         if not quiet:
             print(f"ORDER cloud sync skipped: last success < {min_interval_minutes} minutes")
         return 0, 0, 0
+
+    # Fail fast before scanning hundreds/thousands of local orders. This avoids
+    # repeated network attempts when Render/TiDB is temporarily unavailable.
+    health = one._request_json("GET", "/api/order-cloud/health")
+    if not health.get("ok"):
+        raise one.SyncError(str(health.get("error") or "Render ORDER cloud gateway is not ready"))
 
     db = one._discover_db(db_path)
     conn = one._open_read_only(db)
