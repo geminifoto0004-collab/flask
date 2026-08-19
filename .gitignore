@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 *.db
+*.sqlite
+*.sqlite3
 databases/
 .env
 .env.local
@@ -20,3 +22,12 @@ secrets.py
 
 FLASKPYTHONANYWHERE20251025/
 
+# ORDER runtime/business data must never be committed.
+order_tracking/data/
+order_tracking/uploads/
+order_tracking/cache/
+order_tracking/sync_snapshot/
+order_tracking/snapshots/
+order_tracking/**/__pycache__/
+order_tracking/**/*.pyc
+order_tracking/**/*.bak
