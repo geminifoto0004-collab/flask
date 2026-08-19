@@ -114,39 +114,18 @@ def test_b2_image():
 
 @b2_test_bp.route("/share/test", methods=["GET"])
 def share_test():
-    """Simple customer-facing page that displays a private B2 image through Render."""
-    html = """<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Estado del pedido</title>
-<style>
-body{margin:0;background:#f5f6f8;font-family:Arial,sans-serif;color:#222}.wrap{max-width:760px;margin:0 auto;padding:22px 14px}.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 2px 12px rgba(0,0,0,.08)}h1{font-size:24px;margin:0 0 18px}.status{display:inline-block;background:#fff3cd;padding:7px 12px;border-radius:20px;font-weight:700}.row{margin:10px 0}.label{color:#777}.photo{width:100%;height:auto;margin-top:20px;border-radius:10px;display:block}.note{font-size:13px;color:#888;margin-top:16px}
-</style>
-</head>
-<body><div class="wrap"><div class="card">
-<h1>Estado del pedido</h1>
-<div class="row"><span class="label">Pedido:</span> G-TEST-001</div>
-<div class="row"><span class="label">Estado:</span> <span class="status">En producción</span></div>
-<div class="row"><span class="label">Actualización:</span> Prueba de Render + B2 privado</div>
-<img class="photo" src="/share/test/image" alt="Imagen del pedido">
-<div class="note">Página temporal de prueba.</div>
-</div></div></body></html>"""
+    html = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Estado del pedido</title><style>body{margin:0;background:#f5f6f8;font-family:Arial,sans-serif;color:#222}.wrap{max-width:760px;margin:0 auto;padding:22px 14px}.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 2px 12px rgba(0,0,0,.08)}h1{font-size:24px;margin:0 0 18px}.status{display:inline-block;background:#fff3cd;padding:7px 12px;border-radius:20px;font-weight:700}.row{margin:10px 0}.label{color:#777}.photo{width:100%;height:auto;margin-top:20px;border-radius:10px;display:block}.note{font-size:13px;color:#888;margin-top:16px}</style></head><body><div class="wrap"><div class="card"><h1>Estado del pedido</h1><div class="row"><span class="label">Pedido:</span> G-TEST-001</div><div class="row"><span class="label">Estado:</span> <span class="status">En producción</span></div><div class="row"><span class="label">Actualización:</span> Prueba de Render + B2 privado</div><img class="photo" src="/share/test/image" alt="Imagen del pedido"><div class="note">Página temporal de prueba.</div></div></div></body></html>"""
     return Response(html, mimetype="text/html")
 
 
 @b2_test_bp.route("/share/test/image", methods=["GET"])
 def share_test_image():
-    """Proxy the known private B2 test image without exposing B2 credentials."""
     cfg, missing = _b2_config()
     if missing:
         return jsonify({"ok": False, "step": "environment", "missing": missing}), 500
     try:
         obj = _client(cfg).get_object(Bucket=cfg["bucket_name"], Key=TEST_IMAGE_KEY)
-        data = obj["Body"].read()
-        content_type = obj.get("ContentType") or "image/png"
-        return Response(data, mimetype=content_type, headers={"Cache-Control": "private, max-age=60"})
+        return Response(obj["Body"].read(), mimetype=obj.get("ContentType") or "image/png", headers={"Cache-Control": "private, max-age=60"})
     except ClientError as exc:
         status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
         code = exc.response.get("Error", {}).get("Code")
@@ -155,22 +134,11 @@ def share_test_image():
         return jsonify({"ok": False, "error_type": type(exc).__name__, "error": str(exc)}), 500
 
 
-# ---------------------------------------------------------------------------
-# ORDER Cloud Gateway
-# Kept inside this already-registered blueprint temporarily so app.py remains
-# untouched. Only safe publishing data reaches TiDB.
-# ---------------------------------------------------------------------------
 _order_cloud_initialized = False
 
 
 def _order_cloud_auth_source():
-    """Authenticate caller and derive CN/CL identity from Render-side secrets.
-
-    ORDER_SYNC_API_KEY remains as a temporary backwards-compatible key while the
-    user transitions to separate CN/CL credentials.
-    """
     import hmac
-
     supplied = (request.headers.get("X-Order-Sync-Key") or "").strip()
     configured = [
         ("CN", (os.environ.get("ORDER_SYNC_API_KEY_CN") or "").strip()),
@@ -190,7 +158,9 @@ def _ensure_order_cloud_tables():
     global _order_cloud_initialized
     if not _order_cloud_initialized:
         from services.order_cloud_service import init_order_cloud_tables
+        from services.order_cloud_asset_service import init_order_cloud_asset_table
         init_order_cloud_tables()
+        init_order_cloud_asset_table()
         _order_cloud_initialized = True
 
 
@@ -198,7 +168,7 @@ def _ensure_order_cloud_tables():
 def order_cloud_health():
     try:
         _ensure_order_cloud_tables()
-        return jsonify({"ok": True, "service": "order-cloud", "phase": 2})
+        return jsonify({"ok": True, "service": "order-cloud", "phase": 3, "assets": "sha256-b2"})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -211,8 +181,7 @@ def order_cloud_sync_order():
     try:
         _ensure_order_cloud_tables()
         from services.order_cloud_service import sync_order
-        payload = request.get_json(silent=True) or {}
-        result = sync_order(payload, source_site=source_site)
+        result = sync_order(request.get_json(silent=True) or {}, source_site=source_site)
         return jsonify({"ok": True, "result": result})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -244,10 +213,73 @@ def order_cloud_debug_customer(customer_key):
     try:
         _ensure_order_cloud_tables()
         from services.order_cloud_service import get_customer_space
+        from services.order_cloud_asset_service import attach_assets_to_space
         result = get_customer_space(customer_key)
         if result is None:
             return jsonify({"ok": False, "error": "not found"}), 404
-        return jsonify({"ok": True, "space": result})
+        return jsonify({"ok": True, "space": attach_assets_to_space(result)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/check", methods=["POST"])
+def order_cloud_asset_check():
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import check_image_hash
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "result": check_image_hash(payload.get("sha256"), payload.get("content_type"))})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/register", methods=["POST"])
+def order_cloud_asset_register():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import register_existing_image
+        payload = request.get_json(silent=True) or {}
+        result = register_existing_image(payload.get("order_number"), payload.get("workflow_key"), payload.get("sha256"), payload.get("content_type"), source_site=source_site)
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/upload", methods=["POST"])
+def order_cloud_asset_upload():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import MAX_IMAGE_BYTES, upload_image
+        image = request.files.get("file")
+        if image is None:
+            return jsonify({"ok": False, "error": "multipart field 'file' is required"}), 400
+        data = image.read(MAX_IMAGE_BYTES + 1)
+        if len(data) > MAX_IMAGE_BYTES:
+            return jsonify({"ok": False, "error": "image exceeds 15 MB limit"}), 413
+        result = upload_image(
+            request.form.get("order_number"),
+            request.form.get("workflow_key"),
+            data,
+            image.mimetype,
+            source_site=source_site,
+            expected_sha256=request.form.get("sha256"),
+        )
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -261,12 +293,7 @@ def order_cloud_create_share():
         _ensure_order_cloud_tables()
         from services.order_cloud_service import create_live_share
         payload = request.get_json(silent=True) or {}
-        result = create_live_share(
-            payload.get("customer_key"),
-            source_site=source_site,
-            expires_hours=payload.get("expires_hours", 24),
-            permanent=bool(payload.get("permanent", False)),
-        )
+        result = create_live_share(payload.get("customer_key"), source_site=source_site, expires_hours=payload.get("expires_hours", 24), permanent=bool(payload.get("permanent", False)))
         token = result.pop("token")
         expires_at = result.get("expires_at")
         result["expires_at"] = expires_at.isoformat() if expires_at else None
@@ -286,30 +313,56 @@ def order_cloud_revoke_share():
     try:
         _ensure_order_cloud_tables()
         from services.order_cloud_service import revoke_live_share
-        payload = request.get_json(silent=True) or {}
-        changed = revoke_live_share(payload.get("token"))
+        changed = revoke_live_share((request.get_json(silent=True) or {}).get("token"))
         return jsonify({"ok": True, "revoked": changed})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+def _resolve_public_share_or_response(token):
+    from services.order_cloud_service import resolve_live_share
+    share, state = resolve_live_share(token)
+    if state == "not_found":
+        return None, Response("Enlace no encontrado.", status=404, mimetype="text/plain")
+    if state == "expired":
+        return None, Response("Este enlace ha expirado.", status=410, mimetype="text/plain")
+    if state == "revoked":
+        return None, Response("Este enlace ya no está disponible.", status=410, mimetype="text/plain")
+    return share, None
+
+
 @b2_test_bp.route("/share/<token>", methods=["GET"])
 def order_cloud_public_share(token):
-    """Public customer entry point. Token is the only credential."""
     try:
         _ensure_order_cloud_tables()
-        from services.order_cloud_service import get_customer_space, resolve_live_share
-        share, state = resolve_live_share(token)
-        if state == "not_found":
-            return Response("Enlace no encontrado.", status=404, mimetype="text/plain")
-        if state == "expired":
-            return Response("Este enlace ha expirado.", status=410, mimetype="text/plain")
-        if state == "revoked":
-            return Response("Este enlace ya no está disponible.", status=410, mimetype="text/plain")
+        from services.order_cloud_service import get_customer_space
+        from services.order_cloud_asset_service import attach_assets_to_space
+        share, error_response = _resolve_public_share_or_response(token)
+        if error_response:
+            return error_response
         space = get_customer_space(share.get("customer_key"))
         if not space:
             return Response("No hay información disponible.", status=404, mimetype="text/plain")
-        return render_template("customer_share_live.html", space=space, share=share)
+        attach_assets_to_space(space)
+        return render_template("customer_share_live.html", space=space, share=share, share_token=token)
     except Exception:
-        # Public route deliberately hides infrastructure/database details.
+        return Response("Servicio temporalmente no disponible.", status=503, mimetype="text/plain")
+
+
+@b2_test_bp.route("/share/<token>/asset/<asset_key>", methods=["GET"])
+def order_cloud_public_asset(token, asset_key):
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import get_asset, read_private_asset
+        share, error_response = _resolve_public_share_or_response(token)
+        if error_response:
+            return error_response
+        asset = get_asset(asset_key)
+        if not asset or asset.get("customer_key") != share.get("customer_key"):
+            return Response("Archivo no encontrado.", status=404, mimetype="text/plain")
+        data, content_type = read_private_asset(asset)
+        return Response(data, mimetype=content_type, headers={"Cache-Control": "private, max-age=300", "ETag": '"' + str(asset.get("sha256") or "") + '"'})
+    except FileNotFoundError:
+        return Response("Archivo no encontrado.", status=404, mimetype="text/plain")
+    except Exception:
         return Response("Servicio temporalmente no disponible.", status=503, mimetype="text/plain")
