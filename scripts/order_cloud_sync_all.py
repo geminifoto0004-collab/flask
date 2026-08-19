@@ -4,9 +4,12 @@
 Important safety properties:
 - ORDER SQLite is opened read-only and PRAGMA query_only=ON is inherited from
   order_cloud_sync_real_order.py.
-- Only that module's explicit customer-safe payload is sent.
+- Only explicit ORDER cloud payloads are sent.
 - This script NEVER scans/uploads images, PDFs, Access, phone numbers, deposits,
   payments, internal notes, local file paths, or original filenames.
+- ORDER login users are mirrored separately with username, existing one-way
+  password hash, display name, role/status and reset flag only. Plaintext passwords
+  are never read, sent or logged.
 - State is stored outside tracking.db so normal local ORDER business work is not
   modified or locked by the sync process.
 
@@ -83,7 +86,7 @@ def _save_state(path: Path, state: dict) -> None:
             pass
 
 
-def _payload_hash(payload: dict) -> str:
+def _payload_hash(payload) -> str:
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -109,6 +112,56 @@ def _order_numbers(conn) -> list[str]:
             seen.add(value)
             result.append(value)
     return result
+
+
+def _load_order_users(conn) -> list[dict]:
+    if not one._table_exists(conn, "users"):
+        return []
+    cols = one._columns(conn, "users")
+    if not {"username", "password_hash"}.issubset(cols):
+        return []
+    allowed = [
+        "id", "username", "password_hash", "display_name", "real_name",
+        "role", "status", "needs_password_reset",
+    ]
+    selected = [name for name in allowed if name in cols]
+    rows = conn.execute(
+        "SELECT " + ", ".join(f'\"{name}\"' for name in selected) + " FROM users ORDER BY username"
+    ).fetchall()
+    users = []
+    for row in rows:
+        item = dict(row)
+        username = str(item.get("username") or "").strip()
+        password_hash = str(item.get("password_hash") or "").strip()
+        if not username or not password_hash:
+            continue
+        users.append({
+            "id": item.get("id"),
+            "username": username,
+            "password_hash": password_hash,
+            "display_name": item.get("display_name") or username,
+            "real_name": item.get("real_name"),
+            "role": item.get("role") or "viewer",
+            "status": item.get("status") or "active",
+            "needs_password_reset": bool(item.get("needs_password_reset") or False),
+        })
+    return users
+
+
+def _sync_order_users_if_needed(conn, state: dict, full: bool, quiet: bool) -> None:
+    users = _load_order_users(conn)
+    users_hash = _payload_hash(users)
+    if not full and state.get("users_hash") == users_hash:
+        if not quiet:
+            print(f"ORDER login users: unchanged ({len(users)})")
+        return
+
+    body = one._request_json("POST", "/api/order-cloud/sync/users", json={"users": users})
+    if not body.get("ok"):
+        raise one.SyncError(str(body.get("error") or "Render rejected ORDER user sync"))
+    state["users_hash"] = users_hash
+    if not quiet:
+        print(f"ORDER login users: synced={len(users)}")
 
 
 def _recent_success(state: dict, min_interval_minutes: int) -> bool:
@@ -157,6 +210,11 @@ def sync_all(
     db = one._discover_db(db_path)
     conn = one._open_read_only(db)
     try:
+        # Tiny auth snapshot first, so Render uses the same ORDER username/password
+        # logic as the local ORDER UI. No plaintext password is available here.
+        _sync_order_users_if_needed(conn, state, full=full, quiet=quiet)
+        _save_state(state_path, state)
+
         numbers = _order_numbers(conn)
         current_numbers = set(numbers)
         if not quiet:
@@ -223,6 +281,7 @@ def sync_all(
                 "delete": True,
             })
 
+        workers = max(1, min(MAX_WORKERS, int(workers or DEFAULT_WORKERS)))
         if not quiet:
             print(
                 f"Cloud writes queued: {len(jobs)} | unchanged={unchanged} | "
@@ -234,7 +293,6 @@ def sync_all(
         failed = prepare_failed
         completed = 0
         total_jobs = len(jobs)
-        workers = max(1, min(MAX_WORKERS, int(workers or DEFAULT_WORKERS)))
 
         if jobs:
             with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="order-cloud-sync") as pool:
