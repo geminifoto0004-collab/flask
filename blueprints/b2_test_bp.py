@@ -1,4 +1,4 @@
-"""Temporary isolated Backblaze B2 connectivity tests."""
+"""Temporary isolated Backblaze B2 connectivity tests and ORDER cloud phase-1 API."""
 
 import os
 import uuid
@@ -149,3 +149,72 @@ def share_test_image():
         if status == 404 or code in ("404", "NoSuchKey", "NotFound"):
             return jsonify({"ok": False, "error": "Test image not found in B2", "object_key": TEST_IMAGE_KEY}), 404
         return jsonify({"ok": False, "error_type": type(exc).__name__, "error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# ORDER Cloud Phase 1
+# Kept inside this already-registered blueprint so app.py remains untouched.
+# TiDB decides what is active/visible. B2 asset sync is Phase 2.
+# ---------------------------------------------------------------------------
+_order_cloud_initialized = False
+
+
+def _order_cloud_auth_error():
+    import hmac
+    expected = (os.environ.get("ORDER_SYNC_API_KEY") or "").strip()
+    supplied = (request.headers.get("X-Order-Sync-Key") or "").strip()
+    if not expected:
+        return jsonify({"ok": False, "error": "ORDER_SYNC_API_KEY is not configured"}), 503
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    return None
+
+
+def _ensure_order_cloud_tables():
+    global _order_cloud_initialized
+    if not _order_cloud_initialized:
+        from services.order_cloud_service import init_order_cloud_tables
+        init_order_cloud_tables()
+        _order_cloud_initialized = True
+
+
+@b2_test_bp.route("/api/order-cloud/health", methods=["GET"])
+def order_cloud_health():
+    try:
+        _ensure_order_cloud_tables()
+        return jsonify({"ok": True, "service": "order-cloud", "phase": 1})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/sync/order", methods=["POST"])
+def order_cloud_sync_order():
+    auth_error = _order_cloud_auth_error()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_service import sync_order
+        payload = request.get_json(silent=True) or {}
+        result = sync_order(payload)
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/debug/order/<path:order_number>", methods=["GET"])
+def order_cloud_debug_order(order_number):
+    auth_error = _order_cloud_auth_error()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_service import get_order
+        result = get_order(order_number)
+        if result is None:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        return jsonify({"ok": True, "order": result})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
