@@ -10,19 +10,22 @@ Typical Windows CMD usage from the Render-Flask clone:
     python scripts\order_cloud_sync_real_order.py --latest
 
 The API key is read from ORDER_SYNC_API_KEY (same environment variable used by
-order_cloud_roundtrip_test.py). Override the SQLite path with ORDER_TRACKING_DB
-when needed. The default discovery includes E:\\upload_xingwang\\tracking.db.
+order_cloud_roundtrip_test.py). Database discovery prefers explicit overrides,
+then reads DATABASE_PATH from the local order_tracking/config.py so the cloud
+sync follows the same ORDER data-location configuration instead of maintaining
+a second hard-coded path.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
 import sqlite3
 import sys
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 
@@ -98,19 +101,101 @@ def _safe_select_list(existing: set[str], allowed: Iterable[str]) -> str:
     return ", ".join(f'"{name}"' for name in names)
 
 
+def _candidate_config_paths() -> List[Path]:
+    """Return likely local ORDER config.py paths without importing order_tracking."""
+    script_path = Path(__file__).resolve()
+    roots: List[Path] = []
+
+    explicit_config = (os.environ.get("ORDER_TRACKING_CONFIG") or "").strip()
+    if explicit_config:
+        roots.append(Path(explicit_config).expanduser())
+
+    # Normal layout used during development:
+    #   KECHEN PEDIDO user/
+    #       order_tracking/config.py
+    #       Render-Flask/scripts/this_file.py
+    roots.extend(
+        [
+            script_path.parents[2] / "order_tracking" / "config.py",
+            Path.cwd().parent / "order_tracking" / "config.py",
+            Path.cwd() / "order_tracking" / "config.py",
+        ]
+    )
+
+    result: List[Path] = []
+    seen = set()
+    for path in roots:
+        key = str(path).lower()
+        if key not in seen:
+            seen.add(key)
+            result.append(path)
+    return result
+
+
+def _database_path_from_order_config() -> Tuple[Optional[Path], List[str]]:
+    """Load only local order_tracking/config.py and read its DATABASE_PATH.
+
+    spec_from_file_location avoids importing the order_tracking package itself, so
+    its Flask blueprint/application startup code is not executed just to discover
+    the SQLite path.
+    """
+    diagnostics: List[str] = []
+    for config_path in _candidate_config_paths():
+        if not config_path.is_file():
+            diagnostics.append(f"config not found: {config_path}")
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "_order_tracking_local_config",
+                str(config_path),
+            )
+            if spec is None or spec.loader is None:
+                diagnostics.append(f"cannot load config: {config_path}")
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            value = getattr(module, "DATABASE_PATH", None)
+            if not value:
+                diagnostics.append(f"DATABASE_PATH missing: {config_path}")
+                continue
+            db_path = Path(str(value)).expanduser()
+            if not db_path.is_absolute():
+                db_path = (config_path.parent / db_path).resolve()
+            if db_path.is_file():
+                return db_path.resolve(), diagnostics
+            diagnostics.append(f"DATABASE_PATH does not exist: {db_path}")
+        except Exception as exc:
+            diagnostics.append(f"config error {config_path}: {type(exc).__name__}: {exc}")
+    return None, diagnostics
+
+
 def _discover_db(explicit: Optional[str]) -> Path:
-    candidates: List[Path] = []
+    # 1) One-off explicit overrides remain available for diagnostics/special cases.
+    direct_candidates: List[Path] = []
     for value in (
         explicit,
         os.environ.get("ORDER_TRACKING_DB"),
-        os.environ.get("TRACKING_DB_PATH"),
     ):
         if value:
-            candidates.append(Path(value).expanduser())
+            direct_candidates.append(Path(value).expanduser())
 
-    candidates.extend(
+    for path in direct_candidates:
+        if path.is_file():
+            return path.resolve()
+
+    # 2) Normal path: trust ORDER's own config.py as the single source of truth.
+    config_db, config_diagnostics = _database_path_from_order_config()
+    if config_db is not None:
+        return config_db
+
+    # 3) Compatibility fallbacks only. These are not the primary configuration.
+    fallback_candidates: List[Path] = []
+    env_fallback = (os.environ.get("TRACKING_DB_PATH") or "").strip()
+    if env_fallback:
+        fallback_candidates.append(Path(env_fallback).expanduser())
+    fallback_candidates.extend(
         [
-            Path(r"E:\upload_xingwang\tracking.db"),
+            Path(r"E:\upload_xingwang\data\tracking.db"),
             Path.cwd().parent / "order_tracking" / "data" / "tracking.db",
             Path.cwd().parent / "order_tracking" / "tracking.db",
             Path.cwd() / "order_tracking" / "data" / "tracking.db",
@@ -118,18 +203,22 @@ def _discover_db(explicit: Optional[str]) -> Path:
     )
 
     seen = set()
-    for path in candidates:
+    checked: List[str] = []
+    for path in direct_candidates + fallback_candidates:
         key = str(path).lower()
         if key in seen:
             continue
         seen.add(key)
+        checked.append(str(path))
         if path.is_file():
             return path.resolve()
 
-    checked = "\n  - ".join(str(p) for p in candidates)
+    details = "\n  - ".join(checked) if checked else "(none)"
+    config_details = "\n  - ".join(config_diagnostics) if config_diagnostics else "(none)"
     raise SyncError(
-        "tracking.db not found. Set ORDER_TRACKING_DB to the real SQLite file.\n"
-        f"Checked:\n  - {checked}"
+        "tracking.db not found. ORDER config.py was checked first.\n"
+        f"ORDER config diagnostics:\n  - {config_details}\n"
+        f"Fallback paths checked:\n  - {details}"
     )
 
 
