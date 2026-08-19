@@ -67,25 +67,105 @@ if _RENDER_ORDER_ENABLED:
     app.config['TRACKING_TIDB_PROVIDER_ENABLED'] = True
     app.config['TRACKING_PUBLIC_SHARE_BACKGROUND_SYNC_ENABLED'] = False
 
+    from blueprints.order_tracking_cloud_auth_bp import order_tracking_cloud_auth_bp
     from order_tracking import init_app as init_order_tracking_app, register_cloud_db_connection_factory
     from services.order_tracking_render_provider import RenderOrderDataProvider
+    from services.order_tracking_cloud_auth import authenticate_order_user
+
+    # Small protected endpoint used only by the local ORDER text-sync process to keep
+    # the native ORDER username/password-hash/role mirror current.
+    app.register_blueprint(order_tracking_cloud_auth_bp)
 
     # Raw ORDER cloud DB calls, when needed, use the same TiDB connection wrapper as Render.
     # Cloud mode never falls back to a Render-local SQLite file.
     register_cloud_db_connection_factory(app, get_db_connection)
     init_order_tracking_app(app, data_provider=RenderOrderDataProvider())
-    print('✅ Render ORDER mounted at /tracking (TiDB read-only)')
+    print('✅ Render ORDER mounted at /tracking (TiDB read-only, native ORDER login)')
 
     @app.before_request
-    def _render_order_parent_login_gate():
-        # ORDER reuses the existing Render login/session. Do not maintain a second cloud password store.
-        if request.path.startswith('/tracking'):
-            if not session.get('logged_in') or not session.get('user_id'):
-                target = request.full_path if request.query_string else request.path
-                if not target.startswith('/') or target.startswith('//'):
-                    target = '/tracking'
-                session['post_login_next'] = target
-                return redirect(url_for('login'))
+    def _render_order_native_login_gate():
+        """Keep ORDER authentication separate from the parent Flask authorization login."""
+        path = request.path or ''
+        if not path.startswith('/tracking'):
+            return None
+        if path.startswith('/tracking/static/'):
+            return None
+
+        # Intercept native ORDER login so it authenticates against cloud_order_users,
+        # not the parent Flask app's unrelated users table.
+        if path.rstrip('/') == '/tracking/login':
+            if request.method == 'GET':
+                if session.get('order_tracking_authenticated'):
+                    return redirect('/tracking')
+                return render_template('tracking/login.html')
+
+            data = request.get_json(silent=True) if request.is_json else request.form
+            data = data or {}
+            username = str(data.get('username') or '').strip()
+            password = str(data.get('password') or '')
+
+            if not username:
+                error_msg = '請輸入用戶名'
+                if request.is_json:
+                    return jsonify({'success': False, 'error': error_msg, 'code': 'MISSING_USERNAME'}), 400
+                return render_template('tracking/login.html', error=error_msg, username=username)
+            if not password:
+                error_msg = '請輸入密碼'
+                if request.is_json:
+                    return jsonify({'success': False, 'error': error_msg, 'code': 'MISSING_PASSWORD'}), 400
+                return render_template('tracking/login.html', error=error_msg, username=username)
+
+            user, auth_state = authenticate_order_user(username, password)
+            state_errors = {
+                'pending': ('您的帳號正在等待主管審核，請稍後再試', 'PENDING_APPROVAL', 403),
+                'rejected': ('您的註冊申請已被拒絕，請聯繫主管', 'REJECTED', 403),
+                'suspended': ('您的帳號已被停權，請聯繫主管', 'SUSPENDED', 403),
+                'needs_password_reset': ('請先在公司 ORDER 完成密碼重置，再登入雲端 ORDER', 'NEEDS_PASSWORD_RESET', 403),
+            }
+            if not user:
+                error_msg, code, status = state_errors.get(
+                    auth_state,
+                    ('用戶名或密碼錯誤', 'INVALID_CREDENTIALS', 401),
+                )
+                if request.is_json:
+                    return jsonify({'success': False, 'error': error_msg, 'code': code}), status
+                return render_template('tracking/login.html', error=error_msg, username=username)
+
+            # Same session keys used by the local ORDER application. Parent Flask
+            # login stays separate because its protected pages require logged_in=True.
+            session['order_tracking_authenticated'] = True
+            session['user_id'] = user.get('id')
+            session['username'] = user.get('username')
+            session['display_name'] = user.get('display_name')
+            session['role'] = user.get('role') or 'viewer'
+
+            if request.is_json:
+                try:
+                    import jwt as _jwt
+                    from order_tracking.config import JWT_SECRET_KEY as _jwt_secret, JWT_EXPIRATION_DELTA as _jwt_exp
+                    from datetime import datetime as _dt
+                    token = _jwt.encode({
+                        'user_id': user.get('id'),
+                        'username': user.get('username'),
+                        'role': user.get('role') or 'viewer',
+                        'exp': _dt.utcnow().timestamp() + _jwt_exp,
+                    }, _jwt_secret, algorithm='HS256')
+                except Exception:
+                    token = None
+                return jsonify({
+                    'success': True,
+                    'token': token,
+                    'user': {
+                        'id': user.get('id'),
+                        'username': user.get('username'),
+                        'display_name': user.get('display_name'),
+                        'role': user.get('role') or 'viewer',
+                    },
+                })
+            return redirect('/tracking')
+
+        if not session.get('order_tracking_authenticated'):
+            return redirect('/tracking/login')
         return None
 
 # ========== 自動初始化資料庫 ==========
@@ -342,8 +422,6 @@ def login():
         
         # 優先檢查超級管理員帳號
         from config import admin_config
-        print(f"登入嘗試: 郵箱='{email}', 密碼='{password}'")
-        print(f"Super Admin配置: 郵箱='{admin_config.SUPER_ADMIN_EMAIL}', 密碼='{admin_config.SUPER_ADMIN_PASSWORD}'")
         
         if email == admin_config.SUPER_ADMIN_EMAIL and password == admin_config.SUPER_ADMIN_PASSWORD:
             print("Super Admin登入成功！")
@@ -472,9 +550,6 @@ def order_entry():
     """Stable entry point for the Render-hosted read-only ORDER UI."""
     if not _RENDER_ORDER_ENABLED:
         return jsonify({'success': False, 'error': 'Render ORDER is disabled'}), 404
-    if not session.get('logged_in') or not session.get('user_id'):
-        session['post_login_next'] = '/order'
-        return redirect(url_for('login'))
     return redirect('/tracking')
 
 
