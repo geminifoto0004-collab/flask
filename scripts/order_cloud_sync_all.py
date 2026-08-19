@@ -10,14 +10,18 @@ Important safety properties:
 - State is stored outside tracking.db so normal local ORDER business work is not
   modified or locked by the sync process.
 
-First run uploads all current orders. Later runs hash the same safe payload and
-send only new/changed orders. Orders present in the previous successful local
-index but no longer present in SQLite are hard-deleted from TiDB so cloud presence
-matches local SQLite rather than accumulating soft-deleted rows.
+First run uploads all current cloud-safe orders. Later runs hash the same safe
+payload and send only new/changed orders. Orders present in the previous successful
+local index but no longer present in SQLite are hard-deleted from TiDB so cloud
+presence matches local SQLite rather than accumulating soft-deleted rows.
+
+Network writes are parallelised with a small bounded worker pool. This avoids the
+very slow one-request-at-a-time first sync without overwhelming Render/TiDB.
 """
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -30,6 +34,8 @@ from typing import Dict, Tuple
 import order_cloud_sync_real_order as one
 
 STATE_VERSION = 1
+DEFAULT_WORKERS = 4
+MAX_WORKERS = 8
 
 
 def _state_path(explicit: str | None = None) -> Path:
@@ -121,7 +127,21 @@ def _recent_success(state: dict, min_interval_minutes: int) -> bool:
         return False
 
 
-def sync_all(db_path: str | None, state_path: Path, full: bool, quiet: bool, min_interval_minutes: int) -> Tuple[int, int, int]:
+def _send_job(job: dict) -> dict:
+    body = one._request_json("POST", "/api/order-cloud/sync/order", json=job["payload"])
+    if not body.get("ok"):
+        raise one.SyncError(str(body.get("error") or "Render rejected ORDER sync"))
+    return body
+
+
+def sync_all(
+    db_path: str | None,
+    state_path: Path,
+    full: bool,
+    quiet: bool,
+    min_interval_minutes: int,
+    workers: int = DEFAULT_WORKERS,
+) -> Tuple[int, int, int]:
     state = _load_state(state_path)
     if not full and _recent_success(state, min_interval_minutes):
         if not quiet:
@@ -148,57 +168,108 @@ def sync_all(db_path: str | None, state_path: Path, full: bool, quiet: bool, min
         previous_numbers = set(fingerprints)
         deleted_numbers = sorted(previous_numbers - current_numbers)
 
-        sent = 0
+        jobs: list[dict] = []
         unchanged = 0
-        deleted = 0
-        failed = 0
+        skipped_no_customer = 0
+        prepare_failed = 0
 
-        for pos, order_number in enumerate(numbers, start=1):
+        # Build payloads locally first. SQLite work stays single-threaded/read-only;
+        # only the HTTP/TiDB writes are parallel below.
+        for order_number in numbers:
             try:
                 payload = one._load_order_payload(conn, order_number)
                 fingerprint = _payload_hash(payload)
                 if not full and fingerprints.get(order_number) == fingerprint:
                     unchanged += 1
                     continue
-
-                body = one._request_json("POST", "/api/order-cloud/sync/order", json=payload)
-                if not body.get("ok"):
-                    raise one.SyncError(str(body.get("error") or "Render rejected ORDER sync"))
-
-                fingerprints[order_number] = fingerprint
-                sent += 1
+                jobs.append({
+                    "order_number": order_number,
+                    "payload": payload,
+                    "fingerprint": fingerprint,
+                    "delete": False,
+                })
+            except one.SyncError as exc:
+                # Legacy/placeholder ORDER rows with no customer cannot be represented
+                # in the customer-keyed cloud mirror. They are source-data omissions,
+                # not network/TiDB failures. If this order was previously synced while
+                # it had a customer, delete that stale cloud copy.
+                if "has no customer_name" in str(exc):
+                    skipped_no_customer += 1
+                    if order_number in fingerprints:
+                        jobs.append({
+                            "order_number": order_number,
+                            "payload": {"order_number": order_number, "_deleted": True},
+                            "fingerprint": None,
+                            "delete": True,
+                        })
+                    continue
+                prepare_failed += 1
                 if not quiet:
-                    print(f"SYNC {pos}/{len(numbers)} OK: {order_number}")
-
-                # Persist progress periodically so a network/power interruption does
-                # not force a full restart next time.
-                if sent % 25 == 0:
-                    state["fingerprints"] = fingerprints
-                    _save_state(state_path, state)
+                    print(f"PREPARE FAILED: {order_number}: {type(exc).__name__}: {exc}")
             except Exception as exc:
-                failed += 1
+                prepare_failed += 1
                 if not quiet:
-                    print(f"SYNC {pos}/{len(numbers)} FAILED: {order_number}: {type(exc).__name__}: {exc}")
+                    print(f"PREPARE FAILED: {order_number}: {type(exc).__name__}: {exc}")
 
-        # Deletions are sent only after the local orders table was read successfully.
-        # The server hard-deletes that order's cloud order/workflow/history tree.
-        for pos, order_number in enumerate(deleted_numbers, start=1):
-            try:
-                body = one._request_json(
-                    "POST",
-                    "/api/order-cloud/sync/order",
-                    json={"order_number": order_number, "_deleted": True},
-                )
-                if not body.get("ok"):
-                    raise one.SyncError(str(body.get("error") or "Render rejected ORDER deletion"))
-                fingerprints.pop(order_number, None)
-                deleted += 1
-                if not quiet:
-                    print(f"DELETE {pos}/{len(deleted_numbers)} OK: {order_number}")
-            except Exception as exc:
-                failed += 1
-                if not quiet:
-                    print(f"DELETE {pos}/{len(deleted_numbers)} FAILED: {order_number}: {type(exc).__name__}: {exc}")
+        # Orders removed from SQLite are hard-deleted from TiDB.
+        already_delete = {j["order_number"] for j in jobs if j["delete"]}
+        for order_number in deleted_numbers:
+            if order_number in already_delete:
+                continue
+            jobs.append({
+                "order_number": order_number,
+                "payload": {"order_number": order_number, "_deleted": True},
+                "fingerprint": None,
+                "delete": True,
+            })
+
+        if not quiet:
+            print(
+                f"Cloud writes queued: {len(jobs)} | unchanged={unchanged} | "
+                f"no_customer={skipped_no_customer} | workers={workers}"
+            )
+
+        sent = 0
+        deleted = 0
+        failed = prepare_failed
+        completed = 0
+        total_jobs = len(jobs)
+        workers = max(1, min(MAX_WORKERS, int(workers or DEFAULT_WORKERS)))
+
+        if jobs:
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="order-cloud-sync") as pool:
+                future_map = {pool.submit(_send_job, job): job for job in jobs}
+                for future in as_completed(future_map):
+                    job = future_map[future]
+                    completed += 1
+                    try:
+                        future.result()
+                        if job["delete"]:
+                            fingerprints.pop(job["order_number"], None)
+                            deleted += 1
+                        else:
+                            fingerprints[job["order_number"]] = job["fingerprint"]
+                            sent += 1
+
+                        # Save progress regularly so Ctrl+C/network interruption does
+                        # not make the next run start from zero.
+                        if completed % 25 == 0:
+                            state["fingerprints"] = fingerprints
+                            _save_state(state_path, state)
+
+                        if not quiet and (completed % 25 == 0 or completed == total_jobs):
+                            print(
+                                f"PROGRESS {completed}/{total_jobs}: "
+                                f"sent={sent} deleted={deleted} failed={failed}"
+                            )
+                    except Exception as exc:
+                        failed += 1
+                        if not quiet:
+                            action = "DELETE" if job["delete"] else "SYNC"
+                            print(
+                                f"{action} FAILED: {job['order_number']}: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
 
         state["fingerprints"] = fingerprints
         state["last_attempt_at"] = datetime.now(timezone.utc).isoformat()
@@ -206,12 +277,13 @@ def sync_all(db_path: str | None, state_path: Path, full: bool, quiet: bool, min
             state["last_success_at"] = state["last_attempt_at"]
         state["last_db"] = str(db)
         state["last_order_count"] = len(numbers)
+        state["last_skipped_no_customer"] = skipped_no_customer
         _save_state(state_path, state)
 
         if not quiet:
             print(
                 f"ORDER CLOUD SYNC SUMMARY: sent={sent} unchanged={unchanged} "
-                f"deleted={deleted} failed={failed}"
+                f"deleted={deleted} no_customer={skipped_no_customer} failed={failed}"
             )
         return sent, unchanged, failed
     finally:
@@ -222,13 +294,19 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", help="explicit local tracking.db path")
     ap.add_argument("--state", help="explicit local fingerprint state JSON path")
-    ap.add_argument("--full", action="store_true", help="send every order even if fingerprint is unchanged")
+    ap.add_argument("--full", action="store_true", help="send every cloud-safe order even if fingerprint is unchanged")
     ap.add_argument("--quiet", action="store_true", help="print only unexpected top-level errors")
     ap.add_argument(
         "--min-interval-minutes",
         type=int,
         default=int(os.environ.get("ORDER_CLOUD_AUTOSYNC_MIN_MINUTES", "30")),
         help="skip startup sync if a successful sync was this recent (default 30)",
+    )
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=int(os.environ.get("ORDER_CLOUD_SYNC_WORKERS", str(DEFAULT_WORKERS))),
+        help=f"parallel Render/TiDB write requests (default {DEFAULT_WORKERS}, max {MAX_WORKERS})",
     )
     args = ap.parse_args()
 
@@ -239,8 +317,12 @@ def main() -> int:
             full=bool(args.full),
             quiet=bool(args.quiet),
             min_interval_minutes=max(0, int(args.min_interval_minutes)),
+            workers=max(1, min(MAX_WORKERS, int(args.workers))),
         )
         return 1 if failed else 0
+    except KeyboardInterrupt:
+        print("ORDER CLOUD SYNC CANCELLED", file=sys.stderr)
+        return 130
     except Exception as exc:
         print(f"ORDER CLOUD SYNC ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
