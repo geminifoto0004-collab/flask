@@ -1,19 +1,16 @@
 """Chunked full ORDER SQLite -> TiDB mirror transport.
 
-The original full-mirror endpoint accepts a complete snapshot in one HTTP request.
-That is convenient for small databases, but a real ORDER database can contain
-hundreds of thousands of rows and exceed the web request lifetime while Render is
-still inserting the snapshot into TiDB.
+Large mirrors are loaded into deterministic staging tables and become visible only
+when finalize verifies every expected row count and atomically swaps the tables.
 
-This module keeps the same all-or-nothing visible mirror semantics while loading
-staging tables in many short authenticated requests:
+Transport is deliberately split into short requests:
+1. begin: validate snapshot/state only (no multi-table DDL)
+2. table: recreate one staging table + its indexes
+3. chunk: append bounded rows to that staging table
+4. finalize: verify all row counts and atomically swap into place
 
-1. begin: create empty staging tables (with indexes)
-2. chunk: append a bounded number of rows to one staging table
-3. finalize: verify row counts and atomically rename staging tables into place
-
-Until finalize succeeds, the currently visible WAN ORDER tables are untouched.
-External image/PDF/upload bytes are never handled here.
+This prevents Render/Gunicorn request timeouts during bulk DDL and keeps the live WAN
+ORDER untouched until a complete snapshot succeeds.
 """
 from __future__ import annotations
 
@@ -108,7 +105,12 @@ def _stale_result(snapshot_hash: str, source_watermark, force: bool):
 
 def begin_chunked_mirror(manifest: Any, snapshot_hash: str, source_watermark=None,
                          source_site=None, force=False) -> dict:
-    """Create a fresh complete set of staging tables without touching live tables."""
+    """Validate a full snapshot without doing multi-table DDL.
+
+    Earlier versions dropped/created every staging table in this single request.
+    That can cross Render/Gunicorn request limits, especially when retrying after a
+    partially loaded staging set. Each table is now prepared by a separate request.
+    """
     snapshot_hash = _hash(snapshot_hash)
     normalized, total_rows = _manifest(manifest)
     source_watermark = str(source_watermark or '').strip() or None
@@ -117,26 +119,44 @@ def begin_chunked_mirror(manifest: Any, snapshot_hash: str, source_watermark=Non
     if early is not None:
         return early
 
-    token = snapshot_hash[:8]
     conn = get_order_tidb_connection()
     try:
         _ensure_state_table(conn)
+    finally:
+        conn.close()
+
+    return {
+        'changed': True,
+        'ready': True,
+        'snapshot_hash': snapshot_hash,
+        'tables': len(normalized),
+        'rows': total_rows,
+        'source_site': str(source_site or '').strip().upper()[:32] or None,
+        'prepare_mode': 'per_table',
+    }
+
+
+def prepare_chunked_table(snapshot_hash: str, table_spec: Any) -> dict:
+    """Recreate exactly one deterministic staging table for this snapshot."""
+    snapshot_hash = _hash(snapshot_hash)
+    normalized, _ = _manifest([table_spec])
+    table = normalized[0]
+    name = table['name']
+    token = snapshot_hash[:8]
+    stage = _safe_stage_name('__stg', name, token)
+
+    conn = get_order_tidb_connection()
+    try:
         cur = conn.cursor()
-        for table in normalized:
-            stage = _safe_stage_name('__stg', table['name'], token)
-            cur.execute(f'DROP TABLE IF EXISTS {_qi(stage)}')
-            cur.execute(_create_table_sql(stage, table))
-            # Build indexes while tables are empty. This keeps finalize short and
-            # avoids one long index-build request after hundreds of thousands of rows.
-            _create_indexes(cur, stage, table)
+        cur.execute(f'DROP TABLE IF EXISTS {_qi(stage)}')
+        cur.execute(_create_table_sql(stage, table))
+        _create_indexes(cur, stage, table)
         conn.commit()
         return {
-            'changed': True,
-            'ready': True,
             'snapshot_hash': snapshot_hash,
-            'tables': len(normalized),
-            'rows': total_rows,
-            'source_site': str(source_site or '').strip().upper()[:32] or None,
+            'table': name,
+            'ready': True,
+            'expected_rows': int(table.get('expected_rows') or 0),
         }
     except Exception:
         try:
@@ -180,7 +200,7 @@ def append_chunk(snapshot_hash: str, table_name: str, columns: Any, rows: Any) -
         )
         actual = [str(r.get('COLUMN_NAME') or '') for r in (cur.fetchall() or [])]
         if not actual:
-            raise ValueError(f'staging table does not exist for {table_name}; run begin again')
+            raise ValueError(f'staging table does not exist for {table_name}; prepare table again')
         if actual != columns:
             raise ValueError(f'column order mismatch for {table_name}')
 
@@ -238,8 +258,6 @@ def finalize_chunked_mirror(manifest: Any, snapshot_hash: str, source_watermark=
         _ensure_state_table(conn)
         cur = conn.cursor()
 
-        # A failed/partial upload never becomes visible: every stage must have the
-        # exact SQLite row count before any RENAME TABLE is attempted.
         for table in normalized:
             stage = _safe_stage_name('__stg', table['name'], token)
             cur.execute(f'SELECT COUNT(*) AS n FROM {_qi(stage)}')
@@ -284,7 +302,6 @@ def finalize_chunked_mirror(manifest: Any, snapshot_hash: str, source_watermark=
             cur.execute('RENAME TABLE ' + ', '.join(rename_parts))
         conn.commit()
 
-        # State is updated only after the atomic table rename succeeded.
         from datetime import datetime, timezone
         committed_at = datetime.now(timezone.utc).isoformat()
         cur.execute(f'SELECT id FROM {_qi(_STATE_TABLE)} WHERE id=1')
