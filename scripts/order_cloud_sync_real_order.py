@@ -35,35 +35,20 @@ API_KEY = (os.environ.get("ORDER_SYNC_API_KEY") or "").strip()
 
 
 SAFE_ORDER_COLUMNS = {
-    "order_number",
-    "customer_name",
-    "order_date",
-    "status",
-    "current_status",
-    "production_type",
-    "product_name",
-    "product_code",
-    "pattern_code",
-    "quantity",
+    "order_number", "customer_name", "order_date", "status", "current_status",
+    "visibility", "is_locked", "notes", "created_by", "updated_by", "updated_at",
+    "production_type", "product_name", "product_code", "pattern_code", "quantity",
     "expected_delivery_date",
 }
 SAFE_WORKFLOW_COLUMNS = {
-    "workflow_number",
-    "order_number",
-    "current_status",
-    "production_type",
-    "product_name",
-    "product_code",
-    "quantity",
-    "expected_delivery_date",
-    "status_updated_at",
+    "workflow_number", "order_number", "current_status", "production_type",
+    "product_name", "product_code", "quantity", "factory",
+    "expected_delivery_date", "status_updated_at", "status_days",
+    "created_by_id", "handler_id", "notes", "created_at", "updated_at",
 }
 SAFE_HISTORY_COLUMNS = {
-    "id",
-    "workflow_number",
-    "to_status",
-    "action_date",
-    "created_at",
+    "id", "workflow_number", "from_status", "to_status", "action_date",
+    "operator_id", "notes", "created_at",
 }
 
 
@@ -309,7 +294,11 @@ def _load_history(conn: sqlite3.Connection, workflow_number: str) -> List[Dict[s
             {
                 "history_key": history_key,
                 "status": status,
+                "from_status": _clean(item.get("from_status")),
                 "action_date": action_date,
+                "operator_id": item.get("operator_id"),
+                "notes": _clean(item.get("notes")),
+                "created_at": _clean(item.get("created_at")),
                 "sort_order": pos,
             }
         )
@@ -352,6 +341,12 @@ def _load_order_payload(conn: sqlite3.Connection, order_number: str) -> Dict[str
         "customer_name": customer_name,
         "order_status": order_status,
         "order_date": order.get("order_date"),
+        "visibility": order.get("visibility"),
+        "is_locked": order.get("is_locked"),
+        "notes": order.get("notes"),
+        "created_by": order.get("created_by"),
+        "updated_by": order.get("updated_by"),
+        "updated_at": order.get("updated_at"),
         "expected_delivery_date": order.get("expected_delivery_date"),
         "production_type": order.get("production_type"),
         "product_name": order.get("product_name"),
@@ -396,7 +391,14 @@ def _load_order_payload(conn: sqlite3.Connection, order_number: str) -> Dict[str
                         "product_name": wf.get("product_name"),
                         "product_code": wf.get("product_code"),
                         "quantity": wf.get("quantity"),
+                        "factory": wf.get("factory"),
                         "expected_delivery_date": wf.get("expected_delivery_date"),
+                        "status_days": wf.get("status_days"),
+                        "created_by_id": wf.get("created_by_id"),
+                        "handler_id": wf.get("handler_id"),
+                        "notes": wf.get("notes"),
+                        "created_at": wf.get("created_at"),
+                        "updated_at": wf.get("updated_at"),
                         "last_status_change_date": last_history_date or wf.get("status_updated_at"),
                         "draft_date": draft_date,
                         "sort_order": pos,

@@ -30,6 +30,10 @@ class OrderDataProvider:
     # The methods below let the exact same ORDER routes/UI run against a cloud
     # mirror. Local/LAN deployments do not register a provider, so they keep
     # using the original SQLite code paths unchanged.
+    def get_workflows_for_order(self, order_number: str, role: str = 'viewer',
+                                user_id: Any = None):  # pragma: no cover - interface only
+        raise NotImplementedError
+
     def get_order_detail(self, order_number: str):  # pragma: no cover - interface only
         raise NotImplementedError
 

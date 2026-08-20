@@ -260,6 +260,21 @@ def replace_snapshot(
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 list(orders.values()),
             )
+        render_payload_rows = [
+            (
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str),
+                str(payload.get("order_number") or "").strip(),
+            )
+            for payload in payloads
+            if isinstance(payload, dict) and str(payload.get("order_number") or "").strip()
+        ]
+        if render_payload_rows:
+            executemany_sql(
+                cur,
+                "UPDATE cloud_orders SET render_payload=? WHERE order_number=?",
+                render_payload_rows,
+            )
+
         if workflows:
             executemany_sql(
                 cur,

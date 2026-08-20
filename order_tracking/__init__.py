@@ -5821,6 +5821,20 @@ def api_list_workflows():
     order_number = request.args.get('order')
     if not order_number:
         return jsonify({'success': False, 'error': '缺少訂單號參數'}), 400
+
+    if cloud_mode_enabled():
+        current_ctx = get_current_user_context()
+        try:
+            workflows = _cloud_provider_call(
+                'get_workflows_for_order', order_number,
+                current_ctx.get('role', 'viewer'), current_ctx.get('id')
+            ) or []
+        except Exception as exc:
+            return jsonify({'success': False, 'error': f'雲端流程列表載入失敗: {exc}'}), 503
+        return jsonify({
+            'success': True,
+            'data': {'order_number': order_number, 'workflows': list(workflows)}
+        })
     
     conn = get_db()
     cursor = conn.cursor()

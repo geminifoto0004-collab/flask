@@ -8,6 +8,7 @@ Design rules:
 - ORDER rows mirror local SQLite presence: deleted local rows are hard-deleted here.
 """
 from datetime import datetime, timedelta
+import json
 import hashlib
 import secrets
 
@@ -96,6 +97,8 @@ def init_order_cloud_tables():
         """)
 
         # Safe additive migration from phase 1 to the real ORDER payload shape.
+        _ensure_column(cur, "cloud_orders", "render_payload", "LONGTEXT NULL")
+
         for name, definition in (
             ("production_type", "VARCHAR(191) NULL"),
             ("product_name", "VARCHAR(255) NULL"),
@@ -252,6 +255,15 @@ def sync_order(payload, source_site=None):
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 vals,
             )
+
+        # Authenticated Render ORDER may need the LAN drawer's operational text.
+        # This JSON deliberately comes from the local whitelist; it contains no media,
+        # local paths, phone, payment or deposit data. Public customer-share routes do
+        # not return this column.
+        cur.execute(
+            "UPDATE cloud_orders SET render_payload=? WHERE order_number=?",
+            (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str), order_number),
+        )
 
         seen_workflows = []
         seen_history = []
