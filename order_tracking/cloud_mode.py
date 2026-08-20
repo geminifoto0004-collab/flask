@@ -1,23 +1,29 @@
 """Cloud/read-only helpers for the shared order_tracking Blueprint.
 
-The shared package is used by both local deployments and the Render deployment.
-Local behaviour stays unchanged by default. Render can opt in with app config or
-environment variables and provide its own read-only order data provider later.
+There are now two different concepts:
+- legacy cloud/provider mode (old Render adapter path), and
+- unified remote DB mode, where the exact LAN ORDER routes/UI run against a TiDB
+  mirror through the DB compatibility layer.
+
+Unified remote DB mode intentionally reports ``cloud_mode=False`` to the ORDER
+routes/templates so they do not branch into a second Render-specific UI/provider.
+Read-only enforcement remains independent and can stay enabled on Render.
 """
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict
+from typing import Dict
 
 from flask import current_app, jsonify, request
 
 from .config import CLOUD_MODE, CLOUD_READ_ONLY
 from .permissions_config import PERMISSION_MATRIX
+from .runtime_mode import unified_remote_db_enabled
 
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
-# POST endpoints that are semantically read-only. Keep this list deliberately
-# small; unknown non-GET endpoints are denied in cloud read-only mode.
+# POST endpoints that are semantically read-only/auth related. Unknown non-GET
+# endpoints are still denied while Render is configured read-only.
 _CLOUD_READ_ONLY_POST_ALLOWLIST = {
     "tracking_bp.login",
     "tracking_bp.logout",
@@ -40,24 +46,34 @@ _WRITE_ACTIONS = {
 
 
 def cloud_mode_enabled() -> bool:
-    """Return whether this mounted Blueprint is running in cloud mode."""
+    """Return legacy provider-mode status for ORDER route/UI branching.
+
+    In unified WAN mode this must be False: the point is to execute the exact LAN
+    routes against TiDB rather than maintaining a second cloud implementation.
+    """
+    if unified_remote_db_enabled():
+        return False
     return bool(current_app.config.get("TRACKING_CLOUD_MODE", CLOUD_MODE))
 
 
 def cloud_read_only_enabled() -> bool:
     """Return whether business writes must be rejected."""
-    # Cloud mode defaults to read-only unless the parent app explicitly opts out.
-    default = CLOUD_READ_ONLY or cloud_mode_enabled()
+    # Keep this separate from cloud_mode_enabled(); unified WAN reuses LAN routes
+    # while Render can still enforce a server-side read-only policy.
+    default = CLOUD_READ_ONLY or unified_remote_db_enabled() or cloud_mode_enabled()
     return bool(current_app.config.get("TRACKING_CLOUD_READ_ONLY", default))
 
 
 def effective_permission_matrix() -> Dict[str, Dict[str, list]]:
-    """Return the normal role matrix with write capabilities removed in cloud mode.
+    """Return the role matrix used to render ORDER.
 
-    This changes only what the UI advertises. The server-side request guard remains
-    the authoritative protection.
+    Unified WAN intentionally keeps the LAN menu/controls visible so the visual
+    product is the same. Backend read-only enforcement is still authoritative.
+    Legacy provider mode keeps the old behaviour of removing write capabilities.
     """
     matrix = deepcopy(PERMISSION_MATRIX)
+    if unified_remote_db_enabled():
+        return matrix
     if not cloud_read_only_enabled():
         return matrix
 
@@ -76,13 +92,7 @@ def cloud_read_only_response():
 
 
 def enforce_cloud_read_only_request():
-    """Blueprint before_request guard.
-
-    GET/HEAD/OPTIONS remain available. A very small set of POST endpoints that do
-    not change business data is allowed. Everything else is denied while cloud
-    read-only mode is enabled. This is intentionally backend-enforced rather than
-    relying on hidden buttons.
-    """
+    """Blueprint before_request guard."""
     if not cloud_read_only_enabled():
         return None
     if request.method in _SAFE_METHODS:
