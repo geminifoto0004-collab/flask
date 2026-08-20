@@ -2,7 +2,7 @@
 """Mirror the complete ORDER SQLite database schema/data to Render/TiDB.
 
 Only SQLite contents are read. External upload/image/PDF files are never opened or
-sent.  The Render ORDER code can therefore use the same logical tables on WAN while
+sent. The Render ORDER code can therefore use the same logical tables on WAN while
 local attachment areas remain empty.
 """
 from __future__ import annotations
@@ -40,16 +40,20 @@ def _encode_value(value: Any):
     return value
 
 
+def _quote_ident(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
 def _table_indexes(conn: sqlite3.Connection, table_name: str):
     result = []
-    for row in conn.execute(f'PRAGMA index_list("{table_name}")').fetchall():
+    for row in conn.execute(f'PRAGMA index_list({_quote_ident(table_name)})').fetchall():
         d = dict(row)
         index_name = str(d.get('name') or '').strip()
         if not index_name:
             continue
         cols = []
         try:
-            for c in conn.execute(f'PRAGMA index_info("{index_name}")').fetchall():
+            for c in conn.execute(f'PRAGMA index_info({_quote_ident(index_name)})').fetchall():
                 cd = dict(c)
                 name = cd.get('name')
                 if name:
@@ -69,6 +73,20 @@ def _table_indexes(conn: sqlite3.Connection, table_name: str):
     return result
 
 
+def _row_order_sql(columns):
+    pk = []
+    for col in columns:
+        order = int(col.get('pk') or 0)
+        if order > 0:
+            pk.append((order, str(col.get('name') or '')))
+    if pk:
+        pk.sort()
+        return ' ORDER BY ' + ','.join(_quote_ident(name) for _, name in pk)
+    # Ordinary SQLite tables expose rowid. If a special table does not, caller
+    # retries without an ORDER BY. Most ORDER tables have an integer id/PK.
+    return ' ORDER BY rowid'
+
+
 def _dump_tables(conn: sqlite3.Connection):
     rows = conn.execute(
         """SELECT name FROM sqlite_master
@@ -81,7 +99,7 @@ def _dump_tables(conn: sqlite3.Connection):
         name = str(row[0] or '').strip()
         if not name:
             continue
-        cols_raw = conn.execute(f'PRAGMA table_info("{name}")').fetchall()
+        cols_raw = conn.execute(f'PRAGMA table_info({_quote_ident(name)})').fetchall()
         columns = []
         for c in cols_raw:
             d = dict(c)
@@ -94,11 +112,16 @@ def _dump_tables(conn: sqlite3.Connection):
             })
         if not columns:
             continue
+
         col_names = [c['name'] for c in columns]
-        quoted = ','.join('"' + n.replace('"', '""') + '"' for n in col_names)
-        data_rows = []
-        for data in conn.execute(f'SELECT {quoted} FROM "{name}"').fetchall():
-            data_rows.append([_encode_value(data[n]) for n in col_names])
+        quoted = ','.join(_quote_ident(n) for n in col_names)
+        select_sql = f'SELECT {quoted} FROM {_quote_ident(name)}' + _row_order_sql(columns)
+        try:
+            source_rows = conn.execute(select_sql).fetchall()
+        except sqlite3.DatabaseError:
+            source_rows = conn.execute(f'SELECT {quoted} FROM {_quote_ident(name)}').fetchall()
+
+        data_rows = [[_encode_value(data[n]) for n in col_names] for data in source_rows]
         total_rows += len(data_rows)
         tables.append({
             'name': name,
@@ -117,13 +140,14 @@ def _source_watermark(conn: sqlite3.Connection):
     ).fetchall()]
     names = ('updated_at', 'created_at', 'status_updated_at', 'action_date', 'order_date', 'visit_date')
     for table in tables:
-        cols = {str(r['name']) for r in conn.execute(f'PRAGMA table_info("{table}")').fetchall()}
+        cols = {str(r['name']) for r in conn.execute(f'PRAGMA table_info({_quote_ident(table)})').fetchall()}
         for col in names:
             if col not in cols:
                 continue
             try:
                 row = conn.execute(
-                    f'SELECT MAX(CAST("{col}" AS TEXT)) FROM "{table}" WHERE "{col}" IS NOT NULL'
+                    f'SELECT MAX(CAST({_quote_ident(col)} AS TEXT)) FROM {_quote_ident(table)} '
+                    f'WHERE {_quote_ident(col)} IS NOT NULL'
                 ).fetchone()
                 if row and row[0] is not None:
                     value = str(row[0]).strip()
@@ -135,7 +159,9 @@ def _source_watermark(conn: sqlite3.Connection):
 
 
 def _canonical_hash(tables):
-    raw = json.dumps(tables, ensure_ascii=False, sort_keys=True, separators=(',', ':'), default=str).encode('utf-8')
+    raw = json.dumps(
+        tables, ensure_ascii=False, sort_keys=True, separators=(',', ':'), default=str
+    ).encode('utf-8')
     return hashlib.sha256(raw).hexdigest()
 
 
