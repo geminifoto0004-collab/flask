@@ -1,11 +1,9 @@
 """Full ORDER SQLite -> TiDB mirror.
 
-This is intentionally separate from the older customer-safe cloud_* publishing
-mirror.  It mirrors the complete ORDER SQLite schema/data into the dedicated
-``order_tracking`` TiDB logical database so the exact same ORDER routes can run on
-LAN (SQLite) and WAN (TiDB).
-
-Actual attachment/image bytes are not part of SQLite and are never uploaded here.
+This mirrors the complete ORDER SQLite schema/data into a dedicated ``order_tracking``
+TiDB logical database so the exact same ORDER routes can run on LAN (SQLite) and WAN
+(TiDB). External attachment/image/PDF bytes are not part of SQLite and are never
+uploaded here.
 """
 from __future__ import annotations
 
@@ -61,19 +59,19 @@ def _type_for(column: dict, indexed: bool) -> str:
     if 'BOOL' in declared:
         return 'TINYINT(1)'
     if any(x in declared for x in ('DATE', 'TIME')):
-        # SQLite stores these flexibly. VARCHAR preserves exact values and keeps
-        # YYYY-MM-DD ordering semantics used by ORDER.
         return 'VARCHAR(64)'
 
     m = re.search(r'(?:VAR)?CHAR\s*\(\s*(\d+)\s*\)', declared)
     if m:
         n = max(1, int(m.group(1)))
         if indexed:
-            n = min(n, 512)
+            # Four utf8mb4 VARCHAR(191) columns still fit a normal 3072-byte
+            # composite index. ORDER's indexed identifiers/names are below this.
+            n = min(n, 191)
         return f'VARCHAR({min(n, 4096)})'
 
-    # Indexed/PK text must be indexable under utf8mb4; free text stays unlimited.
-    return 'VARCHAR(512)' if indexed else 'LONGTEXT'
+    # SQLite TEXT is unbounded. Only indexed/PK text needs a finite MySQL type.
+    return 'VARCHAR(191)' if indexed else 'LONGTEXT'
 
 
 def _index_columns(table: dict) -> set[str]:
@@ -82,6 +80,8 @@ def _index_columns(table: dict) -> set[str]:
         if int(col.get('pk') or 0) > 0:
             result.add(str(col.get('name') or ''))
     for idx in table.get('indexes') or []:
+        if bool(idx.get('partial')):
+            continue
         for name in idx.get('columns') or []:
             if name:
                 result.add(str(name))
@@ -115,11 +115,10 @@ def _create_table_sql(physical_name: str, table: dict) -> str:
 
 def _safe_stage_name(prefix: str, table_name: str, token: str) -> str:
     base = re.sub(r'[^A-Za-z0-9_]', '_', table_name)
-    room = 63 - len(prefix) - len(token) - 2
-    base = base[:max(8, room)]
-    name = f'{prefix}_{token}_{base}'
-    if len(name) > 64:
-        name = name[:64]
+    suffix = hashlib.sha1(str(table_name).encode('utf-8')).hexdigest()[:6]
+    room = 64 - len(prefix) - len(token) - len(suffix) - 3
+    base = base[:max(1, room)]
+    name = f'{prefix}_{token}_{base}_{suffix}'
     _qi(name)
     return name
 
@@ -150,6 +149,7 @@ def get_full_mirror_state() -> dict:
         return dict(row) if row else {
             'snapshot_hash': None,
             'source_watermark': None,
+            'source_site': None,
             'table_count': 0,
             'row_count': 0,
             'committed_at': None,
@@ -161,6 +161,8 @@ def get_full_mirror_state() -> dict:
 def _normalize_tables(tables: Any) -> tuple[list[dict], int]:
     if not isinstance(tables, list):
         raise ValueError('tables must be a list')
+    if not tables:
+        raise ValueError('full ORDER snapshot contains no tables')
     if len(tables) > MAX_TABLES:
         raise ValueError(f'too many tables (max {MAX_TABLES})')
 
@@ -218,12 +220,14 @@ def _create_indexes(cur, stage_name: str, table: dict):
     known_cols = {str(c.get('name')) for c in table.get('columns') or []}
     seq = 0
     for raw in table.get('indexes') or []:
-        if not isinstance(raw, dict):
+        if not isinstance(raw, dict) or bool(raw.get('partial')):
+            # SQLite partial indexes have a WHERE clause which PRAGMA index_info
+            # does not preserve. Creating them as full indexes could change unique
+            # semantics, so the read-only WAN mirror safely omits them.
             continue
         columns = [str(x) for x in (raw.get('columns') or []) if str(x) in known_cols]
         if not columns:
             continue
-        # PRIMARY is already represented by PRAGMA table_info(pk).
         if str(raw.get('origin') or '').lower() == 'pk' or str(raw.get('name') or '').upper() == 'PRIMARY':
             continue
         seq += 1
@@ -239,6 +243,20 @@ def _create_indexes(cur, stage_name: str, table: dict):
         )
 
 
+def _watermark_dt(value):
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+    try:
+        normalized = raw.replace('Z', '+00:00')
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
 def replace_full_mirror(tables: Any, snapshot_hash: str, source_watermark=None,
                         source_site=None, force=False) -> dict:
     normalized, total_rows = _normalize_tables(tables)
@@ -249,7 +267,10 @@ def replace_full_mirror(tables: Any, snapshot_hash: str, source_watermark=None,
     if calculated != supplied_hash:
         raise ValueError('snapshot_hash does not match received full ORDER snapshot')
 
+    source_watermark = str(source_watermark or '').strip() or None
+    source_site = str(source_site or '').strip().upper()[:32] or None
     current = get_full_mirror_state()
+
     if current.get('snapshot_hash') == supplied_hash and not force:
         return {
             'changed': False,
@@ -257,6 +278,21 @@ def replace_full_mirror(tables: Any, snapshot_hash: str, source_watermark=None,
             'snapshot_hash': supplied_hash,
             'tables': int(current.get('table_count') or 0),
             'rows': int(current.get('row_count') or 0),
+        }
+
+    # HASH only proves "different", not "newer". When both CN/CL machines may
+    # refresh the cloud, reject a clearly older SQLite watermark unless force=True.
+    incoming_dt = _watermark_dt(source_watermark)
+    current_dt = _watermark_dt(current.get('source_watermark'))
+    if not force and incoming_dt and current_dt and incoming_dt < current_dt:
+        return {
+            'changed': False,
+            'reason': 'stale_source',
+            'stale': True,
+            'snapshot_hash': supplied_hash,
+            'source_watermark': source_watermark,
+            'cloud_watermark': current.get('source_watermark'),
+            'cloud_source_site': current.get('source_site'),
         }
 
     token = supplied_hash[:8]
@@ -267,8 +303,8 @@ def replace_full_mirror(tables: Any, snapshot_hash: str, source_watermark=None,
         _ensure_state_table(conn)
         cur = conn.cursor()
 
-        # Build and load every staging table before touching the currently visible
-        # ORDER mirror. A failed upload therefore leaves the old WAN ORDER intact.
+        # Build/load every stage before touching the visible mirror. If anything
+        # fails, the previous WAN ORDER remains intact.
         for table in normalized:
             name = table['name']
             stage = _safe_stage_name('__stg', name, token)
@@ -298,10 +334,7 @@ def replace_full_mirror(tables: Any, snapshot_hash: str, source_watermark=None,
         cur.execute('SHOW TABLES')
         existing = set()
         for row in cur.fetchall() or []:
-            if isinstance(row, dict):
-                value = next(iter(row.values()), None)
-            else:
-                value = row[0] if row else None
+            value = next(iter(row.values()), None) if isinstance(row, dict) else (row[0] if row else None)
             if value:
                 existing.add(str(value))
 
@@ -335,8 +368,6 @@ def replace_full_mirror(tables: Any, snapshot_hash: str, source_watermark=None,
             cur.execute(f'DROP TABLE IF EXISTS {_qi(backup)}')
 
         committed_at = datetime.now(timezone.utc).isoformat()
-        source_watermark = str(source_watermark or '').strip() or None
-        source_site = str(source_site or '').strip().upper()[:32] or None
         cur.execute(f'SELECT id FROM {_qi(_STATE_TABLE)} WHERE id=1')
         if cur.fetchone():
             cur.execute(
@@ -366,7 +397,6 @@ def replace_full_mirror(tables: Any, snapshot_hash: str, source_watermark=None,
             conn.rollback()
         except Exception:
             pass
-        # Staging tables are disposable; never remove visible mirror tables here.
         try:
             cur = conn.cursor()
             for stage in stages.values():
