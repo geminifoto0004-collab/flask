@@ -2,8 +2,8 @@
 """Mirror the complete ORDER SQLite database schema/data to Render/TiDB.
 
 Only SQLite contents are read. External upload/image/PDF files are never opened or
-sent. The Render ORDER code can therefore use the same logical tables on WAN while
-local attachment areas remain empty.
+sent. Large mirrors are transported in short gzip-compressed row chunks so Render
+does not have to insert hundreds of thousands of rows inside one HTTP request.
 """
 from __future__ import annotations
 
@@ -24,6 +24,8 @@ import order_cloud_sync_real_order as one
 
 BASE_URL = (os.environ.get('ORDER_CLOUD_BASE_URL') or 'https://flask-393d.onrender.com').rstrip('/')
 API_KEY = (os.environ.get('ORDER_SYNC_API_KEY') or '').strip()
+DEFAULT_CHUNK_ROWS = 5000
+MAX_CHUNK_ROWS = 20000
 
 
 def _headers(extra=None):
@@ -82,8 +84,6 @@ def _row_order_sql(columns):
     if pk:
         pk.sort()
         return ' ORDER BY ' + ','.join(_quote_ident(name) for _, name in pk)
-    # Ordinary SQLite tables expose rowid. If a special table does not, caller
-    # retries without an ORDER BY. Most ORDER tables have an integer id/PK.
     return ' ORDER BY rowid'
 
 
@@ -165,7 +165,7 @@ def _canonical_hash(tables):
     return hashlib.sha256(raw).hexdigest()
 
 
-def _request_json(session, method, path, *, body=None, timeout=300):
+def _request_json(session, method, path, *, body=None, timeout=120):
     kwargs = {'timeout': (10, timeout)}
     if body is not None:
         raw = json.dumps(body, ensure_ascii=False, separators=(',', ':'), default=str).encode('utf-8')
@@ -186,12 +186,31 @@ def _request_json(session, method, path, *, body=None, timeout=300):
     return data
 
 
+def _manifest(tables):
+    return [{
+        'name': table['name'],
+        'columns': table['columns'],
+        'indexes': table['indexes'],
+        'expected_rows': len(table['rows']),
+    } for table in tables]
+
+
+def _print_stale(result):
+    print('TiDB full ORDER mirror: NOT UPDATED (source is older than cloud)')
+    print(f"Local watermark: {result.get('source_watermark')}")
+    print(f"Cloud watermark: {result.get('cloud_watermark')}")
+
+
 def main():
     ap = argparse.ArgumentParser(description='Mirror complete ORDER SQLite into TiDB')
     ap.add_argument('--db', help='explicit tracking.db path')
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--force', action='store_true')
+    ap.add_argument('--chunk-rows', type=int, default=DEFAULT_CHUNK_ROWS,
+                    help=f'rows per HTTP request (default {DEFAULT_CHUNK_ROWS}, max {MAX_CHUNK_ROWS})')
     args = ap.parse_args()
+    if args.chunk_rows < 1 or args.chunk_rows > MAX_CHUNK_ROWS:
+        ap.error(f'--chunk-rows must be between 1 and {MAX_CHUNK_ROWS}')
 
     db = one._discover_db(args.db)
     conn = one._open_read_only(db)
@@ -202,15 +221,16 @@ def main():
         conn.close()
 
     snapshot_hash = _canonical_hash(tables)
-    body = {
-        'version': 1,
+    manifest = _manifest(tables)
+    diagnostic_body = {
+        'version': 2,
         'snapshot_hash': snapshot_hash,
         'source_watermark': watermark,
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'force': bool(args.force),
         'tables': tables,
     }
-    raw = json.dumps(body, ensure_ascii=False, separators=(',', ':'), default=str).encode('utf-8')
+    raw = json.dumps(diagnostic_body, ensure_ascii=False, separators=(',', ':'), default=str).encode('utf-8')
     gz = gzip.compress(raw, compresslevel=6)
 
     print(f'ORDER SQLite: {db}')
@@ -219,10 +239,19 @@ def main():
     print(f'Snapshot HASH: {snapshot_hash}')
     print(f'Source watermark: {watermark or "(none)"}')
     print('External images/PDF/upload files: NOT READ / NOT SENT')
+    print(f'Transport: chunked ({args.chunk_rows} rows/request)')
 
     if args.dry_run:
         print('DRY RUN OK')
         return 0
+
+    common = {
+        'version': 2,
+        'snapshot_hash': snapshot_hash,
+        'source_watermark': watermark,
+        'force': bool(args.force),
+        'manifest': manifest,
+    }
 
     with requests.Session() as session:
         state_body = _request_json(session, 'GET', '/api/order-cloud/sync/full-mirror-state')
@@ -231,22 +260,68 @@ def main():
             print('TiDB full ORDER mirror: SAME HASH -> no rebuild')
             return 0
 
+        begin_body = _request_json(
+            session,
+            'POST',
+            '/api/order-cloud/sync/full-mirror/begin',
+            body=common,
+            timeout=120,
+        )
+        begin_result = begin_body.get('result') or {}
+        if begin_result.get('stale'):
+            _print_stale(begin_result)
+            return 3
+        if not begin_result.get('ready'):
+            if begin_result.get('reason') == 'same_hash':
+                print('TiDB full ORDER mirror: SAME HASH -> no rebuild')
+                return 0
+            raise one.SyncError('full mirror begin did not become ready: ' + json.dumps(begin_result, ensure_ascii=False))
+
+        print('TiDB staging: READY')
+        table_total = len(tables)
+        for table_index, table in enumerate(tables, start=1):
+            name = table['name']
+            rows = table['rows']
+            columns = [str(c.get('name') or '') for c in table['columns']]
+            count = len(rows)
+            if count == 0:
+                print(f'[{table_index}/{table_total}] {name}: 0 rows')
+                continue
+
+            sent = 0
+            while sent < count:
+                chunk = rows[sent:sent + args.chunk_rows]
+                _request_json(
+                    session,
+                    'POST',
+                    '/api/order-cloud/sync/full-mirror/chunk',
+                    body={
+                        'snapshot_hash': snapshot_hash,
+                        'table_name': name,
+                        'columns': columns,
+                        'rows': chunk,
+                    },
+                    timeout=120,
+                )
+                sent += len(chunk)
+                print(f'[{table_index}/{table_total}] {name}: {sent}/{count}')
+
+        print('All chunks uploaded; verifying and swapping TiDB tables...')
         result_body = _request_json(
             session,
             'POST',
-            '/api/order-cloud/sync/full-mirror',
-            body=body,
-            timeout=300,
+            '/api/order-cloud/sync/full-mirror/finalize',
+            body=common,
+            timeout=120,
         )
         result = result_body.get('result') or {}
         if result.get('stale'):
-            print('TiDB full ORDER mirror: NOT UPDATED (source is older than cloud)')
-            print(f"Local watermark: {result.get('source_watermark')}")
-            print(f"Cloud watermark: {result.get('cloud_watermark')}")
+            _print_stale(result)
             return 3
         if not result.get('changed'):
             print(f"TiDB full ORDER mirror: skipped ({result.get('reason') or 'no change'})")
             return 0
+
         print(
             'TIDB FULL ORDER MIRROR OK: '
             f"tables={result.get('tables')} rows={result.get('rows')} "
