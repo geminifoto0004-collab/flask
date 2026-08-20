@@ -2,8 +2,9 @@
 """Mirror the complete ORDER SQLite database schema/data to Render/TiDB.
 
 Only SQLite contents are read. External upload/image/PDF files are never opened or
-sent. Large mirrors are transported in short gzip-compressed row chunks so Render
-does not have to insert hundreds of thousands of rows inside one HTTP request.
+sent. Large mirrors are transported in short gzip-compressed requests. Staging DDL
+is prepared one table at a time so no single Render request has to rebuild the full
+schema. Transient 502/503/504 responses are retried automatically.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 from typing import Any
 
 import requests
@@ -26,9 +28,8 @@ BASE_URL = (os.environ.get('ORDER_CLOUD_BASE_URL') or 'https://flask-393d.onrend
 API_KEY = (os.environ.get('ORDER_SYNC_API_KEY') or '').strip()
 DEFAULT_CHUNK_ROWS = 5000
 MAX_CHUNK_ROWS = 20000
-# Keep the notifications table schema on WAN so the shared ORDER code never
-# hits a missing-table error, but do not mirror its high-volume historical rows.
 SCHEMA_ONLY_TABLES = {'notifications'}
+_RETRY_STATUS = {429, 502, 503, 504}
 
 
 def _headers(extra=None):
@@ -177,25 +178,54 @@ def _canonical_hash(tables):
     return hashlib.sha256(raw).hexdigest()
 
 
-def _request_json(session, method, path, *, body=None, timeout=120):
-    kwargs = {'timeout': (10, timeout)}
+def _request_json(session, method, path, *, body=None, timeout=120, retries=4):
     if body is not None:
         raw = json.dumps(body, ensure_ascii=False, separators=(',', ':'), default=str).encode('utf-8')
         compressed = gzip.compress(raw, compresslevel=6)
-        kwargs['data'] = compressed
-        kwargs['headers'] = _headers({'Content-Type': 'application/json', 'Content-Encoding': 'gzip'})
+        data_bytes = compressed
+        headers = _headers({'Content-Type': 'application/json', 'Content-Encoding': 'gzip'})
     else:
-        kwargs['headers'] = _headers()
-    response = session.request(method, BASE_URL + path, **kwargs)
-    try:
-        data = response.json()
-    except ValueError:
-        data = {'raw': response.text[:1200]}
-    if not response.ok or not data.get('ok'):
+        data_bytes = None
+        headers = _headers()
+
+    last_error = None
+    for attempt in range(1, max(1, retries) + 1):
+        try:
+            kwargs = {'timeout': (10, timeout), 'headers': headers}
+            if data_bytes is not None:
+                kwargs['data'] = data_bytes
+            response = session.request(method, BASE_URL + path, **kwargs)
+        except requests.RequestException as exc:
+            last_error = f'{type(exc).__name__}: {exc}'
+            if attempt < retries:
+                wait = min(2 ** attempt, 12)
+                print(f'HTTP transient error on {path}; retry {attempt}/{retries} in {wait}s', file=sys.stderr)
+                time.sleep(wait)
+                continue
+            raise one.SyncError(f'{method} {path} request failed: {last_error}') from exc
+
+        try:
+            data = response.json()
+        except ValueError:
+            data = {'raw': response.text[:1200]}
+
+        if response.ok and data.get('ok'):
+            return data
+
+        if response.status_code in _RETRY_STATUS and attempt < retries:
+            wait = min(2 ** attempt, 12)
+            print(
+                f'HTTP {response.status_code} on {path}; retry {attempt}/{retries} in {wait}s',
+                file=sys.stderr,
+            )
+            time.sleep(wait)
+            continue
+
         raise one.SyncError(
             f'{method} {path} failed ({response.status_code}): ' + json.dumps(data, ensure_ascii=False)
         )
-    return data
+
+    raise one.SyncError(f'{method} {path} failed after retries: {last_error or "unknown error"}')
 
 
 def _manifest(tables):
@@ -234,8 +264,9 @@ def main():
 
     snapshot_hash = _canonical_hash(tables)
     manifest = _manifest(tables)
+    manifest_by_name = {item['name']: item for item in manifest}
     diagnostic_body = {
-        'version': 2,
+        'version': 3,
         'snapshot_hash': snapshot_hash,
         'source_watermark': watermark,
         'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -253,14 +284,14 @@ def main():
     print('External images/PDF/upload files: NOT READ / NOT SENT')
     for table_name, count in sorted(skipped_rows.items()):
         print(f'{table_name}: schema only | {count} SQLite rows NOT uploaded')
-    print(f'Transport: chunked ({args.chunk_rows} rows/request)')
+    print(f'Transport: per-table staging + chunked rows ({args.chunk_rows} rows/request)')
 
     if args.dry_run:
         print('DRY RUN OK')
         return 0
 
     common = {
-        'version': 2,
+        'version': 3,
         'snapshot_hash': snapshot_hash,
         'source_watermark': watermark,
         'force': bool(args.force),
@@ -279,7 +310,7 @@ def main():
             'POST',
             '/api/order-cloud/sync/full-mirror/begin',
             body=common,
-            timeout=120,
+            timeout=60,
         )
         begin_result = begin_body.get('result') or {}
         if begin_result.get('stale'):
@@ -291,15 +322,27 @@ def main():
                 return 0
             raise one.SyncError('full mirror begin did not become ready: ' + json.dumps(begin_result, ensure_ascii=False))
 
-        print('TiDB staging: READY')
+        print('TiDB staging session: READY')
         table_total = len(tables)
         for table_index, table in enumerate(tables, start=1):
             name = table['name']
             rows = table['rows']
             columns = [str(c.get('name') or '') for c in table['columns']]
             count = len(rows)
+
+            _request_json(
+                session,
+                'POST',
+                '/api/order-cloud/sync/full-mirror/table',
+                body={
+                    'snapshot_hash': snapshot_hash,
+                    'table': manifest_by_name[name],
+                },
+                timeout=60,
+            )
+
             if count == 0:
-                print(f'[{table_index}/{table_total}] {name}: 0 rows')
+                print(f'[{table_index}/{table_total}] {name}: staging ready | 0 rows')
                 continue
 
             sent = 0
