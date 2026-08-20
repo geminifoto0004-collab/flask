@@ -1,12 +1,8 @@
-"""Native ORDER login mirror for Render.
+"""ORDER authentication helpers for Render.
 
-Render uses the same ORDER username/password hashes/roles as the local ORDER system,
-but authentication data is kept in an isolated cloud_order_users table so it never
-collides with the parent Flask app's own users table.
-
-Only the existing one-way password hash is stored; plaintext passwords are never
-synced or logged. Cloud ORDER stays read-only: password reset/registration must be
-done in the local ORDER system and will be reflected on the next sync.
+Unified WAN ORDER now mirrors the complete SQLite ``users`` table into the isolated
+ORDER TiDB database. Login therefore reads that same mirrored users table first.
+The older cloud_order_users mirror is retained temporarily as a rollback fallback.
 """
 from __future__ import annotations
 
@@ -41,7 +37,7 @@ def init_order_auth_table() -> None:
 
 
 def sync_order_users(users, source_site=None):
-    """Replace the small ORDER authentication mirror with the supplied local snapshot."""
+    """Legacy small auth mirror; kept for rollback while full mirror takes over."""
     if not isinstance(users, list):
         raise ValueError("users must be a list")
     if len(users) > 1000:
@@ -78,27 +74,19 @@ def sync_order_users(users, source_site=None):
             str((get_row_dict(row, cur) or {}).get("username") or "")
             for row in cur.fetchall()
         }
-
         for user in normalized:
             username = user["username"]
             values = (
-                user["local_user_id"],
-                user["password_hash"],
-                user["display_name"],
-                user["real_name"],
-                user["role"],
-                user["status"],
-                user["needs_password_reset"],
-                source_site,
-                username,
+                user["local_user_id"], user["password_hash"], user["display_name"],
+                user["real_name"], user["role"], user["status"],
+                user["needs_password_reset"], source_site, username,
             )
             if username in existing:
                 cur.execute(
                     """UPDATE cloud_order_users
                        SET local_user_id=?, password_hash=?, display_name=?, real_name=?,
                            role=?, status=?, needs_password_reset=?, source_site=?,
-                           updated_at=CURRENT_TIMESTAMP
-                       WHERE username=?""",
+                           updated_at=CURRENT_TIMESTAMP WHERE username=?""",
                     values,
                 )
             else:
@@ -109,10 +97,8 @@ def sync_order_users(users, source_site=None):
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     values,
                 )
-
         for username in existing - seen:
             cur.execute("DELETE FROM cloud_order_users WHERE username=?", (username,))
-
         conn.commit()
         return {"users": len(normalized), "deleted": len(existing - seen)}
     except Exception:
@@ -122,13 +108,29 @@ def sync_order_users(users, source_site=None):
         conn.close()
 
 
-def authenticate_order_user(username: str, password: str):
-    """Validate credentials with the same Werkzeug password hash used by local ORDER."""
-    username = str(username or "").strip()
-    password = str(password or "")
-    if not username or not password:
-        return None, "invalid"
+def _load_unified_mirror_user(username: str):
+    """Read one user from the complete ORDER TiDB mirror if it is available."""
+    try:
+        from services.order_tidb_connection import get_order_tidb_connection
+        conn = get_order_tidb_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT * FROM users WHERE username=%s LIMIT 1', (username,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            data = dict(row)
+            data['local_user_id'] = data.get('id')
+            return data
+        finally:
+            conn.close()
+    except Exception:
+        # First deploy may happen before the first complete mirror. Legacy auth
+        # remains available so Render does not lock the user out during migration.
+        return None
 
+
+def _load_legacy_auth_user(username: str):
     init_order_auth_table()
     conn = get_db_connection()
     cur = get_cursor(conn)
@@ -140,10 +142,19 @@ def authenticate_order_user(username: str, password: str):
             (username,),
         )
         row = cur.fetchone()
-        user = get_row_dict(row, cur) if row else None
+        return get_row_dict(row, cur) if row else None
     finally:
         conn.close()
 
+
+def authenticate_order_user(username: str, password: str):
+    """Validate credentials against the same mirrored ORDER users table."""
+    username = str(username or "").strip()
+    password = str(password or "")
+    if not username or not password:
+        return None, "invalid"
+
+    user = _load_unified_mirror_user(username) or _load_legacy_auth_user(username)
     if not user:
         return None, "invalid"
 
@@ -159,7 +170,7 @@ def authenticate_order_user(username: str, password: str):
         return None, "invalid"
 
     return {
-        "id": user.get("local_user_id"),
+        "id": user.get("local_user_id") if user.get("local_user_id") is not None else user.get('id'),
         "username": user.get("username"),
         "display_name": user.get("display_name") or user.get("real_name") or user.get("username"),
         "real_name": user.get("real_name"),
