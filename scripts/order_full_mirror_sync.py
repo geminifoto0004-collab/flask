@@ -26,6 +26,9 @@ BASE_URL = (os.environ.get('ORDER_CLOUD_BASE_URL') or 'https://flask-393d.onrend
 API_KEY = (os.environ.get('ORDER_SYNC_API_KEY') or '').strip()
 DEFAULT_CHUNK_ROWS = 5000
 MAX_CHUNK_ROWS = 20000
+# Keep the notifications table schema on WAN so the shared ORDER code never
+# hits a missing-table error, but do not mirror its high-volume historical rows.
+SCHEMA_ONLY_TABLES = {'notifications'}
 
 
 def _headers(extra=None):
@@ -95,6 +98,7 @@ def _dump_tables(conn: sqlite3.Connection):
     ).fetchall()
     tables = []
     total_rows = 0
+    skipped_rows = {}
     for row in rows:
         name = str(row[0] or '').strip()
         if not name:
@@ -115,11 +119,17 @@ def _dump_tables(conn: sqlite3.Connection):
 
         col_names = [c['name'] for c in columns]
         quoted = ','.join(_quote_ident(n) for n in col_names)
-        select_sql = f'SELECT {quoted} FROM {_quote_ident(name)}' + _row_order_sql(columns)
-        try:
-            source_rows = conn.execute(select_sql).fetchall()
-        except sqlite3.DatabaseError:
-            source_rows = conn.execute(f'SELECT {quoted} FROM {_quote_ident(name)}').fetchall()
+
+        if name in SCHEMA_ONLY_TABLES:
+            count_row = conn.execute(f'SELECT COUNT(*) FROM {_quote_ident(name)}').fetchone()
+            skipped_rows[name] = int(count_row[0] or 0) if count_row else 0
+            source_rows = []
+        else:
+            select_sql = f'SELECT {quoted} FROM {_quote_ident(name)}' + _row_order_sql(columns)
+            try:
+                source_rows = conn.execute(select_sql).fetchall()
+            except sqlite3.DatabaseError:
+                source_rows = conn.execute(f'SELECT {quoted} FROM {_quote_ident(name)}').fetchall()
 
         data_rows = [[_encode_value(data[n]) for n in col_names] for data in source_rows]
         total_rows += len(data_rows)
@@ -130,7 +140,7 @@ def _dump_tables(conn: sqlite3.Connection):
             'rows': data_rows,
         })
     tables.sort(key=lambda t: t['name'])
-    return tables, total_rows
+    return tables, total_rows, skipped_rows
 
 
 def _source_watermark(conn: sqlite3.Connection):
@@ -140,6 +150,8 @@ def _source_watermark(conn: sqlite3.Connection):
     ).fetchall()]
     names = ('updated_at', 'created_at', 'status_updated_at', 'action_date', 'order_date', 'visit_date')
     for table in tables:
+        if table in SCHEMA_ONLY_TABLES:
+            continue
         cols = {str(r['name']) for r in conn.execute(f'PRAGMA table_info({_quote_ident(table)})').fetchall()}
         for col in names:
             if col not in cols:
@@ -215,7 +227,7 @@ def main():
     db = one._discover_db(args.db)
     conn = one._open_read_only(db)
     try:
-        tables, total_rows = _dump_tables(conn)
+        tables, total_rows, skipped_rows = _dump_tables(conn)
         watermark = _source_watermark(conn)
     finally:
         conn.close()
@@ -239,6 +251,8 @@ def main():
     print(f'Snapshot HASH: {snapshot_hash}')
     print(f'Source watermark: {watermark or "(none)"}')
     print('External images/PDF/upload files: NOT READ / NOT SENT')
+    for table_name, count in sorted(skipped_rows.items()):
+        print(f'{table_name}: schema only | {count} SQLite rows NOT uploaded')
     print(f'Transport: chunked ({args.chunk_rows} rows/request)')
 
     if args.dry_run:
