@@ -1,0 +1,39 @@
+name: Patch SQLite VARCHAR mirror compatibility
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'Fix SQLite VARCHAR mirror compatibility') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Apply patch
+        run: python scripts/patch_sqlite_varchar_mirror.py
+      - name: Compile mirror services
+        run: |
+          python -m py_compile services/order_full_mirror_service.py
+          python -m py_compile services/order_full_mirror_chunk_service.py
+      - name: Commit and push
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git add services/order_full_mirror_service.py
+          git commit -m "Fix SQLite VARCHAR mirror compatibility"
+          git push
