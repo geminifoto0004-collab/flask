@@ -14,6 +14,7 @@ from services.order_full_mirror_chunk_service import (
     finalize_chunked_mirror,
     prepare_chunked_table,
 )
+from services.order_wan_compat_diagnostics import run_order_wan_compat_diagnostics
 
 order_tracking_cloud_auth_bp = Blueprint("order_tracking_cloud_auth", __name__)
 
@@ -85,6 +86,18 @@ def full_mirror_state():
         return jsonify({'ok': True, 'result': get_full_mirror_state()})
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 500
+
+
+@order_tracking_cloud_auth_bp.route('/api/order-cloud/sync/compat-check', methods=['GET'])
+def compat_check():
+    """Run a no-row-data smoke test of the unified LAN SQL path against TiDB."""
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        return jsonify({'ok': True, 'result': run_order_wan_compat_diagnostics()})
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': str(exc), 'error_type': type(exc).__name__}), 500
 
 
 @order_tracking_cloud_auth_bp.route('/api/order-cloud/sync/full-mirror', methods=['POST'])
@@ -163,7 +176,7 @@ def sync_full_mirror_chunk():
         )
         return jsonify({'ok': True, 'result': result})
     except ValueError as exc:
-        return jsonify({'ok': False, 'error': str(exc)}), 400
+        return jsonify({'ok': False, "error": str(exc)}), 400
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 500
 
