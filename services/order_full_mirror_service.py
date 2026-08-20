@@ -65,10 +65,16 @@ def _type_for(column: dict, indexed: bool) -> str:
     if m:
         n = max(1, int(m.group(1)))
         if indexed:
-            # Four utf8mb4 VARCHAR(191) columns still fit a normal 3072-byte
-            # composite index. ORDER's indexed identifiers/names are below this.
-            n = min(n, 191)
-        return f'VARCHAR({min(n, 4096)})'
+            # Indexed identifiers keep a bounded VARCHAR so TiDB can build the
+            # mirrored indexes. ORDER's indexed keys are short identifiers.
+            return f'VARCHAR({min(n, 191)})'
+
+        # SQLite treats VARCHAR(n) as TEXT affinity and DOES NOT enforce n. The
+        # live ORDER database already contains values longer than declarations
+        # such as workflows.product_code VARCHAR(50). Mirroring that declaration
+        # literally to TiDB causes error 1406 (Data too long). Non-indexed text
+        # must therefore stay unbounded on the read-only WAN mirror.
+        return 'LONGTEXT'
 
     # SQLite TEXT is unbounded. Only indexed/PK text needs a finite MySQL type.
     return 'VARCHAR(191)' if indexed else 'LONGTEXT'
