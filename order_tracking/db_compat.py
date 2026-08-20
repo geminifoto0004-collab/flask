@@ -156,6 +156,23 @@ def translate_sqlite_sql(sql: str) -> str:
         text,
         flags=re.I,
     )
+
+    # SQLite GLOB appears in ORDER's numeric-section filters. TiDB/MySQL uses
+    # REGEXP. The media-extension GLOB queries are intercepted separately because
+    # WAN deliberately exposes no local attachment bytes.
+    text = re.sub(
+        r"\b([A-Za-z_][A-Za-z0-9_\.]*)\s+NOT\s+GLOB\s+['\"]\[0-9\]\*['\"]",
+        r"\1 NOT REGEXP '^[0-9]'",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"\b([A-Za-z_][A-Za-z0-9_\.]*)\s+GLOB\s+['\"]\[0-9\]\*['\"]",
+        r"\1 REGEXP '^[0-9]'",
+        text,
+        flags=re.I,
+    )
+
     text = re.sub(r"^\s*BEGIN\s+(IMMEDIATE|EXCLUSIVE)\b", "START TRANSACTION", text, flags=re.I)
 
     # MySQL/TiDB do not accept CREATE INDEX IF NOT EXISTS. Existence is checked
@@ -335,7 +352,11 @@ class TiDBSQLiteCompatCursor:
             return False
         if not any(re.search(rf"\b{re.escape(name)}\b", low) for name in _MEDIA_TABLES):
             return False
-        if 'count(' in low:
+        # A grouped count such as ``SELECT order_number, COUNT(*) ... GROUP BY``
+        # represents one row per local attachment owner. With no WAN attachment
+        # bytes the correct result is zero rows, not a synthetic row missing the
+        # grouping column. Scalar COUNT queries still receive one zero value.
+        if 'count(' in low and 'group by' not in low:
             alias = 'count'
             m = re.search(r"count\s*\([^\)]*\)\s+(?:as\s+)?([a-zA-Z_][\w]*)", low)
             if m:
