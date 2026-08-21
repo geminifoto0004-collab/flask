@@ -11,7 +11,6 @@
     const isAdminRole = () => (typeof appPerm.isAdmin === 'function' ? appPerm.isAdmin() : false);
     const isSalesRole = () => (typeof appPerm.isSales === 'function' ? appPerm.isSales() : false);
     const canEditWorkflow = () => (typeof appPerm.can === 'function' ? appPerm.can('edit', 'workflow') : false);
-    const isCloudReadOnly = () => document.body?.dataset.cloudReadOnly === 'true';
 
     const WorkspaceDrawer = {
         // 状态管理
@@ -873,7 +872,6 @@
 
             if (this.state.orderOnly) {
                 this.renderAdminRef();
-                this.applyCloudReadonlyVisual();
                 this._syncPreviewAfterRender();
                 return;
             }
@@ -884,7 +882,6 @@
             this.renderFiles();
             this.renderQuickActions();
             this.renderFooterActions();
-            this.applyCloudReadonlyVisual();
 
             this._syncPreviewAfterRender();
         },
@@ -961,47 +958,6 @@
             }
             if (this.elements.orderManagementGrid) {
                 this.elements.orderManagementGrid.style.display = canOperate ? '' : 'none';
-            }
-        },
-
-        /**
-         * Render 仍使用 LAN 的完整抽屜版面；寫入控制保持唯讀。
-         * 這裡只把 LAN 原本存在的操作區顯示成 disabled，不會繞過後端唯讀保護。
-         */
-        applyCloudReadonlyVisual() {
-            if (!isCloudReadOnly()) return;
-
-            const disable = (el, show = true) => {
-                if (!el) return;
-                if (show) el.classList.remove('hidden');
-                el.disabled = true;
-                el.classList.add('is-disabled');
-                el.setAttribute('aria-disabled', 'true');
-                el.title = 'Render 云端唯读';
-            };
-
-            if (this.isAdmin()) {
-                disable(this.elements.adminRemarkEditBtn);
-                disable(this.elements.adminUploadBtn);
-                disable(this.elements.adminSelectBtn);
-                disable(this.elements.adminDeleteBtn);
-                disable(this.elements.transferBtn);
-            }
-            if (this.isSales()) {
-                disable(this.elements.salesRemarkEditBtn);
-            }
-            if (this.isAdmin() || this.isSales()) {
-                disable(this.elements.salesUploadBtn);
-                disable(this.elements.salesSelectBtn);
-                disable(this.elements.salesDeleteBtn);
-            }
-
-            if (!this.state.orderOnly && (this.isAdmin() || this.isSales())) {
-                if (this.elements.footer) this.elements.footer.style.display = '';
-                if (this.elements.quickActionsGrid) this.elements.quickActionsGrid.style.display = '';
-                if (this.elements.orderManagementGrid) this.elements.orderManagementGrid.style.display = '';
-                disable(this.elements.quickActionBtn);
-                disable(this.elements.skipBtn);
             }
         },
 
