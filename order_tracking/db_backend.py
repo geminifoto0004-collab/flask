@@ -51,11 +51,12 @@ def get_tracking_db_connection():
     if unified_remote_db_enabled():
         # Use a dedicated TiDB logical database so ORDER's users/orders/etc. can
         # keep their original table names without colliding with the parent Flask
-        # application's own TiDB tables.
+        # application's own TiDB tables. The wrapper also normalizes MySQL-only
+        # derived-table alias requirements while LAN keeps the original SQLite SQL.
         from services.order_tidb_connection import get_order_tidb_connection
-        from .db_compat import TiDBSQLiteCompatConnection
+        from .db_derived_alias import TiDBDerivedAliasCompatConnection
 
-        return TiDBSQLiteCompatConnection(get_order_tidb_connection())
+        return TiDBDerivedAliasCompatConnection(get_order_tidb_connection())
 
     # Legacy provider/cloud path kept for rollback compatibility.
     factory = get_registered_cloud_db_factory()
