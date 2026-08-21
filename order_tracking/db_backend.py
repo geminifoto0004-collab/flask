@@ -58,7 +58,9 @@ def get_tracking_db_connection():
 
         return TiDBDerivedAliasCompatConnection(get_order_tidb_connection())
 
-    # Legacy provider/cloud path kept for rollback compatibility.
+    # Legacy provider/cloud path kept for rollback compatibility. The parent
+    # database layer already handles placeholders; only add the MySQL-required
+    # derived-table aliases here so the same ORDER search SQL works in both modes.
     factory = get_registered_cloud_db_factory()
     if factory is None:
         raise RuntimeError(
@@ -68,4 +70,5 @@ def get_tracking_db_connection():
     conn = factory()
     if conn is None:
         raise RuntimeError("ORDER cloud database factory returned no connection")
-    return conn
+    from .db_derived_alias import DerivedAliasConnectionProxy
+    return DerivedAliasConnectionProxy(conn)
