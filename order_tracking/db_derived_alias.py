@@ -95,3 +95,60 @@ class TiDBDerivedAliasCompatConnection(TiDBSQLiteCompatConnection):
     def cursor(self, *args, **kwargs):
         kwargs = {k: v for k, v in kwargs.items() if k not in ('cursor_factory', 'cursorclass')}
         return TiDBDerivedAliasCompatCursor(self._conn.cursor(*args, **kwargs))
+
+
+class DerivedAliasCursorProxy:
+    """Alias-only proxy for the legacy cloud DB factory path.
+
+    The parent Flask database layer already performs its own placeholder/dialect
+    translation. This proxy deliberately changes only anonymous derived-table
+    aliases so we do not translate the same SQL twice.
+    """
+
+    def __init__(self, raw_cursor):
+        self._cursor = raw_cursor
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+    def execute(self, sql: str, params=None):
+        fixed = ensure_mysql_derived_aliases(sql)
+        return self._cursor.execute(fixed, params) if params is not None else self._cursor.execute(fixed)
+
+    def executemany(self, sql: str, params_list):
+        return self._cursor.executemany(ensure_mysql_derived_aliases(sql), params_list)
+
+
+class DerivedAliasConnectionProxy:
+    """Connection proxy used only when Render is still on the legacy factory path."""
+
+    def __init__(self, raw_connection):
+        self._conn = raw_connection
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def cursor(self, *args, **kwargs):
+        return DerivedAliasCursorProxy(self._conn.cursor(*args, **kwargs))
+
+    def execute(self, sql: str, params=None):
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql: str, params_list):
+        cur = self.cursor()
+        cur.executemany(sql, params_list)
+        return cur
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type:
+            try:
+                self.rollback()
+            except Exception:
+                pass
+        self.close()
+        return False
