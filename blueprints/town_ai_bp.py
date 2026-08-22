@@ -34,6 +34,7 @@ _LAST_CALL_BY_IP = {}
 _STATE_DIR = (os.environ.get("TOWN_STATE_DIR") or "/tmp/customs_agent_town").strip()
 _WORLD_PATH = os.path.join(_STATE_DIR, "world.json")
 _PLAN_PATH = os.path.join(_STATE_DIR, "plan.json")
+_HISTORY_PATH = os.path.join(_STATE_DIR, "plan_history.json")
 
 
 def _cors(response):
@@ -64,8 +65,13 @@ def _extract_json(text):
 def _clean_world(world):
     if not isinstance(world, dict):
         return {}
+    try:
+        decor_variant = int(world.get("decorVariant", 0)) % 4
+    except Exception:
+        decor_variant = 0
     return {
         "now": str(world.get("now") or "")[:40],
+        "decorVariant": decor_variant,
         "stats": world.get("stats") if isinstance(world.get("stats"), dict) else {},
         "agents": world.get("agents")[:3] if isinstance(world.get("agents"), list) else [],
         "plants": world.get("plants")[:12] if isinstance(world.get("plants"), list) else [],
@@ -116,6 +122,7 @@ def _validate_actions(raw_actions):
             if furniture_type in _ALLOWED_FURNITURE_TYPES:
                 valid.append({
                     "type": "furniture_add",
+                    "id": str(item.get("id") or "")[:80],
                     "furniture": furniture_type,
                     "x": round(_bounded_number(item.get("x"), 50, 590, 500), 1),
                     "y": round(_bounded_number(item.get("y"), 40, 250, 180), 1),
@@ -156,6 +163,56 @@ def _write_json(path, data):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, path)
+
+
+def _assign_furniture_ids(actions, version):
+    result = []
+    for index, action in enumerate(actions or []):
+        action = dict(action)
+        if action.get("type") == "furniture_add" and not action.get("id"):
+            action["id"] = f"ai-furn-{version}-{index}"
+        result.append(action)
+    return result
+
+
+def _apply_persistent_actions(world, actions):
+    world = _clean_world(world)
+    agents = [dict(a) for a in world.get("agents", []) if isinstance(a, dict)]
+    furniture = [dict(f) for f in world.get("furniture", []) if isinstance(f, dict)]
+
+    for action in actions or []:
+        kind = action.get("type")
+        if kind == "agent_evolve":
+            for agent in agents:
+                if str(agent.get("name") or "").upper() == action.get("agent"):
+                    trait = action.get("trait")
+                    current = _bounded_number(agent.get(trait), 0.05, 1.0, 0.5)
+                    agent[trait] = round(max(0.05, min(1.0, current + float(action.get("delta") or 0))), 3)
+                    break
+        elif kind == "layout_shuffle":
+            world["decorVariant"] = (int(world.get("decorVariant", 0)) + 1) % 4
+        elif kind == "furniture_add" and len(furniture) < 24:
+            furniture_id = str(action.get("id") or "")[:80]
+            if furniture_id and not any(str(f.get("id")) == furniture_id for f in furniture):
+                furniture.append({
+                    "id": furniture_id,
+                    "type": action.get("furniture"),
+                    "x": action.get("x"), "y": action.get("y"),
+                    "w": action.get("w"), "h": action.get("h"),
+                    "label": action.get("label") or "",
+                })
+        elif kind == "furniture_move":
+            for furniture_item in furniture:
+                if str(furniture_item.get("id")) == str(action.get("id")):
+                    furniture_item["x"] = action.get("x")
+                    furniture_item["y"] = action.get("y")
+                    break
+        elif kind == "furniture_remove":
+            furniture = [f for f in furniture if str(f.get("id")) != str(action.get("id"))]
+
+    world["agents"] = agents[:3]
+    world["furniture"] = furniture[:24]
+    return _clean_world(world)
 
 
 def _model_decision(world, evolution=False):
@@ -226,16 +283,22 @@ Choose at most 6 actions and make them coherent with the supplied world JSON, in
 
 
 def _save_plan(decision, source):
+    version = int(time.time() * 1000)
+    actions = _assign_furniture_ids(decision.get("actions") or [], version)
     plan = {
         "ok": True,
-        "version": int(time.time() * 1000),
+        "version": version,
         "created_at": int(time.time()),
         "source": source,
         "thought": decision.get("thought") or "",
-        "actions": decision.get("actions") or [],
+        "actions": actions,
         "model": decision.get("model") or "deepseek-chat",
     }
     _write_json(_PLAN_PATH, plan)
+    history_data = _read_json(_HISTORY_PATH, {"plans": []})
+    plans = history_data.get("plans") if isinstance(history_data.get("plans"), list) else []
+    plans.append(plan)
+    _write_json(_HISTORY_PATH, {"plans": plans[-48:]})
     return plan
 
 
@@ -260,6 +323,7 @@ def health():
         "cron_ready": bool((os.environ.get("TOWN_CRON_TOKEN") or "").strip()),
         "model": (os.environ.get("TOWN_AI_MODEL") or "deepseek-chat").strip(),
         "furniture_ai": True,
+        "plan_history": True,
     })
 
 
@@ -282,8 +346,12 @@ def save_state():
 def get_plan():
     if request.method == "OPTIONS":
         return _cors(jsonify({"ok": True}))
-    plan = _read_json(_PLAN_PATH, {})
-    return jsonify(plan or {"ok": True, "version": 0, "thought": "", "actions": []})
+    latest = _read_json(_PLAN_PATH, {})
+    history_data = _read_json(_HISTORY_PATH, {"plans": []})
+    plans = history_data.get("plans") if isinstance(history_data.get("plans"), list) else []
+    result = dict(latest or {"ok": True, "version": 0, "thought": "", "actions": []})
+    result["plans"] = plans[-48:]
+    return jsonify(result)
 
 
 @town_ai_bp.route("/evolve", methods=["GET", "POST", "OPTIONS"])
@@ -298,7 +366,10 @@ def evolve():
         stored = _read_json(_WORLD_PATH, {})
         world = _clean_world(stored.get("world"))
         decision = _model_decision(world, evolution=True)
-        return jsonify(_save_plan(decision, "cron"))
+        plan = _save_plan(decision, "cron")
+        evolved_world = _apply_persistent_actions(world, plan.get("actions"))
+        _write_json(_WORLD_PATH, {"saved_at": int(time.time()), "world": evolved_world})
+        return jsonify(plan)
     except requests.Timeout:
         return jsonify({"ok": False, "error": "DeepSeek request timed out"}), 504
     except Exception as exc:
@@ -325,9 +396,10 @@ def think():
             body = {}
     world = _clean_world(body.get("world"))
     try:
-        _write_json(_WORLD_PATH, {"saved_at": int(time.time()), "world": world})
         decision = _model_decision(world, evolution=False)
         plan = _save_plan(decision, "browser")
+        evolved_world = _apply_persistent_actions(world, plan.get("actions"))
+        _write_json(_WORLD_PATH, {"saved_at": int(time.time()), "world": evolved_world})
         return jsonify(plan)
     except requests.Timeout:
         return jsonify({"ok": False, "error": "DeepSeek request timed out"}), 504
