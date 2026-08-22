@@ -116,7 +116,14 @@ def think():
         return jsonify({"ok": False, "error": "AI is thinking; please wait a few seconds"}), 429
     _LAST_CALL_BY_IP[ip] = now
 
-    body = request.get_json(silent=True) or {}
+    # The App Block sends a simple cross-origin POST so the browser does not need
+    # an OPTIONS preflight. Accept both normal application/json and raw JSON text.
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        try:
+            body = json.loads(request.get_data(as_text=True) or "{}")
+        except Exception:
+            body = {}
     world = _clean_world(body.get("world"))
     model = (os.environ.get("TOWN_AI_MODEL") or "deepseek-chat").strip()
 
