@@ -21,6 +21,10 @@ _ALLOWED_AGENT_ACTIONS = {
     "coffee", "files", "desk", "plant", "waterPlant", "lookSea",
     "stretch", "radio", "chat", "checkCoworker", "fishing", "wander",
 }
+_ALLOWED_TRAITS = {
+    "workBias", "energy", "mood", "curiosity", "social", "focus",
+    "restlessness", "coffeeLove", "flowerLove", "fishLove",
+}
 _ALLOWED_DOG_KINDS = {"male", "female"}
 _LAST_CALL_BY_IP = {}
 _STATE_DIR = (os.environ.get("TOWN_STATE_DIR") or "/tmp/customs_agent_town").strip()
@@ -71,7 +75,7 @@ def _validate_actions(raw_actions):
     if not isinstance(raw_actions, list):
         return valid
 
-    for item in raw_actions[:6]:
+    for item in raw_actions[:7]:
         if not isinstance(item, dict):
             continue
         kind = item.get("type")
@@ -80,6 +84,16 @@ def _validate_actions(raw_actions):
             action = str(item.get("action") or "")
             if agent in _ALLOWED_AGENTS and action in _ALLOWED_AGENT_ACTIONS:
                 valid.append({"type": "agent_action", "agent": agent, "action": action})
+        elif kind == "agent_evolve":
+            agent = str(item.get("agent") or "").upper()
+            trait = str(item.get("trait") or "")
+            try:
+                delta = float(item.get("delta") or 0)
+            except Exception:
+                delta = 0
+            delta = max(-0.18, min(0.18, delta))
+            if agent in _ALLOWED_AGENTS and trait in _ALLOWED_TRAITS and abs(delta) >= 0.01:
+                valid.append({"type": "agent_evolve", "agent": agent, "trait": trait, "delta": round(delta, 3)})
         elif kind == "plant_spawn":
             valid.append({"type": "plant_spawn"})
         elif kind == "dog_visit":
@@ -88,7 +102,7 @@ def _validate_actions(raw_actions):
                 valid.append({"type": "dog_visit", "kind": dog_kind})
         elif kind == "layout_shuffle":
             valid.append({"type": "layout_shuffle"})
-        if len(valid) >= 4:
+        if len(valid) >= 5:
             break
     return valid
 
@@ -117,24 +131,27 @@ def _model_decision(world, evolution=False):
 
     model = (os.environ.get("TOWN_AI_MODEL") or "deepseek-chat").strip()
     mode_hint = (
-        "This is a scheduled evolution tick. Prefer a meaningful persistent-feeling change; "
-        "occasionally use layout_shuffle, plant_spawn, or dog_visit, but keep the world coherent."
+        "This is a scheduled evolution tick. Make one lasting world change and then optionally add small life events."
         if evolution else
-        "Choose small natural life events that should become visibly observable right now."
+        "Choose visible life events, but also make one small lasting change so the town is genuinely different after this decision."
     )
     system_prompt = f"""You are the life director of a persistent pixel-art customs office called CUSTOMS AGENT TOWN.
 The town should feel alive, surprising and slightly different whenever the owner returns.
 {mode_hint}
+A lasting change means ONE of: agent_evolve, layout_shuffle, or plant_spawn. Include at least one lasting change in every response.
+Use agent_evolve for gradual personality/habit development. Typical delta is 0.02 to 0.08; negative values are allowed. Do not swing personalities wildly.
+Examples: MIA gradually becomes more coffee-loving or lazy; ANA becomes more social or flower-loving; LIA becomes more interested in fishing or less restless.
 You may influence character routines and safe decorative layout variation, but never coordinates, walls, the only doorway, sea movement, ship inspection results, security data, or database records.
 Avoid repeating the same behavior. Do not move desks or block exits. Layout changes are cosmetic/decorative only.
 Return ONLY one JSON object with this exact shape:
 {{"thought":"short Traditional Chinese sentence, max 60 chars","actions":[...]}}
 Allowed actions are ONLY:
 {{"type":"agent_action","agent":"MIA|ANA|LIA","action":"coffee|files|desk|plant|waterPlant|lookSea|stretch|radio|chat|checkCoworker|fishing|wander"}}
+{{"type":"agent_evolve","agent":"MIA|ANA|LIA","trait":"workBias|energy|mood|curiosity|social|focus|restlessness|coffeeLove|flowerLove|fishLove","delta":0.04}}
 {{"type":"plant_spawn"}}
 {{"type":"dog_visit","kind":"male|female"}}
 {{"type":"layout_shuffle"}}
-Choose at most 4 actions. The choices must make sense from the supplied world JSON."""
+Choose at most 5 actions. The choices must make sense from the supplied world JSON."""
 
     payload = {
         "model": model,
@@ -142,8 +159,8 @@ Choose at most 4 actions. The choices must make sense from the supplied world JS
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": "Current world JSON:\n" + json.dumps(world, ensure_ascii=False, separators=(",", ":"))},
         ],
-        "temperature": 1.2,
-        "max_tokens": 380,
+        "temperature": 1.25,
+        "max_tokens": 430,
         "response_format": {"type": "json_object"},
     }
     response = requests.post(
