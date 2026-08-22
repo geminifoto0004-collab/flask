@@ -1,6 +1,6 @@
 """Ground user-visible town AI narration in validated executable commands."""
 
-from .town_ai_director_runtime import _call_model
+from .town_ai_language_runtime import _call_model
 
 
 def _action_summary(action):
