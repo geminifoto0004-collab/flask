@@ -25,7 +25,7 @@ def patch_render_profiles(html: str) -> str:
     if(Array.isArray(action.likes))p.likes=action.likes.map(v=>String(v).trim()).filter(Boolean).slice(0,10);
     if(Array.isArray(action.dislikes))p.dislikes=action.dislikes.map(v=>String(v).trim()).filter(Boolean).slice(0,10);
     if(Array.isArray(action.interests))p.interests=action.interests.map(v=>String(v).trim()).filter(Boolean).slice(0,10);
-    addLog('AI 更新 '+agentLabel(a)+' 的生活檔案');saveWorld();
+    addLog('AI 生活檔案：'+agentLabel(a)+' · '+(p.age||'?')+'歲 · '+(p.gender||'?')+' · '+(p.zodiac||'?')+' · '+(p.maritalStatus||'?')+' · '+(p.hasChildren?((p.childrenCount||0)+' 個小孩'):'無小孩')+(p.likes.length?' · 喜歡 '+p.likes.slice(0,3).join('、'):''));saveWorld();
   });
 
 '''
