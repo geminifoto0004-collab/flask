@@ -61,14 +61,13 @@ def validate_actions(raw_actions):
                 if len(turns) >= 8:
                     break
             if turns:
-                action = {"type": "agent_chat", "from": from_agent, "to": to_agent, "turns": turns}
-                valid.extend(_attach_time([action], item))
+                valid.extend(_attach_time([{"type": "agent_chat", "from": from_agent, "to": to_agent, "turns": turns}], item))
 
         elif kind == "agent_outfit":
             agent = str(item.get("agent") or "").upper()
             if agent not in _AGENT_IDS:
                 continue
-            action = {
+            valid.extend(_attach_time([{
                 "type": "agent_outfit",
                 "agent": agent,
                 "shirt": str(item.get("shirt") or "#f3eee1") if _HEX.match(str(item.get("shirt") or "#f3eee1")) else "#f3eee1",
@@ -76,8 +75,7 @@ def validate_actions(raw_actions):
                 "badge": str(item.get("badge") or "#31516a") if _HEX.match(str(item.get("badge") or "#31516a")) else "#31516a",
                 "style": str(item.get("style") or "")[:24],
                 "day": str(item.get("day") or "")[:10],
-            }
-            valid.extend(_attach_time([action], item))
+            }], item))
 
         elif kind == "object_add":
             parts = []
@@ -103,14 +101,13 @@ def validate_actions(raw_actions):
                     y = max(104.0, min(242.0, float(item.get("y", 210))))
                 except Exception:
                     x, y = 500.0, 210.0
-                action = {
+                valid.extend(_attach_time([{
                     "type": "object_add",
                     "id": str(item.get("id") or "")[:80],
                     "x": round(x, 1), "y": round(y, 1),
                     "label": str(item.get("label") or "AI object")[:24],
                     "parts": parts,
-                }
-                valid.extend(_attach_time([action], item))
+                }], item))
 
         elif kind == "agent_evolve" and str(item.get("trait") or "") in {"cleanliness", "dogLove"}:
             agent = str(item.get("agent") or "").upper()
@@ -134,8 +131,7 @@ def validate_actions(raw_actions):
 def apply_persistent_actions(world, actions):
     actions = actions or []
     base_actions = [a for a in actions if a.get("type") not in {"agent_chat", "agent_outfit", "object_add"} and not (a.get("type") == "agent_evolve" and a.get("trait") in {"cleanliness", "dogLove"})]
-    evolved = _ORIGINAL_APPLY(world, base_actions)
-    evolved = _base._clean_world(evolved)
+    evolved = _base._clean_world(_ORIGINAL_APPLY(world, base_actions))
     agents = [dict(a) for a in evolved.get("agents", []) if isinstance(a, dict)]
     furniture = [dict(f) for f in evolved.get("furniture", []) if isinstance(f, dict)]
 
@@ -177,10 +173,7 @@ def install_latest_action_runtime():
     _base._validate_actions = validate_actions
     _base._apply_persistent_actions = apply_persistent_actions
 
-    # The current browser polls this endpoint for server-authoritative state.
-    # Register it before the blueprint is attached to the Flask app.
-    existing = {rule.rule for rule in _base.town_ai_bp.deferred_functions if hasattr(rule, "rule")}
-    @ _base.town_ai_bp.route("/world", methods=["GET"])
+    @_base.town_ai_bp.route("/world", methods=["GET"])
     def latest_town_world():
         stored = _base._read_json(_base._WORLD_PATH, {})
         world = _base._clean_world(stored.get("world"))
