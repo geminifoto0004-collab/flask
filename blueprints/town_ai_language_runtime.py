@@ -1,8 +1,7 @@
 """Dialogue-focused DeepSeek runtime for CUSTOMS AGENT TOWN.
 
-Keeps native tool calling, but gives the model stricter language and news-grounding
-rules so conversations sound like coworkers in Iquique instead of translated
-news narration.
+Keeps native tool calling, but gives the model stricter language, topic-memory and
+life-profile rules so conversations feel like persistent coworkers in Iquique.
 """
 
 import json
@@ -31,6 +30,8 @@ def _call_model(world, evolution, retry_note=""):
     )
     entropy = int(time.time() * 1000) % 1000000
     dialogue_policy = world.get("dialoguePolicy") if isinstance(world, dict) else None
+    profiles = world.get("characterProfiles") if isinstance(world, dict) else None
+    recent_dialogue = world.get("recentDialogue") if isinstance(world, dict) else None
 
     system_prompt = f"""You are the autonomous WORLD DIRECTOR of a persistent pixel-art customs office in IQUIQUE, Chile.
 {mode}
@@ -40,15 +41,29 @@ You DIRECT THE WORLD ONLY by calling the provided tools. Do not narrate imaginar
 CHARACTERS AND WORLD:
 - MIA, ANA and LIA are literal IDs. Never translate or respell them.
 - Ship/customs work is the main story and active ship work has priority.
-- Read character traits, mood, energy, relationships, recent stimuli, dogs, plants, current actions and recentDirectorActions.
+- Read character traits, mood, energy, relationships, recent stimuli, dogs, plants, current actions, recentDirectorActions, characterProfiles and recentDialogue.
 - Avoid repeating the same safe action if recentDirectorActions shows it happened recently.
 - Manual-test diversity seed: {entropy}. Use it only to avoid repetitive choices; world state matters more than randomness.
+
+PERSISTENT LIFE PROFILES:
+- Each officer may have persistent life facts: age, gender, zodiac, marital status, children, likes, dislikes and interests.
+- If a profile is still empty, you may use agent_profile to create a believable profile. Once established, do NOT randomly overwrite it every tick.
+- Profiles are conversation context, NOT deterministic stereotypes. A zodiac sign or gender never forces behavior.
+- Use profiles together with current mood, traits, relationships, recent events and time of day to decide whether they talk and what feels natural to mention.
+- Examples of possible sources of conversation include family logistics, children, partner, hobbies, food, music, football, pets, weekend plans, shopping, fishing, plants, coworkers, work annoyances, memories, local life and occasional news. These are possibilities, not a fixed menu.
+- Do not mechanically mention profile facts. Real coworkers often change subject, tease each other, say one sentence, or stay quiet.
+
+DIALOGUE MEMORY AND VARIETY — CRITICAL:
+- Read recentDialogue before writing a new conversation.
+- Do NOT repeat the same headline, rain/disaster topic, port-delay topic, aid story, weather observation or conversational theme if it was already discussed recently.
+- If a subject was just discussed, choose a genuinely different topic or choose a non-dialogue action instead.
+- News is only an occasional source of conversation, never the default. The presence of recent_news does NOT mean anyone must discuss it.
+- Prefer personal/contextual continuity over repeatedly summarizing public news.
 
 DIALOGUE QUALITY — IMPORTANT:
 - All character dialogue must sound like natural everyday CHILEAN SPANISH between coworkers in Iquique, not translated Chinese/English and not a television news script.
 - Prefer short, conversational sentences with normal Chilean/neutral vocabulary. Mild local expressions are fine, but do not overuse slang.
-- Each person should react according to personality and mood. They can doubt, joke, disagree, ignore the topic, change subject, or say very little.
-- Do not make every conversation about news. News is optional background material.
+- Each person can doubt, joke, disagree, ignore the topic, change subject, or say very little.
 - If a supplied headline is mentioned, use ONLY facts literally present in that headline. Never invent ships, rescue cargo, schedules, port closures, causes, official plans, arrival times, casualty details, or article content that was not supplied.
 - If the headline itself is ambiguous, hedge naturally: "parece que...", "dicen que...", "vi un titular sobre...", "no sé bien los detalles".
 - Never claim "lo dijeron por la radio" unless the world state actually supports a radio-related action/context.
@@ -65,6 +80,8 @@ TOOL USE:
 - Long-term trait/life/personnel changes are rare and should have a believable reason.
 - Never invent unsupported actions. If a desired action has no tool, choose another real capability.
 
+Current characterProfiles: {json.dumps(profiles, ensure_ascii=False)}
+Recent dialogue memory: {json.dumps(recent_dialogue, ensure_ascii=False)}
 Browser-supplied dialogue policy, if any: {json.dumps(dialogue_policy, ensure_ascii=False)}
 {retry_note}
 """
@@ -81,7 +98,7 @@ Browser-supplied dialogue policy, if any: {json.dumps(dialogue_policy, ensure_as
         ],
         "tools": DIRECTOR_TOOLS,
         "tool_choice": "auto" if evolution else "required",
-        "temperature": 1.12,
+        "temperature": 1.18,
         "max_tokens": 1600,
     }
 
