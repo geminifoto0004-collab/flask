@@ -22,6 +22,7 @@ from .town_render_chat_timing_patch import patch_render_chat_timing
 from .town_render_profile_patch import patch_render_profiles
 from .town_render_dialogue_panel_patch import patch_render_dialogue_panel
 from .town_render_dialogue_fix_patch import patch_render_dialogue_fix
+from .town_render_panel_alignment_patch import patch_render_panel_alignment
 
 # Install validation/persistence for the current browser capabilities before the
 # blueprint is registered on the Flask app.
@@ -37,11 +38,11 @@ install_bilingual_runtime()
 _town_ai_module._model_decision = grounded_model_decision
 town_ai_bp = _town_ai_module.town_ai_bp
 
-# Restore the last Render page composition that was visibly working before the
-# chat-app sidebar experiment. The newer sidebar will be reintroduced from the
-# integrated page source instead of stacking more string-rewrite patches here.
+# Keep the last known-good page composition, then only reposition the already
+# working dialogue panel beside the black game frame. This avoids touching the
+# animation/game runtime while making the two frames share the same top/bottom.
 town_page_bp = _town_page_module.town_page_bp
-_town_page_module._patched_town_html = lambda: patch_render_dialogue_fix(patch_render_dialogue_panel(patch_render_profiles(patch_render_chat_timing(patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html()))))))))
+_town_page_module._patched_town_html = lambda: patch_render_panel_alignment(patch_render_dialogue_fix(patch_render_dialogue_panel(patch_render_profiles(patch_render_chat_timing(patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html())))))))))
 
 # b2_test_bp has no url_prefix and is already registered by app.py.
 # Nest the town blueprints under it so both the browser page and /api/town/*
