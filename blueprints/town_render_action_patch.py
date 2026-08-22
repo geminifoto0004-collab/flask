@@ -1,7 +1,23 @@
-"""Make ordinary AI actions visually obvious on the Render town page."""
+"""Make ordinary AI actions visually obvious and feed recent action history back to the director."""
 
 
 def patch_render_actions(html: str) -> str:
+    # Remember only actions that the browser actually received. The next AI
+    # tick sees this tiny history and can avoid repeating the same safe choice.
+    html = html.replace(
+        "function applyAiTownActions(actions=[]){\n    if(!Array.isArray(actions))return;",
+        "function applyAiTownActions(actions=[]){\n"
+        "    if(!Array.isArray(actions))return;\n"
+        "    const visibleActions=actions.filter(a=>a&&typeof a==='object');\n"
+        "    if(visibleActions.length){window.__townDirectorHistory=Array.isArray(window.__townDirectorHistory)?window.__townDirectorHistory:[];visibleActions.forEach(a=>window.__townDirectorHistory.push({at:Date.now(),type:String(a.type||''),agent:String(a.agent||a.from||''),target:String(a.to||''),action:String(a.action||''),label:String(a.label||a.furniture||'')}));window.__townDirectorHistory=window.__townDirectorHistory.slice(-12);}",
+    )
+    html = html.replace(
+        "furniture:aiFurniture.map(f=>({id:f.id,type:f.type,x:f.x,y:f.y,w:f.w,h:f.h,label:f.label||''}))\n    };",
+        "furniture:aiFurniture.map(f=>({id:f.id,type:f.type,x:f.x,y:f.y,w:f.w,h:f.h,label:f.label||''})),\n"
+        "      recentDirectorActions:(Array.isArray(window.__townDirectorHistory)?window.__townDirectorHistory:[]).slice(-12)\n"
+        "    };",
+    )
+
     html = html.replace(
         "a.path=[];a.pathTarget='';a.timer=0;a.decisionTimer=rand(4.5,8.5);chooseIdleTarget(a,action.action);\n    addLog('AI 決定：'+agentLabel(a)+' → '+action.action);",
         "const labels={coffee:'去沖咖啡',files:'去整理文件',desk:'回工位工作',plant:'去看看植物',waterPlant:'去澆花',lookSea:'去窗邊看海',stretch:'伸展一下',radio:'去用海事電台',checkCoworker:'去找同事',fishing:'去釣魚',wander:'走一走'};\n"
