@@ -7,18 +7,20 @@ from .user_auth_bp import user_auth_bp
 from .b2_test_bp import b2_test_bp
 from . import town_ai_bp as _town_ai_module
 from .town_ai_action_runtime import install_latest_action_runtime
-from .town_ai_director_runtime import director_model_decision
+from .town_ai_visibility_runtime import install_visibility_runtime
+from .town_ai_grounded_director import grounded_model_decision
 from . import town_page_bp as _town_page_module
 from .town_latest_page_runtime import latest_town_html
 
 # Install validation/persistence for the current browser capabilities before the
 # blueprint is registered on the Flask app.
 install_latest_action_runtime()
+install_visibility_runtime()
 
-# Render /api/town/think uses the AI world director. The model can only return
-# validated town actions; browser physics and backend validation remain the
-# execution/security boundary.
-_town_ai_module._model_decision = director_model_decision
+# Render /api/town/think uses the grounded AI world director. User-visible
+# narration is rebuilt from validated executable actions, so the log cannot
+# claim a physical event that was never actually sent to the browser.
+_town_ai_module._model_decision = grounded_model_decision
 town_ai_bp = _town_ai_module.town_ai_bp
 
 # Serve the exact current App Block snapshot. Do not run the legacy layered
