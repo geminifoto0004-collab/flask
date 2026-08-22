@@ -18,25 +18,27 @@ _NEWS_CACHE = {"at": 0.0, "items": []}
 DIRECTOR_TOOL_CATALOG = """
 EXECUTABLE DIRECTOR FUNCTIONS
 1. agent_action(agent, action)
-   action: coffee|files|desk|plant|waterPlant|lookSea|stretch|radio|chat|checkCoworker|fishing|wander
+   action: coffee|files|desk|plant|waterPlant|lookSea|stretch|radio|checkCoworker|fishing|wander
 2. agent_chat(from, to, turns)
    turns: [{speaker:"ANA", text:"..."}, ...] up to 8 turns. YOU write every line.
-3. agent_outfit(agent, shirt, vest, badge, style, day)
+3. agent_say(agent, text)
+   One spontaneous remark/reaction. YOU write the exact words.
+4. agent_outfit(agent, shirt, vest, badge, style, day)
    Colors are #RRGGBB. Use when today's outfit has not yet been chosen or there is a believable reason to change.
-4. agent_evolve(agent, trait, delta)
+5. agent_evolve(agent, trait, delta)
    trait: workBias|energy|mood|curiosity|social|focus|restlessness|coffeeLove|flowerLove|fishLove|cleanliness|dogLove
-5. agent_life(agent, event, partnerName)
+6. agent_life(agent, event, partnerName)
    event: marry|divorce
-6. replace_agent(agent, newName, persona, reason, traits)
-7. former_visit(formerId)
-8. plant_spawn()
-9. dog_visit(kind)
-10. layout_shuffle()
-11. furniture_add(furniture, x, y, w, h, label)
+7. replace_agent(agent, newName, persona, reason, traits)
+8. former_visit(formerId)
+9. plant_spawn()
+10. dog_visit(kind)
+11. layout_shuffle()
+12. furniture_add(furniture, x, y, w, h, label)
     furniture: file_box|chair|plant_shelf|dog_bowl|side_table|wall_frame|floor_lamp|small_cabinet|rug|notice_board
-12. furniture_move(id, x, y)
-13. furniture_remove(id)
-14. object_add(x, y, label, parts)
+13. furniture_move(id, x, y)
+14. furniture_remove(id)
+15. object_add(x, y, label, parts)
     parts: safe pixel rectangles [{shape:"rect",x,y,w,h,color:"#RRGGBB"}, ...]
 
 You never edit JavaScript and never write SQL. The browser/server execute only
@@ -92,17 +94,21 @@ def _call_model(world, evolution, retry_note=""):
 {DIRECTOR_TOOL_CATALOG}
 
 DIRECTOR PRINCIPLES:
+- Character IDs are literal proper names: MIA, ANA, LIA. NEVER translate, localize, respell or replace these names in thought, dialogue speaker fields or actions. Write MIA/ANA/LIA exactly.
+- Never make a character talk to herself. `agent_chat.from` and `agent_chat.to` must be different people.
 - The ship/customs workflow is the MAIN STORY. If ships are waiting/being inspected, work takes priority over leisure and decoration.
 - People are persistent RPG-like characters. Read their numeric traits, mood, energy, relationships, current action, cleanliness/dogLove and recent reaction cues. Do not reduce a person to one stereotype.
 - Do not hard-code a repetitive routine. Coffee, radio, fishing, cleaning, plants and chatting are possibilities, not mandatory loops.
-- Dialogue is YOUR job. If people talk, generate natural multi-turn `agent_chat.turns`; the browser will not invent fallback lines.
+- Dialogue is YOUR job. If people talk, use `agent_chat` with actual turns or `agent_say` with actual text. Never use a bare action called chat.
 - Recent news is optional conversation context, not a forced topic. Use only supplied headline facts; never invent article details. People may ignore news entirely.
 - Outfit is YOUR decision. If an on-duty character's `outfitDay` is not today's Iquique date, you may choose a plausible different outfit. Avoid changing clothes repeatedly during one day without a reason.
 - Furniture/layout changes are rare life events, not a visibility gimmick. Do not repeatedly add side tables or lamps. Prefer moving/reusing/removing existing objects over buying duplicates.
-- `layout_shuffle` is currently a safe coarse-layout capability; use it only when a believable reorganization is warranted. More free-form layout control will be added later.
+- `layout_shuffle` is currently a safe coarse-layout capability; use it only when a believable reorganization is warranted.
 - `object_add` lets you invent a small object from safe pixel rectangles when the world genuinely needs something not in the furniture catalog.
 - Dog poop is a world fact. A character with high cleanliness may be bothered and the browser may clean it; use reactionCue/traits to decide whether they SAY something. Do not force a complaint.
 - Long-term trait changes, marriage/divorce, colleague replacement and former visits are uncommon. They should emerge slowly.
+- `desk` means ordinary desk work. It does NOT mean lying down, sleeping or napping.
+- Never narrate unsupported physical actions such as picking up a child's basket, lying on a desk, opening a drawer, moving an object, or cleaning something unless a matching executable function exists and is returned.
 - Return 1-4 coherent actions, normally ordinary life/work. It is okay to return subtle actions.
 - Never narrate a change in `thought` unless a matching executable action is actually returned.
 - Use server Iquique time/weather. Do not contradict it.
@@ -110,7 +116,7 @@ DIRECTOR PRINCIPLES:
 {retry_note}
 
 Return ONLY JSON:
-{{"thought":"Traditional Chinese, <=100 chars","actions":[...]}}
+{{"thought":"Traditional Chinese, <=100 chars; keep MIA/ANA/LIA exactly in Latin letters","actions":[...]}}
 """
 
     payload = {
