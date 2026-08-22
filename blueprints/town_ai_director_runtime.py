@@ -1,8 +1,8 @@
 """AI world director for the persistent Iquique customs-office town.
 
-The model sees world facts and a small recent-news context, then chooses from a
-strict catalog of executable capabilities. Dialogue and reactions are generated
-by the model; the browser owns rendering/physics and the backend owns validation.
+DeepSeek chooses real executable town functions through native tool calling.
+The model never edits JavaScript or SQL; browser physics and backend validation
+remain authoritative.
 """
 
 import json
@@ -14,36 +14,201 @@ import requests
 
 
 _NEWS_CACHE = {"at": 0.0, "items": []}
+_AGENT_ENUM = ["MIA", "ANA", "LIA"]
+_ACTION_ENUM = [
+    "coffee", "files", "desk", "plant", "waterPlant", "lookSea",
+    "stretch", "radio", "checkCoworker", "fishing", "wander",
+]
+_TRAIT_ENUM = [
+    "workBias", "energy", "mood", "curiosity", "social", "focus",
+    "restlessness", "coffeeLove", "flowerLove", "fishLove", "cleanliness", "dogLove",
+]
+_FURNITURE_ENUM = [
+    "file_box", "chair", "plant_shelf", "dog_bowl", "side_table",
+    "wall_frame", "floor_lamp", "small_cabinet", "rug", "notice_board",
+]
+_PERSONA_ENUM = ["lazy", "busybody", "restless"]
 
-DIRECTOR_TOOL_CATALOG = """
-EXECUTABLE DIRECTOR FUNCTIONS
-1. agent_action(agent, action)
-   action: coffee|files|desk|plant|waterPlant|lookSea|stretch|radio|checkCoworker|fishing|wander
-2. agent_chat(from, to, turns)
-   turns: [{speaker:"ANA", text:"..."}, ...] up to 8 turns. YOU write every line.
-3. agent_say(agent, text)
-   One spontaneous remark/reaction. YOU write the exact words.
-4. agent_outfit(agent, shirt, vest, badge, style, day)
-   Colors are #RRGGBB. Use when today's outfit has not yet been chosen or there is a believable reason to change.
-5. agent_evolve(agent, trait, delta)
-   trait: workBias|energy|mood|curiosity|social|focus|restlessness|coffeeLove|flowerLove|fishLove|cleanliness|dogLove
-6. agent_life(agent, event, partnerName)
-   event: marry|divorce
-7. replace_agent(agent, newName, persona, reason, traits)
-8. former_visit(formerId)
-9. plant_spawn()
-10. dog_visit(kind)
-11. layout_shuffle()
-12. furniture_add(furniture, x, y, w, h, label)
-    furniture: file_box|chair|plant_shelf|dog_bowl|side_table|wall_frame|floor_lamp|small_cabinet|rug|notice_board
-13. furniture_move(id, x, y)
-14. furniture_remove(id)
-15. object_add(x, y, label, parts)
-    parts: safe pixel rectangles [{shape:"rect",x,y,w,h,color:"#RRGGBB"}, ...]
 
-You never edit JavaScript and never write SQL. The browser/server execute only
-validated actions from this catalog.
-"""
+def _fn(name, description, properties=None, required=None):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties or {},
+                "required": required or [],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+DIRECTOR_TOOLS = [
+    _fn(
+        "agent_action",
+        "Make one on-duty idle officer perform one supported visible action. Choose from the character/world state, not a fixed routine.",
+        {
+            "agent": {"type": "string", "enum": _AGENT_ENUM},
+            "action": {"type": "string", "enum": _ACTION_ENUM},
+        },
+        ["agent", "action"],
+    ),
+    _fn(
+        "agent_chat",
+        "Start a real multi-turn conversation between two DIFFERENT on-duty officers. Write every line yourself; topics may come from their personalities, recent events, dogs, work or supplied news.",
+        {
+            "from": {"type": "string", "enum": _AGENT_ENUM},
+            "to": {"type": "string", "enum": _AGENT_ENUM},
+            "turns": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 8,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "speaker": {"type": "string", "enum": _AGENT_ENUM},
+                        "text": {"type": "string", "minLength": 1, "maxLength": 120},
+                    },
+                    "required": ["speaker", "text"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        ["from", "to", "turns"],
+    ),
+    _fn(
+        "agent_say",
+        "Make one on-duty officer say one spontaneous sentence. Write the exact words; silence is also possible by choosing another tool instead.",
+        {
+            "agent": {"type": "string", "enum": _AGENT_ENUM},
+            "text": {"type": "string", "minLength": 1, "maxLength": 120},
+        },
+        ["agent", "text"],
+    ),
+    _fn(
+        "agent_outfit",
+        "Choose today's outfit colors/style for one officer. Use sparingly, normally once per Iquique day per person.",
+        {
+            "agent": {"type": "string", "enum": _AGENT_ENUM},
+            "shirt": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+            "vest": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+            "badge": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+            "style": {"type": "string", "maxLength": 24},
+            "day": {"type": "string", "maxLength": 10},
+        },
+        ["agent", "shirt", "vest", "badge", "style", "day"],
+    ),
+    _fn(
+        "agent_evolve",
+        "Apply a small persistent RPG-like trait change only when current/recent experience supports it.",
+        {
+            "agent": {"type": "string", "enum": _AGENT_ENUM},
+            "trait": {"type": "string", "enum": _TRAIT_ENUM},
+            "delta": {"type": "number", "minimum": -0.18, "maximum": 0.18},
+        },
+        ["agent", "trait", "delta"],
+    ),
+    _fn(
+        "agent_life",
+        "Rare long-term life event for an officer.",
+        {
+            "agent": {"type": "string", "enum": _AGENT_ENUM},
+            "event": {"type": "string", "enum": ["marry", "divorce"]},
+            "partnerName": {"type": "string", "maxLength": 18},
+        },
+        ["agent", "event", "partnerName"],
+    ),
+    _fn(
+        "replace_agent",
+        "Very rare personnel change: one slot gets a new colleague. Do not use as ordinary variety.",
+        {
+            "agent": {"type": "string", "enum": _AGENT_ENUM},
+            "newName": {"type": "string", "minLength": 1, "maxLength": 18},
+            "persona": {"type": "string", "enum": _PERSONA_ENUM},
+            "reason": {"type": "string", "maxLength": 50},
+            "traits": {
+                "type": "object",
+                "properties": {key: {"type": "number", "minimum": 0.05, "maximum": 1.0} for key in _TRAIT_ENUM},
+                "additionalProperties": False,
+            },
+        },
+        ["agent", "newName", "persona", "reason", "traits"],
+    ),
+    _fn(
+        "former_visit",
+        "Invite a known former colleague to visit, using an id that exists in formerAgents.",
+        {"formerId": {"type": "string", "minLength": 1, "maxLength": 80}},
+        ["formerId"],
+    ),
+    _fn("plant_spawn", "Add one new plant when the office plausibly needs/wants one."),
+    _fn(
+        "dog_visit",
+        "Let a passing dog visit the office/harbor area.",
+        {"kind": {"type": "string", "enum": ["male", "female"]}},
+        ["kind"],
+    ),
+    _fn("layout_shuffle", "Reorganize the safe office layout. This is a meaningful occasional change, not a routine action."),
+    _fn(
+        "furniture_add",
+        "Add one supported furniture object at a proposed office position. The engine may reject unsafe placement.",
+        {
+            "furniture": {"type": "string", "enum": _FURNITURE_ENUM},
+            "x": {"type": "number", "minimum": 50, "maximum": 590},
+            "y": {"type": "number", "minimum": 40, "maximum": 250},
+            "w": {"type": "number", "minimum": 8, "maximum": 72},
+            "h": {"type": "number", "minimum": 8, "maximum": 60},
+            "label": {"type": "string", "maxLength": 24},
+        },
+        ["furniture", "x", "y", "w", "h", "label"],
+    ),
+    _fn(
+        "furniture_move",
+        "Move an existing furniture object by its world id. Prefer this to adding duplicates.",
+        {
+            "id": {"type": "string", "minLength": 1, "maxLength": 80},
+            "x": {"type": "number", "minimum": 50, "maximum": 590},
+            "y": {"type": "number", "minimum": 40, "maximum": 250},
+        },
+        ["id", "x", "y"],
+    ),
+    _fn(
+        "furniture_remove",
+        "Remove an existing AI furniture object by id when it is clutter/unwanted.",
+        {"id": {"type": "string", "minLength": 1, "maxLength": 80}},
+        ["id"],
+    ),
+    _fn(
+        "object_add",
+        "Invent a small new pixel object from safe rectangles when something outside the furniture catalog genuinely improves the world.",
+        {
+            "x": {"type": "number", "minimum": 60, "maximum": 570},
+            "y": {"type": "number", "minimum": 104, "maximum": 242},
+            "label": {"type": "string", "minLength": 1, "maxLength": 24},
+            "parts": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "shape": {"type": "string", "enum": ["rect"]},
+                        "x": {"type": "number", "minimum": -40, "maximum": 40},
+                        "y": {"type": "number", "minimum": -40, "maximum": 40},
+                        "w": {"type": "number", "minimum": 2, "maximum": 72},
+                        "h": {"type": "number", "minimum": 2, "maximum": 60},
+                        "color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                    },
+                    "required": ["shape", "x", "y", "w", "h", "color"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        ["x", "y", "label", "parts"],
+    ),
+]
 
 
 def _recent_news():
@@ -72,6 +237,29 @@ def _recent_news():
     return list(_NEWS_CACHE["items"])
 
 
+def _tool_calls_to_actions(message):
+    actions = []
+    for call in (message.get("tool_calls") or [])[:6]:
+        if not isinstance(call, dict):
+            continue
+        fn = call.get("function") or {}
+        name = str(fn.get("name") or "").strip()
+        if not name:
+            continue
+        raw_args = fn.get("arguments")
+        if isinstance(raw_args, dict):
+            args = dict(raw_args)
+        else:
+            try:
+                args = json.loads(raw_args or "{}")
+            except Exception:
+                args = {}
+        if not isinstance(args, dict):
+            args = {}
+        actions.append({"type": name, **args})
+    return actions
+
+
 def _call_model(world, evolution, retry_note=""):
     from .town_ai_bp import _iquique_context
 
@@ -83,40 +271,32 @@ def _call_model(world, evolution, retry_note=""):
     context = _iquique_context()
     news = _recent_news()
     mode = (
-        "This is the approximately five-minute world-director tick. Decide a small coherent slice of life for the coming minutes."
+        "This is an approximately five-minute world-director tick."
         if evolution else
-        "This is a manual world-director tick. Decide naturally what should happen from the current state."
+        "This is a MANUAL TEST tick. You MUST choose at least one executable tool so the user can visibly test the director."
     )
+    entropy = int(time.time() * 1000) % 1000000
 
-    system_prompt = f"""You are the autonomous director of a persistent pixel-art customs office in IQUIQUE, Chile.
+    system_prompt = f"""You are the autonomous WORLD DIRECTOR of a persistent pixel-art customs office in IQUIQUE, Chile.
 {mode}
 
-{DIRECTOR_TOOL_CATALOG}
+IMPORTANT: You do not write an imaginary story and you do not return action JSON in prose. You DIRECT THE WORLD BY CALLING THE PROVIDED TOOLS. Every physical/social change you want must be a real tool call.
 
-DIRECTOR PRINCIPLES:
-- Character IDs are literal proper names: MIA, ANA, LIA. NEVER translate, localize, respell or replace these names in thought, dialogue speaker fields or actions. Write MIA/ANA/LIA exactly.
-- Never make a character talk to herself. `agent_chat.from` and `agent_chat.to` must be different people.
-- The ship/customs workflow is the MAIN STORY. If ships are waiting/being inspected, work takes priority over leisure and decoration.
-- People are persistent RPG-like characters. Read their numeric traits, mood, energy, relationships, current action, cleanliness/dogLove and recent reaction cues. Do not reduce a person to one stereotype.
-- Do not hard-code a repetitive routine. Coffee, radio, fishing, cleaning, plants and chatting are possibilities, not mandatory loops.
-- Dialogue is YOUR job. If people talk, use `agent_chat` with actual turns or `agent_say` with actual text. Never use a bare action called chat.
-- Recent news is optional conversation context, not a forced topic. Use only supplied headline facts; never invent article details. People may ignore news entirely.
-- Outfit is YOUR decision. If an on-duty character's `outfitDay` is not today's Iquique date, you may choose a plausible different outfit. Avoid changing clothes repeatedly during one day without a reason.
-- Furniture/layout changes are rare life events, not a visibility gimmick. Do not repeatedly add side tables or lamps. Prefer moving/reusing/removing existing objects over buying duplicates.
-- `layout_shuffle` is currently a safe coarse-layout capability; use it only when a believable reorganization is warranted.
-- `object_add` lets you invent a small object from safe pixel rectangles when the world genuinely needs something not in the furniture catalog.
-- Dog poop is a world fact. A character with high cleanliness may be bothered and the browser may clean it; use reactionCue/traits to decide whether they SAY something. Do not force a complaint.
-- Long-term trait changes, marriage/divorce, colleague replacement and former visits are uncommon. They should emerge slowly.
-- `desk` means ordinary desk work. It does NOT mean lying down, sleeping or napping.
-- Never narrate unsupported physical actions such as picking up a child's basket, lying on a desk, opening a drawer, moving an object, or cleaning something unless a matching executable function exists and is returned.
-- Return 1-4 coherent actions, normally ordinary life/work. It is okay to return subtle actions.
-- Never narrate a change in `thought` unless a matching executable action is actually returned.
-- Use server Iquique time/weather. Do not contradict it.
-- Never touch business records, security data, scraper results, walls, the only doorway, or harbor geometry.
+DIRECTOR RULES:
+- MIA, ANA, LIA are literal IDs. Never translate or respell them.
+- Ship/customs work is the main story. Never interrupt an active ship task for leisure.
+- Characters are persistent RPG people. Read numeric traits, mood, energy, relationships, outfit, recent stimuli, dogs, plants and current states.
+- Do NOT fall into the coffee/files/lookSea loop. Those are only 3 possibilities among many tools. Vary choices naturally across calls.
+- You may combine 1-3 coherent tools in one manual test, e.g. move one person, let two others converse, change an outfit, invite a dog, alter the room, or evolve a trait if justified.
+- Dialogue must use agent_chat or agent_say and contain the exact words. Never call agent_action with chat.
+- Recent news is optional conversation material. Use only supplied headline facts, never invented article details.
+- Outfit changes normally happen once per Iquique day per person.
+- Furniture/layout/object changes are occasional, not constant decoration spam.
+- Long-term life/personnel changes are rare.
+- Never invent unsupported actions. If a desired action has no tool, choose another real capability instead.
+- Preserve believable causality: characters can react differently to the same dog/plant/event because their traits differ.
+- Manual-test diversity seed: {entropy}. Use it only to avoid repeating the same safe choice; world state still matters more than randomness.
 {retry_note}
-
-Return ONLY JSON:
-{{"thought":"Traditional Chinese, <=100 chars; keep MIA/ANA/LIA exactly in Latin letters","actions":[...]}}
 """
 
     payload = {
@@ -129,9 +309,10 @@ Return ONLY JSON:
                 "world": world,
             }, ensure_ascii=False, separators=(",", ":"))},
         ],
-        "temperature": 1.15,
-        "max_tokens": 1200,
-        "response_format": {"type": "json_object"},
+        "tools": DIRECTOR_TOOLS,
+        "tool_choice": "auto" if evolution else "required",
+        "temperature": 1.25,
+        "max_tokens": 1600,
     }
     response = requests.post(
         "https://api.deepseek.com/chat/completions",
@@ -140,9 +321,13 @@ Return ONLY JSON:
         timeout=35,
     )
     if not response.ok:
-        raise RuntimeError(f"DeepSeek HTTP {response.status_code}: {response.text[:220]}")
+        raise RuntimeError(f"DeepSeek HTTP {response.status_code}: {response.text[:260]}")
     raw = response.json()
-    text = (((raw.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+    message = ((raw.get("choices") or [{}])[0].get("message") or {})
+    actions = _tool_calls_to_actions(message)
+    # Keep the old caller contract: it expects JSON text and then runs the
+    # authoritative validator. The content itself is no longer trusted/needed.
+    text = json.dumps({"thought": "", "actions": actions}, ensure_ascii=False)
     return text, model, context, news
 
 
@@ -153,22 +338,22 @@ def director_model_decision(world, evolution=False):
     decision = _extract_json(text)
     actions = _validate_actions(decision.get("actions"))
 
-    if not actions:
+    if not actions and not evolution:
         text, model, context, news = _call_model(
             world,
             evolution,
-            retry_note="Your previous answer had no executable action after validation. Return 1-3 valid catalog actions; choose natural behavior, not decoration for decoration's sake.",
+            retry_note="Your previous tool calls were rejected by validation. Call 1-3 different valid tools using only ids/items that exist in the supplied world.",
         )
         decision = _extract_json(text)
         actions = _validate_actions(decision.get("actions"))
 
-    thought = str(decision.get("thought") or "AI 觀察了 IQUIQUE 辦公室並安排了一小段自然生活。")[:180]
     return {
         "ok": True,
-        "thought": thought,
+        "thought": "",
         "actions": actions,
         "model": model,
         "context": context,
         "news_context_count": len(news),
         "director_tools": True,
+        "native_tool_calls": True,
     }
