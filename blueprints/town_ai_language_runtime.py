@@ -61,7 +61,7 @@ DIALOGUE MEMORY AND VARIETY — CRITICAL:
 - Prefer personal/contextual continuity over repeatedly summarizing public news.
 
 DIALOGUE QUALITY — IMPORTANT:
-- All character dialogue must sound like natural everyday CHILEAN SPANISH between coworkers in Iquique, not translated Chinese/English and not a television news script.
+- All character dialogue in the tool payload must sound like natural everyday CHILEAN SPANISH between coworkers in Iquique, not translated Chinese/English and not a television news script.
 - Prefer short, conversational sentences with normal Chilean/neutral vocabulary. Mild local expressions are fine, but do not overuse slang.
 - Each person can doubt, joke, disagree, ignore the topic, change subject, or say very little.
 - If a supplied headline is mentioned, use ONLY facts literally present in that headline. Never invent ships, rescue cargo, schedules, port closures, causes, official plans, arrival times, casualty details, or article content that was not supplied.
@@ -70,6 +70,13 @@ DIALOGUE QUALITY — IMPORTANT:
 - Avoid awkward literal constructions such as "ni piernas quietas tendré" or unnatural noun phrases such as "cargueros de socorro".
 - If agent_chat is used, every turn must belong to one of the two participants and the two participants must be different people.
 - If agent_say is used, write the exact natural sentence the character says.
+
+BILINGUAL OUTPUT FOR THE UI:
+- When you use agent_chat, for every turn provide BOTH fields:
+  - text: the natural Spanish sentence that the character really says.
+  - text_zh: a concise Traditional Chinese translation of that exact same sentence.
+- When you use agent_say, provide BOTH fields text and text_zh with the same meaning.
+- Keep the Chinese translation natural and clear; do not translate names.
 
 TOOL USE:
 - Do not fall into a coffee/files/lookSea loop. Those are only some possibilities.
