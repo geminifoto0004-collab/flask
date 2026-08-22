@@ -20,6 +20,8 @@ def _action_summary(action):
         return f"{agent} 說了一句話"
     if kind == "agent_outfit":
         return f"{agent} 換了今天的衣服"
+    if kind == "agent_profile":
+        return f"{agent} 建立／更新生活檔案"
     if kind == "agent_evolve":
         return f"{agent} 的 {action.get('trait')} 改變"
     if kind == "agent_life":
