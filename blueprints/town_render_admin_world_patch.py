@@ -23,7 +23,7 @@ def patch_render_admin_world(html: str) -> str:
 #customs-sim #town-world-prompt-input{min-height:44px;flex:1 1 auto;min-width:220px;border:2px solid light-dark(#655d50,#3c4657);background:light-dark(#fffaf0,#202936);color:inherit;padding:8px 10px;font:inherit;box-sizing:border-box}
 #customs-sim #town-world-prompt-run{min-height:44px}
 #customs-sim .game-wrap{position:relative}
-#town-sea-overlay{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);pointer-events:none;image-rendering:pixelated;image-rendering:crisp-edges;z-index:8}
+#town-sea-overlay{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);pointer-events:none;image-rendering:pixelated;image-rendering:crisp-edges;z-index:8;background:transparent!important}
 </style>
 '''
     js = r'''
