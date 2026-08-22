@@ -12,6 +12,7 @@ from .town_ai_grounded_director import grounded_model_decision
 from . import town_page_bp as _town_page_module
 from .town_latest_page_runtime import latest_town_html
 from .town_render_visibility_patch import patch_render_visibility
+from .town_render_action_patch import patch_render_actions
 
 # Install validation/persistence for the current browser capabilities before the
 # blueprint is registered on the Flask app.
@@ -24,10 +25,10 @@ install_visibility_runtime()
 _town_ai_module._model_decision = grounded_model_decision
 town_ai_bp = _town_ai_module.town_ai_bp
 
-# Serve the current embedded town snapshot with the small live-visibility patch
-# applied at request time while the App Block continues to evolve quickly.
+# Serve the current embedded town snapshot with small runtime patches for the
+# latest visibility/animation fixes while the App Block continues to evolve.
 town_page_bp = _town_page_module.town_page_bp
-_town_page_module._patched_town_html = lambda: patch_render_visibility(latest_town_html())
+_town_page_module._patched_town_html = lambda: patch_render_actions(patch_render_visibility(latest_town_html()))
 
 # b2_test_bp has no url_prefix and is already registered by app.py.
 # Nest the town blueprints under it so both the browser page and /api/town/*
