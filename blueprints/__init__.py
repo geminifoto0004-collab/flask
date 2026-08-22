@@ -15,6 +15,7 @@ from .town_latest_page_runtime import latest_town_html
 from .town_render_visibility_patch import patch_render_visibility
 from .town_render_action_patch import patch_render_actions
 from .town_render_depth_patch import patch_render_depth
+from .town_render_fishing_patch import patch_render_fishing
 
 # Install validation/persistence for the current browser capabilities before the
 # blueprint is registered on the Flask app.
@@ -31,7 +32,7 @@ town_ai_bp = _town_ai_module.town_ai_bp
 # Serve the current embedded town snapshot with small runtime patches for the
 # latest visibility/animation fixes while the App Block continues to evolve.
 town_page_bp = _town_page_module.town_page_bp
-_town_page_module._patched_town_html = lambda: patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html())))
+_town_page_module._patched_town_html = lambda: patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html()))))
 
 # b2_test_bp has no url_prefix and is already registered by app.py.
 # Nest the town blueprints under it so both the browser page and /api/town/*
