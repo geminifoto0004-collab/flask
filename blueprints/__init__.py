@@ -13,6 +13,7 @@ from .town_ai_profile_runtime import install_profile_runtime
 from .town_ai_bilingual_runtime import install_bilingual_runtime
 from .town_world_map_runtime import install_world_map_runtime
 from .town_ai_sea_runtime import install_sea_runtime
+from .town_ai_shift_runtime import install_shift_runtime
 from .town_world_tidb_runtime import install_tidb_world_runtime
 from .town_dialogue_tidb_runtime import install_tidb_dialogue_runtime
 from .town_admin_runtime import install_town_admin_runtime
@@ -41,6 +42,7 @@ install_profile_runtime()
 install_bilingual_runtime()
 install_world_map_runtime()
 install_sea_runtime()
+install_shift_runtime()
 install_tidb_world_runtime()
 install_tidb_dialogue_runtime()
 install_town_admin_runtime()
