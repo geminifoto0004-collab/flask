@@ -18,12 +18,48 @@ def patch_render_actions(html: str) -> str:
         "    };",
     )
 
+    # Give every AI movement a protected execution window. Random idle logic may
+    # resume only after the visible action has actually played, while ship work
+    # can still pre-empt it through the existing queue/task logic.
     html = html.replace(
         "a.path=[];a.pathTarget='';a.timer=0;a.decisionTimer=rand(4.5,8.5);chooseIdleTarget(a,action.action);\n    addLog('AI 決定：'+agentLabel(a)+' → '+action.action);",
         "const labels={coffee:'去沖咖啡',files:'去整理文件',desk:'回工位工作',plant:'去看看植物',waterPlant:'去澆花',lookSea:'去窗邊看海',stretch:'伸展一下',radio:'去用海事電台',checkCoworker:'去找同事',fishing:'去釣魚',wander:'走一走'};\n"
-        "    a.path=[];a.pathTarget='';a.timer=0;a.decisionTimer=rand(10,16);a.intentLabel=labels[action.action]||action.action;a.intentUntil=Date.now()+16000;chooseIdleTarget(a,action.action);\n"
+        "    a.path=[];a.pathTarget='';a.timer=0;a.decisionTimer=999;a.intentLabel=labels[action.action]||action.action;a.intentUntil=Date.now()+30000;a.intentStarted=false;a.directorAction=action.action;a.directorCompleted=false;a.directorLockUntil=Date.now()+30000;chooseIdleTarget(a,action.action);\n"
         "    addLog('AI 指派：'+agentLabel(a)+' '+a.intentLabel);",
     )
+
+    html = html.replace(
+        "if(a.state==='idle'){\n        a.timer-=dt;a.decisionTimer-=dt;",
+        "if(a.state==='idle'){\n        a.timer-=dt;a.decisionTimer-=dt;\n        const directorLocked=Date.now()<(a.directorLockUntil||0)&&!!a.directorAction;",
+    )
+    html = html.replace(
+        "if(a.timer<=0)chooseIdleTarget(a);",
+        "if(a.timer<=0){if(directorLocked){a.timer=.6;}else{chooseIdleTarget(a);}}",
+    )
+
+    # Hold ordinary AI actions on screen long enough to be unmistakable.
+    timing_replacements = {
+        "if(a.idle==='coffee'){a.timer=rand(1.4,5.5);": "if(a.idle==='coffee'){a.timer=rand(5.5,8.5);",
+        "if(a.idle==='lookSea')a.timer=rand(1.2,5.4);": "if(a.idle==='lookSea')a.timer=rand(5.0,8.0);",
+        "if(a.idle==='files')a.timer=rand(1.0,4.6);": "if(a.idle==='files')a.timer=rand(5.0,8.0);",
+        "if(a.idle==='fishing'){a.timer=rand(4.5,12);": "if(a.idle==='fishing'){a.timer=rand(7.0,12);",
+    }
+    for old, new in timing_replacements.items():
+        html = html.replace(old, new)
+
+    # Mark a protected action complete only after it reached the destination and
+    # visibly ran. This makes the log reflect execution rather than intent.
+    html = html.replace(
+        "    // 不再把所有空閒關員強制抓去工作；每個人各自有工作意願與隨機決策時間。",
+        "      if(a.state==='idle'&&a.directorAction&&Date.now()<(a.directorLockUntil||0)&&a.intentStarted&&a.timer<=.65&&a.directorAction!=='chat'){addLog('AI 動作完成：'+agentLabel(a)+' '+(a.intentLabel||a.directorAction));a.directorCompleted=true;a.directorAction='';a.directorLockUntil=0;a.intentLabel='';a.intentUntil=0;a.decisionTimer=rand(1.5,4);a.timer=rand(.8,2.2);}\n"
+        "    });\n"
+        "    // 不再把所有空閒關員強制抓去工作；每個人各自有工作意願與隨機決策時間。",
+        1,
+    )
+
+    # The embedded snapshot already closes agents.forEach immediately before the
+    # comment above. If the previous replacement inserted an extra close, fix it.
+    html = html.replace("    });\n      if(a.state==='idle'&&a.directorAction", "      if(a.state==='idle'&&a.directorAction")
 
     # Show what a moving character is on the way to do, and already carry the
     # relevant prop while walking instead of looking like a generic walk cycle.
