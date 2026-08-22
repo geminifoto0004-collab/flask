@@ -15,6 +15,7 @@ from . import town_ai_bp as _base
 
 _ORIGINAL_VALIDATE = _base._validate_actions
 _ORIGINAL_APPLY = _base._apply_persistent_actions
+_ORIGINAL_CLEAN = _base._clean_world
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _AGENT_IDS = {"MIA", "ANA", "LIA"}
 
@@ -33,6 +34,31 @@ def _attach_time(actions, item):
         if at > 0:
             action["at_seconds"] = at
     return actions
+
+
+def clean_world(world):
+    """Keep safe recent stimuli that the older base cleaner did not know about."""
+    cleaned = _ORIGINAL_CLEAN(world)
+    if isinstance(world, dict):
+        stimuli = world.get("stimuli")
+        if isinstance(stimuli, list):
+            safe = []
+            for item in stimuli[-12:]:
+                if not isinstance(item, dict):
+                    continue
+                safe.append({
+                    "type": str(item.get("type") or "")[:40],
+                    "agent": str(item.get("agent") or "")[:18],
+                    "displayName": str(item.get("displayName") or "")[:24],
+                    "reason": str(item.get("reason") or "")[:40],
+                    "annoyance": item.get("annoyance"),
+                    "dogLove": item.get("dogLove"),
+                    "cleanliness": item.get("cleanliness"),
+                    "mood": item.get("mood"),
+                    "at": item.get("at"),
+                })
+            cleaned["stimuli"] = safe
+    return cleaned
 
 
 def validate_actions(raw_actions):
@@ -62,6 +88,12 @@ def validate_actions(raw_actions):
                     break
             if turns:
                 valid.extend(_attach_time([{"type": "agent_chat", "from": from_agent, "to": to_agent, "turns": turns}], item))
+
+        elif kind == "agent_say":
+            agent = str(item.get("agent") or "").upper()
+            text = str(item.get("text") or item.get("message") or "").strip()[:120]
+            if agent in _AGENT_IDS and text:
+                valid.extend(_attach_time([{"type": "agent_say", "agent": agent, "text": text}], item))
 
         elif kind == "agent_outfit":
             agent = str(item.get("agent") or "").upper()
@@ -130,8 +162,10 @@ def validate_actions(raw_actions):
 
 def apply_persistent_actions(world, actions):
     actions = actions or []
-    base_actions = [a for a in actions if a.get("type") not in {"agent_chat", "agent_outfit", "object_add"} and not (a.get("type") == "agent_evolve" and a.get("trait") in {"cleanliness", "dogLove"})]
-    evolved = _base._clean_world(_ORIGINAL_APPLY(world, base_actions))
+    transient = {"agent_chat", "agent_say", "agent_outfit", "object_add"}
+    base_actions = [a for a in actions if a.get("type") not in transient and not (a.get("type") == "agent_evolve" and a.get("trait") in {"cleanliness", "dogLove"})]
+    evolved = _ORIGINAL_APPLY(world, base_actions)
+    evolved = clean_world(evolved)
     agents = [dict(a) for a in evolved.get("agents", []) if isinstance(a, dict)]
     furniture = [dict(f) for f in evolved.get("furniture", []) if isinstance(f, dict)]
 
@@ -172,11 +206,12 @@ def apply_persistent_actions(world, actions):
 def install_latest_action_runtime():
     _base._validate_actions = validate_actions
     _base._apply_persistent_actions = apply_persistent_actions
+    _base._clean_world = clean_world
 
     @_base.town_ai_bp.route("/world", methods=["GET"])
     def latest_town_world():
         stored = _base._read_json(_base._WORLD_PATH, {})
-        world = _base._clean_world(stored.get("world"))
+        world = clean_world(stored.get("world"))
         try:
             version = int(stored.get("saved_at") or 0)
         except Exception:
