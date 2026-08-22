@@ -82,14 +82,37 @@ def install_profile_runtime():
         if not isinstance(world, dict):
             return cleaned
 
+        source_agents = [a for a in world.get("agents", []) if isinstance(a, dict)] if isinstance(world.get("agents"), list) else []
+        cleaned_agents = [dict(a) for a in cleaned.get("agents", []) if isinstance(a, dict)]
+        for clean_agent in cleaned_agents:
+            name = str(clean_agent.get("name") or "").upper()
+            source = next((a for a in source_agents if str(a.get("name") or "").upper() == name), None)
+            if source:
+                profile = _clean_profile(source.get("profile"))
+                if profile:
+                    clean_agent["profile"] = profile
+        if cleaned_agents:
+            cleaned["agents"] = cleaned_agents[:3]
+
         profiles = []
-        for item in world.get("characterProfiles") if isinstance(world.get("characterProfiles"), list) else []:
+        supplied_profiles = world.get("characterProfiles") if isinstance(world.get("characterProfiles"), list) else []
+        for item in supplied_profiles:
             if not isinstance(item, dict):
                 continue
             name = str(item.get("name") or "").upper()
             if name not in _AGENT_ENUM:
                 continue
             profiles.append({"name": name, "profile": _clean_profile(item.get("profile"))})
+
+        # If the browser has not supplied a separate profile list yet, derive it
+        # from persistent agent rows so a reload does not erase life context.
+        if not profiles:
+            for agent in cleaned.get("agents", []):
+                if not isinstance(agent, dict):
+                    continue
+                name = str(agent.get("name") or "").upper()
+                if name in _AGENT_ENUM:
+                    profiles.append({"name": name, "profile": _clean_profile(agent.get("profile"))})
         if profiles:
             cleaned["characterProfiles"] = profiles[:3]
 
@@ -137,6 +160,11 @@ def install_profile_runtime():
                     agent["profile"] = current
                     break
         evolved["agents"] = agents[:3]
+        evolved["characterProfiles"] = [
+            {"name": str(agent.get("name") or "").upper(), "profile": _clean_profile(agent.get("profile"))}
+            for agent in agents[:3]
+            if str(agent.get("name") or "").upper() in _AGENT_ENUM
+        ]
         return evolved
 
     _base._clean_world = clean_world
