@@ -1,8 +1,8 @@
 """Small post-patch for shared chat history and compact language controls.
 
-Keeps the known-good game/dialogue renderer intact. It only moves the existing
-language selects into the bottom control row and observes accepted browser chat
-history so executed conversations are persisted through /api/town/dialogues.
+Keeps the known-good game/dialogue renderer intact. New local dialogue is shown
+immediately, then persisted asynchronously. Other viewers poll the shared TiDB
+history on a short interval, so the current speaker bubble never waits on DB I/O.
 """
 
 
@@ -39,13 +39,19 @@ def patch_render_shared_dialogue(html: str) -> str:
 
   let backing=Array.isArray(window.__townDialogueHistory)?window.__townDialogueHistory:[];
   let proxy=null;
-  let posting=false;
   const alreadyPosted=new Set();
+  const pendingById=new Map();
 
   function dialogueId(chat){
     if(chat&&chat.id)return String(chat.id);
     const members=Array.isArray(chat&&chat.members)?chat.members.join('-'):'chat';
     return members+'@'+String(chat&&chat.at||'');
+  }
+
+  function renderNow(){
+    if(typeof renderDialogueSidebar==='function'){
+      try{renderDialogueSidebar();}catch(_e){}
+    }
   }
 
   function postDialogue(chat){
@@ -63,10 +69,11 @@ def patch_render_shared_dialogue(html: str) -> str:
         text_zh:String(turn&&turn.text_zh||turn&&turn.textZh||'')
       }))
     };
-    posting=true;
+    pendingById.set(id,payload);
     fetch('/api/town/dialogues',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({dialogue:payload})})
-      .catch(()=>{})
-      .finally(()=>{posting=false;});
+      .then(r=>r.ok?r.json():Promise.reject(new Error('dialogue save failed')))
+      .then(()=>{pendingById.delete(id);setTimeout(refreshSharedHistory,80);})
+      .catch(()=>{alreadyPosted.delete(id);});
   }
 
   function wrapArray(value){
@@ -75,7 +82,10 @@ def patch_render_shared_dialogue(html: str) -> str:
       get(target,prop,receiver){
         if(prop==='push')return (...items)=>{
           const result=Array.prototype.push.apply(target,items);
-          if(!posting)items.forEach(postDialogue);
+          // Current viewer sees the dialogue immediately. TiDB persistence happens
+          // in parallel and must never gate the visible chat panel.
+          requestAnimationFrame(renderNow);
+          items.forEach(postDialogue);
           return result;
         };
         return Reflect.get(target,prop,receiver);
@@ -93,30 +103,43 @@ def patch_render_shared_dialogue(html: str) -> str:
         if(value===proxy)return;
         backing=Array.isArray(value)?value:[];
         proxy=wrapArray(backing);
+        requestAnimationFrame(renderNow);
       }
     });
   }catch(_e){ }
 
+  let refreshing=false;
   function refreshSharedHistory(){
+    if(refreshing)return;
+    refreshing=true;
     fetch('/api/town/dialogues?limit=12',{headers:{'Accept':'application/json'}})
       .then(r=>r.ok?r.json():null)
       .then(data=>{
         if(!data||!Array.isArray(data.dialogues))return;
-        window.__townDialogueHistory=data.dialogues.map(chat=>({
+        const shared=data.dialogues.map(chat=>({
           id:chat.id,
           at:chat.at,
           members:Array.isArray(chat.members)?chat.members:[],
           turns:Array.isArray(chat.turns)?chat.turns.map(turn=>({speaker:turn.speaker,text:turn.text,text_zh:turn.text_zh,textZh:turn.text_zh})):[],
           text:chat.text||''
         }));
-        if(typeof renderDialogueSidebar==='function')renderDialogueSidebar();
+        const ids=new Set(shared.map(dialogueId));
+        // Never erase a just-spoken local conversation while its POST is still
+        // travelling to TiDB. Merge it until the shared copy becomes visible.
+        pendingById.forEach((chat,id)=>{if(!ids.has(id))shared.push(chat);});
+        shared.sort((a,b)=>Number(a.at||0)-Number(b.at||0));
+        window.__townDialogueHistory=shared.slice(-12);
+        renderNow();
       })
-      .catch(()=>{});
+      .catch(()=>{})
+      .finally(()=>{refreshing=false;});
   }
 
   moveLanguageControls();
   refreshSharedHistory();
-  setInterval(refreshSharedHistory,15000);
+  // Other viewers receive shared dialogue within about 3 seconds. The speaker's
+  // own browser still updates instantly and does not wait for this timer.
+  setInterval(refreshSharedHistory,3000);
   setTimeout(moveLanguageControls,150);
 })();
 </script>
