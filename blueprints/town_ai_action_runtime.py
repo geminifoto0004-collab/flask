@@ -211,7 +211,7 @@ def install_latest_action_runtime():
     @_base.town_ai_bp.route("/world", methods=["GET"])
     def latest_town_world():
         stored = _base._read_json(_base._WORLD_PATH, {})
-        world = clean_world(stored.get("world"))
+        world = _base._clean_world(stored.get("world"))
         try:
             version = int(stored.get("saved_at") or 0)
         except Exception:
