@@ -78,7 +78,7 @@ def install_bilingual_runtime():
             if kind == "agent_say":
                 agent = str(item.get("agent") or "").upper()
                 text = str(item.get("text") or item.get("message") or "").strip()[:120]
-                text_zh = str(item.get("text_zh") or item.get("textZh") or turn.get("translation_zh") or "").strip()[:120] if False else str(item.get("text_zh") or item.get("textZh") or item.get("translation_zh") or "").strip()[:120]
+                text_zh = str(item.get("text_zh") or item.get("textZh") or item.get("translation_zh") or "").strip()[:120]
                 if agent in {"MIA", "ANA", "LIA"} and text:
                     payload = {"type": "agent_say", "agent": agent, "text": text}
                     if text_zh:
