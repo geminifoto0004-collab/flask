@@ -62,10 +62,24 @@ def _patched_town_html():
         "  let vessels=[];\n  let aiAuto=localStorage.getItem('customs-town-ai-auto')!=='0';\n  let aiAutoTimer=rand(35,75);\n  let aiBusy=false;\n  let decorVariant=Math.floor(rand(0,4));\n  let serverStateTimer=12;\n  let serverPlanTimer=6;\n  let lastServerPlanVersion=Number(localStorage.getItem('customs-town-plan-version')||0);",
     )
 
-    # DeepSeek may now trigger a safe decorative layout shuffle.
+    # Persist AI-created layout evolution together with personalities and plants.
+    html = html.replace(
+        "        savedAt:Date.now(),\n        plants:plantStates,",
+        "        savedAt:Date.now(),\n        decorVariant,\n        plants:plantStates,",
+    )
+    html = html.replace(
+        "      if(!state){seedPlants();return;}\n      if(Array.isArray(state.plants)&&state.plants.length){",
+        "      if(!state){seedPlants();return;}\n      if(Number.isFinite(state.decorVariant))decorVariant=((state.decorVariant%4)+4)%4;\n      if(Array.isArray(state.plants)&&state.plants.length){",
+    )
+
+    # DeepSeek may trigger safe decorative changes and gradual, persistent character evolution.
     html = html.replace(
         "      }else if(action.type==='dog_visit'&&dogVisitors.length<2){\n        spawnDog(action.kind==='female'?'female':'male',Math.random()<.5);\n        addLog('AI 觸發了一隻過路狗');\n      }",
-        "      }else if(action.type==='dog_visit'&&dogVisitors.length<2){\n        spawnDog(action.kind==='female'?'female':'male',Math.random()<.5);\n        addLog('AI 觸發了一隻過路狗');\n      }else if(action.type==='layout_shuffle'){\n        decorVariant=(decorVariant+1+Math.floor(Math.random()*3))%4;\n        const live=plantStates.filter(p=>p.alive);\n        live.forEach(p=>{const slot=chooseFreePlantSlot(p.id);p.x=slot.x;p.y=slot.y;});\n        addLog('AI 重新整理了辦公室的生活佈局');\n      }",
+        "      }else if(action.type==='dog_visit'&&dogVisitors.length<2){\n        spawnDog(action.kind==='female'?'female':'male',Math.random()<.5);\n        addLog('AI 觸發了一隻過路狗');\n      }else if(action.type==='layout_shuffle'){\n        decorVariant=(decorVariant+1+Math.floor(Math.random()*3))%4;\n        const live=plantStates.filter(p=>p.alive);\n        live.forEach(p=>{const slot=chooseFreePlantSlot(p.id);p.x=slot.x;p.y=slot.y;});\n        addLog('AI 重新整理了辦公室的生活佈局');\n        saveWorld();\n      }else if(action.type==='agent_evolve'){\n        const target=agents.find(x=>x.name===action.agent);\n        if(target){\n          const trait=String(action.trait||'');\n          const allowedTraits=['workBias','energy','mood','curiosity','social','focus','restlessness','coffeeLove','flowerLove','fishLove'];\n          if(allowedTraits.includes(trait)){\n            const delta=Math.max(-.18,Math.min(.18,Number(action.delta)||0));\n            target[trait]=Math.max(.05,Math.min(1,target[trait]+delta));\n            addLog('AI 讓 '+target.name+' 的 '+trait+' 永久變成 '+target[trait].toFixed(2));\n            saveWorld();\n          }\n        }\n      }",
+    )
+    html = html.replace(
+        "        if(dead)Object.assign(dead,fresh,{id:dead.id});else plantStates.push(fresh);\n        addLog('AI 讓辦公室多了一盆新植物');",
+        "        if(dead)Object.assign(dead,fresh,{id:dead.id});else plantStates.push(fresh);\n        addLog('AI 讓辦公室多了一盆新植物');\n        saveWorld();",
     )
     html = html.replace(
         "  async function testDeepSeek(){\n    if(!ui.aiTest)return;",
@@ -128,4 +142,5 @@ def customs_town_page_health():
         "compact_layout": True,
         "auto_ai": True,
         "cron_plan_sync": True,
+        "persistent_evolution": True,
     })
