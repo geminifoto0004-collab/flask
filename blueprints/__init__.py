@@ -11,6 +11,7 @@ from .town_ai_visibility_runtime import install_visibility_runtime
 from .town_ai_history_runtime import install_history_runtime
 from .town_ai_profile_runtime import install_profile_runtime
 from .town_ai_bilingual_runtime import install_bilingual_runtime
+from .town_dialogue_tidb_runtime import install_tidb_dialogue_runtime
 from .town_ai_grounded_director import grounded_model_decision
 from . import town_page_bp as _town_page_module
 from .town_latest_page_runtime import latest_town_html
@@ -23,6 +24,7 @@ from .town_render_profile_patch import patch_render_profiles
 from .town_render_dialogue_panel_patch import patch_render_dialogue_panel
 from .town_render_dialogue_fix_patch import patch_render_dialogue_fix
 from .town_render_panel_alignment_patch import patch_render_panel_alignment
+from .town_render_shared_dialogue_patch import patch_render_shared_dialogue
 
 # Install validation/persistence for the current browser capabilities before the
 # blueprint is registered on the Flask app.
@@ -31,6 +33,7 @@ install_visibility_runtime()
 install_history_runtime()
 install_profile_runtime()
 install_bilingual_runtime()
+install_tidb_dialogue_runtime()
 
 # Render /api/town/think uses the grounded AI world director. User-visible
 # narration is rebuilt from validated executable actions, so the log cannot
@@ -38,11 +41,10 @@ install_bilingual_runtime()
 _town_ai_module._model_decision = grounded_model_decision
 town_ai_bp = _town_ai_module.town_ai_bp
 
-# Keep the last known-good page composition, then only reposition the already
-# working dialogue panel beside the black game frame. This avoids touching the
-# animation/game runtime while making the two frames share the same top/bottom.
+# Keep the known-good game composition. Shared dialogue adds only database
+# history plus compact language controls; it does not change the animation loop.
 town_page_bp = _town_page_module.town_page_bp
-_town_page_module._patched_town_html = lambda: patch_render_panel_alignment(patch_render_dialogue_fix(patch_render_dialogue_panel(patch_render_profiles(patch_render_chat_timing(patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html())))))))))
+_town_page_module._patched_town_html = lambda: patch_render_shared_dialogue(patch_render_panel_alignment(patch_render_dialogue_fix(patch_render_dialogue_panel(patch_render_profiles(patch_render_chat_timing(patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html()))))))))))
 
 # b2_test_bp has no url_prefix and is already registered by app.py.
 # Nest the town blueprints under it so both the browser page and /api/town/*
