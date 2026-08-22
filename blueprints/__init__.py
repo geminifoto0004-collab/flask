@@ -11,7 +11,11 @@ from .town_ai_visibility_runtime import install_visibility_runtime
 from .town_ai_history_runtime import install_history_runtime
 from .town_ai_profile_runtime import install_profile_runtime
 from .town_ai_bilingual_runtime import install_bilingual_runtime
+from .town_world_map_runtime import install_world_map_runtime
+from .town_ai_sea_runtime import install_sea_runtime
+from .town_world_tidb_runtime import install_tidb_world_runtime
 from .town_dialogue_tidb_runtime import install_tidb_dialogue_runtime
+from .town_admin_runtime import install_town_admin_runtime
 from .town_ai_grounded_director import grounded_model_decision
 from . import town_page_bp as _town_page_module
 from .town_latest_page_runtime import latest_town_html
@@ -27,13 +31,18 @@ from .town_render_panel_alignment_patch import patch_render_panel_alignment
 from .town_render_shared_dialogue_patch import patch_render_shared_dialogue
 
 # Install validation/persistence for the current browser capabilities before the
-# blueprint is registered on the Flask app.
+# blueprint is registered on the Flask app. The server map is authoritative,
+# while browser physics remains the final collision/safety boundary.
 install_latest_action_runtime()
 install_visibility_runtime()
 install_history_runtime()
 install_profile_runtime()
 install_bilingual_runtime()
+install_world_map_runtime()
+install_sea_runtime()
+install_tidb_world_runtime()
 install_tidb_dialogue_runtime()
+install_town_admin_runtime()
 
 # Render /api/town/think uses the grounded AI world director. User-visible
 # narration is rebuilt from validated executable actions, so the log cannot
