@@ -1,12 +1,43 @@
-"""Safe DOM-only Render patch for town admin controls and sea-life overlay.
-
-This deliberately does not rewrite the game animation loop. Privileged controls
-call server-validated admin endpoints, while persisted sea creatures are drawn on
-a transparent overlay from the shared /api/town/world snapshot.
-"""
+"""Safe Render patch for town admin controls, shared duty state and sea life."""
 
 
 def patch_render_admin_world(html: str) -> str:
+    # Teach the known-good browser runtime one additional persistent capability
+    # without replacing its animation loop.
+    html = html.replace(
+        "  function isAgentOnDuty(a){return !isIquiqueNight()||a.index===nightShiftIndex()||!!a.task;}",
+        "  function isAgentOnDuty(a){if(a?.manualOffDuty&&!a?.task)return false;return !isIquiqueNight()||a.index===nightShiftIndex()||!!a.task;}",
+        1,
+    )
+    html = html.replace(
+        "careerState:a.careerState,generation:a.generation,state:a.state",
+        "careerState:a.careerState,manualOffDuty:!!a.manualOffDuty,generation:a.generation,state:a.state",
+        1,
+    )
+    html = html.replace(
+        "        if(Number.isFinite(Number(saved.generation)))a.generation=Number(saved.generation);",
+        "        if(Number.isFinite(Number(saved.generation)))a.generation=Number(saved.generation);\n        if(typeof saved.manualOffDuty==='boolean')a.manualOffDuty=saved.manualOffDuty;",
+        1,
+    )
+    shift_marker = "  registerDirectorTool('agent_action',action=>{"
+    if "registerDirectorTool('agent_shift'" not in html and shift_marker in html:
+        shift_runtime = r'''  registerDirectorTool('agent_shift',action=>{
+    const a=agents.find(x=>x.name===String(action.agent||'').toUpperCase());
+    if(!a){addLog('AI 班次指令未執行：找不到 '+String(action.agent||'')+' 這個角色');return;}
+    const mode=String(action.mode||action.shift||'').toLowerCase();
+    if(mode==='off'){
+      if(a.task){addLog('AI 班次指令未執行：'+agentLabel(a)+' 正在處理船務');return;}
+      a.manualOffDuty=true;a.state='offDuty';a.path=[];a.pathTarget='';a.chatText='';a.chatTimer=0;a.intentLabel='';a.intentUntil=0;
+      addLog('AI 安排 '+agentLabel(a)+' 下班離開辦公室');saveWorld();return;
+    }
+    if(mode==='on'){
+      a.manualOffDuty=false;a.state='idle';a.x=a.homeX;a.y=a.homeY;a.timer=.2;a.decisionTimer=.2;
+      addLog('AI 安排 '+agentLabel(a)+' 回來上班');saveWorld();
+    }
+  });
+'''
+        html = html.replace(shift_marker, shift_runtime + shift_marker, 1)
+
     css = r'''
 <style id="town-admin-world-style">
 #customs-sim .town-admin-created{display:none!important}
@@ -56,7 +87,7 @@ def patch_render_admin_world(html: str) -> str:
   let promptWrap=document.getElementById('town-world-prompt');
   if(!promptWrap){
     promptWrap=document.createElement('label');promptWrap.id='town-world-prompt';promptWrap.className='town-admin-created';
-    promptWrap.innerHTML='<span>AI 指令</span><input id="town-world-prompt-input" type="text" maxlength="180" placeholder="例如：在海上生成一隻海豹"><button id="town-world-prompt-run" type="button">✨ 執行</button>';
+    promptWrap.innerHTML='<span>AI 指令</span><input id="town-world-prompt-input" type="text" maxlength="180" placeholder="例如：在海上生成一隻海豹、讓 MIA 下班"><button id="town-world-prompt-run" type="button">✨ 執行</button>';
     const aiBtn=app.querySelector('#aiTestBtn');
     if(aiBtn&&aiBtn.parentNode===controls)aiBtn.insertAdjacentElement('afterend',promptWrap);else controls.appendChild(promptWrap);
   }
@@ -94,7 +125,7 @@ def patch_render_admin_world(html: str) -> str:
       const data=await r.json().catch(()=>({}));
       if(!r.ok||!data.ok)throw new Error(data.error||('HTTP '+r.status));
       if(input)input.value='';log('AI 指令已送入共同世界：'+prompt);
-      setTimeout(refreshWorld,500);
+      setTimeout(refreshWorld,300);
     }catch(err){log('AI 指令失敗：'+String(err&&err.message||err));}
     finally{if(btn)btn.disabled=false;}
   }
@@ -114,12 +145,17 @@ def patch_render_admin_world(html: str) -> str:
     const dir=Number(c.direction)<0?-1:1;
     const x=Math.max(70,Math.min(570,Number(c.x)||320));
     const y=Math.max(326,Math.min(374,Number(c.y)||350))+Math.sin(phase)*2;
-    px(x-10,y-4,20,8,'#6f7f83');
-    px(x+dir*8-(dir<0?8:0),y-7,8,7,'#809094');
-    px(x+dir*13-(dir<0?4:0),y-6,3,2,'#202a2f');
-    px(x-dir*10-(dir<0?4:0),y,6,3,'#59686b');
-    px(x-4,y+3,5,3,'#5f6f72');px(x+3,y+3,5,3,'#5f6f72');
-    px(x-13,y+7,26,2,'rgba(220,245,250,.55)');
+    const hx=x+dir*11;
+    px(x-12,y-3,24,8,'#738488');
+    px(x-9,y-6,18,4,'#819196');
+    px(hx-(dir<0?8:0),y-7,8,8,'#89999d');
+    px(hx+dir*5-(dir<0?3:0),y-4,5,4,'#a5b2b4');
+    px(hx+dir*3-(dir<0?2:0),y-6,2,2,'#172126');
+    px(hx+dir*8-(dir<0?2:0),y-3,2,2,'#263237');
+    px(x-dir*13-(dir<0?7:0),y-1,7,4,'#5d6c70');
+    px(x-7,y+4,7,4,'#627276');px(x+2,y+4,7,4,'#627276');
+    if(oc){oc.strokeStyle='rgba(230,245,246,.72)';oc.lineWidth=1;for(let i=-1;i<=1;i++){oc.beginPath();oc.moveTo(hx+dir*7,y-1+i*2);oc.lineTo(hx+dir*13,y-3+i*3);oc.stroke();}}
+    px(x-16,y+8,32,2,'rgba(220,245,250,.6)');
   }
   function seaFrame(now){
     if(oc){oc.clearRect(0,0,640,400);seaCreatures.forEach(c=>drawSeal(c,now));}
@@ -134,7 +170,7 @@ def patch_render_admin_world(html: str) -> str:
       seaCreatures=Array.isArray(data&&data.world&&data.world.seaCreatures)?data.world.seaCreatures.filter(c=>String(c&&c.kind||'').toLowerCase()==='seal').slice(-12):[];
     }catch(_){}
   }
-  adminStatus();refreshWorld();setInterval(refreshWorld,8000);
+  adminStatus();refreshWorld();setInterval(refreshWorld,3000);
 })();
 </script>
 '''
