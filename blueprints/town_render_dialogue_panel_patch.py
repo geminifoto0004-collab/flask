@@ -8,13 +8,13 @@ def patch_render_dialogue_panel(html: str) -> str:
             """
   #town-dock-layout{display:flex;align-items:flex-start;justify-content:center;gap:0;width:max-content;max-width:calc(100vw - 18px);margin:0 auto}
   #town-dock-layout>.town-main-root{flex:0 1 auto;min-width:0}
-  #town-side-panel{position:relative;display:flex;flex-direction:column;gap:10px;flex:0 0 360px;width:360px;max-width:360px;min-height:640px;z-index:20;background:#1c2733;border:2px solid #1a2028;border-left:0;border-radius:0 10px 10px 0;box-shadow:none;padding:12px;color:#eef4ff;font:12px/1.45 "Segoe UI",Arial,sans-serif}
+  #town-side-panel{position:relative;display:flex;flex-direction:column;gap:10px;flex:0 0 360px;width:360px;max-width:360px;height:640px;min-height:0;z-index:20;background:#1c2733;border:2px solid #1a2028;border-left:0;border-radius:0 10px 10px 0;box-shadow:none;padding:12px;color:#eef4ff;font:12px/1.45 "Segoe UI",Arial,sans-serif;overflow:hidden;box-sizing:border-box}
   #town-side-panel .panel-title{font-size:24px;font-weight:800;letter-spacing:.4px;color:#fff}
   #town-side-panel .panel-sub{font-size:12px;opacity:.8}
   #town-side-panel .panel-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   #town-side-panel label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#d6e4ff;flex:1 1 130px}
   #town-side-panel select{background:#243646;color:#fff;border:1px solid #4e6a84;border-radius:6px;padding:6px 8px;font-size:12px}
-  #town-dialogue-list{overflow:auto;display:flex;flex-direction:column;gap:10px;padding-right:2px;min-height:0;flex:1 1 auto}
+  #town-dialogue-list{overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:10px;padding-right:2px;min-height:0;flex:1 1 auto;scrollbar-gutter:stable;overscroll-behavior:contain}
   .town-dialogue-card{background:#111922;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px}
   .town-dialogue-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;color:#b8cae6}
   .town-dialogue-members{font-weight:700;color:#fff;letter-spacing:.3px}
@@ -29,7 +29,7 @@ def patch_render_dialogue_panel(html: str) -> str:
   .town-dialogue-empty{background:#111922;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px;font-size:14px}
   @media (max-width: 1180px){
     #town-dock-layout{flex-direction:column;max-width:100vw;width:100%}
-    #town-side-panel{width:auto;max-width:none;min-height:260px;border-left:2px solid #1a2028;border-top:0;border-radius:0 0 10px 10px}
+    #town-side-panel{width:auto;max-width:none;height:320px;min-height:260px;border-left:2px solid #1a2028;border-top:0;border-radius:0 0 10px 10px}
   }
 </style>""",
             1,
@@ -94,6 +94,13 @@ def patch_render_dialogue_panel(html: str) -> str:
     }
     return seed||document.body.firstElementChild||document.body;
   }
+  function syncTownDialoguePanelHeight(){
+    const panel=document.getElementById('town-side-panel');
+    const game=document.querySelector('#customs-sim .game-wrap');
+    if(!panel||!game)return;
+    if(window.matchMedia('(max-width:1180px)').matches){panel.style.height='320px';return;}
+    panel.style.height=Math.max(320,Math.round(game.getBoundingClientRect().height))+'px';
+  }
   function ensureTownSidePanel(){
     let panel=document.getElementById('town-side-panel');
     if(panel)return panel;
@@ -123,13 +130,19 @@ def patch_render_dialogue_panel(html: str) -> str:
     statusSel.value=(window.__townUiPrefs||{}).statusLang||'zh';
     dialogueSel.addEventListener('change',()=>{window.__townUiPrefs.dialogueLang=dialogueSel.value;saveTownUiPrefs();renderDialogueSidebar();});
     statusSel.addEventListener('change',()=>{window.__townUiPrefs.statusLang=statusSel.value;saveTownUiPrefs();if(typeof addLog==='function')addLog(statusSel.value==='es'?'Idioma del registro cambiado a Español':'狀態列語言已切換為中文');});
+    setTimeout(syncTownDialoguePanelHeight,0);
+    if('ResizeObserver' in window){
+      const game=document.querySelector('#customs-sim .game-wrap');
+      if(game)new ResizeObserver(syncTownDialoguePanelHeight).observe(game);
+    }
+    window.addEventListener('resize',syncTownDialoguePanelHeight);
     return panel;
   }
   function renderDialogueSidebar(){
     const panel=ensureTownSidePanel();
     const box=panel.querySelector('#town-dialogue-list');
     const items=(Array.isArray(window.__townDialogueHistory)?window.__townDialogueHistory:[]).slice(-8);
-    if(!items.length){box.innerHTML='<div class="town-dialogue-empty">尚無對話 / Aún no hay diálogo.</div>';return;}
+    if(!items.length){box.innerHTML='<div class="town-dialogue-empty">尚無對話 / Aún no hay diálogo.</div>';syncTownDialoguePanelHeight();return;}
     box.innerHTML=items.map(item=>{
       const members=(Array.isArray(item.members)?item.members:[]).slice(0,2);
       const first=members[0]||'MIA';
@@ -140,7 +153,7 @@ def patch_render_dialogue_panel(html: str) -> str:
       const stamp=item.at?new Date(item.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'';
       return '<div class="town-dialogue-card"><div class="town-dialogue-head"><span class="town-dialogue-members">'+escapeHtml(members.join(' ↔ ')||'MIA ↔ ANA')+'</span><span>'+escapeHtml(stamp)+'</span></div><div class="town-dialogue-turns">'+(turns||('<div class="town-dialogue-bubble left"><div class="town-dialogue-line">'+escapeHtml(item.text||'')+'</div></div>'))+'</div></div>';
     }).join('');
-    box.scrollTop=box.scrollHeight;
+    requestAnimationFrame(()=>{box.scrollTop=box.scrollHeight;syncTownDialoguePanelHeight();});
   }
   function installTownLanguageUi(){
     if(window.__townLangUiInstalled)return;
