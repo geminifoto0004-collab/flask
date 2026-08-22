@@ -6,12 +6,17 @@ Blueprints 包初始化
 from .user_auth_bp import user_auth_bp
 from .b2_test_bp import b2_test_bp
 from . import town_ai_bp as _town_ai_module
+from .town_ai_action_runtime import install_latest_action_runtime
 from .town_ai_director_runtime import director_model_decision
 from . import town_page_bp as _town_page_module
 from .town_latest_page_runtime import latest_town_html
 
-# Render /api/town/think uses the validated AI director. The model can only
-# return town-director actions; browser physics and backend validation remain the
+# Install validation/persistence for the current browser capabilities before the
+# blueprint is registered on the Flask app.
+install_latest_action_runtime()
+
+# Render /api/town/think uses the AI world director. The model can only return
+# validated town actions; browser physics and backend validation remain the
 # execution/security boundary.
 _town_ai_module._model_decision = director_model_decision
 town_ai_bp = _town_ai_module.town_ai_bp
