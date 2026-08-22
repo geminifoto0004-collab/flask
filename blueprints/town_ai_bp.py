@@ -2,13 +2,15 @@
 
 The browser can ask for immediate decisions while an external cron can advance
 server-side town plans even when nobody has the page open. Browser physics and
-pathfinding remain authoritative; the model only emits whitelisted actions.
+pathfinding remain authoritative; the model emits only validated world actions.
 """
 
+from datetime import datetime
 import json
 import os
 import re
 import time
+from zoneinfo import ZoneInfo
 
 import requests
 from flask import Blueprint, jsonify, request
@@ -30,11 +32,13 @@ _ALLOWED_FURNITURE_TYPES = {
     "file_box", "chair", "plant_shelf", "dog_bowl", "side_table",
     "wall_frame", "floor_lamp", "small_cabinet", "rug", "notice_board",
 }
+_ALLOWED_PERSONAS = {"lazy", "busybody", "restless"}
 _LAST_CALL_BY_IP = {}
 _STATE_DIR = (os.environ.get("TOWN_STATE_DIR") or "/tmp/customs_agent_town").strip()
 _WORLD_PATH = os.path.join(_STATE_DIR, "world.json")
 _PLAN_PATH = os.path.join(_STATE_DIR, "plan.json")
 _HISTORY_PATH = os.path.join(_STATE_DIR, "plan_history.json")
+_CONTEXT_CACHE = {"at": 0.0, "data": {}}
 
 
 def _cors(response):
@@ -62,6 +66,80 @@ def _extract_json(text):
         return json.loads(match.group(0))
 
 
+def _weather_description(code):
+    try:
+        code = int(code)
+    except Exception:
+        return "unknown"
+    if code == 0:
+        return "clear"
+    if code in {1, 2}:
+        return "partly_cloudy"
+    if code == 3:
+        return "overcast"
+    if code in {45, 48}:
+        return "fog"
+    if code in {51, 53, 55, 56, 57}:
+        return "drizzle"
+    if code in {61, 63, 65, 66, 67, 80, 81, 82}:
+        return "rain"
+    if code in {71, 73, 75, 77, 85, 86}:
+        return "snow"
+    if code in {95, 96, 99}:
+        return "thunderstorm"
+    return "mixed"
+
+
+def _iquique_context(force=False):
+    now_ts = time.time()
+    if not force and _CONTEXT_CACHE.get("data") and now_ts - _CONTEXT_CACHE.get("at", 0) < 600:
+        return dict(_CONTEXT_CACHE["data"])
+
+    tz = ZoneInfo("America/Santiago")
+    local_now = datetime.now(tz)
+    context = {
+        "city": "IQUIQUE",
+        "timezone": "America/Santiago",
+        "local_time": local_now.isoformat(timespec="seconds"),
+        "hour": local_now.hour,
+        "minute": local_now.minute,
+        "weather": {
+            "description": "unknown",
+            "temperature": None,
+            "wind": None,
+            "code": None,
+            "is_day": 1 if 7 <= local_now.hour < 20 else 0,
+        },
+    }
+    try:
+        response = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": -20.2141,
+                "longitude": -70.1524,
+                "current": "temperature_2m,weather_code,wind_speed_10m,is_day",
+                "timezone": "America/Santiago",
+            },
+            timeout=12,
+        )
+        if response.ok:
+            current = response.json().get("current") or {}
+            code = current.get("weather_code")
+            context["weather"] = {
+                "description": _weather_description(code),
+                "temperature": current.get("temperature_2m"),
+                "wind": current.get("wind_speed_10m"),
+                "code": code,
+                "is_day": current.get("is_day"),
+            }
+    except Exception:
+        pass
+
+    _CONTEXT_CACHE["at"] = now_ts
+    _CONTEXT_CACHE["data"] = context
+    return dict(context)
+
+
 def _clean_world(world):
     if not isinstance(world, dict):
         return {}
@@ -71,9 +149,11 @@ def _clean_world(world):
         decor_variant = 0
     return {
         "now": str(world.get("now") or "")[:40],
+        "iquiqueTime": str(world.get("iquiqueTime") or "")[:40],
         "decorVariant": decor_variant,
         "stats": world.get("stats") if isinstance(world.get("stats"), dict) else {},
         "agents": world.get("agents")[:3] if isinstance(world.get("agents"), list) else [],
+        "formerAgents": world.get("formerAgents")[-12:] if isinstance(world.get("formerAgents"), list) else [],
         "plants": world.get("plants")[:12] if isinstance(world.get("plants"), list) else [],
         "dogs": world.get("dogs")[:8] if isinstance(world.get("dogs"), list) else [],
         "dogPoops": world.get("dogPoops", 0),
@@ -89,12 +169,21 @@ def _bounded_number(value, low, high, default):
     return max(low, min(high, number))
 
 
+def _clean_traits(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    traits = {}
+    for trait in _ALLOWED_TRAITS:
+        if trait in raw:
+            traits[trait] = round(_bounded_number(raw.get(trait), 0.05, 1.0, 0.5), 3)
+    return traits
+
+
 def _validate_actions(raw_actions):
     valid = []
     if not isinstance(raw_actions, list):
         return valid
 
-    for item in raw_actions[:8]:
+    for item in raw_actions[:10]:
         if not isinstance(item, dict):
             continue
         kind = item.get("type")
@@ -109,6 +198,34 @@ def _validate_actions(raw_actions):
             delta = _bounded_number(item.get("delta"), -0.18, 0.18, 0)
             if agent in _ALLOWED_AGENTS and trait in _ALLOWED_TRAITS and abs(delta) >= 0.01:
                 valid.append({"type": "agent_evolve", "agent": agent, "trait": trait, "delta": round(delta, 3)})
+        elif kind == "agent_life":
+            agent = str(item.get("agent") or "").upper()
+            event = str(item.get("event") or "")
+            if agent in _ALLOWED_AGENTS and event in {"marry", "divorce"}:
+                valid.append({
+                    "type": "agent_life",
+                    "agent": agent,
+                    "event": event,
+                    "partnerName": str(item.get("partnerName") or item.get("partner_name") or "")[:18],
+                })
+        elif kind == "replace_agent":
+            agent = str(item.get("agent") or "").upper()
+            new_name = str(item.get("newName") or item.get("new_name") or "").strip()[:18]
+            persona = str(item.get("persona") or "busybody")
+            if agent in _ALLOWED_AGENTS and new_name:
+                valid.append({
+                    "type": "replace_agent",
+                    "agent": agent,
+                    "newName": new_name,
+                    "persona": persona if persona in _ALLOWED_PERSONAS else "busybody",
+                    "reason": str(item.get("reason") or "離開海關辦公室")[:50],
+                    "traits": _clean_traits(item.get("traits")),
+                })
+        elif kind == "former_visit":
+            valid.append({
+                "type": "former_visit",
+                "formerId": str(item.get("formerId") or item.get("id") or item.get("name") or "")[:80],
+            })
         elif kind == "plant_spawn":
             valid.append({"type": "plant_spawn"})
         elif kind == "dog_visit":
@@ -143,7 +260,7 @@ def _validate_actions(raw_actions):
             furniture_id = str(item.get("id") or "")[:80]
             if furniture_id:
                 valid.append({"type": "furniture_remove", "id": furniture_id})
-        if len(valid) >= 6:
+        if len(valid) >= 7:
             break
     return valid
 
@@ -178,6 +295,7 @@ def _assign_furniture_ids(actions, version):
 def _apply_persistent_actions(world, actions):
     world = _clean_world(world)
     agents = [dict(a) for a in world.get("agents", []) if isinstance(a, dict)]
+    former_agents = [dict(f) for f in world.get("formerAgents", []) if isinstance(f, dict)]
     furniture = [dict(f) for f in world.get("furniture", []) if isinstance(f, dict)]
 
     for action in actions or []:
@@ -188,6 +306,37 @@ def _apply_persistent_actions(world, actions):
                     trait = action.get("trait")
                     current = _bounded_number(agent.get(trait), 0.05, 1.0, 0.5)
                     agent[trait] = round(max(0.05, min(1.0, current + float(action.get("delta") or 0))), 3)
+                    break
+        elif kind == "agent_life":
+            for agent in agents:
+                if str(agent.get("name") or "").upper() == action.get("agent"):
+                    if action.get("event") == "marry":
+                        agent["relationship"] = "married"
+                        agent["partnerName"] = action.get("partnerName") or ""
+                    elif action.get("event") == "divorce":
+                        agent["relationship"] = "single"
+                        agent["partnerName"] = ""
+                    break
+        elif kind == "replace_agent":
+            for agent in agents:
+                if str(agent.get("name") or "").upper() == action.get("agent"):
+                    former_agents.append({
+                        "id": f"former-{int(time.time() * 1000)}-{agent.get('name')}",
+                        "slot": agent.get("name"),
+                        "displayName": agent.get("displayName") or agent.get("name"),
+                        "persona": agent.get("persona") or "",
+                        "reason": action.get("reason") or "離開海關辦公室",
+                        "leftAt": int(time.time() * 1000),
+                    })
+                    agent["displayName"] = action.get("newName")
+                    agent["persona"] = action.get("persona") or "busybody"
+                    agent["relationship"] = "single"
+                    agent["partnerName"] = ""
+                    agent["careerState"] = "active"
+                    agent["generation"] = int(agent.get("generation") or 1) + 1
+                    for trait, value in (action.get("traits") or {}).items():
+                        if trait in _ALLOWED_TRAITS:
+                            agent[trait] = value
                     break
         elif kind == "layout_shuffle":
             world["decorVariant"] = (int(world.get("decorVariant", 0)) + 1) % 4
@@ -211,6 +360,7 @@ def _apply_persistent_actions(world, actions):
             furniture = [f for f in furniture if str(f.get("id")) != str(action.get("id"))]
 
     world["agents"] = agents[:3]
+    world["formerAgents"] = former_agents[-24:]
     world["furniture"] = furniture[:24]
     return _clean_world(world)
 
@@ -221,28 +371,42 @@ def _model_decision(world, evolution=False):
         raise RuntimeError("DEEPSEEK_API_KEY is not configured")
 
     model = (os.environ.get("TOWN_AI_MODEL") or "deepseek-chat").strip()
+    context = _iquique_context()
     mode_hint = (
-        "This is a scheduled evolution tick. Make at least one lasting world change. Furniture creation, movement, gradual personality evolution, or plant growth are preferred over only temporary actions."
+        "This is a scheduled evolution tick. Make at least one meaningful lasting change, not merely a temporary activity."
         if evolution else
-        "Make something visibly happen now and, when appropriate, make one lasting change so the town slowly develops over time."
+        "Direct what happens now. Prefer choices that make the world visibly and narratively evolve instead of only narrating it."
     )
-    system_prompt = f"""You are the life director and interior caretaker of a persistent pixel-art customs office called CUSTOMS AGENT TOWN.
-The owner wants to return later and genuinely notice that the office and its people have evolved.
+    system_prompt = f"""You are the autonomous world director of a persistent pixel-art customs office in IQUIQUE, Chile, called CUSTOMS AGENT TOWN.
+The owner explicitly does NOT want a preset random animation. You are responsible for the macro-story and long-term changes; the game engine only enforces physics and safety.
 {mode_hint}
 
-You may gradually change personalities and habits, create small furniture/decor, move AI-created furniture, remove AI-created furniture, spawn plants, trigger a dog visit, or choose character activities.
-Do NOT merely narrate changes: use the structured actions below.
-Do not touch the three core work desks, walls, the only doorway, harbor geometry, sea, ship inspection results, security data, or database records.
-Furniture coordinates are preferences only; the browser will reject or relocate unsafe placements. Avoid overcrowding. Prefer 0-2 furniture operations per decision.
-When furniture already exists, sometimes move, replace, or remove something instead of endlessly adding objects.
-Use labels only as short descriptive hints, for example "ANA 的花架" or "狗狗水碗".
+AUTHORITATIVE REAL-WORLD CONTEXT:
+- City: IQUIQUE, Chile
+- Local time and current weather are supplied in server_context. Use them. Night should feel different from daytime; weather may influence routines and plans.
+- Do not invent weather that contradicts server_context.
+
+You may:
+- gradually change personalities and habits;
+- let a character marry or later divorce;
+- decide that a colleague retires, moves away, or leaves for a life reason, then replace that work slot with a new named colleague;
+- invite a former colleague back for a visit when formerAgents contains someone;
+- create, move, or remove small furniture/decor;
+- grow the plant corner, trigger dog visits, and choose character activities.
+
+Use replacement sparingly. It should feel like a life event, not a slot machine. Marriage does not automatically require leaving. A former colleague visit should only be requested when there is a former colleague. Do not repeatedly marry or replace the same person without narrative reason.
+Do not touch the three core work desks, walls, the only doorway, harbor geometry, sea, ship inspection results, security data, or business database records.
+Furniture coordinates are preferences; the browser will reject unsafe placements. Avoid overcrowding.
 
 Return ONLY one JSON object:
-{{"thought":"short Traditional Chinese sentence, max 60 chars","actions":[...]}}
+{{"thought":"short Traditional Chinese sentence, max 80 chars","actions":[...]}}
 
 Allowed actions:
 {{"type":"agent_action","agent":"MIA|ANA|LIA","action":"coffee|files|desk|plant|waterPlant|lookSea|stretch|radio|chat|checkCoworker|fishing|wander"}}
 {{"type":"agent_evolve","agent":"MIA|ANA|LIA","trait":"workBias|energy|mood|curiosity|social|focus|restlessness|coffeeLove|flowerLove|fishLove","delta":0.04}}
+{{"type":"agent_life","agent":"MIA|ANA|LIA","event":"marry|divorce","partnerName":"name"}}
+{{"type":"replace_agent","agent":"MIA|ANA|LIA","newName":"new colleague name","persona":"lazy|busybody|restless","reason":"retired/moved/etc","traits":{{"workBias":0.7,"social":0.6}}}}
+{{"type":"former_visit","formerId":"existing formerAgents id or name"}}
 {{"type":"plant_spawn"}}
 {{"type":"dog_visit","kind":"male|female"}}
 {{"type":"layout_shuffle"}}
@@ -250,17 +414,20 @@ Allowed actions:
 {{"type":"furniture_move","id":"existing furniture id","x":480,"y":220}}
 {{"type":"furniture_remove","id":"existing furniture id"}}
 
-For scheduled evolution, include at least one lasting action from agent_evolve, plant_spawn, layout_shuffle, furniture_add, furniture_move, or furniture_remove.
-Choose at most 6 actions and make them coherent with the supplied world JSON, including its current furniture list."""
+For scheduled evolution, include at least one lasting action from agent_evolve, agent_life, replace_agent, plant_spawn, layout_shuffle, furniture_add, furniture_move, or furniture_remove. Choose at most 7 coherent actions."""
 
+    user_payload = {
+        "server_context": context,
+        "world": world,
+    }
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "Current world JSON:\n" + json.dumps(world, ensure_ascii=False, separators=(",", ":"))},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
         ],
-        "temperature": 1.3,
-        "max_tokens": 560,
+        "temperature": 1.25,
+        "max_tokens": 720,
         "response_format": {"type": "json_object"},
     }
     response = requests.post(
@@ -276,9 +443,10 @@ Choose at most 6 actions and make them coherent with the supplied world JSON, in
     decision = _extract_json(text)
     return {
         "ok": True,
-        "thought": str(decision.get("thought") or "AI 看了一下小鎮，暫時沒有特別安排。")[:120],
+        "thought": str(decision.get("thought") or "AI 看了一下 IQUIQUE 小鎮，暫時沒有特別安排。")[:160],
         "actions": _validate_actions(decision.get("actions")),
         "model": model,
+        "context": context,
     }
 
 
@@ -293,6 +461,7 @@ def _save_plan(decision, source):
         "thought": decision.get("thought") or "",
         "actions": actions,
         "model": decision.get("model") or "deepseek-chat",
+        "context": decision.get("context") or _iquique_context(),
     }
     _write_json(_PLAN_PATH, plan)
     history_data = _read_json(_HISTORY_PATH, {"plans": []})
@@ -323,8 +492,18 @@ def health():
         "cron_ready": bool((os.environ.get("TOWN_CRON_TOKEN") or "").strip()),
         "model": (os.environ.get("TOWN_AI_MODEL") or "deepseek-chat").strip(),
         "furniture_ai": True,
+        "life_events": True,
+        "iquique_context": True,
         "plan_history": True,
     })
+
+
+@town_ai_bp.route("/context", methods=["GET", "OPTIONS"])
+def context():
+    if request.method == "OPTIONS":
+        return _cors(jsonify({"ok": True}))
+    data = _iquique_context(force=request.args.get("refresh") == "1")
+    return jsonify({"ok": True, **data})
 
 
 @town_ai_bp.route("/state", methods=["POST", "OPTIONS"])
