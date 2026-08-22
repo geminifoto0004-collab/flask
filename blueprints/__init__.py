@@ -8,6 +8,7 @@ from .b2_test_bp import b2_test_bp
 from . import town_ai_bp as _town_ai_module
 from .town_ai_action_runtime import install_latest_action_runtime
 from .town_ai_visibility_runtime import install_visibility_runtime
+from .town_ai_history_runtime import install_history_runtime
 from .town_ai_grounded_director import grounded_model_decision
 from . import town_page_bp as _town_page_module
 from .town_latest_page_runtime import latest_town_html
@@ -18,6 +19,7 @@ from .town_render_action_patch import patch_render_actions
 # blueprint is registered on the Flask app.
 install_latest_action_runtime()
 install_visibility_runtime()
+install_history_runtime()
 
 # Render /api/town/think uses the grounded AI world director. User-visible
 # narration is rebuilt from validated executable actions, so the log cannot
