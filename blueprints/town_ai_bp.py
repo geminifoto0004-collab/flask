@@ -26,6 +26,10 @@ _ALLOWED_TRAITS = {
     "restlessness", "coffeeLove", "flowerLove", "fishLove",
 }
 _ALLOWED_DOG_KINDS = {"male", "female"}
+_ALLOWED_FURNITURE_TYPES = {
+    "file_box", "chair", "plant_shelf", "dog_bowl", "side_table",
+    "wall_frame", "floor_lamp", "small_cabinet", "rug", "notice_board",
+}
 _LAST_CALL_BY_IP = {}
 _STATE_DIR = (os.environ.get("TOWN_STATE_DIR") or "/tmp/customs_agent_town").strip()
 _WORLD_PATH = os.path.join(_STATE_DIR, "world.json")
@@ -67,7 +71,16 @@ def _clean_world(world):
         "plants": world.get("plants")[:12] if isinstance(world.get("plants"), list) else [],
         "dogs": world.get("dogs")[:8] if isinstance(world.get("dogs"), list) else [],
         "dogPoops": world.get("dogPoops", 0),
+        "furniture": world.get("furniture")[:24] if isinstance(world.get("furniture"), list) else [],
     }
+
+
+def _bounded_number(value, low, high, default):
+    try:
+        number = float(value)
+    except Exception:
+        number = default
+    return max(low, min(high, number))
 
 
 def _validate_actions(raw_actions):
@@ -75,7 +88,7 @@ def _validate_actions(raw_actions):
     if not isinstance(raw_actions, list):
         return valid
 
-    for item in raw_actions[:7]:
+    for item in raw_actions[:8]:
         if not isinstance(item, dict):
             continue
         kind = item.get("type")
@@ -87,11 +100,7 @@ def _validate_actions(raw_actions):
         elif kind == "agent_evolve":
             agent = str(item.get("agent") or "").upper()
             trait = str(item.get("trait") or "")
-            try:
-                delta = float(item.get("delta") or 0)
-            except Exception:
-                delta = 0
-            delta = max(-0.18, min(0.18, delta))
+            delta = _bounded_number(item.get("delta"), -0.18, 0.18, 0)
             if agent in _ALLOWED_AGENTS and trait in _ALLOWED_TRAITS and abs(delta) >= 0.01:
                 valid.append({"type": "agent_evolve", "agent": agent, "trait": trait, "delta": round(delta, 3)})
         elif kind == "plant_spawn":
@@ -102,7 +111,32 @@ def _validate_actions(raw_actions):
                 valid.append({"type": "dog_visit", "kind": dog_kind})
         elif kind == "layout_shuffle":
             valid.append({"type": "layout_shuffle"})
-        if len(valid) >= 5:
+        elif kind == "furniture_add":
+            furniture_type = str(item.get("furniture") or item.get("typeName") or "")
+            if furniture_type in _ALLOWED_FURNITURE_TYPES:
+                valid.append({
+                    "type": "furniture_add",
+                    "furniture": furniture_type,
+                    "x": round(_bounded_number(item.get("x"), 50, 590, 500), 1),
+                    "y": round(_bounded_number(item.get("y"), 40, 250, 180), 1),
+                    "w": round(_bounded_number(item.get("w"), 8, 72, 24), 1),
+                    "h": round(_bounded_number(item.get("h"), 8, 60, 18), 1),
+                    "label": str(item.get("label") or "")[:24],
+                })
+        elif kind == "furniture_move":
+            furniture_id = str(item.get("id") or "")[:80]
+            if furniture_id:
+                valid.append({
+                    "type": "furniture_move",
+                    "id": furniture_id,
+                    "x": round(_bounded_number(item.get("x"), 50, 590, 500), 1),
+                    "y": round(_bounded_number(item.get("y"), 40, 250, 180), 1),
+                })
+        elif kind == "furniture_remove":
+            furniture_id = str(item.get("id") or "")[:80]
+            if furniture_id:
+                valid.append({"type": "furniture_remove", "id": furniture_id})
+        if len(valid) >= 6:
             break
     return valid
 
@@ -131,27 +165,36 @@ def _model_decision(world, evolution=False):
 
     model = (os.environ.get("TOWN_AI_MODEL") or "deepseek-chat").strip()
     mode_hint = (
-        "This is a scheduled evolution tick. Make one lasting world change and then optionally add small life events."
+        "This is a scheduled evolution tick. Make at least one lasting world change. Furniture creation, movement, gradual personality evolution, or plant growth are preferred over only temporary actions."
         if evolution else
-        "Choose visible life events, but also make one small lasting change so the town is genuinely different after this decision."
+        "Make something visibly happen now and, when appropriate, make one lasting change so the town slowly develops over time."
     )
-    system_prompt = f"""You are the life director of a persistent pixel-art customs office called CUSTOMS AGENT TOWN.
-The town should feel alive, surprising and slightly different whenever the owner returns.
+    system_prompt = f"""You are the life director and interior caretaker of a persistent pixel-art customs office called CUSTOMS AGENT TOWN.
+The owner wants to return later and genuinely notice that the office and its people have evolved.
 {mode_hint}
-A lasting change means ONE of: agent_evolve, layout_shuffle, or plant_spawn. Include at least one lasting change in every response.
-Use agent_evolve for gradual personality/habit development. Typical delta is 0.02 to 0.08; negative values are allowed. Do not swing personalities wildly.
-Examples: MIA gradually becomes more coffee-loving or lazy; ANA becomes more social or flower-loving; LIA becomes more interested in fishing or less restless.
-You may influence character routines and safe decorative layout variation, but never coordinates, walls, the only doorway, sea movement, ship inspection results, security data, or database records.
-Avoid repeating the same behavior. Do not move desks or block exits. Layout changes are cosmetic/decorative only.
-Return ONLY one JSON object with this exact shape:
+
+You may gradually change personalities and habits, create small furniture/decor, move AI-created furniture, remove AI-created furniture, spawn plants, trigger a dog visit, or choose character activities.
+Do NOT merely narrate changes: use the structured actions below.
+Do not touch the three core work desks, walls, the only doorway, harbor geometry, sea, ship inspection results, security data, or database records.
+Furniture coordinates are preferences only; the browser will reject or relocate unsafe placements. Avoid overcrowding. Prefer 0-2 furniture operations per decision.
+When furniture already exists, sometimes move, replace, or remove something instead of endlessly adding objects.
+Use labels only as short descriptive hints, for example "ANA 的花架" or "狗狗水碗".
+
+Return ONLY one JSON object:
 {{"thought":"short Traditional Chinese sentence, max 60 chars","actions":[...]}}
-Allowed actions are ONLY:
+
+Allowed actions:
 {{"type":"agent_action","agent":"MIA|ANA|LIA","action":"coffee|files|desk|plant|waterPlant|lookSea|stretch|radio|chat|checkCoworker|fishing|wander"}}
 {{"type":"agent_evolve","agent":"MIA|ANA|LIA","trait":"workBias|energy|mood|curiosity|social|focus|restlessness|coffeeLove|flowerLove|fishLove","delta":0.04}}
 {{"type":"plant_spawn"}}
 {{"type":"dog_visit","kind":"male|female"}}
 {{"type":"layout_shuffle"}}
-Choose at most 5 actions. The choices must make sense from the supplied world JSON."""
+{{"type":"furniture_add","furniture":"file_box|chair|plant_shelf|dog_bowl|side_table|wall_frame|floor_lamp|small_cabinet|rug|notice_board","x":500,"y":210,"w":28,"h":22,"label":"short label"}}
+{{"type":"furniture_move","id":"existing furniture id","x":480,"y":220}}
+{{"type":"furniture_remove","id":"existing furniture id"}}
+
+For scheduled evolution, include at least one lasting action from agent_evolve, plant_spawn, layout_shuffle, furniture_add, furniture_move, or furniture_remove.
+Choose at most 6 actions and make them coherent with the supplied world JSON, including its current furniture list."""
 
     payload = {
         "model": model,
@@ -159,8 +202,8 @@ Choose at most 5 actions. The choices must make sense from the supplied world JS
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": "Current world JSON:\n" + json.dumps(world, ensure_ascii=False, separators=(",", ":"))},
         ],
-        "temperature": 1.25,
-        "max_tokens": 430,
+        "temperature": 1.3,
+        "max_tokens": 560,
         "response_format": {"type": "json_object"},
     }
     response = requests.post(
@@ -216,6 +259,7 @@ def health():
         "deepseek_configured": bool((os.environ.get("DEEPSEEK_API_KEY") or "").strip()),
         "cron_ready": bool((os.environ.get("TOWN_CRON_TOKEN") or "").strip()),
         "model": (os.environ.get("TOWN_AI_MODEL") or "deepseek-chat").strip(),
+        "furniture_ai": True,
     })
 
 
