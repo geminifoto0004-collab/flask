@@ -43,7 +43,17 @@ def _admin_model_command(prompt, world):
 The administrator has typed one direct instruction. Fulfil that instruction ONLY through the provided tools.
 Never output arbitrary JavaScript, SQL, shell commands, URLs, secrets, or executable code.
 MIA, ANA and LIA are literal agent IDs.
-If the administrator asks to create a seal in the sea/harbor, use sea_creature_spawn with kind=seal.
+
+GENERAL WORLD CREATION:
+- For a visible object or creature without a dedicated tool, use world_object_spawn and DESIGN its pixel appearance using safe rectangle parts.
+- Examples: Christmas tree in office; car on harbor_walkway; octopus, turtle, buoy or floating debris in sea.
+- Use world.worldMap semantic zones and pick an appropriate behavior. Never place objects in physically nonsensical zones.
+- Use sea_creature_spawn only when a seal specifically is requested; other sea creatures should use world_object_spawn.
+
+PEOPLE / SHIFT:
+- Use agent_shift when asked to send an officer home/off duty or bring them back to work.
+- Respect current duty state for spontaneous dialogue. At Iquique night only one officer is on duty, so do not invent a two-person office conversation unless the administrator explicitly asks to bring another person back on duty first.
+
 If the request cannot be represented by the available tools, choose no unrelated action.
 For dialogue, use natural Chilean Spanish in text and Traditional Chinese in text_zh where the schema supports it.
 Return tool calls, not an imaginary narration."""
@@ -61,7 +71,7 @@ Return tool calls, not an imaginary narration."""
         "tools": DIRECTOR_TOOLS,
         "tool_choice": "required",
         "temperature": 0.85,
-        "max_tokens": 1200,
+        "max_tokens": 1800,
     }
     response = requests.post(
         "https://api.deepseek.com/chat/completions",
@@ -126,6 +136,12 @@ def install_town_admin_runtime():
         try:
             stored = _base._read_json(_base._WORLD_PATH, {})
             world = _base._clean_world(stored.get("world"))
+            # Merge current browser presence hints without trusting the browser
+            # to overwrite persistent world data.
+            browser_world = body.get("world") if isinstance(body.get("world"), dict) else {}
+            for key_name in ("onDutyAgents", "nightShiftAgent", "dialoguePolicy"):
+                if key_name in browser_world:
+                    world[key_name] = browser_world.get(key_name)
             result = _admin_model_command(prompt, world)
             actions = result.get("actions") or []
             if not actions:
@@ -140,7 +156,7 @@ def install_town_admin_runtime():
             plan = _base._save_plan(decision, "admin-command")
             evolved_world = _base._apply_persistent_actions(world, plan.get("actions") or [])
             _base._write_json(_base._WORLD_PATH, {"saved_at": int(time.time()), "world": evolved_world})
-            return jsonify({**plan, "ok": True, "admin_command": True})
+            return jsonify({**plan, "ok": True, "admin_command": True, "world": evolved_world})
         except requests.Timeout:
             return jsonify({"ok": False, "error": "DeepSeek request timed out"}), 504
         except Exception as exc:
