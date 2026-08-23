@@ -1,20 +1,51 @@
 """Render ORDER customer share HTML from TiDB metadata only.
 
-The first page request never talks to B2 and never creates per-image signed URLs.
-Render reads the customer's safe text + asset metadata from TiDB, renders HTML once,
-and returns it immediately.  All image attributes point to the same lazy
-/share/<token>/image/<asset_key> URL; that endpoint performs authorization and a 302 to
-B2 only when the browser actually needs that image.
+Hot path goals:
+- no B2 calls while rendering the page;
+- token lookup is cached briefly;
+- customer/orders/workflows/history/assets are fetched in parallel instead of five
+  sequential Render -> TiDB round trips;
+- the assembled customer payload is cached briefly so refreshes are near-Render-only.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+import copy
 import hashlib
+import threading
+import time
 
 from flask import Response, jsonify, render_template, request
 
 from blueprints.b2_test_bp import b2_test_bp, _ensure_order_cloud_tables
 from database import get_cursor, get_db_connection, get_row_dict
+
+_TOKEN_TTL = 30.0
+_SPACE_TTL = 20.0
+_token_cache = {}
+_space_cache = {}
+_cache_lock = threading.RLock()
+_page_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix='order-share-tidb')
+
+
+def _cache_get(cache, key):
+    now = time.monotonic()
+    with _cache_lock:
+        item = cache.get(key)
+        if not item:
+            return None
+        expires_at, value = item
+        if expires_at <= now:
+            cache.pop(key, None)
+            return None
+        return value
+
+
+def _cache_put(cache, key, value, ttl):
+    with _cache_lock:
+        cache[key] = (time.monotonic() + float(ttl), value)
+    return value
 
 
 def _parse_expiry(value):
@@ -30,25 +61,31 @@ def _parse_expiry(value):
 
 
 def _resolve(token):
-    """Resolve a share with one indexed TiDB query and no request-time migration."""
+    """Resolve a share with one indexed query; cache valid metadata briefly."""
     token = str(token or '').strip()
     if not token:
         return None, Response('Enlace no encontrado.', 404, mimetype='text/plain')
-    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
 
-    conn = get_db_connection()
-    cur = get_cursor(conn)
-    try:
-        cur.execute(
-            """SELECT token_hash, customer_key, mode, status, source_site, created_at,
-                      expires_at, history_scope, include_cancelled
-               FROM cloud_share_tokens WHERE token_hash=? LIMIT 1""",
-            (token_hash,),
-        )
-        row = cur.fetchone()
-        share = get_row_dict(row, cur) if row else None
-    finally:
-        conn.close()
+    cached = _cache_get(_token_cache, token)
+    if cached is not None:
+        share = dict(cached)
+    else:
+        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            cur.execute(
+                """SELECT token_hash, customer_key, mode, status, source_site, created_at,
+                          expires_at, history_scope, include_cancelled
+                   FROM cloud_share_tokens WHERE token_hash=? LIMIT 1""",
+                (token_hash,),
+            )
+            row = cur.fetchone()
+            share = get_row_dict(row, cur) if row else None
+        finally:
+            conn.close()
+        if share:
+            _cache_put(_token_cache, token, dict(share), _TOKEN_TTL)
 
     if not share:
         return None, Response('Enlace no encontrado.', 404, mimetype='text/plain')
@@ -62,24 +99,111 @@ def _resolve(token):
     return share, None
 
 
-def _assets_owned_by_customer(customer_key):
-    """One indexed metadata query; no B2 calls and no storage schema migration."""
+def _query_all(sql, params):
     conn = get_db_connection()
     cur = get_cursor(conn)
     try:
-        cur.execute(
-            """SELECT a.asset_key, a.customer_key, a.order_number, a.workflow_key,
-                      a.asset_type, a.sha256, a.object_key, a.content_type, a.file_size,
-                      a.display_name, a.source_site, a.storage_backend, a.updated_at
-               FROM cloud_assets a
-               INNER JOIN cloud_orders o ON o.order_number=a.order_number
-               WHERE o.customer_key=? AND o.active=TRUE AND a.active=TRUE
-               ORDER BY a.order_number, a.created_at, a.asset_key""",
-            (customer_key,),
-        )
+        cur.execute(sql, params)
         return [get_row_dict(row, cur) for row in cur.fetchall()]
     finally:
         conn.close()
+
+
+def _load_customer_bundle(customer_key):
+    """Fetch all safe public-share metadata in one parallel TiDB wave."""
+    customer_key = str(customer_key or '').strip()
+    cached = _cache_get(_space_cache, customer_key)
+    if cached is not None:
+        return copy.deepcopy(cached)
+
+    sql_customer = (
+        "SELECT customer_key, customer_name, updated_at "
+        "FROM cloud_customers WHERE customer_key=? AND active=TRUE LIMIT 1"
+    )
+    sql_orders = """SELECT order_number, customer_key, customer_name, order_status, order_date,
+                           expected_delivery_date, production_type, product_name, product_code,
+                           pattern_code, quantity, active, source_site, updated_at
+                    FROM cloud_orders
+                    WHERE customer_key=? AND active=TRUE
+                    ORDER BY order_date DESC, order_number DESC"""
+    sql_workflows = """SELECT w.workflow_key, w.workflow_number, w.order_number, w.workflow_type,
+                              w.status, w.production_type, w.product_name, w.product_code,
+                              w.quantity, w.expected_delivery_date, w.last_status_change_date,
+                              w.draft_date, w.sort_order, w.active, w.updated_at
+                       FROM cloud_workflows w
+                       INNER JOIN cloud_orders o ON o.order_number=w.order_number
+                       WHERE o.customer_key=? AND o.active=TRUE AND w.active=TRUE
+                       ORDER BY w.order_number, w.sort_order, w.workflow_key"""
+    sql_history = """SELECT h.history_key, h.workflow_key, h.order_number, h.status,
+                            h.action_date, h.sort_order
+                     FROM cloud_workflow_history h
+                     INNER JOIN cloud_orders o ON o.order_number=h.order_number
+                     WHERE o.customer_key=? AND o.active=TRUE AND h.active=TRUE
+                     ORDER BY h.order_number, h.workflow_key, h.sort_order,
+                              h.action_date, h.history_key"""
+    sql_assets = """SELECT a.asset_key, a.customer_key, a.order_number, a.workflow_key,
+                           a.asset_type, a.sha256, a.object_key, a.content_type, a.file_size,
+                           a.display_name, a.source_site, a.storage_backend, a.updated_at
+                    FROM cloud_assets a
+                    INNER JOIN cloud_orders o ON o.order_number=a.order_number
+                    WHERE o.customer_key=? AND o.active=TRUE AND a.active=TRUE
+                    ORDER BY a.order_number, a.created_at, a.asset_key"""
+
+    futures = [
+        _page_executor.submit(_query_all, sql_customer, (customer_key,)),
+        _page_executor.submit(_query_all, sql_orders, (customer_key,)),
+        _page_executor.submit(_query_all, sql_workflows, (customer_key,)),
+        _page_executor.submit(_query_all, sql_history, (customer_key,)),
+        _page_executor.submit(_query_all, sql_assets, (customer_key,)),
+    ]
+    customer_rows, orders, workflows, history, assets = [f.result() for f in futures]
+    if not customer_rows:
+        return None
+
+    customer = customer_rows[0]
+    by_order = {str(order.get('order_number') or ''): order for order in orders}
+    for order in orders:
+        order['workflows'] = []
+        order['assets'] = []
+
+    by_workflow = {}
+    for wf in workflows:
+        wf['timeline'] = []
+        wf_key = str(wf.get('workflow_key') or '')
+        if wf_key:
+            by_workflow[wf_key] = wf
+        parent = by_order.get(str(wf.get('order_number') or ''))
+        if parent is not None:
+            parent['workflows'].append(wf)
+
+    for item in history:
+        parent = by_workflow.get(str(item.get('workflow_key') or ''))
+        if parent is not None:
+            parent['timeline'].append(item)
+
+    for asset in assets:
+        parent = by_order.get(str(asset.get('order_number') or ''))
+        if parent is not None:
+            parent['assets'].append(asset)
+
+    bundle = {
+        'space': {'customer': customer, 'orders': orders},
+        'asset_count': len(assets),
+        'asset_order_count': len({str(a.get('order_number') or '') for a in assets if a.get('order_number')}),
+    }
+    _cache_put(_space_cache, customer_key, bundle, _SPACE_TTL)
+    return copy.deepcopy(bundle)
+
+
+def _assets_owned_by_customer(customer_key):
+    """Compatibility helper used by the safe asset-debug endpoint."""
+    bundle = _load_customer_bundle(customer_key)
+    if not bundle:
+        return []
+    assets = []
+    for order in (bundle.get('space') or {}).get('orders') or []:
+        assets.extend(order.get('assets') or [])
+    return assets
 
 
 @b2_test_bp.before_app_request
@@ -91,7 +215,6 @@ def _order_public_share_multi_b2_page():
         return None
     parts = path.strip('/').split('/')
 
-    # Safe diagnostic: token authorizes only this customer's relationship counts.
     if len(parts) == 3 and parts[2] == 'asset-debug':
         token = parts[1]
         try:
@@ -101,17 +224,8 @@ def _order_public_share_multi_b2_page():
                 return error
             customer_key = str(share.get('customer_key') or '').strip()
             assets = _assets_owned_by_customer(customer_key)
-            conn = get_db_connection()
-            cur = get_cursor(conn)
-            try:
-                cur.execute(
-                    'SELECT order_number FROM cloud_orders '
-                    'WHERE customer_key=? AND active=TRUE ORDER BY order_number',
-                    (customer_key,),
-                )
-                orders = [str((get_row_dict(r, cur) or {}).get('order_number') or '') for r in cur.fetchall()]
-            finally:
-                conn.close()
+            bundle = _load_customer_bundle(customer_key) or {}
+            orders = [str(o.get('order_number') or '') for o in ((bundle.get('space') or {}).get('orders') or [])]
             by_backend = {}
             by_order = {}
             total_bytes = 0
@@ -131,6 +245,7 @@ def _order_public_share_multi_b2_page():
                 'by_backend': by_backend,
                 'page_b2_calls': 0,
                 'image_mode': 'lazy-single-image-redirect',
+                'data_mode': 'parallel-tidb-cache',
             })
             resp.headers['Cache-Control'] = 'no-store'
             return resp
@@ -144,31 +259,18 @@ def _order_public_share_multi_b2_page():
     try:
         _ensure_order_cloud_tables()
         from services.order_public_share_fast import _filter_space
-        from services.order_cloud_service import get_customer_space
 
         share, error = _resolve(token)
         if error:
             return error
         customer_key = str(share.get('customer_key') or '').strip()
 
-        # get_customer_space is the bounded-query implementation registered by
-        # services.__init__: customer/orders/workflows/history are fetched in four
-        # indexed queries, then grouped in Python.
-        space = get_customer_space(customer_key)
-        if not space:
+        bundle = _load_customer_bundle(customer_key)
+        if not bundle:
             return Response('No hay información disponible.', 404, mimetype='text/plain')
-
-        assets = _assets_owned_by_customer(customer_key)
-        by_order = {}
-        for asset in assets:
-            number = str(asset.get('order_number') or '').strip()
-            if number:
-                by_order.setdefault(number, []).append(asset)
-        for order in space.get('orders') or []:
-            number = str(order.get('order_number') or '').strip()
-            order['assets'] = by_order.get(number, [])
-
+        space = bundle['space']
         _filter_space(space, share)
+
         html = render_template(
             'customer_share_live_fast.html',
             space=space,
@@ -176,34 +278,26 @@ def _order_public_share_multi_b2_page():
             share_token=token,
         )
 
-        # The existing template still has historical data-thumb/data-full names. Make
-        # every attribute use the exact same stable application URL so the browser can
-        # reuse its cache; no physical thumbnail object exists in the formal design.
         prefix = f'/share/{token}/'
         image_prefix = prefix + 'image/'
         html = html.replace(prefix + 'thumb/', image_prefix)
         html = html.replace(prefix + 'asset/', image_prefix)
-        html = html.replace(
-            'Las fotos grandes se cargan solo al abrirlas',
-            'Fotos optimizadas · carga bajo demanda',
-        )
-        html = html.replace(
-            'Miniaturas rápidas · alta calidad al abrir',
-            'Fotos optimizadas · carga bajo demanda',
-        )
-        # Load fewer off-screen covers in advance. Detail still loads current +/- 1.
+        html = html.replace('Las fotos grandes se cargan solo al abrirlas', 'Fotos optimizadas · carga bajo demanda')
+        html = html.replace('Miniaturas rápidas · alta calidad al abrir', 'Fotos optimizadas · carga bajo demanda')
         html = html.replace("rootMargin:'700px 0px'", "rootMargin:'250px 0px'")
 
         response = Response(html, mimetype='text/html')
         response.headers['Cache-Control'] = 'no-store, max-age=0, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
-        response.headers['X-Order-Asset-Count'] = str(len(assets))
-        response.headers['X-Order-Asset-Orders'] = str(len(by_order))
+        response.headers['X-Order-Asset-Count'] = str(bundle.get('asset_count') or 0)
+        response.headers['X-Order-Asset-Orders'] = str(bundle.get('asset_order_count') or 0)
         response.headers['X-Order-Share-B2-Calls'] = '0'
         response.headers['X-Order-Image-Mode'] = 'lazy-single-image-redirect'
+        response.headers['X-Order-Data-Mode'] = 'parallel-tidb-cache'
         return response
     except Exception as exc:
+        print(f'[WARN] ORDER share page failed: {exc}')
         response = Response('Servicio temporalmente no disponible.', 503, mimetype='text/plain')
         response.headers['X-Order-Share-Error'] = type(exc).__name__
         return response
