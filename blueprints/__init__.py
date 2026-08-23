@@ -34,6 +34,9 @@ from .town_world_object_runtime import install_world_object_runtime
 from .town_generic_entity_runtime import install_generic_entity_runtime
 from .town_world_tidb_runtime import install_tidb_world_runtime
 from .town_dialogue_tidb_runtime import install_tidb_dialogue_runtime
+# Import side effect: allow DeepSeek to return longer composed action sequences
+# before admin/language runtimes bind _tool_calls_to_actions.
+from . import town_ai_toolcall_limit_patch as _town_ai_toolcall_limit_patch
 from .town_admin_runtime import install_town_admin_runtime
 from .town_ai_grounded_director import grounded_model_decision
 from . import town_page_bp as _town_page_module
