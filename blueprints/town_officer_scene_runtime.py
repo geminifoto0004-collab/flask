@@ -90,6 +90,7 @@ def install_officer_scene_runtime():
             return []
         expanded = []
         direct_group_actions = []
+        extra_agent_actions = []
         for raw in raw_actions[:18]:
             if not isinstance(raw, dict):
                 continue
@@ -108,7 +109,11 @@ def install_officer_scene_runtime():
                             "text": step.get("text"), "text_zh": step.get("text_zh"),
                         })
                     elif step_type == "action":
-                        expanded.append({"type": "agent_action", "agent": agent, "action": step.get("action")})
+                        action_name = str(step.get("action") or "")
+                        if action_name in _EXTRA_AGENT_ACTIONS:
+                            extra_agent_actions.append({"type": "agent_action", "agent": agent, "action": action_name})
+                        else:
+                            expanded.append({"type": "agent_action", "agent": agent, "action": action_name})
                     elif step_type == "world_group":
                         direct_group_actions.append({
                             "type": "world_group_action", "actor": agent,
@@ -120,11 +125,12 @@ def install_officer_scene_runtime():
             elif kind == "agent_action" and str(raw.get("action") or "") in _EXTRA_AGENT_ACTIONS:
                 agent = str(raw.get("agent") or "").upper()
                 if agent in _OFFICERS:
-                    expanded.append({"type": "agent_action", "agent": agent, "action": str(raw.get("action"))})
+                    extra_agent_actions.append({"type": "agent_action", "agent": agent, "action": str(raw.get("action"))})
             else:
                 expanded.append(raw)
 
         validated = previous_validate(expanded)
+        validated.extend(extra_agent_actions)
         for raw in direct_group_actions:
             actor = str(raw.get("actor") or "").upper()
             operation = str(raw.get("operation") or "")
