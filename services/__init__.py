@@ -1,4 +1,9 @@
-# Services package
-# Keep this file intentionally small: service modules are imported explicitly by app/blueprints.
-# ORDER hot-path patches register themselves through services/order_cloud_proxy_thumb.py and
-# the normal b2_test blueprint bootstrap; do not replace the package API here.
+"""Service package exports for Flask application.
+
+Keep imports lightweight; optional ORDER runtime patches are registered explicitly by
+services/order_cloud_proxy_thumb.py so importing services itself remains safe.
+"""
+
+# This package intentionally exposes modules through normal Python imports.  Do not
+# eagerly import optional runtime patches here because several of them register Flask
+# hooks as a side effect and their ordering is controlled elsewhere.
