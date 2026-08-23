@@ -33,6 +33,7 @@ from .town_ai_shift_runtime import install_shift_runtime
 from .town_world_object_runtime import install_world_object_runtime
 from .town_generic_entity_runtime import install_generic_entity_runtime
 from .town_universal_action_runtime import install_universal_action_runtime
+from .town_universal_action_translation_runtime import install_universal_action_translation_runtime
 from .town_relationship_runtime import install_relationship_runtime
 from .town_officer_scene_runtime import install_officer_scene_runtime
 from .town_generic_scene_runtime import install_generic_scene_runtime
@@ -62,6 +63,7 @@ from .town_render_admin_world_patch import patch_render_admin_world
 from .town_render_world_object_patch import patch_render_world_objects
 from .town_render_generic_entity_patch import patch_render_generic_entities
 from .town_render_admin_action_feedback_patch import patch_render_admin_action_feedback
+from .town_render_shift_walk_patch import patch_render_shift_walk
 
 # Install validation/persistence for the current browser capabilities before the
 # blueprint is registered on the Flask app. The server map is authoritative,
@@ -77,6 +79,7 @@ install_shift_runtime()
 install_world_object_runtime()
 install_generic_entity_runtime()
 install_universal_action_runtime()
+install_universal_action_translation_runtime()
 install_relationship_runtime()
 install_officer_scene_runtime()
 install_generic_scene_runtime()
@@ -96,7 +99,7 @@ town_ai_bp = _town_ai_module.town_ai_bp
 # Keep the known-good game composition. Generic objects/entities are transparent
 # overlays; the existing game animation loop remains untouched.
 town_page_bp = _town_page_module.town_page_bp
-_town_page_module._patched_town_html = lambda: patch_render_admin_action_feedback(patch_render_generic_entities(patch_render_world_objects(patch_render_admin_world(patch_render_shared_dialogue(patch_render_panel_alignment(patch_render_dialogue_fix(patch_render_dialogue_panel(patch_render_profiles(patch_render_chat_timing(patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html()))))))))))))))
+_town_page_module._patched_town_html = lambda: patch_render_shift_walk(patch_render_admin_action_feedback(patch_render_generic_entities(patch_render_world_objects(patch_render_admin_world(patch_render_shared_dialogue(patch_render_panel_alignment(patch_render_dialogue_fix(patch_render_dialogue_panel(patch_render_profiles(patch_render_chat_timing(patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html())))))))))))))))
 
 # b2_test_bp has no url_prefix and is already registered by app.py.
 # Nest the town blueprints under it so both the browser page and /api/town/*
