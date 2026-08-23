@@ -22,14 +22,15 @@ def _ensure_scene_tool():
         "entity_scene",
         (
             "Direct ONE COMPLETE multi-step scene for a generic actor in a single call. Treat the administrator text as a "
-            "high-level story intention, not as a rigid animation script: preserve the goal and explicit facts, then choose the "
-            "most believable staging yourself. You decide whether talking, waiting, handing something over, or simply leaving is "
-            "natural. Do not add conversation merely because a person is nearby. Read onDutyAgents and relationships/presence: never "
-            "spawn an absent MIA/ANA/LIA. A newly created visitor does NOT automatically know other officers unless the instruction or "
-            "world relationship data says so; with a stranger, keep interaction appropriately brief/polite or avoid it. If the requested "
-            "officer is absent, improvise a believable alternative using whoever is actually present, leaving the item, waiting, or "
-            "departing. Include the whole ordered scene through its natural ending. Also summarize the user's intent and briefly state "
-            "what directorial adaptation/optimization you chose."
+            "story seed plus constraints, not as a rigid animation script. Infer command strength from wording: explicit MUST/一定/必須/不要改/" 
+            "一定要 clauses are binding and belong in mustKeep; phrases such as 看AI怎麼發展/讓AI決定/如果太怪可以改 are creative freedom. "
+            "Preserve binding facts, then improve pacing, causality and reactions yourself. You decide whether talking, waiting, giving, "
+            "relationship changes or simply leaving are natural. Do not add conversation merely because a person is nearby. Read "
+            "onDutyAgents, relationships and presence. Never spawn an absent MIA/ANA/LIA. A newly created visitor does NOT automatically "
+            "know every officer. If a requested person is absent, improvise a believable alternative without violating mustKeep. Other "
+            "characters keep agency: attraction does not force reciprocation, and ANA may reject Oscar even if Oscar pursues her. Include "
+            "the whole ordered scene through its natural ending, plus a short Traditional Chinese summary of what the user asked and what "
+            "you changed/optimized as director."
         ),
         {
             "id": {"type": "string", "minLength": 1, "maxLength": 64},
@@ -44,18 +45,29 @@ def _ensure_scene_tool():
             },
             "intentSummary": {
                 "type": "string", "minLength": 1, "maxLength": 140,
-                "description": "Concise Traditional Chinese summary of what the administrator basically wants to happen, without inventing details."
+                "description": "Concise Traditional Chinese summary of what the administrator basically wants to happen."
+            },
+            "mustKeep": {
+                "type": "array", "maxItems": 6,
+                "items": {"type": "string", "minLength": 1, "maxLength": 90},
+                "description": "Explicit non-negotiable story beats inferred from strong wording. Empty is allowed when the user gave only a loose idea."
+            },
+            "creativeFreedom": {
+                "type": "array", "maxItems": 6,
+                "items": {"type": "string", "minLength": 1, "maxLength": 90},
+                "description": "Things the administrator left to the director: reactions, dialogue, acceptance/rejection, timing, staging, etc."
             },
             "directorNote": {
                 "type": "string", "minLength": 1, "maxLength": 180,
-                "description": "Concise Traditional Chinese note explaining the believable staging/adaptation you chose, e.g. target absent, strangers, handoff choice, whether conversation was unnecessary."
+                "description": "Concise Traditional Chinese note explaining the believable adaptation/optimization you chose."
             },
             "steps": {
-                "type": "array", "minItems": 2, "maxItems": 12,
+                "type": "array", "minItems": 2, "maxItems": 14,
                 "items": {
                     "type": "object",
                     "properties": {
-                        "type": {"type": "string", "enum": ["move", "say", "give", "wait", "leave"]},
+                        "type": {"type": "string", "enum": ["move", "say", "officer_say", "give", "relationship", "wait", "leave"]},
+                        "from": {"type": "string", "maxLength": 64},
                         "target": {"type": "string", "maxLength": 64},
                         "zone": {"type": "string", "enum": ["office", "office_door", "harbor_walkway", "pier", "sea"]},
                         "x": {"type": "number", "minimum": 12, "maximum": 628},
@@ -64,6 +76,9 @@ def _ensure_scene_tool():
                         "text": {"type": "string", "maxLength": 160},
                         "text_zh": {"type": "string", "maxLength": 160},
                         "item": {"type": "string", "maxLength": 24},
+                        "status": {"type": "string", "maxLength": 40},
+                        "intensity": {"type": "number", "minimum": 0, "maximum": 1},
+                        "note": {"type": "string", "maxLength": 140},
                         "seconds": {"type": "number", "minimum": 0.5, "maximum": 120},
                     },
                     "required": ["type"],
@@ -71,7 +86,7 @@ def _ensure_scene_tool():
                 },
             },
         },
-        ["id", "name", "entityType", "zone", "intentSummary", "directorNote", "steps"],
+        ["id", "name", "entityType", "zone", "intentSummary", "mustKeep", "creativeFreedom", "directorNote", "steps"],
     ))
 
 
@@ -117,10 +132,24 @@ def install_generic_scene_runtime():
                         "type": "say", "entity": entity_id,
                         "text": step.get("text"), "text_zh": step.get("text_zh"),
                     })
+                elif kind == "officer_say":
+                    expanded.append({
+                        "type": "agent_say", "agent": step.get("target"),
+                        "text": step.get("text"), "text_zh": step.get("text_zh"),
+                    })
                 elif kind == "give":
                     expanded.append({
                         "type": "give", "entity": entity_id,
                         "target": step.get("target"), "item": step.get("item"),
+                    })
+                elif kind == "relationship":
+                    expanded.append({
+                        "type": "set_relationship",
+                        "actor": step.get("from") or entity_id,
+                        "target": step.get("target"),
+                        "status": step.get("status"),
+                        "intensity": step.get("intensity"),
+                        "note": step.get("note"),
                     })
                 elif kind == "wait":
                     expanded.append({"type": "wait", "entity": entity_id, "seconds": step.get("seconds")})
