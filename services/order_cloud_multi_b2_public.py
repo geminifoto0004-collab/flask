@@ -148,7 +148,8 @@ def _multi_b2_public_media_interceptor():
     try:
         url, backend = _signed_get(asset, seconds=600)
         resp = redirect(url, code=302)
-        resp.headers['Cache-Control'] = 'private, max-age=300'
+        resp.headers['Cache-Control'] = 'no-store, max-age=0'
+        resp.headers['Pragma'] = 'no-cache'
         resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-single-image-sigv4'
         resp.headers['X-Order-Storage-Backend'] = backend
         if parts[2] != 'image':
