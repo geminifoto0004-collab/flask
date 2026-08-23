@@ -1,0 +1,7 @@
+Flask==2.3.3
+Werkzeug==2.3.7
+requests==2.31.0
+gunicorn==21.2.0
+PyMySQL==1.1.0
+DBUtils==3.0.3
+python-dotenv==1.0.0
