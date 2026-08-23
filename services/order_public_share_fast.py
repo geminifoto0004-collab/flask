@@ -154,7 +154,7 @@ def _thumb_redirect(asset):
             if im.mode not in ('RGB', 'L'): im = im.convert('RGB')
             elif im.mode == 'L': im = im.convert('RGB')
             im.thumbnail((480, 480), Image.Resampling.LANCZOS)
-            out = BytesIO(); im.save(out, format='JPEG', quality=78, optimize=True, progressive=True)
+            out = BytesIO(); im.save(out, format='JPEG', quality=85, subsampling=0, optimize=True, progressive=True)
             body = out.getvalue()
         s3.put_object(Bucket=cfg['bucket_name'], Key=thumb_key, Body=body, ContentType='image/jpeg', CacheControl='private, max-age=2592000')
     url = s3.generate_presigned_url('get_object', Params={'Bucket': cfg['bucket_name'], 'Key': thumb_key}, ExpiresIn=3600)
@@ -199,7 +199,6 @@ def _prune_customer_scope():
     if not customer: return jsonify({'ok':False,'error':'customer_key is required'}), 400
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
-        # Do not destroy rows required by another broader live share for the same customer.
         cur.execute("SELECT history_scope, include_cancelled FROM cloud_share_tokens WHERE customer_key=? AND status='active'", (customer,))
         for row in cur.fetchall():
             d = get_row_dict(row, cur) or {}; other_scope = _scope(d.get('history_scope'))
@@ -241,7 +240,13 @@ def _order_public_share_fast_interceptor():
             space = get_customer_space(share.get('customer_key'))
             if not space: return Response('No hay información disponible.', 404, mimetype='text/plain')
             attach_assets_to_space(space); _filter_space(space, share)
-            return render_template('customer_share_live_fast.html', space=space, share=share, share_token=token)
+            html = render_template('customer_share_live_fast.html', space=space, share=share, share_token=token)
+            # Gallery cards stay on 480px thumbnails. Inside one order, load only the
+            # current/adjacent 2560px WEB assets. The same WEB URL is then reused by the
+            # full-screen viewer; no original-size cloud object is needed by new clients.
+            html = html.replace('img.src=img.dataset.thumb;', 'img.src=img.dataset.full;')
+            html = html.replace('Las fotos grandes se cargan solo al abrirlas', 'Miniaturas rápidas · alta calidad al abrir')
+            return Response(html, mimetype='text/html')
         if len(parts) == 4 and parts[2] == 'asset' and request.method == 'GET':
             _share, asset, error = _asset_for_share(token, parts[3])
             if error: return error
