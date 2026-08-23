@@ -171,6 +171,10 @@ from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 # authorized original-image reads directly to short-lived private B2 URLs.
 from . import order_public_share_fast as _order_public_share_fast  # noqa: E402,F401
 
+# Register 480px thumbnail presigning, stale asset-row pruning, and make ORDER detail
+# views use the 2560px colour-managed web derivative instead of the gallery thumbnail.
+from . import order_cloud_web_variants as _order_cloud_web_variants  # noqa: E402,F401
+
 __all__ = [
     'send_verification_code',
     'verify_code',
