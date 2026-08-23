@@ -20,11 +20,16 @@ from database import get_cursor, get_db_connection, get_row_dict
 from services import order_cloud_asset_service as asset_service
 from services import order_cloud_direct_multi_b2 as direct
 from services.order_cloud_asset_service import _validate_content_type, _validate_sha256
-from services.order_cloud_multi_b2 import PRIMARY, SECONDARY, backend_ready
+from services.order_cloud_multi_b2 import PRIMARY, SECONDARY, backend_ready, _ensure_storage_backend_column
 from services.order_cloud_multi_b2_auto import probe_backend_class_b
 
 _MAX_CUSTOMERS = 200
 _ALLOWED = {PRIMARY, SECONDARY}
+
+
+def _ensure_asset_schema():
+    _ensure_order_cloud_tables()
+    _ensure_storage_backend_column()
 
 
 def _public_health(item):
@@ -72,6 +77,7 @@ def order_cloud_wan_storage_summary():
     _source_site, auth_error = _order_cloud_auth_source()
     if auth_error:
         return auth_error
+    _ensure_asset_schema()
 
     payload = request.get_json(silent=True) or {}
     customer_keys = _normalize_customer_keys(payload.get('customer_keys'))
@@ -156,7 +162,7 @@ def order_cloud_wan_repair_plan():
     _source_site, auth_error = _order_cloud_auth_source()
     if auth_error:
         return auth_error
-    _ensure_order_cloud_tables()
+    _ensure_asset_schema()
 
     payload = request.get_json(silent=True) or {}
     customer_key = str(payload.get('customer_key') or '').strip()
@@ -222,7 +228,7 @@ def order_cloud_direct_repair_register():
     source_site, auth_error = _order_cloud_auth_source()
     if auth_error:
         return auth_error
-    _ensure_order_cloud_tables()
+    _ensure_asset_schema()
 
     try:
         payload = request.get_json(silent=True) or {}
