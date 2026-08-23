@@ -1,29 +1,71 @@
-"""Render ORDER public share pages from TiDB multi-B2 asset metadata directly.
+"""Render ORDER customer share HTML from TiDB metadata only.
 
-Asset ownership is resolved through cloud_orders.order_number -> customer_key. The
-customer_key copied into cloud_assets is treated as denormalized metadata only, so an
-old/mismatched asset customer key cannot hide otherwise valid images from a share.
-
-Performance rule:
-- gallery/detail browsing uses the already-published 480px thumbnail directly from a
-  short-lived B2 signed URL (signing itself does not call B2);
-- 2560px WEB data is loaded only when the user opens the full-screen viewer;
-- if a direct thumbnail fails, the browser falls back to the token-protected Render
-  media route, which can in turn fall back to the WEB object.
+The first page request never talks to B2 and never creates per-image signed URLs.
+Render reads the customer's safe text + asset metadata from TiDB, renders HTML once,
+and returns it immediately.  All image attributes point to the same lazy
+/share/<token>/image/<asset_key> URL; that endpoint performs authorization and a 302 to
+B2 only when the browser actually needs that image.
 """
 from __future__ import annotations
 
-from html import escape
+from datetime import datetime
+import hashlib
 
 from flask import Response, jsonify, render_template, request
 
 from blueprints.b2_test_bp import b2_test_bp, _ensure_order_cloud_tables
 from database import get_cursor, get_db_connection, get_row_dict
-from services.order_cloud_multi_b2 import presigned_get_for_asset
+
+
+def _parse_expiry(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+    text = str(value).strip().replace('Z', '+00:00')
+    try:
+        return datetime.fromisoformat(text).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _resolve(token):
+    """Resolve a share with one indexed TiDB query and no request-time migration."""
+    token = str(token or '').strip()
+    if not token:
+        return None, Response('Enlace no encontrado.', 404, mimetype='text/plain')
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        cur.execute(
+            """SELECT token_hash, customer_key, mode, status, source_site, created_at,
+                      expires_at, history_scope, include_cancelled
+               FROM cloud_share_tokens WHERE token_hash=? LIMIT 1""",
+            (token_hash,),
+        )
+        row = cur.fetchone()
+        share = get_row_dict(row, cur) if row else None
+    finally:
+        conn.close()
+
+    if not share:
+        return None, Response('Enlace no encontrado.', 404, mimetype='text/plain')
+    if str(share.get('status') or '') != 'active':
+        return share, Response('Este enlace ya no está disponible.', 410, mimetype='text/plain')
+    expiry = _parse_expiry(share.get('expires_at'))
+    if expiry and datetime.utcnow() >= expiry:
+        return share, Response('Este enlace ha expirado.', 410, mimetype='text/plain')
+    share['history_scope'] = str(share.get('history_scope') or 'current')
+    share['include_cancelled'] = bool(share.get('include_cancelled'))
+    return share, None
 
 
 def _assets_owned_by_customer(customer_key):
-    conn = get_db_connection(); cur = get_cursor(conn)
+    """One indexed metadata query; no B2 calls and no storage schema migration."""
+    conn = get_db_connection()
+    cur = get_cursor(conn)
     try:
         cur.execute(
             """SELECT a.asset_key, a.customer_key, a.order_number, a.workflow_key,
@@ -40,65 +82,6 @@ def _assets_owned_by_customer(customer_key):
         conn.close()
 
 
-def _resolve(token):
-    from services.order_public_share_fast import _resolve_share, _error_response
-    share, state = _resolve_share(token)
-    if state != 'active':
-        return share, _error_response(state)
-    return share, None
-
-
-def _apply_fast_thumbnail_urls(html, token, assets):
-    """Replace only thumbnail URLs with direct B2 signed URLs.
-
-    Full/2560 URLs intentionally remain token-protected Render URLs and therefore are
-    fetched only when the full-screen viewer is opened.  Each direct thumbnail keeps a
-    Render fallback URL in a data attribute for reliability.
-    """
-    for asset in assets:
-        asset_key = str(asset.get('asset_key') or '').strip()
-        sha = str(asset.get('sha256') or '').strip().lower()
-        if not asset_key or len(sha) != 64:
-            continue
-        thumb_key = f'order-cloud/thumbs/{sha[:2]}/{sha}.jpg'
-        try:
-            direct_thumb = presigned_get_for_asset(asset, seconds=3600, object_key=thumb_key)
-        except Exception:
-            continue
-
-        proxy_thumb = f'/share/{token}/thumb/{asset_key}'
-        signed = escape(direct_thumb, quote=True)
-        proxy = escape(proxy_thumb, quote=True)
-
-        html = html.replace(
-            f'data-src="{proxy_thumb}"',
-            f'data-src="{signed}" data-proxy-src="{proxy}"',
-        )
-        html = html.replace(
-            f'data-thumb="{proxy_thumb}"',
-            f'data-thumb="{signed}" data-proxy-thumb="{proxy}"',
-        )
-
-    # Install the fallback handler before body images start lazy-loading.  It only
-    # handles direct-thumbnail failures; full-size WEB image handling stays unchanged.
-    fallback_script = r'''<script id="order-direct-thumb-fallback">
-window.addEventListener('error',function(ev){
-  var img=ev.target;
-  if(!img||img.tagName!=='IMG'||img.dataset.orderFallbackDone==='1')return;
-  var proxy=img.dataset.proxySrc||img.dataset.proxyThumb||'';
-  if(!proxy)return;
-  img.dataset.orderFallbackDone='1';
-  img.src=proxy;
-},true);
-</script>'''
-    if 'order-direct-thumb-fallback' not in html:
-        if '</head>' in html:
-            html = html.replace('</head>', fallback_script + '</head>', 1)
-        else:
-            html = fallback_script + html
-    return html
-
-
 @b2_test_bp.before_app_request
 def _order_public_share_multi_b2_page():
     if request.method != 'GET':
@@ -108,31 +91,47 @@ def _order_public_share_multi_b2_page():
         return None
     parts = path.strip('/').split('/')
 
-    # Safe live diagnostic: token authorizes only this customer's relationship counts.
+    # Safe diagnostic: token authorizes only this customer's relationship counts.
     if len(parts) == 3 and parts[2] == 'asset-debug':
         token = parts[1]
         try:
             _ensure_order_cloud_tables()
             share, error = _resolve(token)
-            if error: return error
+            if error:
+                return error
             customer_key = str(share.get('customer_key') or '').strip()
             assets = _assets_owned_by_customer(customer_key)
-            conn = get_db_connection(); cur = get_cursor(conn)
+            conn = get_db_connection()
+            cur = get_cursor(conn)
             try:
-                cur.execute('SELECT order_number FROM cloud_orders WHERE customer_key=? AND active=TRUE ORDER BY order_number', (customer_key,))
+                cur.execute(
+                    'SELECT order_number FROM cloud_orders '
+                    'WHERE customer_key=? AND active=TRUE ORDER BY order_number',
+                    (customer_key,),
+                )
                 orders = [str((get_row_dict(r, cur) or {}).get('order_number') or '') for r in cur.fetchall()]
             finally:
                 conn.close()
             by_backend = {}
             by_order = {}
-            for a in assets:
-                b = str(a.get('storage_backend') or 'b2_primary')
-                n = str(a.get('order_number') or '')
-                by_backend[b] = by_backend.get(b, 0) + 1
-                by_order[n] = by_order.get(n, 0) + 1
-            resp = jsonify({'ok': True, 'customer_key': customer_key, 'orders': orders,
-                            'asset_count': len(assets), 'by_order': by_order,
-                            'by_backend': by_backend})
+            total_bytes = 0
+            for asset in assets:
+                backend = str(asset.get('storage_backend') or 'b2_primary')
+                number = str(asset.get('order_number') or '')
+                by_backend[backend] = by_backend.get(backend, 0) + 1
+                by_order[number] = by_order.get(number, 0) + 1
+                total_bytes += int(asset.get('file_size') or 0)
+            resp = jsonify({
+                'ok': True,
+                'customer_key': customer_key,
+                'orders': orders,
+                'asset_count': len(assets),
+                'asset_bytes': total_bytes,
+                'by_order': by_order,
+                'by_backend': by_backend,
+                'page_b2_calls': 0,
+                'image_mode': 'lazy-single-image-redirect',
+            })
             resp.headers['Cache-Control'] = 'no-store'
             return resp
         except Exception as exc:
@@ -148,8 +147,13 @@ def _order_public_share_multi_b2_page():
         from services.order_cloud_service import get_customer_space
 
         share, error = _resolve(token)
-        if error: return error
+        if error:
+            return error
         customer_key = str(share.get('customer_key') or '').strip()
+
+        # get_customer_space is the bounded-query implementation registered by
+        # services.__init__: customer/orders/workflows/history are fetched in four
+        # indexed queries, then grouped in Python.
         space = get_customer_space(customer_key)
         if not space:
             return Response('No hay información disponible.', 404, mimetype='text/plain')
@@ -165,12 +169,30 @@ def _order_public_share_multi_b2_page():
             order['assets'] = by_order.get(number, [])
 
         _filter_space(space, share)
-        html = render_template('customer_share_live_fast.html', space=space, share=share, share_token=token)
+        html = render_template(
+            'customer_share_live_fast.html',
+            space=space,
+            share=share,
+            share_token=token,
+        )
 
-        # Keep the template's original behaviour: gallery and detail views load 480px
-        # thumbnails.  Do NOT replace detail thumbnails with 2560px images here.
-        html = html.replace('Las fotos grandes se cargan solo al abrirlas', 'Miniaturas rápidas · alta calidad al abrir')
-        html = _apply_fast_thumbnail_urls(html, token, assets)
+        # The existing template still has historical data-thumb/data-full names. Make
+        # every attribute use the exact same stable application URL so the browser can
+        # reuse its cache; no physical thumbnail object exists in the formal design.
+        prefix = f'/share/{token}/'
+        image_prefix = prefix + 'image/'
+        html = html.replace(prefix + 'thumb/', image_prefix)
+        html = html.replace(prefix + 'asset/', image_prefix)
+        html = html.replace(
+            'Las fotos grandes se cargan solo al abrirlas',
+            'Fotos optimizadas · carga bajo demanda',
+        )
+        html = html.replace(
+            'Miniaturas rápidas · alta calidad al abrir',
+            'Fotos optimizadas · carga bajo demanda',
+        )
+        # Load fewer off-screen covers in advance. Detail still loads current +/- 1.
+        html = html.replace("rootMargin:'700px 0px'", "rootMargin:'250px 0px'")
 
         response = Response(html, mimetype='text/html')
         response.headers['Cache-Control'] = 'no-store, max-age=0, must-revalidate'
@@ -178,7 +200,8 @@ def _order_public_share_multi_b2_page():
         response.headers['Expires'] = '0'
         response.headers['X-Order-Asset-Count'] = str(len(assets))
         response.headers['X-Order-Asset-Orders'] = str(len(by_order))
-        response.headers['X-Order-Thumb-Mode'] = 'direct-b2-signed-with-render-fallback'
+        response.headers['X-Order-Share-B2-Calls'] = '0'
+        response.headers['X-Order-Image-Mode'] = 'lazy-single-image-redirect'
         return response
     except Exception as exc:
         response = Response('Servicio temporalmente no disponible.', 503, mimetype='text/plain')
