@@ -32,6 +32,7 @@ from .town_render_dialogue_fix_patch import patch_render_dialogue_fix
 from .town_render_panel_alignment_patch import patch_render_panel_alignment
 from .town_render_shared_dialogue_patch import patch_render_shared_dialogue
 from .town_render_admin_world_patch import patch_render_admin_world
+from .town_render_world_object_patch import patch_render_world_objects
 
 # Install validation/persistence for the current browser capabilities before the
 # blueprint is registered on the Flask app. The server map is authoritative,
@@ -55,10 +56,10 @@ install_town_admin_runtime()
 _town_ai_module._model_decision = grounded_model_decision
 town_ai_bp = _town_ai_module.town_ai_bp
 
-# Keep the known-good game composition. Admin/world UI is a DOM-only overlay and
-# does not rewrite the game's animation loop.
+# Keep the known-good game composition. Generic objects are a transparent safe
+# overlay; the existing game animation loop remains untouched.
 town_page_bp = _town_page_module.town_page_bp
-_town_page_module._patched_town_html = lambda: patch_render_admin_world(patch_render_shared_dialogue(patch_render_panel_alignment(patch_render_dialogue_fix(patch_render_dialogue_panel(patch_render_profiles(patch_render_chat_timing(patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html())))))))))))
+_town_page_module._patched_town_html = lambda: patch_render_world_objects(patch_render_admin_world(patch_render_shared_dialogue(patch_render_panel_alignment(patch_render_dialogue_fix(patch_render_dialogue_panel(patch_render_profiles(patch_render_chat_timing(patch_render_fishing(patch_render_depth(patch_render_actions(patch_render_visibility(latest_town_html()))))))))))))
 
 # b2_test_bp has no url_prefix and is already registered by app.py.
 # Nest the town blueprints under it so both the browser page and /api/town/*
