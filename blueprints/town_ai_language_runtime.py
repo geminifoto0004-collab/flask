@@ -32,6 +32,8 @@ def _call_model(world, evolution, retry_note=""):
     dialogue_policy = world.get("dialoguePolicy") if isinstance(world, dict) else None
     profiles = world.get("characterProfiles") if isinstance(world, dict) else None
     recent_dialogue = world.get("recentDialogue") if isinstance(world, dict) else None
+    on_duty = world.get("onDutyAgents") if isinstance(world, dict) else None
+    night_shift_agent = world.get("nightShiftAgent") if isinstance(world, dict) else None
 
     system_prompt = f"""You are the autonomous WORLD DIRECTOR of a persistent pixel-art customs office in IQUIQUE, Chile.
 {mode}
@@ -44,6 +46,13 @@ CHARACTERS AND WORLD:
 - Read character traits, mood, energy, relationships, recent stimuli, dogs, plants, current actions, recentDirectorActions, characterProfiles and recentDialogue.
 - Avoid repeating the same safe action if recentDirectorActions shows it happened recently.
 - Manual-test diversity seed: {entropy}. Use it only to avoid repetitive choices; world state matters more than randomness.
+
+SHIFT / PRESENCE RULES — HARD RULES:
+- Use server_context.hour and world.onDutyAgents as authoritative presence information.
+- During Iquique night (hour >= 20 or hour < 7), this office has EXACTLY ONE duty officer. NEVER use agent_chat at night, because two coworkers are not physically present together.
+- At night, the lone duty officer may use agent_say, work, look at the sea, use the radio, or do other solo actions.
+- During daytime, agent_chat is allowed only when BOTH participants are listed in onDutyAgents. Never make an off-duty officer talk or perform an office action.
+- If nightShiftAgent is supplied, that is the one officer physically present at night.
 
 PERSISTENT LIFE PROFILES:
 - Each officer may have persistent life facts: age, gender, zodiac, marital status, children, likes, dislikes and interests.
@@ -71,6 +80,13 @@ DIALOGUE QUALITY — IMPORTANT:
 - If agent_chat is used, every turn must belong to one of the two participants and the two participants must be different people.
 - If agent_say is used, write the exact natural sentence the character says.
 
+GENERIC WORLD CREATION:
+- world_object_spawn is the GENERAL visual creation tool. Use it when the instruction/story calls for an object or creature that has no dedicated tool.
+- You can compose pixel art from safe colored rectangles. Examples: Christmas tree in office, car on harbor_walkway, buoy or octopus/turtle in sea.
+- Pick the correct semantic zone from world.worldMap. Never place a car in the sea or an octopus in the office.
+- Choose behavior that fits the object: static/bob/float/drift/swim_left/swim_right/drive_left/drive_right.
+- Do NOT emit JavaScript or executable code; only structured rectangle blueprints through the tool.
+
 BILINGUAL OUTPUT FOR THE UI:
 - When you use agent_chat, for every turn provide BOTH fields:
   - text: the natural Spanish sentence that the character really says.
@@ -85,8 +101,10 @@ TOOL USE:
 - Outfit changes normally happen once per Iquique day per person.
 - Furniture/layout/object changes are occasional, not decoration spam.
 - Long-term trait/life/personnel changes are rare and should have a believable reason.
-- Never invent unsupported actions. If a desired action has no tool, choose another real capability.
+- Never invent unsupported actions. If a desired action has no dedicated tool but is a visible object/creature, use world_object_spawn.
 
+Current onDutyAgents: {json.dumps(on_duty, ensure_ascii=False)}
+Current nightShiftAgent: {json.dumps(night_shift_agent, ensure_ascii=False)}
 Current characterProfiles: {json.dumps(profiles, ensure_ascii=False)}
 Recent dialogue memory: {json.dumps(recent_dialogue, ensure_ascii=False)}
 Browser-supplied dialogue policy, if any: {json.dumps(dialogue_policy, ensure_ascii=False)}
