@@ -1,8 +1,8 @@
 """Atomic multi-step scene tool for CUSTOMS AGENT TOWN.
 
 DeepSeek is good at inventing a scene, but native tool calling may legally return
-only the first call (for example spawn_entity).  entity_scene lets the model send
-one complete ordered scene in a single tool call.  The runtime expands that one
+only the first call (for example spawn_entity). entity_scene lets the model send
+one complete ordered scene in a single tool call. The runtime expands that one
 call into the existing generic world verbs, so the browser/server engine stays
 generic rather than gaining story-specific functions.
 """
@@ -21,12 +21,15 @@ def _ensure_scene_tool():
     DIRECTOR_TOOLS.append(_fn(
         "entity_scene",
         (
-            "Create ONE COMPLETE multi-step scene for a generic actor in a single call. "
-            "Use this instead of returning spawn_entity alone when a visitor/person/animal/vehicle must arrive, move, "
-            "speak, give something, wait, and/or leave. Read onDutyAgents before planning: never spawn an absent MIA/ANA/LIA. "
-            "If the requested officer is absent, let the actor notice and improvise a believable alternative with an officer "
-            "who is actually present (for example ask them, leave/hand over the item, or depart). Include the whole ordered scene "
-            "through its natural ending. This is a generic scene transaction, not a story-specific function."
+            "Direct ONE COMPLETE multi-step scene for a generic actor in a single call. Treat the administrator text as a "
+            "high-level story intention, not as a rigid animation script: preserve the goal and explicit facts, then choose the "
+            "most believable staging yourself. You decide whether talking, waiting, handing something over, or simply leaving is "
+            "natural. Do not add conversation merely because a person is nearby. Read onDutyAgents and relationships/presence: never "
+            "spawn an absent MIA/ANA/LIA. A newly created visitor does NOT automatically know other officers unless the instruction or "
+            "world relationship data says so; with a stranger, keep interaction appropriately brief/polite or avoid it. If the requested "
+            "officer is absent, improvise a believable alternative using whoever is actually present, leaving the item, waiting, or "
+            "departing. Include the whole ordered scene through its natural ending. Also summarize the user's intent and briefly state "
+            "what directorial adaptation/optimization you chose."
         ),
         {
             "id": {"type": "string", "minLength": 1, "maxLength": 64},
@@ -38,6 +41,14 @@ def _ensure_scene_tool():
             "carrying": {
                 "type": "array", "maxItems": 6,
                 "items": {"type": "string", "minLength": 1, "maxLength": 24},
+            },
+            "intentSummary": {
+                "type": "string", "minLength": 1, "maxLength": 140,
+                "description": "Concise Traditional Chinese summary of what the administrator basically wants to happen, without inventing details."
+            },
+            "directorNote": {
+                "type": "string", "minLength": 1, "maxLength": 180,
+                "description": "Concise Traditional Chinese note explaining the believable staging/adaptation you chose, e.g. target absent, strangers, handoff choice, whether conversation was unnecessary."
             },
             "steps": {
                 "type": "array", "minItems": 2, "maxItems": 12,
@@ -60,7 +71,7 @@ def _ensure_scene_tool():
                 },
             },
         },
-        ["id", "name", "entityType", "zone", "steps"],
+        ["id", "name", "entityType", "zone", "intentSummary", "directorNote", "steps"],
     ))
 
 
