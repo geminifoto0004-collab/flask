@@ -8,11 +8,15 @@ entry points and therefore load different code.
 
 Use the same GitHub repository and configure:
 
-- Build Command: `pip install -r requirements.txt`
+- Build Command: `pip install -r requirements-town.txt`
 - Start Command: `gunicorn town_app:app`
 - Health Check Path: `/health`
 
 Opening the new service root redirects to `/customs-town`.
+
+`requirements-town.txt` intentionally omits ORDER, Playwright, B2, report/PDF,
+pandas and other main-service dependencies so the dedicated town build stays
+small and isolated.
 
 ## Required environment variables
 
