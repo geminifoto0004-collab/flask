@@ -171,6 +171,10 @@ from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 # authorized WEB-image reads directly to short-lived private B2 URLs.
 from . import order_public_share_fast as _order_public_share_fast  # noqa: E402,F401
 
+# Keep the chunked full-mirror finalize HTTP request short.  Expensive old-table cleanup
+# is deliberately deferred so Render/Gunicorn does not terminate finalize with an empty 502.
+from . import order_full_mirror_finalize_fast as _order_full_mirror_finalize_fast  # noqa: E402,F401
+
 __all__ = [
     'send_verification_code',
     'verify_code',
