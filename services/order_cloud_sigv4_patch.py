@@ -2,8 +2,8 @@
 
 Backblaze B2 S3-Compatible API accepts SigV4 only. Botocore can otherwise choose the
 legacy SigV2 query format for presigned URLs on a custom endpoint, which B2 rejects as
-an unauthenticated request. This module patches the shared ORDER B2 client factory so
-both presigned PUT and presigned GET URLs use SigV4.
+an unauthenticated request. This module patches both the shared ORDER B2 client factory
+and the direct PC->B2 presign client so PUT and GET signed URLs are always SigV4.
 """
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ def _region_from_endpoint(endpoint):
     match = re.search(r'(?:^|\.)s3\.([^.]+)\.backblazeb2\.com$', host)
     if match:
         return match.group(1)
-    # Compatibility fallback for any S3-compatible custom endpoint.
     return 'us-east-1'
 
 
@@ -55,6 +54,25 @@ def validate_sigv4_presigned_url(url):
     return text
 
 
-# Runtime patch: functions already defined in order_cloud_multi_b2 resolve this global
-# at call time, so presigned GETs and future shared B2 calls also use SigV4.
+# Shared GET/HEAD/PUT client path.
 multi.client_for_backend = sigv4_client_for_backend
+
+# Direct PC->B2 presign path has its own client factory. It is imported before this
+# patch from order_cloud_proxy_thumb.py, so replacing the module global here changes
+# future _presigned_put() calls without touching image bytes or credentials on the PC.
+try:
+    from services import order_cloud_direct_multi_b2 as direct
+    direct._client_for_backend = sigv4_client_for_backend
+
+    _original_presigned_put = direct._presigned_put
+
+    def _sigv4_presigned_put(backend, object_key, content_type, seconds=600):
+        return validate_sigv4_presigned_url(
+            _original_presigned_put(backend, object_key, content_type, seconds=seconds)
+        )
+
+    direct._presigned_put = _sigv4_presigned_put
+except Exception:
+    # Import order is controlled by order_cloud_proxy_thumb.py. Keep shared patch alive
+    # even if a future deployment loads the direct module in a different order.
+    pass
