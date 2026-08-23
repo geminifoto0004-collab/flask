@@ -33,7 +33,10 @@ class _AdminRequestsProxy:
                     kwargs["timeout"] = 24
             except Exception:
                 kwargs["timeout"] = 24
-        return _real_requests.post(*args, **kwargs)
+        try:
+            return _real_requests.post(*args, **kwargs)
+        except _real_requests.Timeout as exc:
+            raise RuntimeError("DeepSeek request timed out after the extended wait") from exc
 
 
 def install_officer_scene_admin_patch():
