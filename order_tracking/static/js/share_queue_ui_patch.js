@@ -34,6 +34,14 @@
             if (event.key === 'Enter' || event.key === ' ') dismiss(event);
         });
         box.appendChild(close);
+
+        // The legacy updater flips hidden=false every five seconds while a job is
+        // active. Keep a user-dismissed queue hidden even if an older tracking.js
+        // still calls its original updater through the global lexical binding.
+        const observer = new MutationObserver(() => {
+            if (dismissed && !box.hidden) box.hidden = true;
+        });
+        observer.observe(box, { attributes: true, attributeFilter: ['hidden'] });
     }
 
     const original = window.desktopGuestUpdateGlobalQueue;
