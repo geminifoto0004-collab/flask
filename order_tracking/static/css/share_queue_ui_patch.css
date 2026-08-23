@@ -1,0 +1,37 @@
+/* 2026-08-23: keep the global share queue away from footer pagination and make it closable. */
+.desktop-share-global-queue {
+    bottom: 76px !important;
+    padding-right: 38px !important;
+    position: fixed !important;
+}
+.desktop-share-global-queue-close {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    z-index: 2;
+    width: 25px;
+    height: 25px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #8c95a0;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+}
+.desktop-share-global-queue-close:hover,
+.desktop-share-global-queue-close:focus-visible {
+    background: #f1f3f6;
+    color: #3f4751;
+    outline: none;
+}
+html[data-theme="dark"] .desktop-share-global-queue-close:hover,
+html[data-theme="dark"] .desktop-share-global-queue-close:focus-visible {
+    background: #2b3037;
+    color: #e1e5ea;
+}
+@media (max-width: 768px) {
+    .desktop-share-global-queue { bottom: 72px !important; }
+}
