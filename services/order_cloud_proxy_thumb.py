@@ -13,14 +13,13 @@ from __future__ import annotations
 import hashlib
 
 from flask import jsonify, request
-from botocore.exceptions import ClientError
 
 from blueprints.b2_test_bp import (
     b2_test_bp,
     _ensure_order_cloud_tables,
     _order_cloud_auth_source,
 )
-from services.order_cloud_asset_service import _b2_client, _b2_config, _is_not_found, _validate_sha256
+from services.order_cloud_asset_service import _b2_client, _b2_config, _validate_sha256
 from services.order_cloud_direct_b2 import _thumb_object_key
 
 MAX_THUMB_BYTES = 3 * 1024 * 1024
@@ -56,33 +55,27 @@ def order_cloud_asset_upload_thumb():
         cfg = _b2_config()
         s3 = _b2_client(cfg)
         object_key = _thumb_object_key(asset_sha256)
-        uploaded = False
-        try:
-            info = s3.head_object(Bucket=cfg['bucket_name'], Key=object_key)
-            existing_size = int(info.get('ContentLength') or 0)
-            if existing_size <= 0:
-                raise RuntimeError('existing thumbnail has invalid size')
-        except ClientError as exc:
-            if not _is_not_found(exc):
-                raise
-            s3.put_object(
-                Bucket=cfg['bucket_name'],
-                Key=object_key,
-                Body=data,
-                ContentType='image/jpeg',
-                CacheControl='private, max-age=2592000',
-                Metadata={'sha256': actual_sha, 'asset-sha256': asset_sha256},
-            )
-            uploaded = True
+
+        # Deliberately do not HEAD before upload. The thumbnail key is deterministic
+        # and re-PUT is safe, while HEAD consumes Backblaze Class-B transactions.
+        s3.put_object(
+            Bucket=cfg['bucket_name'],
+            Key=object_key,
+            Body=data,
+            ContentType='image/jpeg',
+            CacheControl='private, max-age=2592000',
+            Metadata={'sha256': actual_sha, 'asset-sha256': asset_sha256},
+        )
 
         return jsonify({'ok': True, 'result': {
             'asset_sha256': asset_sha256,
             'sha256': actual_sha,
             'object_key': object_key,
             'file_size': len(data),
-            'uploaded_to_b2': uploaded,
-            'deduplicated': not uploaded,
-            'upload_mode': 'render_proxy_thumb',
+            'uploaded_to_b2': True,
+            'deduplicated': False,
+            'upload_mode': 'render_proxy_thumb_nohead',
+            'b2_head_calls': 0,
         }})
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
@@ -90,6 +83,7 @@ def order_cloud_asset_upload_thumb():
         return jsonify({'ok': False, 'error': str(exc), 'error_type': type(exc).__name__}), 500
 
 
-# Register the isolated, authenticated B2 diagnostic endpoint while this module is
-# already imported by services.__init__.py.  This does not alter production uploads.
+# Register isolated protected extensions while this module is already imported by
+# services.__init__.py. They do not expose B2 credentials.
 from . import order_b2_diagnostic as _order_b2_diagnostic  # noqa: E402,F401
+from . import order_cloud_nohead_upload as _order_cloud_nohead_upload  # noqa: E402,F401
