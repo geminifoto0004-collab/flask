@@ -54,6 +54,21 @@ def _action_summary(action):
         return f"移除世界物件 {action.get('id')}"
     if kind == "agent_shift":
         return f"{agent} {'下班' if action.get('mode') == 'off' else '回來上班'}"
+    if kind == "spawn_entity":
+        return f"{action.get('name') or action.get('id')} 出現在 {action.get('zone') or '世界'}"
+    if kind == "move_entity":
+        target = action.get('target') or action.get('zone') or '目的地'
+        return f"{action.get('entity')} 前往 {target}"
+    if kind == "say":
+        return f"{action.get('entity')} 說話"
+    if kind == "give":
+        return f"{action.get('entity')} 把 {action.get('item')} 交給 {action.get('target')}"
+    if kind == "wait":
+        return f"{action.get('entity')} 等待 {action.get('seconds')} 秒"
+    if kind == "leave":
+        return f"{action.get('entity')} 離開"
+    if kind == "remove_entity":
+        return f"移除 {action.get('entity')}"
     return kind or "未知指令"
 
 
@@ -131,21 +146,21 @@ def grounded_model_decision(world, evolution=False):
             evolution,
             retry_note=(
                 "Your previous response produced no executable action after validation. "
-                "Return 1-3 valid actions only. Keep MIA/ANA/LIA exactly in Latin letters. "
-                "Respect onDutyAgents. At Iquique night there is only ONE duty officer, so NEVER use agent_chat; "
-                "use agent_say or a non-dialogue world action instead."
+                "Return valid tool actions only. Keep MIA/ANA/LIA exactly in Latin letters. "
+                "Respect onDutyAgents. At Iquique night there is only ONE duty officer, so NEVER use agent_chat. "
+                "You may instead compose generic entity verbs for a visitor/world scene."
             ),
         )
         decision = _extract_json(text)
         actions = _filter_duty_actions(_validate_actions(decision.get("actions")), world, context)
 
-    thought = "；".join(_action_summary(action) for action in actions[:5])
+    thought = "；".join(_action_summary(action) for action in actions[:6])
     if not thought:
         thought = "本輪沒有可執行的 AI 指令"
 
     return {
         "ok": True,
-        "thought": thought[:220],
+        "thought": thought[:300],
         "actions": actions,
         "model": model,
         "context": context,
