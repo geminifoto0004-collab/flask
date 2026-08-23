@@ -8,6 +8,8 @@ This module moves that remaining read off the customer request path:
 - a small background sweep refreshes them every 15 seconds;
 - public requests validate the raw token by hashing it locally and looking up the
   prewarmed hash cache, so a normal first request does not need TiDB;
+- snapshot rebuilds immediately repopulate the same in-process cache instead of
+  invalidating it until the next sweep;
 - the existing one-row TiDB loader remains the safe fallback if prewarming ever fails.
 
 No image bytes, B2 credentials, raw share tokens, LAN SQLite data, phone/payment or
@@ -30,6 +32,7 @@ _SPACE_TTL = 90.0
 _HASH_TOKEN_CACHE = {}
 _STOP = threading.Event()
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
+_ORIGINAL_REBUILD_SNAPSHOT = _snapshot.rebuild_snapshot
 
 
 def _token_hash(raw_token):
@@ -58,6 +61,21 @@ def _cache_space(customer_key, bundle):
     hot["cache_state"] = "HIT"
     hot["data_mode"] = "persistent-snapshot-prewarmed"
     _page._cache_put(_page._space_cache, customer_key, hot, _SPACE_TTL)
+
+
+def _rebuild_snapshot_and_rewarm(customer_key):
+    """Rebuild persisted data, then immediately keep the fresh bundle hot.
+
+    The snapshot module intentionally invalidates stale process memory after a rebuild.
+    During Render startup its background backfill used to erase the prewarm cache about
+    0.75s after it was populated, making the first real visitor fall back to TiDB.  Put
+    the freshly rebuilt bundle straight back into memory so startup and normal writes
+    never create that cold-cache window.
+    """
+    bundle = _ORIGINAL_REBUILD_SNAPSHOT(customer_key)
+    if bundle:
+        _cache_space(customer_key, bundle)
+    return bundle
 
 
 def _warm_once():
@@ -182,6 +200,10 @@ def install():
     # not cause the old 20-second cache-expiry TiDB miss. The background sweep refreshes
     # it every 15 seconds, while data writers continue rebuilding the persisted snapshot.
     _page._SPACE_TTL = _SPACE_TTL
+
+    # Snapshot background rebuilds are global lookups at call time, so installing this
+    # wrapper before their 0.75-second startup delay also fixes the startup race.
+    _snapshot.rebuild_snapshot = _rebuild_snapshot_and_rewarm
 
     # Pay the small active-share lookup during Render startup, not on the customer's
     # first page request. Failure is harmless because the one-row fallback is retained.
