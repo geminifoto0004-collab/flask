@@ -6,14 +6,13 @@ Services 包初始化
 from .email_service import send_verification_code, verify_code
 from .user_service import create_user, verify_password, reset_password
 
-# ORDER public-share fast path.
+# ORDER public-share fast paths.
 #
-# The original create_live_share() checked customer existence by calling
-# get_customer_space(), which loads every order/workflow/history row for the customer.
-# For customers with dozens of orders this made token creation slow enough to hit the
-# local Render-client timeout.  Token creation only needs to know that the customer
-# exists, so replace that existence check with one indexed SELECT.  The public page
-# still loads the full customer space later, when the customer actually opens the URL.
+# The legacy cloud service is correct but some read paths use N+1 queries.  Large
+# customers (dozens of orders, workflows and history rows) can therefore exceed the
+# Render request timeout.  Keep the storage schema/business behaviour unchanged and
+# replace only the two expensive public-share read/create paths with bounded-query
+# implementations.
 from . import order_cloud_service as _order_cloud_service
 
 
@@ -22,6 +21,8 @@ def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, pe
     if not customer_key:
         raise ValueError('customer_key is required')
 
+    # Token creation only needs an existence check.  Do not load the full customer
+    # space here; the public GET will load it when someone actually opens the URL.
     conn = _order_cloud_service.get_db_connection()
     cur = _order_cloud_service.get_cursor(conn)
     try:
@@ -71,7 +72,96 @@ def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, pe
     return {'token': raw_token, 'customer_key': customer_key, 'expires_at': expires_at}
 
 
+def _fast_get_customer_space(customer_key):
+    """Load one public customer space in a fixed number of SQL queries.
+
+    Legacy get_customer_space() selected order numbers and then called get_order()
+    once per order; get_order() in turn queried history once per workflow.  A customer
+    with 42 orders could therefore produce hundreds of TiDB round-trips.  This version
+    fetches customer, orders, workflows and history in four indexed queries and groups
+    rows in Python while preserving the original response shape.
+    """
+    customer_key = str(customer_key or '').strip()
+    if not customer_key:
+        return None
+
+    conn = _order_cloud_service.get_db_connection()
+    cur = _order_cloud_service.get_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT customer_key, customer_name, updated_at "
+            "FROM cloud_customers WHERE customer_key=? AND active=TRUE LIMIT 1",
+            (customer_key,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        customer = _order_cloud_service.get_row_dict(row, cur)
+
+        cur.execute(
+            """SELECT order_number, customer_key, customer_name, order_status, order_date,
+                      expected_delivery_date, production_type, product_name, product_code,
+                      pattern_code, quantity, active, source_site, updated_at
+               FROM cloud_orders
+               WHERE customer_key=? AND active=TRUE
+               ORDER BY order_date DESC, order_number DESC""",
+            (customer_key,),
+        )
+        orders = [_order_cloud_service.get_row_dict(r, cur) for r in cur.fetchall()]
+        if not orders:
+            return {'customer': customer, 'orders': []}
+
+        by_order = {str(order.get('order_number') or ''): order for order in orders}
+        for order in orders:
+            order['workflows'] = []
+
+        # Join through cloud_orders so this remains one query regardless of order count.
+        cur.execute(
+            """SELECT w.workflow_key, w.workflow_number, w.order_number, w.workflow_type,
+                      w.status, w.production_type, w.product_name, w.product_code,
+                      w.quantity, w.expected_delivery_date, w.last_status_change_date,
+                      w.draft_date, w.sort_order, w.active, w.updated_at
+               FROM cloud_workflows w
+               INNER JOIN cloud_orders o ON o.order_number=w.order_number
+               WHERE o.customer_key=? AND o.active=TRUE AND w.active=TRUE
+               ORDER BY w.order_number, w.sort_order, w.workflow_key""",
+            (customer_key,),
+        )
+        workflows = [_order_cloud_service.get_row_dict(r, cur) for r in cur.fetchall()]
+        by_workflow = {}
+        for wf in workflows:
+            wf['timeline'] = []
+            wf_key = str(wf.get('workflow_key') or '')
+            if wf_key:
+                by_workflow[wf_key] = wf
+            parent = by_order.get(str(wf.get('order_number') or ''))
+            if parent is not None:
+                parent['workflows'].append(wf)
+
+        if by_workflow:
+            cur.execute(
+                """SELECT h.history_key, h.workflow_key, h.order_number, h.status,
+                          h.action_date, h.sort_order
+                   FROM cloud_workflow_history h
+                   INNER JOIN cloud_orders o ON o.order_number=h.order_number
+                   WHERE o.customer_key=? AND o.active=TRUE AND h.active=TRUE
+                   ORDER BY h.order_number, h.workflow_key, h.sort_order,
+                            h.action_date, h.history_key""",
+                (customer_key,),
+            )
+            for r in cur.fetchall():
+                item = _order_cloud_service.get_row_dict(r, cur)
+                parent = by_workflow.get(str(item.get('workflow_key') or ''))
+                if parent is not None:
+                    parent['timeline'].append(item)
+
+        return {'customer': customer, 'orders': orders}
+    finally:
+        conn.close()
+
+
 _order_cloud_service.create_live_share = _fast_create_live_share
+_order_cloud_service.get_customer_space = _fast_get_customer_space
 
 __all__ = [
     'send_verification_code',
