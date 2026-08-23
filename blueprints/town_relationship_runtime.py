@@ -78,8 +78,19 @@ def install_relationship_runtime():
     def clean_world(world):
         cleaned = previous_clean(world)
         source = world if isinstance(world, dict) else {}
+        relation_source = source.get("relationships") if isinstance(source.get("relationships"), list) else None
+        # Older Render/browser builds do not know about relationship memory. A
+        # periodic /state push from such a page must not erase relationships
+        # already created by the server-side director.
+        if relation_source is None:
+            try:
+                stored = _base._read_json(_base._WORLD_PATH, {})
+                stored_world = stored.get("world") if isinstance(stored, dict) else {}
+                relation_source = stored_world.get("relationships") if isinstance(stored_world, dict) and isinstance(stored_world.get("relationships"), list) else []
+            except Exception:
+                relation_source = []
         relationships = []
-        for raw in source.get("relationships") if isinstance(source.get("relationships"), list) else []:
+        for raw in relation_source:
             if not isinstance(raw, dict):
                 continue
             actor = _short(raw.get("actor") or raw.get("from"), 64)
