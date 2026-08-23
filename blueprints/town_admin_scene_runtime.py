@@ -18,6 +18,9 @@ def install_admin_scene_runtime():
             "帶晚餐", "带晚餐", "帶飯", "带饭", "送晚餐", "送飯", "送饭", "帶咖啡", "带咖啡",
             "帶禮物", "带礼物", "送禮", "送礼", "外送", "朋友", "客人", "訪客", "访客",
             "visitor", "visit", "visita", "oscar", "待一下", "等一下再離開", "离开", "離開",
+            "追求", "追她", "追他", "分手", "喜歡", "喜欢", "愛上", "爱上", "心動", "心动",
+            "驚為天人", "惊为天人", "告白", "表白", "拒絕", "拒绝", "接受", "交往", "約會", "约会",
+            "看ai怎麼", "让ai", "讓ai", "自己導演", "自己导演", "自己決定", "自己决定",
         )
         if any(word in text for word in scene_words):
             scene = [tool for tool in DIRECTOR_TOOLS if _name(tool) == "entity_scene"]
