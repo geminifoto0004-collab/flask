@@ -5,10 +5,38 @@ client. The overseas parent Flask app registers a provider only when deployment 
 flags permit it. Credentials stay outside this source tree and can be revoked externally.
 """
 from __future__ import annotations
+import sys
 from flask import current_app
-from .config import PUBLIC_SHARE_PROVIDER_READY
+from .config import (
+    PUBLIC_SHARE_PROVIDER_READY,
+    RENDER_PUBLIC_GUEST_ENABLED,
+    PERMANENT_PUBLIC_GUEST_ENABLED,
+)
 
 _KEY = 'order_tracking_public_share_provider'
+
+
+def _sync_runtime_feature_flags(app):
+    """Keep the already-imported order_tracking package in sync with parent Flask flags.
+
+    ``order_tracking.__init__`` imports the deployment flags at module import time.  An
+    overseas parent Flask (for example FlaskApp2025) intentionally enables cloud sharing
+    later, when it registers its external Render provider.  Mirror those runtime values
+    into the package globals so the admin share UI immediately reflects the provider that
+    is actually registered, without forcing China/local standalone ORDER deployments on.
+    """
+    package = sys.modules.get(__package__)
+    if package is None:
+        return
+    package.RENDER_PUBLIC_GUEST_ENABLED = bool(
+        app.config.get('TRACKING_RENDER_PUBLIC_GUEST_ENABLED', RENDER_PUBLIC_GUEST_ENABLED)
+    )
+    package.PERMANENT_PUBLIC_GUEST_ENABLED = bool(
+        app.config.get('TRACKING_PERMANENT_PUBLIC_GUEST_ENABLED', PERMANENT_PUBLIC_GUEST_ENABLED)
+    )
+    package.PUBLIC_SHARE_PROVIDER_READY = bool(
+        app.config.get('TRACKING_PUBLIC_SHARE_PROVIDER_READY', PUBLIC_SHARE_PROVIDER_READY)
+    )
 
 
 def register_public_share_provider(app, provider):
@@ -19,6 +47,7 @@ def register_public_share_provider(app, provider):
     if not secret or secret.startswith('your-secret-key-change-in-production'):
         raise RuntimeError('Public share provider requires a non-default Flask SECRET_KEY from the deployment secret store')
     app.extensions[_KEY] = provider
+    _sync_runtime_feature_flags(app)
 
 
 def get_public_share_provider():
