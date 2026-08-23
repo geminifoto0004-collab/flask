@@ -41,11 +41,14 @@ def _tool_name(item):
 
 def _select_admin_tools(prompt):
     text = str(prompt or "").lower()
-    wanted = set()
+    # These seven verbs are the small general-purpose story language. They stay
+    # available for every admin instruction so DeepSeek can compose scenes we
+    # never anticipated instead of falling back to an unrelated bespoke tool.
+    wanted = {"spawn_entity", "move_entity", "say", "give", "wait", "leave", "remove_entity"}
     if any(k in text for k in ("車", "车", "car", "auto", "coche", "聖誕", "圣诞", "christmas", "navidad", "章魚", "章鱼", "octopus", "pulpo", "海豹", "seal", "foca", "生成", "出現", "出现", "放一", "來一", "来一")):
         wanted.update({"world_object_spawn", "world_object_move", "world_object_remove", "sea_creature_spawn"})
-    if any(k in text for k in ("探班", "探望", "拜訪", "拜访", "帶晚餐", "带晚餐", "帶咖啡", "带咖啡", "visitor", "visit", "visita", "oscar")):
-        wanted.add("visitor_visit")
+    if any(k in text for k in ("探班", "探望", "拜訪", "拜访", "帶晚餐", "带晚餐", "帶咖啡", "带咖啡", "visitor", "visit", "visita", "oscar", "朋友", "客人", "外送")):
+        wanted.update({"agent_say", "agent_shift"})
     if any(k in text for k in ("下班", "回來上班", "回来上班", "上班", "off duty", "go home", "shift")):
         wanted.add("agent_shift")
     if any(k in text for k in ("聊天", "對話", "对话", "說", "说", "聊一下", "hablar", "chat")):
@@ -56,17 +59,17 @@ def _select_admin_tools(prompt):
         wanted.add("dog_visit")
     if any(k in text for k in ("植物", "花", "plant")):
         wanted.update({"plant_spawn", "agent_action"})
-    if any(k in text for k in ("mIa", "ana", "lia", "MIA", "ANA", "LIA")) or not wanted:
-        wanted.update({"agent_action", "agent_shift", "agent_say", "agent_chat", "visitor_visit", "world_object_spawn"})
+    if any(k in text for k in ("mia", "ana", "lia")):
+        wanted.update({"agent_action", "agent_shift", "agent_say", "agent_chat"})
     selected = [tool for tool in DIRECTOR_TOOLS if _tool_name(tool) in wanted]
-    return selected[:10] if selected else DIRECTOR_TOOLS[:10]
+    return selected[:16] if selected else DIRECTOR_TOOLS[:16]
 
 
 def _slim_world(world):
     source = world if isinstance(world, dict) else {}
     keep = (
         "worldMap", "agents", "onDutyAgents", "nightShiftAgent", "stats",
-        "worldObjects", "seaCreatures", "visitors", "characterProfiles",
+        "worldObjects", "genericEntities", "seaCreatures", "visitors", "characterProfiles",
         "recentDialogue", "dialoguePolicy", "furniture", "plants", "dogs",
     )
     return {key: source.get(key) for key in keep if key in source}
@@ -82,19 +85,26 @@ def _admin_model_command(prompt, world):
     system_prompt = """You are the privileged world director for CUSTOMS AGENT TOWN in Iquique, Chile.
 The administrator typed one direct instruction. Fulfil that instruction ONLY through the provided tools.
 Return tool calls immediately; do not narrate, explain, or invent unsupported actions.
-MIA, ANA and LIA are literal agent IDs.
+MIA, ANA and LIA are literal persistent officer IDs.
 
-WORLD CREATION:
-- Use world_object_spawn for visible objects and creatures without a dedicated tool.
-- Prefer preset=car for a car, preset=christmas_tree for a Christmas tree, preset=octopus for an octopus, preset=seal for a seal. Presets are polished shared pixel sprites and are preferred over drawing those common objects from scratch.
-- Cars belong on harbor_walkway and should normally drive_left/drive_right.
-- Octopus/seal belong in sea and should swim/bob/float as appropriate.
-- For uncommon objects, design safe rectangle parts yourself.
+GENERAL STORY ENGINE — IMPORTANT:
+- For a person/visitor/actor or any multi-step scene, prefer the generic verbs: spawn_entity -> move_entity -> say/give/wait -> leave/remove_entity.
+- spawn_entity creates a generic human, vehicle, animal, item or decoration. Give the entity a short stable id such as visitor-oscar and reuse exactly that id in later calls in the same response.
+- Compose several tool calls when the scene needs several actions. Do NOT ask for a bespoke function such as santa_visit or dinner_visit.
+- A human entering/leaving the office will be routed through the office door by the engine. Vehicles/animals/items should use physically sensible zones.
+- To hand something to somebody, move near the target first, then give.
+- If the named officer is absent/off duty, DO NOT magically materialize them. Read onDutyAgents/nightShiftAgent and adapt the story naturally: the visitor may ask the on-duty officer, leave the item with them, wait, or leave. Only use agent_shift if the administrator explicitly asked to bring that officer back to work.
 
-PEOPLE:
-- Use visitor_visit when a named person comes to visit an officer, optionally bringing dinner/coffee/flowers/a gift. The visitor automatically leaves after staySeconds.
-- Use agent_shift for on/off duty.
-- At night only the named nightShiftAgent is normally on duty. Do not invent office conversations with absent officers unless the administrator explicitly changes duty state.
+WORLD OBJECTS:
+- Use world_object_spawn for non-actor scenery/creatures that do not need a multi-step personal script.
+- Prefer preset=car for a simple background car, preset=christmas_tree for a Christmas tree, preset=octopus for an octopus, preset=seal for a seal.
+- Cars belong on harbor_walkway; octopus/seal belong in sea.
+- For uncommon scenery, design safe rectangle parts yourself.
+
+OFFICERS:
+- Use agent_shift for explicit on/off duty requests.
+- At night only nightShiftAgent is normally physically present. Never invent a two-officer conversation when only one officer is on duty.
+- A generic visitor may talk with the on-duty officer by using say for the visitor and agent_say for the officer.
 
 Never output JavaScript, SQL, shell commands, URLs, secrets, or executable code."""
     payload = {
@@ -109,8 +119,8 @@ Never output JavaScript, SQL, shell commands, URLs, secrets, or executable code.
         ],
         "tools": tools,
         "tool_choice": "required",
-        "temperature": 0.45,
-        "max_tokens": 900,
+        "temperature": 0.55,
+        "max_tokens": 1200,
     }
     response = requests.post(
         "https://api.deepseek.com/chat/completions",
@@ -205,6 +215,8 @@ def install_town_admin_runtime():
                 return jsonify({"ok": False, "error": "no_supported_action"}), 422
             if command_id:
                 for index, action in enumerate(actions):
+                    # Generic spawn_entity IDs are chosen by the model because
+                    # later tool calls in the same response must reference them.
                     if action.get("type") in {"world_object_spawn", "visitor_visit"}:
                         action["id"] = f"{command_id}-{index}"[:80]
             decision = {
