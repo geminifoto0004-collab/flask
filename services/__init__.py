@@ -8,9 +8,9 @@ from .user_service import create_user, verify_password, reset_password
 
 # ORDER public-share fast paths.
 #
-# The legacy cloud service is correct but some read paths use N+1 queries.  Large
+# The legacy cloud service is correct but some read paths use N+1 queries. Large
 # customers (dozens of orders, workflows and history rows) can therefore exceed the
-# Render request timeout.  Keep the storage schema/business behaviour unchanged and
+# Render request timeout. Keep the storage schema/business behaviour unchanged and
 # replace only the two expensive public-share read/create paths with bounded-query
 # implementations.
 from . import order_cloud_service as _order_cloud_service
@@ -21,7 +21,7 @@ def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, pe
     if not customer_key:
         raise ValueError('customer_key is required')
 
-    # Token creation only needs an existence check.  Do not load the full customer
+    # Token creation only needs an existence check. Do not load the full customer
     # space here; the public GET will load it when someone actually opens the URL.
     conn = _order_cloud_service.get_db_connection()
     cur = _order_cloud_service.get_cursor(conn)
@@ -76,8 +76,8 @@ def _fast_get_customer_space(customer_key):
     """Load one public customer space in a fixed number of SQL queries.
 
     Legacy get_customer_space() selected order numbers and then called get_order()
-    once per order; get_order() in turn queried history once per workflow.  A customer
-    with 42 orders could therefore produce hundreds of TiDB round-trips.  This version
+    once per order; get_order() in turn queried history once per workflow. A customer
+    with 42 orders could therefore produce hundreds of TiDB round-trips. This version
     fetches customer, orders, workflows and history in four indexed queries and groups
     rows in Python while preserving the original response shape.
     """
@@ -163,17 +163,13 @@ _order_cloud_service.create_live_share = _fast_create_live_share
 _order_cloud_service.get_customer_space = _fast_get_customer_space
 
 # Register the protected short-lived direct-B2 upload signer on b2_test_bp before
-# app.py registers that blueprint.  No B2 credential leaves Render.
+# app.py registers that blueprint. No B2 credential leaves Render.
 from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 
 # Intercept public ORDER share routes before the legacy handlers: persist each link's
 # scope, filter old/cancelled rows per token, serve cached thumbnails, and redirect
-# authorized original-image reads directly to short-lived private B2 URLs.
+# authorized WEB-image reads directly to short-lived private B2 URLs.
 from . import order_public_share_fast as _order_public_share_fast  # noqa: E402,F401
-
-# Register 480px thumbnail presigning, stale asset-row pruning, and make ORDER detail
-# views use the 2560px colour-managed web derivative instead of the gallery thumbnail.
-from . import order_cloud_web_variants as _order_cloud_web_variants  # noqa: E402,F401
 
 __all__ = [
     'send_verification_code',
