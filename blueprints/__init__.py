@@ -32,6 +32,7 @@ from .town_ai_sea_runtime import install_sea_runtime
 from .town_ai_shift_runtime import install_shift_runtime
 from .town_world_object_runtime import install_world_object_runtime
 from .town_generic_entity_runtime import install_generic_entity_runtime
+from .town_relationship_runtime import install_relationship_runtime
 from .town_generic_scene_runtime import install_generic_scene_runtime
 from .town_world_tidb_runtime import install_tidb_world_runtime
 from .town_dialogue_tidb_runtime import install_tidb_dialogue_runtime
@@ -70,6 +71,7 @@ install_sea_runtime()
 install_shift_runtime()
 install_world_object_runtime()
 install_generic_entity_runtime()
+install_relationship_runtime()
 install_generic_scene_runtime()
 install_tidb_world_runtime()
 install_tidb_dialogue_runtime()
