@@ -88,3 +88,8 @@ def order_cloud_asset_upload_thumb():
         return jsonify({'ok': False, 'error': str(exc)}), 400
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc), 'error_type': type(exc).__name__}), 500
+
+
+# Register the isolated, authenticated B2 diagnostic endpoint while this module is
+# already imported by services.__init__.py.  This does not alter production uploads.
+from . import order_b2_diagnostic as _order_b2_diagnostic  # noqa: E402,F401
