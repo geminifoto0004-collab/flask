@@ -1,13 +1,38 @@
-"""Public ORDER media routing for assets stored across multiple B2 backends.
+"""Public ORDER media routing across multiple B2 backends.
 
-This hook is registered before the legacy public-share hook. It intercepts only media
-URLs, authorizes them through the existing share-token logic, then generates a signed
-GET URL from the backend recorded in TiDB. No B2 HEAD request is performed.
+Authorization follows the canonical ownership relation cloud_orders.order_number ->
+customer_key, not the denormalized customer_key copied into cloud_assets.  No B2 HEAD
+request is performed.
 """
-from flask import redirect, request
+from flask import Response, redirect, request
 
 from blueprints.b2_test_bp import b2_test_bp
-from services.order_cloud_multi_b2 import presigned_get_for_asset
+from database import get_cursor, get_db_connection
+from services.order_cloud_multi_b2 import get_asset_multi, presigned_get_for_asset
+
+
+def _authorized_asset(token, asset_key):
+    from services.order_public_share_fast import _resolve_share, _error_response
+    share, state = _resolve_share(token)
+    if state != 'active':
+        return None, _error_response(state)
+
+    asset = get_asset_multi(asset_key)
+    if not asset:
+        return None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
+
+    conn = get_db_connection(); cur = get_cursor(conn)
+    try:
+        cur.execute(
+            """SELECT 1 FROM cloud_orders
+               WHERE order_number=? AND customer_key=? AND active=TRUE LIMIT 1""",
+            (asset.get('order_number'), share.get('customer_key')),
+        )
+        if not cur.fetchone():
+            return None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
+    finally:
+        conn.close()
+    return asset, None
 
 
 @b2_test_bp.before_app_request
@@ -19,12 +44,7 @@ def _multi_b2_public_media_interceptor():
     if len(parts) != 4 or parts[2] not in ('asset', 'thumb'):
         return None
 
-    # Imported lazily because order_public_share_fast is registered later during app
-    # startup. Reuse its token/customer authorization instead of duplicating policy.
-    from services.order_public_share_fast import _asset_for_share
-
-    token = parts[1]
-    _share, asset, error = _asset_for_share(token, parts[3])
+    asset, error = _authorized_asset(parts[1], parts[3])
     if error:
         return error
 
