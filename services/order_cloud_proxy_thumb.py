@@ -85,4 +85,5 @@ from . import order_cloud_direct_multi_b2 as _order_cloud_direct_multi_b2  # noq
 from . import order_cloud_sigv4_patch as _order_cloud_sigv4_patch  # noqa: E402,F401
 from . import order_cloud_direct_reuse_health as _order_cloud_direct_reuse_health  # noqa: E402,F401
 from . import order_cloud_backend_health as _order_cloud_backend_health  # noqa: E402,F401
+from . import order_cloud_wan_storage_summary as _order_cloud_wan_storage_summary  # noqa: E402,F401
 from . import order_share_live_refresh as _order_share_live_refresh  # noqa: E402,F401
