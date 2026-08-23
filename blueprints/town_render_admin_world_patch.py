@@ -2,8 +2,6 @@
 
 
 def patch_render_admin_world(html: str) -> str:
-    # Teach the known-good browser runtime one additional persistent capability
-    # without replacing its animation loop.
     html = html.replace(
         "  function isAgentOnDuty(a){return !isIquiqueNight()||a.index===nightShiftIndex()||!!a.task;}",
         "  function isAgentOnDuty(a){if(a?.manualOffDuty&&!a?.task)return false;return !isIquiqueNight()||a.index===nightShiftIndex()||!!a.task;}",
@@ -52,7 +50,7 @@ def patch_render_admin_world(html: str) -> str:
 #customs-sim #town-world-prompt{display:none;align-items:center;gap:6px;flex:1 1 360px;min-width:280px}
 #customs-sim.town-admin-mode #town-world-prompt{display:flex!important}
 #customs-sim #town-world-prompt-input{min-height:44px;flex:1 1 auto;min-width:220px;border:2px solid light-dark(#655d50,#3c4657);background:light-dark(#fffaf0,#202936);color:inherit;padding:8px 10px;font:inherit;box-sizing:border-box}
-#customs-sim #town-world-prompt-run{min-height:44px}
+#customs-sim #town-world-prompt-run{min-height:44px;min-width:110px}
 #customs-sim .game-wrap{position:relative}
 #town-sea-overlay{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);pointer-events:none;image-rendering:pixelated;image-rendering:crisp-edges;z-index:8;background:transparent!important}
 </style>
@@ -72,6 +70,7 @@ def patch_render_admin_world(html: str) -> str:
     if(!box)return;
     const d=document.createElement('div');d.textContent='> '+msg;box.appendChild(d);box.scrollTop=box.scrollHeight;
   }
+  function setStatus(text){const el=app.querySelector('#statusText');if(el)el.textContent=text;}
   function setAdmin(enabled){
     app.classList.toggle('town-admin-mode',!!enabled);
     const btn=document.getElementById('town-admin-btn');
@@ -87,7 +86,7 @@ def patch_render_admin_world(html: str) -> str:
   let promptWrap=document.getElementById('town-world-prompt');
   if(!promptWrap){
     promptWrap=document.createElement('label');promptWrap.id='town-world-prompt';promptWrap.className='town-admin-created';
-    promptWrap.innerHTML='<span>AI 指令</span><input id="town-world-prompt-input" type="text" maxlength="180" placeholder="例如：在海上生成一隻海豹、讓 MIA 下班"><button id="town-world-prompt-run" type="button">✨ 執行</button>';
+    promptWrap.innerHTML='<span>AI 指令</span><input id="town-world-prompt-input" type="text" maxlength="180" placeholder="例如：道路來一台車、Oscar 帶晚餐來探 MIA"><button id="town-world-prompt-run" type="button">✨ 執行</button>';
     const aiBtn=app.querySelector('#aiTestBtn');
     if(aiBtn&&aiBtn.parentNode===controls)aiBtn.insertAdjacentElement('afterend',promptWrap);else controls.appendChild(promptWrap);
   }
@@ -113,21 +112,49 @@ def patch_render_admin_world(html: str) -> str:
     }catch(err){setAdmin(false);log('管理員登入失敗：'+String(err&&err.message||err));}
   });
 
+  let commandBusy=false;
   async function runWorldPrompt(){
-    if(!app.classList.contains('town-admin-mode'))return;
+    if(!app.classList.contains('town-admin-mode')||commandBusy)return;
     const input=document.getElementById('town-world-prompt-input');
     const btn=document.getElementById('town-world-prompt-run');
     const prompt=String(input&&input.value||'').trim();if(!prompt)return;
-    if(btn)btn.disabled=true;
+    commandBusy=true;
+    const commandId='cmd-'+Date.now()+'-'+Math.floor(Math.random()*1000000);
+    const oldText=btn?btn.textContent:'✨ 執行';
+    const started=Date.now();
+    const controller=new AbortController();
+    let timer=null;
+    if(btn){btn.disabled=true;btn.textContent='⏳ 0s · 已送出';}
+    setStatus('AI 已收到指令 · 正在理解');
+    log('AI 已收到指令：'+prompt+'（已送出，不必重按）');
+    timer=setInterval(()=>{
+      const sec=Math.floor((Date.now()-started)/1000);
+      if(btn)btn.textContent='⏳ '+sec+'s · 已送出';
+      setStatus(sec<3?'AI 已收到指令 · 正在理解':'AI 正在轉成世界動作 · '+sec+' 秒');
+    },1000);
+    const hardTimer=setTimeout(()=>controller.abort(),15000);
     try{
-      const worldResp=await fetch('/api/town/world',{headers:{Accept:'application/json'}}).then(r=>r.ok?r.json():({})).catch(()=>({}));
-      const r=await fetch('/api/town/admin/command',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({prompt,world:worldResp.world||{}})});
+      const r=await fetch('/api/town/admin/command',{method:'POST',credentials:'include',signal:controller.signal,headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({prompt,command_id:commandId})});
       const data=await r.json().catch(()=>({}));
       if(!r.ok||!data.ok)throw new Error(data.error||('HTTP '+r.status));
-      if(input)input.value='';log('AI 指令已送入共同世界：'+prompt);
-      setTimeout(refreshWorld,300);
-    }catch(err){log('AI 指令失敗：'+String(err&&err.message||err));}
-    finally{if(btn)btn.disabled=false;}
+      if(btn)btn.textContent='✅ 已收到 · 同步中';
+      setStatus('AI 已回覆 · 正在顯示到共同世界');
+      const actions=Array.isArray(data.actions)?data.actions:[];
+      if(actions.length)log('AI 真正下令：'+actions.map(a=>String(a.type||'動作')+(a.name?' '+a.name:'')+(a.target?' → '+a.target:'')).join('；'));
+      if(data.duplicate)log('這個 command_id 已執行過，本次沒有重複建立物件');
+      if(input)input.value='';
+      await refreshWorld();
+      setTimeout(refreshWorld,350);
+      setTimeout(refreshWorld,1100);
+      setStatus('AI 指令已完成');
+    }catch(err){
+      const timedOut=err&&err.name==='AbortError';
+      log(timedOut?'AI 指令超過 15 秒，已停止等待；按鈕已恢復':'AI 指令失敗：'+String(err&&err.message||err));
+      setStatus(timedOut?'AI 等待超時，可再試一次':'AI 指令失敗');
+    }finally{
+      clearTimeout(hardTimer);if(timer)clearInterval(timer);commandBusy=false;
+      if(btn){btn.disabled=false;btn.textContent=oldText||'✨ 執行';}
+    }
   }
   const runBtn=document.getElementById('town-world-prompt-run');
   const promptInput=document.getElementById('town-world-prompt-input');
@@ -146,29 +173,20 @@ def patch_render_admin_world(html: str) -> str:
     const x=Math.max(70,Math.min(570,Number(c.x)||320));
     const y=Math.max(326,Math.min(374,Number(c.y)||350))+Math.sin(phase)*2;
     const hx=x+dir*11;
-    px(x-12,y-3,24,8,'#738488');
-    px(x-9,y-6,18,4,'#819196');
-    px(hx-(dir<0?8:0),y-7,8,8,'#89999d');
-    px(hx+dir*5-(dir<0?3:0),y-4,5,4,'#a5b2b4');
-    px(hx+dir*3-(dir<0?2:0),y-6,2,2,'#172126');
-    px(hx+dir*8-(dir<0?2:0),y-3,2,2,'#263237');
-    px(x-dir*13-(dir<0?7:0),y-1,7,4,'#5d6c70');
-    px(x-7,y+4,7,4,'#627276');px(x+2,y+4,7,4,'#627276');
+    px(x-12,y-3,24,8,'#738488');px(x-9,y-6,18,4,'#819196');px(hx-(dir<0?8:0),y-7,8,8,'#89999d');px(hx+dir*5-(dir<0?3:0),y-4,5,4,'#a5b2b4');px(hx+dir*3-(dir<0?2:0),y-6,2,2,'#172126');px(hx+dir*8-(dir<0?2:0),y-3,2,2,'#263237');px(x-dir*13-(dir<0?7:0),y-1,7,4,'#5d6c70');px(x-7,y+4,7,4,'#627276');px(x+2,y+4,7,4,'#627276');
     if(oc){oc.strokeStyle='rgba(230,245,246,.72)';oc.lineWidth=1;for(let i=-1;i<=1;i++){oc.beginPath();oc.moveTo(hx+dir*7,y-1+i*2);oc.lineTo(hx+dir*13,y-3+i*3);oc.stroke();}}
     px(x-16,y+8,32,2,'rgba(220,245,250,.6)');
   }
-  function seaFrame(now){
-    if(oc){oc.clearRect(0,0,640,400);seaCreatures.forEach(c=>drawSeal(c,now));}
-    requestAnimationFrame(seaFrame);
-  }
+  function seaFrame(now){if(oc){oc.clearRect(0,0,640,400);seaCreatures.forEach(c=>drawSeal(c,now));}requestAnimationFrame(seaFrame);}
   requestAnimationFrame(seaFrame);
 
   async function refreshWorld(){
     try{
-      const r=await fetch('/api/town/world',{headers:{Accept:'application/json'}});if(!r.ok)return;
+      const r=await fetch('/api/town/world',{headers:{Accept:'application/json'}});if(!r.ok)return false;
       const data=await r.json();
       seaCreatures=Array.isArray(data&&data.world&&data.world.seaCreatures)?data.world.seaCreatures.filter(c=>String(c&&c.kind||'').toLowerCase()==='seal').slice(-12):[];
-    }catch(_){}
+      return true;
+    }catch(_){return false;}
   }
   adminStatus();refreshWorld();setInterval(refreshWorld,3000);
 })();
