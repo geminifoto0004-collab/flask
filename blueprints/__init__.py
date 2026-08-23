@@ -1,34 +1,40 @@
 # ========== blueprints/__init__.py ==========
 """
-Blueprints 包初始化
+Blueprints package bootstrap.
 
-主 Render 只載入正式系統需要的共用 Blueprint。
-AI 小鎮模組仍保留在 repository，之後可由獨立 Render 入口載入，
-但這個主服務不再 import、install 或 register 任何 town runtime。
+The main Render keeps its existing lightweight shared blueprints and does not
+load AI-town runtimes. A future dedicated town_app.py sets
+TOWN_STANDALONE_SERVICE=1 before importing this package, which skips unrelated
+main-service blueprints entirely.
 """
 
 import os as _os
 import sys as _sys
 
-# Render must never run the full schema bootstrap inside a user's first HTTP
-# request. app.py imports init_database before importing this package, so replace
-# only app.py's bound reference while the app module is still being imported.
-# The real database.init_database function remains available for explicit
-# maintenance/migration jobs; normal web requests go straight to their routes.
-if _os.environ.get('RENDER') or _os.environ.get('RENDER_SERVICE_NAME'):
-    _app_module = _sys.modules.get('app')
-    if _app_module is not None and hasattr(_app_module, 'init_database'):
-        def _skip_render_request_database_init():
-            return None
-        _app_module.init_database = _skip_render_request_database_init
-        print('✅ Render request-time database bootstrap disabled')
+_TOWN_STANDALONE = str(_os.environ.get('TOWN_STANDALONE_SERVICE') or '').strip().lower() in {
+    '1', 'true', 'yes', 'on', 'y'
+}
 
-from .user_auth_bp import user_auth_bp
-from .b2_test_bp import b2_test_bp
+if not _TOWN_STANDALONE:
+    # Main Render must never run the full schema bootstrap inside a user's first
+    # HTTP request. app.py imports init_database before importing this package,
+    # so replace only app.py's bound reference while the app module is importing.
+    if _os.environ.get('RENDER') or _os.environ.get('RENDER_SERVICE_NAME'):
+        _app_module = _sys.modules.get('app')
+        if _app_module is not None and hasattr(_app_module, 'init_database'):
+            def _skip_render_request_database_init():
+                return None
+            _app_module.init_database = _skip_render_request_database_init
+            print('✅ Render request-time database bootstrap disabled')
 
-# AI town is intentionally NOT imported here.
-# Keeping the town source files in blueprints/ lets a future dedicated Render
-# service import and register them from its own lightweight town_app.py entry.
-print('✅ AI town disabled on main Render service')
+    from .user_auth_bp import user_auth_bp
+    from .b2_test_bp import b2_test_bp
 
-__all__ = ['user_auth_bp', 'b2_test_bp']
+    # AI town is intentionally NOT imported on the main Render service.
+    print('✅ AI town disabled on main Render service')
+    __all__ = ['user_auth_bp', 'b2_test_bp']
+else:
+    # Dedicated AI-town service: importing blueprints.* must not drag in ORDER,
+    # crawler/B2 helpers, auth pages or other main-service modules.
+    print('✅ Standalone AI town blueprint mode')
+    __all__ = []
