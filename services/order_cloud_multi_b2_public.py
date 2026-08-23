@@ -1,10 +1,8 @@
 """Token-authorized ORDER image redirects for multiple private B2 backends.
 
 Formal read path:
-Browser -> Render (token/ownership check only) -> 302 signed B2 URL -> Browser reads B2.
-Render never downloads or returns image bytes.  The stable public path is
-/share/<token>/image/<asset_key>.  Legacy /asset and /thumb paths remain aliases during
-rollout and point to the same single cloud object.
+Browser -> Render (single TiDB authorization query) -> 302 signed B2 URL -> B2.
+Render never downloads or returns image bytes.
 """
 from __future__ import annotations
 
@@ -73,7 +71,7 @@ def _parse_expiry(value):
 
 
 def _authorized_asset(token, asset_key):
-    """Resolve token and canonical order ownership in one TiDB connection."""
+    """Authorize token + canonical asset ownership in ONE indexed TiDB query."""
     token = str(token or '').strip()
     asset_key = str(asset_key or '').strip().lower()
     if not token or len(asset_key) != 64:
@@ -84,33 +82,39 @@ def _authorized_asset(token, asset_key):
     cur = get_cursor(conn)
     try:
         cur.execute(
-            """SELECT customer_key, status, expires_at
-               FROM cloud_share_tokens WHERE token_hash=? LIMIT 1""",
-            (token_hash,),
+            """SELECT s.status AS share_status, s.expires_at AS share_expires_at,
+                      a.asset_key, a.order_number, a.workflow_key, a.sha256,
+                      a.object_key, a.content_type, a.file_size, a.storage_backend
+               FROM cloud_share_tokens s
+               INNER JOIN cloud_assets a ON a.asset_key=? AND a.active=TRUE
+               INNER JOIN cloud_orders o ON o.order_number=a.order_number
+                                         AND o.customer_key=s.customer_key
+                                         AND o.active=TRUE
+               WHERE s.token_hash=?
+               LIMIT 1""",
+            (asset_key, token_hash),
         )
         row = cur.fetchone()
-        share = get_row_dict(row, cur) if row else None
-        if not share:
-            return None, Response('Enlace no encontrado.', 404, mimetype='text/plain')
-        if str(share.get('status') or '') != 'active':
+        data = get_row_dict(row, cur) if row else None
+        if not data:
+            return None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
+        if str(data.get('share_status') or '') != 'active':
             return None, Response('Este enlace ya no está disponible.', 410, mimetype='text/plain')
-        expiry = _parse_expiry(share.get('expires_at'))
+        expiry = _parse_expiry(data.get('share_expires_at'))
         if expiry and datetime.utcnow() >= expiry:
             return None, Response('Este enlace ha expirado.', 410, mimetype='text/plain')
 
-        cur.execute(
-            """SELECT a.asset_key, a.order_number, a.workflow_key, a.sha256,
-                      a.object_key, a.content_type, a.file_size, a.storage_backend
-               FROM cloud_assets a
-               INNER JOIN cloud_orders o ON o.order_number=a.order_number
-               WHERE a.asset_key=? AND a.active=TRUE
-                 AND o.customer_key=? AND o.active=TRUE
-               LIMIT 1""",
-            (asset_key, share.get('customer_key')),
-        )
-        row = cur.fetchone()
-        asset = get_row_dict(row, cur) if row else None
-        if not asset or not asset.get('object_key'):
+        asset = {
+            'asset_key': data.get('asset_key'),
+            'order_number': data.get('order_number'),
+            'workflow_key': data.get('workflow_key'),
+            'sha256': data.get('sha256'),
+            'object_key': data.get('object_key'),
+            'content_type': data.get('content_type'),
+            'file_size': data.get('file_size'),
+            'storage_backend': data.get('storage_backend'),
+        }
+        if not asset.get('object_key'):
             return None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
         return asset, None
     finally:
@@ -148,15 +152,14 @@ def _multi_b2_public_media_interceptor():
     try:
         url, backend = _signed_get(asset, seconds=600)
         resp = redirect(url, code=302)
-        resp.headers['Cache-Control'] = 'no-store, max-age=0'
-        resp.headers['Pragma'] = 'no-cache'
-        resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-single-image-sigv4'
+        resp.headers['Cache-Control'] = 'private, max-age=60'
+        resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-one-tidb-query-sigv4'
         resp.headers['X-Order-Storage-Backend'] = backend
         if parts[2] != 'image':
             resp.headers['X-Order-Legacy-Media-Alias'] = parts[2]
         return resp
     except Exception as exc:
         resp = Response('Imagen temporalmente no disponible.', 503, mimetype='text/plain')
-        resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-single-image-sigv4'
+        resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-one-tidb-query-sigv4'
         resp.headers['X-Order-Media-Error'] = type(exc).__name__
         return resp
