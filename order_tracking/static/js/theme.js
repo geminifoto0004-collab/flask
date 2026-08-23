@@ -3,6 +3,24 @@
 
     const STORAGE_KEY = 'orderTrackingThemeMode';
     const root = document.documentElement;
+    const themeScriptSrc = (document.currentScript && document.currentScript.src) ? document.currentScript.src : '';
+
+    function loadShareQueueUiPatch() {
+        if (!themeScriptSrc || document.querySelector('[data-share-queue-ui-patch]')) return;
+        try {
+            const jsUrl = new URL('share_queue_ui_patch.js', themeScriptSrc);
+            const cssUrl = new URL('../css/share_queue_ui_patch.css', themeScriptSrc);
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = cssUrl.toString();
+            link.dataset.shareQueueUiPatch = 'css';
+            document.head.appendChild(link);
+            const script = document.createElement('script');
+            script.src = jsUrl.toString();
+            script.dataset.shareQueueUiPatch = 'js';
+            document.body.appendChild(script);
+        } catch (_) {}
+    }
 
     function preferredTheme(mode) {
         if (mode === 'dark' || mode === 'light') return mode;
@@ -50,6 +68,10 @@
         const theme = preferredTheme(normalized);
         const token = ++switchToken;
 
+        // Theme changes used to inherit the many `transition: all ...` rules in the
+        // desktop dashboard. Rapid clicking could therefore leave different areas
+        // visually half-way between light and dark for a short time. Apply the root
+        // state atomically with transitions suspended, then re-enable them next frame.
         root.classList.add('theme-switching');
         root.dataset.themeMode = normalized;
         root.dataset.theme = theme;
@@ -59,6 +81,7 @@
         }
         updateButtons(theme);
 
+        // Force style resolution while .theme-switching is still active.
         try { void root.offsetWidth; } catch (_) {}
         requestAnimationFrame(() => requestAnimationFrame(() => {
             if (token === switchToken) root.classList.remove('theme-switching');
@@ -85,7 +108,10 @@
     } catch (_) {}
 
     document.addEventListener('DOMContentLoaded', function () {
+        // Re-apply once DOM/CSS are ready. This also repairs pages restored from
+        // browser cache where the DOM may carry an older theme state.
         applyMode(readMode(), false);
+        loadShareQueueUiPatch();
     });
 
     window.addEventListener('pageshow', function () {
@@ -96,44 +122,3 @@
         if (event.key === STORAGE_KEY) applyMode(readMode(), false);
     });
 })();
-
-/* Local ORDER hotfix retained while TiDB backend stays on the cloud branch. */
-document.addEventListener('DOMContentLoaded', function () {
-    if (typeof homeCardFocusRender !== 'function') return;
-    window.homeCardFocusRender = function () {
-        const state = homeCardFocusState;
-        const el = homeCardFocusEls();
-        if (!state || !el) return;
-        const data = state.workflowData || {};
-        const order = state.order || {};
-        const statusKey = String(data.current_status || order.current_status || '').trim();
-        const statusText = statusKey && typeof displayStatus === 'function' ? displayStatus(statusKey) : (statusKey || '尚无流程');
-        el.orderNumber.textContent = state.workflowNumber || state.orderNumber || '—';
-        el.customer.textContent = String(data.customer_name || order.customer_name || '—');
-        el.status.textContent = statusText;
-        el.adminNote.textContent = String(data.order_notes || order.order_notes || '').trim() || '暂无备注';
-        el.salesNote.textContent = String(data.workflow_notes || data.notes || order.notes || '').trim() || '暂无备注';
-        const rootCustomer = String(data.customer_name || order.customer_name || '').trim();
-        if (el.share) el.share.hidden = !(rootCustomer && document.getElementById('desktopGuestShareDrawer') && typeof desktopGuestIsAdmin === 'function' && desktopGuestIsAdmin());
-
-        ['admin', 'sales'].forEach(type => {
-            const note = type === 'admin' ? el.adminNote : el.salesNote;
-            const box = note?.closest('.home-card-focus-note-box');
-            const isEditing = !!box?.classList.contains('is-editing');
-            const btn = el.root.querySelector(`[data-focus-note-edit="${type}"]`);
-            if (isEditing) {
-                if (btn) btn.hidden = true;
-                return;
-            }
-            if (btn) btn.hidden = !homeCardFocusCanEditNote(type);
-            const editor = el.root.querySelector(`[data-focus-note-editor="${type}"]`);
-            if (editor) editor.hidden = true;
-            if (note) note.hidden = false;
-        });
-        homeCardFocusRenderWorkflows();
-        homeCardFocusRenderMeta();
-        homeCardFocusRenderTimeline();
-        homeCardFocusRenderActions();
-        homeCardFocusShowMedia(Math.min(state.mediaIndex || 0, Math.max(0, (state.media || []).length - 1)), {instant: true});
-    };
-});
