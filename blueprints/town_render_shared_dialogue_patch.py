@@ -72,7 +72,7 @@ def patch_render_shared_dialogue(html: str) -> str:
     pendingById.set(id,payload);
     fetch('/api/town/dialogues',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({dialogue:payload})})
       .then(r=>r.ok?r.json():Promise.reject(new Error('dialogue save failed')))
-      .then(()=>{pendingById.delete(id);setTimeout(refreshSharedHistory,80);})
+      .then(()=>{pendingById.delete(id);setTimeout(refreshSharedHistory,50);})
       .catch(()=>{alreadyPosted.delete(id);});
   }
 
@@ -82,9 +82,8 @@ def patch_render_shared_dialogue(html: str) -> str:
       get(target,prop,receiver){
         if(prop==='push')return (...items)=>{
           const result=Array.prototype.push.apply(target,items);
-          // Current viewer sees the dialogue immediately. TiDB persistence happens
-          // in parallel and must never gate the visible chat panel.
-          requestAnimationFrame(renderNow);
+          // Render first, persist second. The current viewer never waits for TiDB.
+          renderNow();
           items.forEach(postDialogue);
           return result;
         };
@@ -103,7 +102,7 @@ def patch_render_shared_dialogue(html: str) -> str:
         if(value===proxy)return;
         backing=Array.isArray(value)?value:[];
         proxy=wrapArray(backing);
-        requestAnimationFrame(renderNow);
+        renderNow();
       }
     });
   }catch(_e){ }
@@ -124,8 +123,6 @@ def patch_render_shared_dialogue(html: str) -> str:
           text:chat.text||''
         }));
         const ids=new Set(shared.map(dialogueId));
-        // Never erase a just-spoken local conversation while its POST is still
-        // travelling to TiDB. Merge it until the shared copy becomes visible.
         pendingById.forEach((chat,id)=>{if(!ids.has(id))shared.push(chat);});
         shared.sort((a,b)=>Number(a.at||0)-Number(b.at||0));
         window.__townDialogueHistory=shared.slice(-12);
@@ -137,9 +134,8 @@ def patch_render_shared_dialogue(html: str) -> str:
 
   moveLanguageControls();
   refreshSharedHistory();
-  // Other viewers receive shared dialogue within about 3 seconds. The speaker's
-  // own browser still updates instantly and does not wait for this timer.
-  setInterval(refreshSharedHistory,3000);
+  // Other viewers follow the shared conversation within about one second.
+  setInterval(refreshSharedHistory,1000);
   setTimeout(moveLanguageControls,150);
 })();
 </script>
