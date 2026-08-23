@@ -14,7 +14,7 @@ from database import execute_sql, get_db_connection
 from . import town_ai_bp as _base
 
 _MAP_KEY = "iquique-customs-v1"
-_MAP_VERSION = 1
+_MAP_VERSION = 2
 _SCHEMA_READY = False
 _SCHEMA_RETRY_AT = 0.0
 
@@ -29,15 +29,17 @@ CANONICAL_WORLD_MAP = {
         "sea_creatures_only_in": "seal_spawn",
         "ships_only_in": "ship_lane",
         "furniture_only_in": "office",
+        "generic_world_object_zones": ["office", "harbor_walkway", "pier", "sea"],
+        "generic_world_object_renderer": "validated rectangle blueprints only; no arbitrary code",
     },
     "zones": [
-        {"id": "office", "type": "walkable", "x": 42, "y": 64, "w": 556, "h": 198, "allows": ["agent", "dog", "plant", "furniture"]},
-        {"id": "south_wall_left", "type": "wall", "x": 34, "y": 262, "w": 220, "h": 12, "blocks": ["agent", "dog", "furniture"]},
-        {"id": "south_wall_right", "type": "wall", "x": 386, "y": 262, "w": 220, "h": 12, "blocks": ["agent", "dog", "furniture"]},
+        {"id": "office", "type": "walkable", "x": 42, "y": 64, "w": 556, "h": 198, "allows": ["agent", "dog", "plant", "furniture", "world_object"]},
+        {"id": "south_wall_left", "type": "wall", "x": 34, "y": 262, "w": 220, "h": 12, "blocks": ["agent", "dog", "furniture", "world_object"]},
+        {"id": "south_wall_right", "type": "wall", "x": 386, "y": 262, "w": 220, "h": 12, "blocks": ["agent", "dog", "furniture", "world_object"]},
         {"id": "office_door", "type": "door", "x": 254, "y": 262, "w": 132, "h": 18, "allows": ["agent", "dog"]},
-        {"id": "harbor_walkway", "type": "road", "x": 40, "y": 276, "w": 560, "h": 28, "allows": ["agent", "dog"]},
-        {"id": "pier", "type": "pier", "x": 282, "y": 300, "w": 76, "h": 18, "allows": ["agent", "dog"]},
-        {"id": "sea", "type": "water", "x": 12, "y": 312, "w": 616, "h": 76, "allows": ["ship", "sea_creature"]},
+        {"id": "harbor_walkway", "type": "road", "x": 40, "y": 276, "w": 560, "h": 28, "allows": ["agent", "dog", "world_object"]},
+        {"id": "pier", "type": "pier", "x": 282, "y": 300, "w": 76, "h": 18, "allows": ["agent", "dog", "world_object"]},
+        {"id": "sea", "type": "water", "x": 12, "y": 312, "w": 616, "h": 76, "allows": ["ship", "sea_creature", "world_object"]},
         {"id": "seal_spawn", "type": "spawn_zone", "parent": "sea", "x": 70, "y": 326, "w": 500, "h": 48, "allows": ["seal"]},
         {"id": "ship_lane", "type": "ship_lane", "parent": "sea", "x": 360, "y": 318, "w": 260, "h": 60, "allows": ["ship"]},
         {"id": "fishing_left", "type": "fishing_spot", "x": 286, "y": 292, "w": 1, "h": 1, "allows": ["agent"]},
