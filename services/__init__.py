@@ -166,6 +166,11 @@ _order_cloud_service.get_customer_space = _fast_get_customer_space
 # app.py registers that blueprint. No B2 credential leaves Render.
 from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 
+# Stable production fallback: upload the small 480px thumbnail through Render to B2.
+# This keeps customer sharing functional even when an office network cannot PUT a
+# presigned B2 URL directly.
+from . import order_cloud_proxy_thumb as _order_cloud_proxy_thumb  # noqa: E402,F401
+
 # Intercept public ORDER share routes before the legacy handlers: persist each link's
 # scope, filter old/cancelled rows per token, serve cached thumbnails, and redirect
 # authorized WEB-image reads directly to short-lived private B2 URLs.
