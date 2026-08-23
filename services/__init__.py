@@ -176,14 +176,18 @@ from . import order_cloud_proxy_thumb as _order_cloud_proxy_thumb  # noqa: E402,
 # authorized WEB-image reads directly to short-lived private B2 URLs.
 from . import order_public_share_fast as _order_public_share_fast  # noqa: E402,F401
 
-# Keep the chunked full-mirror finalize HTTP request short.  Expensive old-table cleanup
+# Keep the chunked full-mirror finalize HTTP request short. Expensive old-table cleanup
 # is deliberately deferred so Render/Gunicorn does not terminate finalize with an empty 502.
 from . import order_full_mirror_finalize_fast as _order_full_mirror_finalize_fast  # noqa: E402,F401
 
-# Persistent TiDB customer-share snapshots are installed last so they can wrap the
-# already-registered ORDER sync/image writers and replace only the page-data loader.
-# Existing live links are prewarmed in a daemon thread after Render starts.
+# Persistent TiDB customer-share snapshots move ORDER/asset assembly away from the
+# customer's GET request and rebuild after ORDER/image writes.
 from . import order_customer_share_snapshot as _order_customer_share_snapshot  # noqa: E402,F401
+
+# Prewarm active token hashes + persisted snapshots in Render memory. Normal customer
+# first opens can therefore validate the token and render without a TiDB round trip;
+# the persistent one-row loader remains the safe fallback.
+from . import order_customer_share_hot_cache as _order_customer_share_hot_cache  # noqa: E402,F401
 
 __all__ = [
     'send_verification_code',
