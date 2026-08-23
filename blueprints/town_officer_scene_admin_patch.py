@@ -1,6 +1,39 @@
 """Small admin integration for generic existing-officer scenes."""
 
+import requests as _real_requests
+
 from . import town_admin_runtime as _admin
+
+
+class _AdminRequestsProxy:
+    """Keep admin DeepSeek reads alive past the old 12 second cap.
+
+    This changes only town_admin_runtime's local requests reference; other app
+    HTTP calls keep their existing timeouts. The read cap stays below a typical
+    Gunicorn worker timeout so one slow model call cannot block forever.
+    """
+
+    Timeout = _real_requests.Timeout
+
+    def __getattr__(self, name):
+        return getattr(_real_requests, name)
+
+    def post(self, *args, **kwargs):
+        timeout = kwargs.get("timeout")
+        if isinstance(timeout, tuple) and len(timeout) == 2:
+            connect_timeout, read_timeout = timeout
+            try:
+                if float(read_timeout) < 24:
+                    kwargs["timeout"] = (connect_timeout, 24)
+            except Exception:
+                kwargs["timeout"] = (connect_timeout, 24)
+        elif timeout is not None:
+            try:
+                if float(timeout) < 24:
+                    kwargs["timeout"] = 24
+            except Exception:
+                kwargs["timeout"] = 24
+        return _real_requests.post(*args, **kwargs)
 
 
 def install_officer_scene_admin_patch():
@@ -27,3 +60,4 @@ def install_officer_scene_admin_patch():
 
     _admin._scene_metadata = scene_metadata
     _admin._slim_world = slim_world
+    _admin.requests = _AdminRequestsProxy()
