@@ -10,9 +10,12 @@ from __future__ import annotations
 
 from datetime import datetime
 import hashlib
+import re
 import threading
+from urllib.parse import urlparse
 
 import boto3
+from botocore.config import Config
 from flask import Response, redirect, request
 
 from blueprints.b2_test_bp import b2_test_bp
@@ -24,21 +27,36 @@ _CLIENTS = {}
 _CLIENTS_LOCK = threading.Lock()
 
 
+def _region_from_endpoint(endpoint):
+    host = str(urlparse(str(endpoint or '')).hostname or '').lower()
+    match = re.search(r'(?:^|\.)s3\.([^.]+)\.backblazeb2\.com$', host)
+    if match:
+        return match.group(1)
+    return 'us-east-1'
+
+
 def _cached_client(backend):
+    """Return a cached Backblaze S3 client that is forced to AWS SigV4."""
     backend = str(backend or PRIMARY).strip().lower()
     if backend not in _ALLOWED_BACKENDS:
         backend = PRIMARY
     cfg = config_for_backend(backend, required=True)
+    cache_key = (backend, cfg['endpoint'], cfg['key_id'])
     with _CLIENTS_LOCK:
-        client = _CLIENTS.get(backend)
+        client = _CLIENTS.get(cache_key)
         if client is None:
             client = boto3.client(
                 's3',
                 endpoint_url=cfg['endpoint'],
                 aws_access_key_id=cfg['key_id'],
                 aws_secret_access_key=cfg['application_key'],
+                region_name=_region_from_endpoint(cfg['endpoint']),
+                config=Config(
+                    signature_version='s3v4',
+                    s3={'addressing_style': 'path'},
+                ),
             )
-            _CLIENTS[backend] = client
+            _CLIENTS[cache_key] = client
         return client, cfg
 
 
@@ -109,6 +127,8 @@ def _signed_get(asset, seconds=600):
         Params={'Bucket': cfg['bucket_name'], 'Key': asset['object_key']},
         ExpiresIn=int(seconds),
     )
+    if 'X-Amz-Algorithm=AWS4-HMAC-SHA256' not in str(url):
+        raise RuntimeError('public B2 GET presigned URL is not AWS Signature V4')
     return url, backend
 
 
@@ -128,16 +148,14 @@ def _multi_b2_public_media_interceptor():
     try:
         url, backend = _signed_get(asset, seconds=600)
         resp = redirect(url, code=302)
-        # Cache the authorization redirect briefly. The signed B2 URL itself expires
-        # quickly, so revoking a share does not grant long-lived future access.
         resp.headers['Cache-Control'] = 'private, max-age=300'
-        resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-single-image'
+        resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-single-image-sigv4'
         resp.headers['X-Order-Storage-Backend'] = backend
         if parts[2] != 'image':
             resp.headers['X-Order-Legacy-Media-Alias'] = parts[2]
         return resp
     except Exception as exc:
         resp = Response('Imagen temporalmente no disponible.', 503, mimetype='text/plain')
-        resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-single-image'
+        resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-single-image-sigv4'
         resp.headers['X-Order-Media-Error'] = type(exc).__name__
         return resp
