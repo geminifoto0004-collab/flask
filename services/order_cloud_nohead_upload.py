@@ -1,29 +1,13 @@
-"""Protected ORDER image upload that does not consume B2 Class-B HEAD calls.
-
-The office sends the already-normalized WEB JPEG to Render. Render validates the
-content hash, PUTs it directly to the deterministic SHA-256 object key, then upserts
-safe TiDB metadata. Re-PUTting the same SHA key is intentionally idempotent.
-"""
+"""Protected ORDER image upload with multi-B2 failover and no Class-B HEAD calls."""
 from __future__ import annotations
 
 import hashlib
 
 from flask import jsonify, request
 
-from blueprints.b2_test_bp import (
-    b2_test_bp,
-    _ensure_order_cloud_tables,
-    _order_cloud_auth_source,
-)
-from services.order_cloud_asset_service import (
-    MAX_IMAGE_BYTES,
-    _b2_client,
-    _b2_config,
-    _object_key,
-    _upsert_asset_metadata,
-    _validate_content_type,
-    _validate_sha256,
-)
+from blueprints.b2_test_bp import b2_test_bp, _ensure_order_cloud_tables, _order_cloud_auth_source
+from services.order_cloud_asset_service import MAX_IMAGE_BYTES, _object_key, _validate_content_type, _validate_sha256
+from services.order_cloud_multi_b2 import put_with_failover, upsert_asset_metadata_multi
 
 
 @b2_test_bp.route('/api/order-cloud/assets/upload-nohead', methods=['POST'])
@@ -33,7 +17,6 @@ def order_cloud_asset_upload_nohead():
         return auth_error
     try:
         _ensure_order_cloud_tables()
-
         order_number = str(request.form.get('order_number') or '').strip()
         workflow_key = str(request.form.get('workflow_key') or '').strip() or None
         expected_sha = _validate_sha256(request.form.get('sha256'))
@@ -43,7 +26,6 @@ def order_cloud_asset_upload_nohead():
         image = request.files.get('file')
         if image is None:
             return jsonify({'ok': False, 'error': "multipart field 'file' is required"}), 400
-
         content_type = _validate_content_type(image.mimetype)
         data = image.read(MAX_IMAGE_BYTES + 1)
         if not data:
@@ -56,22 +38,14 @@ def order_cloud_asset_upload_nohead():
             return jsonify({'ok': False, 'error': 'client sha256 does not match uploaded bytes'}), 400
 
         object_key = _object_key(actual_sha, content_type)
-        cfg = _b2_config()
-        s3 = _b2_client(cfg)
-
-        # Deliberately NO head_object here. The SHA-derived key is deterministic and
-        # PUT is safe to repeat. This avoids exhausting Backblaze Class-B caps during
-        # bulk customer-share publication.
-        s3.put_object(
-            Bucket=cfg['bucket_name'],
-            Key=object_key,
-            Body=data,
-            ContentType=content_type,
-            CacheControl='private, max-age=2592000',
-            Metadata={'sha256': actual_sha},
+        backend = put_with_failover(
+            object_key,
+            data,
+            content_type,
+            metadata={'sha256': actual_sha},
+            cache_control='private, max-age=2592000',
         )
-
-        result = _upsert_asset_metadata(
+        result = upsert_asset_metadata_multi(
             order_number,
             workflow_key,
             actual_sha,
@@ -79,10 +53,11 @@ def order_cloud_asset_upload_nohead():
             content_type,
             len(data),
             source_site=source_site,
+            storage_backend=backend,
         )
         result['uploaded_to_b2'] = True
         result['deduplicated'] = False
-        result['upload_mode'] = 'render_proxy_nohead'
+        result['upload_mode'] = 'render_proxy_nohead_multi_b2'
         result['b2_head_calls'] = 0
         return jsonify({'ok': True, 'result': result})
     except ValueError as exc:
