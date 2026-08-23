@@ -180,6 +180,11 @@ from . import order_public_share_fast as _order_public_share_fast  # noqa: E402,
 # is deliberately deferred so Render/Gunicorn does not terminate finalize with an empty 502.
 from . import order_full_mirror_finalize_fast as _order_full_mirror_finalize_fast  # noqa: E402,F401
 
+# Persistent TiDB customer-share snapshots are installed last so they can wrap the
+# already-registered ORDER sync/image writers and replace only the page-data loader.
+# Existing live links are prewarmed in a daemon thread after Render starts.
+from . import order_customer_share_snapshot as _order_customer_share_snapshot  # noqa: E402,F401
+
 __all__ = [
     'send_verification_code',
     'verify_code',
