@@ -166,6 +166,11 @@ _order_cloud_service.get_customer_space = _fast_get_customer_space
 # app.py registers that blueprint.  No B2 credential leaves Render.
 from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 
+# Intercept public ORDER share routes before the legacy handlers: persist each link's
+# scope, filter old/cancelled rows per token, serve cached thumbnails, and redirect
+# authorized original-image reads directly to short-lived private B2 URLs.
+from . import order_public_share_fast as _order_public_share_fast  # noqa: E402,F401
+
 __all__ = [
     'send_verification_code',
     'verify_code',
