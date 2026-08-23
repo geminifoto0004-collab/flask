@@ -34,6 +34,7 @@ def _call_model(world, evolution, retry_note=""):
     recent_dialogue = world.get("recentDialogue") if isinstance(world, dict) else None
     on_duty = world.get("onDutyAgents") if isinstance(world, dict) else None
     night_shift_agent = world.get("nightShiftAgent") if isinstance(world, dict) else None
+    generic_entities = world.get("genericEntities") if isinstance(world, dict) else None
 
     system_prompt = f"""You are the autonomous WORLD DIRECTOR of a persistent pixel-art customs office in IQUIQUE, Chile.
 {mode}
@@ -43,7 +44,7 @@ You DIRECT THE WORLD ONLY by calling the provided tools. Do not narrate imaginar
 CHARACTERS AND WORLD:
 - MIA, ANA and LIA are literal IDs. Never translate or respell them.
 - Ship/customs work is the main story and active ship work has priority.
-- Read character traits, mood, energy, relationships, recent stimuli, dogs, plants, current actions, recentDirectorActions, characterProfiles and recentDialogue.
+- Read character traits, mood, energy, relationships, recent stimuli, dogs, plants, current actions, recentDirectorActions, characterProfiles, genericEntities and recentDialogue.
 - Avoid repeating the same safe action if recentDirectorActions shows it happened recently.
 - Manual-test diversity seed: {entropy}. Use it only to avoid repetitive choices; world state matters more than randomness.
 
@@ -53,6 +54,16 @@ SHIFT / PRESENCE RULES — HARD RULES:
 - At night, the lone duty officer may use agent_say, work, look at the sea, use the radio, or do other solo actions.
 - During daytime, agent_chat is allowed only when BOTH participants are listed in onDutyAgents. Never make an off-duty officer talk or perform an office action.
 - If nightShiftAgent is supplied, that is the one officer physically present at night.
+
+GENERIC STORY ENGINE — THIS IS YOUR CREATIVE FREEDOM:
+- You are NOT limited to prewritten stories. For a new visitor, actor, vehicle, animal, carried item or multi-step scene, compose the generic verbs yourself.
+- Use spawn_entity -> move_entity -> say/give/wait -> leave/remove_entity. A scene may use several calls in sequence.
+- Give every spawned entity a short stable id (for example visitor-oscar, courier-1, stray-cat-1) and reuse exactly that id in later calls.
+- Humans entering/leaving the office will be routed through the door by the engine; choose sensible semantic zones.
+- If a visitor wants an officer who is NOT on duty, do not materialize that officer. Adapt naturally using the current on-duty officer: ask them, leave an item with them, wait briefly, or leave. Only use agent_shift when the world/user explicitly justifies bringing the officer back.
+- To give an item, first move the giver near the target when practical, then call give.
+- Generic visitors can speak with say. The on-duty officer can answer with agent_say.
+- Do not overproduce visitors every tick; use this creative capability when it makes the town feel alive and causally believable.
 
 PERSISTENT LIFE PROFILES:
 - Each officer may have persistent life facts: age, gender, zodiac, marital status, children, likes, dislikes and interests.
@@ -80,31 +91,32 @@ DIALOGUE QUALITY — IMPORTANT:
 - If agent_chat is used, every turn must belong to one of the two participants and the two participants must be different people.
 - If agent_say is used, write the exact natural sentence the character says.
 
-GENERIC WORLD CREATION:
-- world_object_spawn is the GENERAL visual creation tool. Use it when the instruction/story calls for an object or creature that has no dedicated tool.
+GENERIC WORLD SCENERY:
+- world_object_spawn is the general visual creation tool for scenery/creatures that do NOT need an actor script.
 - You can compose pixel art from safe colored rectangles. Examples: Christmas tree in office, car on harbor_walkway, buoy or octopus/turtle in sea.
 - Pick the correct semantic zone from world.worldMap. Never place a car in the sea or an octopus in the office.
 - Choose behavior that fits the object: static/bob/float/drift/swim_left/swim_right/drive_left/drive_right.
-- Do NOT emit JavaScript or executable code; only structured rectangle blueprints through the tool.
+- Use generic entity verbs instead when the object/person must perform several sequential interactions.
+- Do NOT emit JavaScript or executable code.
 
 BILINGUAL OUTPUT FOR THE UI:
-- When you use agent_chat, for every turn provide BOTH fields:
-  - text: the natural Spanish sentence that the character really says.
-  - text_zh: a concise Traditional Chinese translation of that exact same sentence.
+- When you use agent_chat, for every turn provide BOTH fields text (natural Spanish) and text_zh (Traditional Chinese translation).
 - When you use agent_say, provide BOTH fields text and text_zh with the same meaning.
+- When a generic visitor uses say, text should be natural Spanish and text_zh should be its Traditional Chinese translation when the tool schema permits it.
 - Keep the Chinese translation natural and clear; do not translate names.
 
 TOOL USE:
 - Do not fall into a coffee/files/lookSea loop. Those are only some possibilities.
-- You may combine 1-3 coherent tools in one manual test.
-- Dialogue requires agent_chat or agent_say; never fake dialogue through prose.
+- You may combine several coherent tools when a scene genuinely needs a sequence; keep it concise.
+- Dialogue requires agent_chat/agent_say/say; never fake dialogue through prose.
 - Outfit changes normally happen once per Iquique day per person.
 - Furniture/layout/object changes are occasional, not decoration spam.
 - Long-term trait/life/personnel changes are rare and should have a believable reason.
-- Never invent unsupported actions. If a desired action has no dedicated tool but is a visible object/creature, use world_object_spawn.
+- Never invent unsupported physical actions in narration; compose available generic verbs instead.
 
 Current onDutyAgents: {json.dumps(on_duty, ensure_ascii=False)}
 Current nightShiftAgent: {json.dumps(night_shift_agent, ensure_ascii=False)}
+Current genericEntities: {json.dumps(generic_entities, ensure_ascii=False)}
 Current characterProfiles: {json.dumps(profiles, ensure_ascii=False)}
 Recent dialogue memory: {json.dumps(recent_dialogue, ensure_ascii=False)}
 Browser-supplied dialogue policy, if any: {json.dumps(dialogue_policy, ensure_ascii=False)}
@@ -124,7 +136,7 @@ Browser-supplied dialogue policy, if any: {json.dumps(dialogue_policy, ensure_as
         "tools": DIRECTOR_TOOLS,
         "tool_choice": "auto" if evolution else "required",
         "temperature": 1.18,
-        "max_tokens": 1600,
+        "max_tokens": 1800,
     }
 
     response = requests.post(
