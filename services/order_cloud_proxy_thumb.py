@@ -75,6 +75,7 @@ def order_cloud_asset_upload_thumb():
 # Register additive protected/public extensions while this module is imported by
 # services.__init__.py. The public media hook is registered before the legacy share hook.
 from . import order_b2_diagnostic as _order_b2_diagnostic  # noqa: E402,F401
+from . import order_b2_classb_probe as _order_b2_classb_probe  # noqa: E402,F401
 from . import order_cloud_multi_b2 as _order_cloud_multi_b2  # noqa: E402,F401
 from . import order_cloud_multi_b2_public as _order_cloud_multi_b2_public  # noqa: E402,F401
 from . import order_cloud_nohead_upload as _order_cloud_nohead_upload  # noqa: E402,F401
