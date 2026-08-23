@@ -17,6 +17,9 @@ Thumbs.db
 config.local.py
 secrets.py
 
+# Local Flask ORDER cloud client secret must never be committed.
+**/order_cloud_secret.py
+
 # SMTP 失敗緩存（避免提交到 Git）
 .smtp_failed_cache
 
