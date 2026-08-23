@@ -1,5 +1,7 @@
 """Ground user-visible town AI narration in validated executable commands."""
 
+from datetime import datetime
+
 from .town_ai_language_runtime import _call_model
 
 
@@ -55,6 +57,16 @@ def _action_summary(action):
     return kind or "未知指令"
 
 
+def _rotating_night_agent(context):
+    try:
+        local_time = str((context or {}).get("local_time") or "")
+        dt = datetime.fromisoformat(local_time)
+        index = abs(dt.year * 372 + dt.month * 31 + dt.day) % 3
+        return ["MIA", "ANA", "LIA"][index]
+    except Exception:
+        return ""
+
+
 def _on_duty_agents(world, context):
     world = world if isinstance(world, dict) else {}
     named = world.get("onDutyAgents")
@@ -73,12 +85,9 @@ def _on_duty_agents(world, context):
     hour = int((context or {}).get("hour") or 0)
     if hour >= 20 or hour < 7:
         night_agent = str(world.get("nightShiftAgent") or "").upper()
-        if night_agent in {"MIA", "ANA", "LIA"}:
-            return {night_agent}
-        # At night the visual town has exactly one duty officer. If an older
-        # browser did not send the duty identity, be conservative: never invent
-        # a two-person office conversation.
-        return set()
+        if night_agent not in {"MIA", "ANA", "LIA"}:
+            night_agent = _rotating_night_agent(context)
+        return {night_agent} if night_agent else set()
     result = set()
     for a in agents:
         if not isinstance(a, dict) or bool(a.get("manualOffDuty")):
@@ -103,9 +112,7 @@ def _filter_duty_actions(actions, world, context):
                 continue
         elif kind in {"agent_action", "agent_say"}:
             agent = str(action.get("agent") or "").upper()
-            if duty and agent not in duty:
-                continue
-            if night and not duty:
+            if agent not in duty:
                 continue
         filtered.append(action)
     return filtered
