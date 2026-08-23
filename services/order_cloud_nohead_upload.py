@@ -65,6 +65,7 @@ def order_cloud_asset_upload_nohead():
         result['uploaded_to_b2'] = True
         result['deduplicated'] = False
         result['upload_mode'] = 'render_proxy_auto_b2_nohead'
+        result['b2_head_calls'] = 0
         result['b2_head_calls_per_image'] = 0
         result['backend_selection'] = {
             'selected': selection.get('selected'),
