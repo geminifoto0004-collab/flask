@@ -1,12 +1,7 @@
 """Small Render-proxy thumbnail upload for ORDER customer sharing.
 
-The stable production upload path remains office PC -> Render -> private B2.  The
-2560px WEB image continues to use the existing authenticated /assets/upload route.
-This module adds only the small 480px thumbnail companion so public share pages do
-not need to generate thumbnails on first view.
-
-No B2 credential leaves Render.  Thumbnail objects are content companions keyed by
-the registered WEB image SHA and have no separate cloud_assets row.
+The thumbnail is written to the same B2 backend recorded for its WEB image. No HEAD
+preflight is used, so bulk publishing does not consume Backblaze Class-B transactions.
 """
 from __future__ import annotations
 
@@ -14,13 +9,10 @@ import hashlib
 
 from flask import jsonify, request
 
-from blueprints.b2_test_bp import (
-    b2_test_bp,
-    _ensure_order_cloud_tables,
-    _order_cloud_auth_source,
-)
-from services.order_cloud_asset_service import _b2_client, _b2_config, _validate_sha256
+from blueprints.b2_test_bp import b2_test_bp, _ensure_order_cloud_tables, _order_cloud_auth_source
+from services.order_cloud_asset_service import _validate_sha256
 from services.order_cloud_direct_b2 import _thumb_object_key
+from services.order_cloud_multi_b2 import put_to_backend, storage_backend_for_sha
 
 MAX_THUMB_BYTES = 3 * 1024 * 1024
 
@@ -52,19 +44,15 @@ def order_cloud_asset_upload_thumb():
         if expected_sha and actual_sha != expected_sha:
             return jsonify({'ok': False, 'error': 'thumbnail sha256 does not match uploaded bytes'}), 400
 
-        cfg = _b2_config()
-        s3 = _b2_client(cfg)
+        backend = storage_backend_for_sha(asset_sha256)
         object_key = _thumb_object_key(asset_sha256)
-
-        # Deliberately do not HEAD before upload. The thumbnail key is deterministic
-        # and re-PUT is safe, while HEAD consumes Backblaze Class-B transactions.
-        s3.put_object(
-            Bucket=cfg['bucket_name'],
-            Key=object_key,
-            Body=data,
-            ContentType='image/jpeg',
-            CacheControl='private, max-age=2592000',
-            Metadata={'sha256': actual_sha, 'asset-sha256': asset_sha256},
+        put_to_backend(
+            backend,
+            object_key,
+            data,
+            'image/jpeg',
+            metadata={'sha256': actual_sha, 'asset-sha256': asset_sha256},
+            cache_control='private, max-age=2592000',
         )
 
         return jsonify({'ok': True, 'result': {
@@ -74,7 +62,8 @@ def order_cloud_asset_upload_thumb():
             'file_size': len(data),
             'uploaded_to_b2': True,
             'deduplicated': False,
-            'upload_mode': 'render_proxy_thumb_nohead',
+            'upload_mode': 'render_proxy_thumb_nohead_multi_b2',
+            'storage_backend': backend,
             'b2_head_calls': 0,
         }})
     except ValueError as exc:
@@ -83,7 +72,7 @@ def order_cloud_asset_upload_thumb():
         return jsonify({'ok': False, 'error': str(exc), 'error_type': type(exc).__name__}), 500
 
 
-# Register isolated protected extensions while this module is already imported by
-# services.__init__.py. They do not expose B2 credentials.
+# Register additive protected extensions while this module is imported by services.__init__.
 from . import order_b2_diagnostic as _order_b2_diagnostic  # noqa: E402,F401
+from . import order_cloud_multi_b2 as _order_cloud_multi_b2  # noqa: E402,F401
 from . import order_cloud_nohead_upload as _order_cloud_nohead_upload  # noqa: E402,F401
