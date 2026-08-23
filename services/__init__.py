@@ -115,7 +115,6 @@ def _fast_get_customer_space(customer_key):
         for order in orders:
             order['workflows'] = []
 
-        # Join through cloud_orders so this remains one query regardless of order count.
         cur.execute(
             """SELECT w.workflow_key, w.workflow_number, w.order_number, w.workflow_type,
                       w.status, w.production_type, w.product_name, w.product_code,
@@ -162,6 +161,10 @@ def _fast_get_customer_space(customer_key):
 
 _order_cloud_service.create_live_share = _fast_create_live_share
 _order_cloud_service.get_customer_space = _fast_get_customer_space
+
+# Register the protected short-lived direct-B2 upload signer on b2_test_bp before
+# app.py registers that blueprint.  No B2 credential leaves Render.
+from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 
 __all__ = [
     'send_verification_code',
