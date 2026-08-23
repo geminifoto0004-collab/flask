@@ -82,4 +82,5 @@ from . import order_cloud_multi_b2_public as _order_cloud_multi_b2_public  # noq
 from . import order_public_share_multi_b2_page as _order_public_share_multi_b2_page  # noqa: E402,F401
 from . import order_cloud_nohead_upload as _order_cloud_nohead_upload  # noqa: E402,F401
 from . import order_cloud_direct_multi_b2 as _order_cloud_direct_multi_b2  # noqa: E402,F401
+from . import order_cloud_direct_reuse_health as _order_cloud_direct_reuse_health  # noqa: E402,F401
 from . import order_share_live_refresh as _order_share_live_refresh  # noqa: E402,F401
