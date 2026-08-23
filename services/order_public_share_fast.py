@@ -1,12 +1,14 @@
 """Fast/scoped ORDER public-share layer.
 
-This module is imported before b2_test_bp is registered.  It uses a blueprint-wide
-before_app_request hook to intercept only the ORDER public-share endpoints that need
-scope persistence and fast media delivery, leaving the legacy routes as a fallback.
+This module is imported before b2_test_bp is registered. It intercepts the ORDER
+public-share endpoints and keeps hot public reads away from repeated schema checks
+and repeated TiDB token/asset lookups.
 """
 from datetime import datetime
 from io import BytesIO
 import hashlib
+import threading
+import time
 
 from flask import Response, jsonify, redirect, render_template, request
 from PIL import Image, ImageOps
@@ -20,6 +22,39 @@ from database import check_column_exists, get_cursor, get_db_connection, get_row
 
 _SCOPE_RANK = {'current': 0, '6m': 1, '12m': 2, 'all': 3}
 
+# Public-share hot-path cache.  Share/order data changes comparatively rarely but a
+# customer page can request hundreds of images in a short burst.  Keep token and
+# customer-space lookups in-process briefly so those requests do not each cross the
+# Render <-> TiDB network.
+_SHARE_CACHE_TTL = 60.0
+_SPACE_CACHE_TTL = 30.0
+_ASSET_CACHE_TTL = 120.0
+_cache_lock = threading.RLock()
+_share_cache = {}
+_space_cache = {}
+_asset_cache = {}
+_share_columns_ready = False
+_share_columns_lock = threading.Lock()
+
+
+def _cache_get(cache, key):
+    now = time.monotonic()
+    with _cache_lock:
+        item = cache.get(key)
+        if not item:
+            return None
+        expires_at, value = item
+        if expires_at <= now:
+            cache.pop(key, None)
+            return None
+        return value
+
+
+def _cache_put(cache, key, value, ttl):
+    with _cache_lock:
+        cache[key] = (time.monotonic() + float(ttl), value)
+    return value
+
 
 def _scope(value):
     value = str(value or 'current').strip().lower()
@@ -29,32 +64,47 @@ def _scope(value):
 
 
 def _ensure_share_columns():
-    conn = get_db_connection(); cur = get_cursor(conn)
-    try:
-        if not check_column_exists(cur, 'cloud_share_tokens', 'history_scope'):
-            cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN history_scope VARCHAR(16) NULL")
-        if not check_column_exists(cur, 'cloud_share_tokens', 'include_cancelled'):
-            cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN include_cancelled BOOLEAN NOT NULL DEFAULT FALSE")
-        conn.commit()
-    except Exception:
-        conn.rollback(); raise
-    finally:
-        conn.close()
+    """Run the idempotent migration once per Render process, never per request."""
+    global _share_columns_ready
+    if _share_columns_ready:
+        return
+    with _share_columns_lock:
+        if _share_columns_ready:
+            return
+        conn = get_db_connection(); cur = get_cursor(conn)
+        try:
+            if not check_column_exists(cur, 'cloud_share_tokens', 'history_scope'):
+                cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN history_scope VARCHAR(16) NULL")
+            if not check_column_exists(cur, 'cloud_share_tokens', 'include_cancelled'):
+                cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN include_cancelled BOOLEAN NOT NULL DEFAULT FALSE")
+            conn.commit()
+            _share_columns_ready = True
+        except Exception:
+            conn.rollback(); raise
+        finally:
+            conn.close()
 
 
 def _resolve_share(token):
     token = str(token or '').strip()
     if not token:
         return None, 'not_found'
+
+    cached = _cache_get(_share_cache, token)
+    if cached is not None:
+        share, state = cached
+        return dict(share) if share else None, state
+
     _ensure_share_columns()
     token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute("""SELECT token_hash, customer_key, mode, status, source_site, created_at,
                               expires_at, history_scope, include_cancelled
-                       FROM cloud_share_tokens WHERE token_hash=?""", (token_hash,))
+                       FROM cloud_share_tokens WHERE token_hash=? LIMIT 1""", (token_hash,))
         row = cur.fetchone()
         if not row:
+            _cache_put(_share_cache, token, (None, 'not_found'), 10.0)
             return None, 'not_found'
         share = get_row_dict(row, cur) or {}
     finally:
@@ -62,14 +112,17 @@ def _resolve_share(token):
     share['history_scope'] = _scope(share.get('history_scope') or 'current')
     share['include_cancelled'] = bool(share.get('include_cancelled'))
     if str(share.get('status') or '') != 'active':
-        return share, 'revoked'
-    expiry = share.get('expires_at')
-    if isinstance(expiry, str):
-        try: expiry = datetime.fromisoformat(expiry.replace('Z', '+00:00')).replace(tzinfo=None)
-        except Exception: expiry = None
-    if expiry and datetime.utcnow() >= expiry:
-        return share, 'expired'
-    return share, 'active'
+        state = 'revoked'
+    else:
+        state = 'active'
+        expiry = share.get('expires_at')
+        if isinstance(expiry, str):
+            try: expiry = datetime.fromisoformat(expiry.replace('Z', '+00:00')).replace(tzinfo=None)
+            except Exception: expiry = None
+        if expiry and datetime.utcnow() >= expiry:
+            state = 'expired'
+    _cache_put(_share_cache, token, (dict(share), state), _SHARE_CACHE_TTL)
+    return share, state
 
 
 def _error_response(state):
@@ -122,14 +175,40 @@ def _filter_space(space, share):
     return space
 
 
+def _load_customer_space(customer_key):
+    """Cache the fully asset-attached customer payload for a short period."""
+    customer_key = str(customer_key or '').strip()
+    cached = _cache_get(_space_cache, customer_key)
+    if cached is not None:
+        # JSON round-trip is unnecessary; caller only filters workflow lists for render.
+        # Re-fetch shallow container copies below to avoid mutating cached top-level data.
+        import copy
+        return copy.deepcopy(cached)
+
+    from services.order_cloud_service import get_customer_space
+    from services.order_cloud_asset_service import attach_assets_to_space
+    space = get_customer_space(customer_key)
+    if not space:
+        return None
+    attach_assets_to_space(space)
+    _cache_put(_space_cache, customer_key, space, _SPACE_CACHE_TTL)
+    import copy
+    return copy.deepcopy(space)
+
+
 def _asset_for_share(token, asset_key):
-    from services.order_cloud_asset_service import get_asset
     share, state = _resolve_share(token)
     if state != 'active': return None, None, _error_response(state)
-    asset = get_asset(asset_key)
+
+    asset = _cache_get(_asset_cache, asset_key)
+    if asset is None:
+        from services.order_cloud_asset_service import get_asset
+        asset = get_asset(asset_key)
+        if asset:
+            _cache_put(_asset_cache, asset_key, dict(asset), _ASSET_CACHE_TTL)
     if not asset or asset.get('customer_key') != share.get('customer_key'):
         return share, None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
-    return share, asset, None
+    return share, dict(asset), None
 
 
 def _presigned_get(asset, seconds=900):
@@ -212,7 +291,10 @@ def _prune_customer_scope():
             cur.execute('DELETE FROM cloud_workflow_history WHERE order_number=?', (number,))
             cur.execute('DELETE FROM cloud_workflows WHERE order_number=?', (number,))
             cur.execute('DELETE FROM cloud_orders WHERE order_number=? AND customer_key=?', (number, customer))
-        conn.commit(); return jsonify({'ok':True,'pruned':True,'deleted_orders':len(stale)})
+        conn.commit()
+        with _cache_lock:
+            _space_cache.pop(customer, None)
+        return jsonify({'ok':True,'pruned':True,'deleted_orders':len(stale)})
     except Exception as exc:
         conn.rollback(); return jsonify({'ok':False,'error':str(exc)}), 500
     finally: conn.close()
@@ -233,28 +315,28 @@ def _order_public_share_fast_interceptor():
     try:
         if len(parts) == 2 and request.method == 'GET':
             _ensure_order_cloud_tables()
-            from services.order_cloud_service import get_customer_space
-            from services.order_cloud_asset_service import attach_assets_to_space
             share, state = _resolve_share(token)
             if state != 'active': return _error_response(state)
-            space = get_customer_space(share.get('customer_key'))
+            space = _load_customer_space(share.get('customer_key'))
             if not space: return Response('No hay información disponible.', 404, mimetype='text/plain')
-            attach_assets_to_space(space); _filter_space(space, share)
+            _filter_space(space, share)
             html = render_template('customer_share_live_fast.html', space=space, share=share, share_token=token)
-            # Gallery cards stay on 480px thumbnails. Inside one order, load only the
-            # current/adjacent 2560px WEB assets. The same WEB URL is then reused by the
-            # full-screen viewer; no original-size cloud object is needed by new clients.
             html = html.replace('img.src=img.dataset.thumb;', 'img.src=img.dataset.full;')
             html = html.replace('Las fotos grandes se cargan solo al abrirlas', 'Miniaturas rápidas · alta calidad al abrir')
-            return Response(html, mimetype='text/html')
-        if len(parts) == 4 and parts[2] == 'asset' and request.method == 'GET':
+            resp = Response(html, mimetype='text/html')
+            resp.headers['Cache-Control'] = 'private, max-age=15'
+            return resp
+        if len(parts) == 4 and parts[2] in {'asset', 'image'} and request.method == 'GET':
             _share, asset, error = _asset_for_share(token, parts[3])
             if error: return error
-            resp = redirect(_presigned_get(asset), code=302); resp.headers['Cache-Control']='private, max-age=300'; return resp
+            resp = redirect(_presigned_get(asset), code=302)
+            resp.headers['Cache-Control']='private, max-age=300'
+            return resp
         if len(parts) == 4 and parts[2] == 'thumb' and request.method == 'GET':
             _share, asset, error = _asset_for_share(token, parts[3])
             if error: return error
             return _thumb_redirect(asset)
-    except Exception:
+    except Exception as exc:
+        print(f'[WARN] ORDER public-share fast path failed: {exc}')
         return Response('Servicio temporalmente no disponible.', 503, mimetype='text/plain')
     return None
