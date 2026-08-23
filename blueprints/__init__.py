@@ -3,6 +3,22 @@
 Blueprints 包初始化
 """
 
+import os as _os
+import sys as _sys
+
+# Render must never run the full schema bootstrap inside a user's first HTTP
+# request. app.py imports init_database before importing this package, so replace
+# only app.py's bound reference while the app module is still being imported.
+# The real database.init_database function remains available for explicit
+# maintenance/migration jobs; normal web requests go straight to their routes.
+if _os.environ.get('RENDER') or _os.environ.get('RENDER_SERVICE_NAME'):
+    _app_module = _sys.modules.get('app')
+    if _app_module is not None and hasattr(_app_module, 'init_database'):
+        def _skip_render_request_database_init():
+            return None
+        _app_module.init_database = _skip_render_request_database_init
+        print('✅ Render request-time database bootstrap disabled')
+
 from .user_auth_bp import user_auth_bp
 from .b2_test_bp import b2_test_bp
 from . import town_ai_bp as _town_ai_module
