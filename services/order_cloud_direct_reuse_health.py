@@ -1,12 +1,8 @@
 """Health-aware reuse guard for ORDER direct B2 uploads.
 
-A TiDB cloud_assets row is reusable only while the B2 backend that stores it is
-currently readable. If that backend is Class-B blocked/unavailable, do not return the
-old object as a reuse hit; instead issue a new direct PUT URL on the currently readable
-backend and let direct-register move the TiDB pointer after the PC upload succeeds.
-
-This keeps dual-B2 failover real without performing one HEAD per image: backend health
-comes from the cached multi-B2 probe layer.
+Adds one important recovery control: the office uploader may send ``avoid_backend``
+after repeated direct-PUT failures. Render then signs the other readable B2 backend
+without proxying any image bytes.
 """
 from __future__ import annotations
 
@@ -21,12 +17,31 @@ from services import order_cloud_direct_multi_b2 as direct
 _ALLOWED = {PRIMARY, SECONDARY}
 
 
+def _selection_avoiding(avoid_backend):
+    avoid_backend = str(avoid_backend or '').strip().lower()
+    if avoid_backend not in _ALLOWED:
+        return select_readable_backend(force_probe=False)
+
+    wanted = SECONDARY if avoid_backend == PRIMARY else PRIMARY
+    wanted_health = probe_backend_class_b(wanted, force=False)
+    avoided_health = probe_backend_class_b(avoid_backend, force=False)
+    if wanted_health.get('class_b_ok'):
+        selection = {'selected': wanted, 'primary': None, 'secondary': None, 'avoided': avoid_backend}
+        selection['primary'] = wanted_health if wanted == PRIMARY else avoided_health
+        selection['secondary'] = wanted_health if wanted == SECONDARY else avoided_health
+        return wanted, selection
+    raise RuntimeError(
+        f'alternate B2 backend is not readable after avoiding {avoid_backend}: '
+        f'{wanted}={wanted_health.get("status")} HTTP={wanted_health.get("http_status")}'
+    )
+
+
 @b2_test_bp.before_app_request
 def _health_aware_direct_presign():
     if request.method != 'POST' or request.path != '/api/order-cloud/assets/direct-presign':
         return None
 
-    source_site, auth_error = _order_cloud_auth_source()
+    _source_site, auth_error = _order_cloud_auth_source()
     if auth_error:
         return auth_error
 
@@ -41,8 +56,11 @@ def _health_aware_direct_presign():
         content_type = _validate_content_type(payload.get('content_type'))
         order_number = str(payload.get('order_number') or '').strip()
         workflow_key = str(payload.get('workflow_key') or '').strip() or None
+        avoid_backend = str(payload.get('avoid_backend') or '').strip().lower()
+        if avoid_backend not in _ALLOWED:
+            avoid_backend = ''
         if not order_number:
-            return None  # keep compatibility path handled by the original route
+            return None
 
         try:
             file_size = int(payload.get('file_size') or 0)
@@ -56,7 +74,12 @@ def _health_aware_direct_presign():
         existing_health = None
         if existing:
             existing_backend = str(existing.get('storage_backend') or PRIMARY).strip().lower()
-            if existing_backend in _ALLOWED and backend_ready(existing_backend) and existing.get('object_key'):
+            if (
+                existing_backend in _ALLOWED
+                and existing_backend != avoid_backend
+                and backend_ready(existing_backend)
+                and existing.get('object_key')
+            ):
                 existing_health = probe_backend_class_b(existing_backend, force=False)
                 if existing_health.get('class_b_ok'):
                     return jsonify({'ok': True, 'result': {
@@ -77,16 +100,14 @@ def _health_aware_direct_presign():
                             'selected': existing_backend,
                             'existing_backend_status': existing_health.get('status'),
                             'existing_backend_cached': existing_health.get('cached'),
+                            'avoided_backend': avoid_backend or None,
                         },
                     }})
 
-        # Existing metadata is missing or points to an unreadable backend. Upload the
-        # same logical image to whichever backend is readable now, then direct-register
-        # updates this asset row to the new backend/object location.
         object_key = direct._scoped_object_key(
             customer_key, order_number, workflow_key, sha256_hex, content_type
         )
-        backend, selection = select_readable_backend(force_probe=False)
+        backend, selection = _selection_avoiding(avoid_backend)
         upload_url = direct._presigned_put(backend, object_key, content_type, seconds=600)
         result = {
             'exists': False,
@@ -110,6 +131,7 @@ def _health_aware_direct_presign():
                 'secondary_status': (selection.get('secondary') or {}).get('status') if selection.get('secondary') else None,
                 'secondary_cached': (selection.get('secondary') or {}).get('cached') if selection.get('secondary') else None,
                 'existing_backend_status': (existing_health or {}).get('status'),
+                'avoided_backend': avoid_backend or None,
             },
         }
         return jsonify({'ok': True, 'result': result})
