@@ -2,6 +2,15 @@
 
 
 def patch_render_admin_action_feedback(html: str) -> str:
+    # The main town script keeps applyAiTownActions inside its own IIFE. Expose a
+    # tiny safe bridge before that IIFE closes so the later Render admin overlay
+    # can dispatch transient actions without duplicating the whole engine.
+    html = html.replace(
+        "  bootWorld();\n})();",
+        "  window.__townApplyAiTownActions=applyAiTownActions;\n  bootWorld();\n})();",
+        1,
+    )
+
     html = html.replace(
         "promptWrap.innerHTML='<span>AI 指令</span><input id=\"town-world-prompt-input\" type=\"text\" maxlength=\"180\" placeholder=\"例如：道路來一台車、Oscar 帶晚餐來探 MIA\"><button id=\"town-world-prompt-run\" type=\"button\">✨ 執行</button>';",
         "promptWrap.innerHTML='<span>AI 劇情</span><input id=\"town-world-prompt-input\" type=\"text\" maxlength=\"300\" placeholder=\"告訴 AI 核心劇情；沒指定的細節讓它自己導演\"><button id=\"town-world-prompt-run\" type=\"button\">✨ 執行</button>';",
@@ -17,7 +26,10 @@ def patch_render_admin_action_feedback(html: str) -> str:
     new = """      if(data.thought)log('AI 導演改編：'+String(data.thought).slice(0,300));
       if(actions.length){
         log('AI 真正執行：'+actions.map(a=>String(a.type||'動作')+(a.agent?' '+a.agent:'')+(a.name?' '+a.name:'')+(a.action?' · '+a.action:'')+(a.target?' → '+a.target:'')+(a.group?' · '+a.group:'')).join('；'));
-        try{if(typeof applyAiTownActions==='function')applyAiTownActions(actions);}catch(err){log('AI 即時動作顯示失敗：'+String(err&&err.message||err));}
+        try{
+          if(typeof window.__townApplyAiTownActions==='function')window.__townApplyAiTownActions(actions);
+          else log('AI 即時動作橋接尚未就緒，等待共同世界同步');
+        }catch(err){log('AI 即時動作顯示失敗：'+String(err&&err.message||err));}
       }
       if(data.director_note)log('AI 優化：'+String(data.director_note).slice(0,180));
       if(data.duplicate)log('這個 command_id 已執行過，本次沒有重複建立物件');"""
