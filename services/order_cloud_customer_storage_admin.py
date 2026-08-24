@@ -37,6 +37,39 @@ def _customer_asset_rows(customer_key):
         conn.close()
 
 
+def _shared_object_keys(customer_key, object_keys):
+    """Return keys still referenced by another active customer.
+
+    Older builds used SHA-only global object keys. A customer purge must never remove one
+    of those physical objects while another customer still points at it.
+    """
+    keys = [str(value or "").strip() for value in (object_keys or []) if str(value or "").strip()]
+    if not keys:
+        return set()
+    shared = set()
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        for start in range(0, len(keys), 200):
+            batch = keys[start:start + 200]
+            placeholders = ",".join(["?"] * len(batch))
+            cur.execute(
+                f"""SELECT DISTINCT object_key
+                    FROM cloud_assets
+                    WHERE active=TRUE AND customer_key<>?
+                      AND object_key IN ({placeholders})""",
+                [customer_key, *batch],
+            )
+            for row in cur.fetchall() or []:
+                data = get_row_dict(row, cur) or {}
+                key = str(data.get("object_key") or "").strip()
+                if key:
+                    shared.add(key)
+        return shared
+    finally:
+        conn.close()
+
+
 def _prefix_keys(backend, prefix):
     if not backend_ready(backend):
         raise RuntimeError(f"{backend} is not readable/configured")
@@ -60,6 +93,16 @@ def _prefix_keys(backend, prefix):
         if not token:
             break
     return result
+
+
+def _version_listing_unsupported(exc):
+    response = getattr(exc, "response", None) or {}
+    error = response.get("Error") or {}
+    code = str(error.get("Code") or "").strip().lower()
+    status = int((response.get("ResponseMetadata") or {}).get("HTTPStatusCode") or 0)
+    return status in {400, 405, 501} and code in {
+        "", "invalidrequest", "methodnotallowed", "notimplemented", "unsupportedoperation"
+    }
 
 
 def _delete_exact_all_versions(backend, object_key):
@@ -98,10 +141,11 @@ def _delete_exact_all_versions(backend, object_key):
                 break
         if deleted:
             return deleted
-    except Exception:
-        # Some S3-compatible configurations may not expose version listing. Fall back
-        # to deleting the current exact key; a failure here must still propagate.
-        pass
+    except Exception as exc:
+        # Fail closed on auth/network errors. Only an explicit "version listing is not
+        # supported" response may fall back to deleting the current key.
+        if not _version_listing_unsupported(exc):
+            raise
     client.delete_object(Bucket=cfg["bucket_name"], Key=object_key)
     return 1
 
@@ -233,6 +277,7 @@ def _customer_storage_admin():
             str(row.get("object_key") or "").strip()
             for row in rows if row.get("object_key")
         })
+        protected_shared_keys = sorted(_shared_object_keys(customer_key, metadata_keys))
         preview = {
             "customer_key": customer_key,
             "assigned_backend": assigned_backend(customer_key),
@@ -241,6 +286,7 @@ def _customer_storage_admin():
             "customer_prefix": prefix,
             "prefix_objects": {key: len(value) for key, value in prefix_keys.items()},
             "backend_ready": backend_state,
+            "protected_shared_object_keys": len(protected_shared_keys),
             "scan_errors": scan_errors,
             "execute": execute,
             "confirmation_required": required,
@@ -258,14 +304,16 @@ def _customer_storage_admin():
 
         deleted = {PRIMARY: 0, SECONDARY: 0}
         errors = []
+        protected = set(protected_shared_keys)
         for backend in (PRIMARY, SECONDARY):
             try:
                 keys = set(prefix_keys.get(backend) or [])
                 # Known legacy object keys may live outside the new customer prefix and
                 # may have been duplicated across B2s by old retry logic. Delete exact
-                # known keys from both backends during an explicit full customer purge.
+                # known keys from both backends, EXCEPT a global legacy key that another
+                # customer still actively references.
                 keys.update(metadata_keys)
-                for object_key in sorted(keys):
+                for object_key in sorted(key for key in keys if key not in protected):
                     deleted[backend] += _delete_exact_all_versions(backend, object_key)
             except Exception as exc:
                 errors.append(f"{backend}: {type(exc).__name__}: {exc}")
