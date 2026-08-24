@@ -1,0 +1,51 @@
+{# Render mirror generated from order_tracking/templates/tracking/_guest_share_common.html. #}
+{% macro shipping_badge(order, class_name='guest-shipping-badge') -%}
+    {%- set ns = namespace(date='', status='', partial=0) -%}
+    {%- if order.shipping_zh is defined and order.shipping_es is defined and order.shipping_zh and order.shipping_es -%}
+        <span class="{{ class_name }}" style="display:inline-flex;align-items:center;align-self:flex-start;max-width:100%;padding:3px 7px;border-radius:999px;background:#fff0f2;color:#e11d48;font-size:9.5px;font-weight:800;line-height:1.2;white-space:nowrap" data-guest-zh="{{ order.shipping_zh|e }}" data-guest-es="{{ order.shipping_es|e }}">{{ order.shipping_es }}</span>
+    {%- else -%}
+        {%- if order.last_shipping_date is defined and order.last_shipping_status is defined and order.last_shipping_date and order.last_shipping_status -%}
+            {%- set ns.date = order.last_shipping_date|string -%}
+            {%- set ns.status = order.last_shipping_status|string|upper -%}
+            {%- set ns.partial = order.partial_ship_count|default(0)|int -%}
+        {%- else -%}
+            {%- set workflows = order.workflows|default([]) -%}
+            {%- if workflows -%}
+                {%- set wf = workflows[0] -%}
+                {%- if wf.last_shipping_date is defined and wf.last_shipping_status is defined and wf.last_shipping_date and wf.last_shipping_status -%}
+                    {%- set ns.date = wf.last_shipping_date|string -%}
+                    {%- set ns.status = wf.last_shipping_status|string|upper -%}
+                    {%- set ns.partial = wf.partial_ship_count|default(0)|int -%}
+                {%- else -%}
+                    {%- for item in wf.timeline|default([]) -%}
+                        {%- set st = (item.status|default(item.to_status|default('')))|string|upper -%}
+                        {%- set note = item.notes|default('')|string -%}
+                        {%- if st == 'PARTIAL_SHIPPED' -%}{%- set ns.partial = ns.partial + 1 -%}{%- endif -%}
+                        {%- if st in ['PARTIAL_SHIPPED', 'ALL_SHIPPED', 'COMPLETED'] and item.action_date|default('') and not (st == 'COMPLETED' and note in ['系統自動：已全部出貨後轉為已完成', '全部出货，订单自动完成']) -%}
+                            {%- set ns.date = item.action_date|string -%}
+                            {%- set ns.status = st -%}
+                        {%- endif -%}
+                    {%- endfor -%}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+        {%- if ns.date and ns.status -%}
+            {%- set d = ns.date[:10].split('-') -%}
+            {%- if d|length == 3 -%}
+                {%- set zh_date = (d[1]|int)|string ~ '/' ~ (d[2]|int)|string -%}
+                {%- set es_date = '%02d'|format(d[2]|int) ~ '/' ~ '%02d'|format(d[1]|int) -%}
+            {%- else -%}
+                {%- set zh_date = ns.date -%}{%- set es_date = ns.date -%}
+            {%- endif -%}
+            {%- if ns.status == 'PARTIAL_SHIPPED' -%}
+                {%- set suffix = (' ×' ~ ns.partial) if ns.partial > 1 else '' -%}
+                {%- set zh = zh_date ~ ' 部分出貨' ~ suffix -%}
+                {%- set es = es_date ~ ' Envío parcial' ~ suffix -%}
+            {%- else -%}
+                {%- set zh = zh_date ~ ' 已出貨' -%}
+                {%- set es = es_date ~ ' Enviado' -%}
+            {%- endif -%}
+            <span class="{{ class_name }}" style="display:inline-flex;align-items:center;align-self:flex-start;max-width:100%;padding:3px 7px;border-radius:999px;background:#fff0f2;color:#e11d48;font-size:9.5px;font-weight:800;line-height:1.2;white-space:nowrap" data-guest-zh="{{ zh|e }}" data-guest-es="{{ es|e }}">{{ es }}</span>
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
