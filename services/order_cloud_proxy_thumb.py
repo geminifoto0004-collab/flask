@@ -73,11 +73,13 @@ def order_cloud_asset_upload_thumb():
 
 
 # Register additive protected/public extensions while this module is imported by
-# services.__init__.py. The direct multi-B2 share-page hook is registered before the
-# legacy public-share hook imported later by services.__init__.py.
+# services.__init__.py. Customer storage policy MUST register before direct-presign
+# routes so one customer's new images can never fail over to the other B2.
 from . import order_b2_diagnostic as _order_b2_diagnostic  # noqa: E402,F401
 from . import order_b2_classb_probe as _order_b2_classb_probe  # noqa: E402,F401
 from . import order_cloud_multi_b2 as _order_cloud_multi_b2  # noqa: E402,F401
+from . import order_cloud_customer_storage as _order_cloud_customer_storage  # noqa: E402,F401
+from . import order_cloud_customer_storage_admin as _order_cloud_customer_storage_admin  # noqa: E402,F401
 from . import order_cloud_multi_b2_public as _order_cloud_multi_b2_public  # noqa: E402,F401
 from . import order_public_share_multi_b2_page as _order_public_share_multi_b2_page  # noqa: E402,F401
 from . import order_cloud_nohead_upload as _order_cloud_nohead_upload  # noqa: E402,F401
