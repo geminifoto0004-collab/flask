@@ -102,6 +102,8 @@ def _add_order_share_server_timing(response):
     load_ms = float(getattr(g, "_order_load_ms", 0.0) or 0.0)
     filter_ms = float(getattr(g, "_order_filter_ms", 0.0) or 0.0)
     render_ms = float(getattr(g, "_order_render_ms", 0.0) or 0.0)
+    cover_sign_ms = float(getattr(g, "_order_direct_cover_sign_ms", 0.0) or 0.0)
+    direct_covers = int(getattr(g, "_order_direct_cover_count", 0) or 0)
     rest_ms = max(0.0, app_ms - load_ms - filter_ms - render_ms)
     active, sweep_ms, sweep_age_ms = _sweep_state()
 
@@ -109,12 +111,15 @@ def _add_order_share_server_timing(response):
         f"order_load;dur={load_ms:.1f}, "
         f"order_filter;dur={filter_ms:.1f}, "
         f"order_render;dur={render_ms:.1f}, "
+        f"order_cover_sign;dur={cover_sign_ms:.1f}, "
         f"order_rest;dur={rest_ms:.1f}, "
         f"order_app;dur={app_ms:.1f}"
     )
     response.headers["X-Order-App-MS"] = f"{app_ms:.1f}"
     response.headers["X-Order-Load-MS"] = f"{load_ms:.1f}"
     response.headers["X-Order-Render-MS"] = f"{render_ms:.1f}"
+    response.headers["X-Order-Direct-Covers"] = str(direct_covers)
+    response.headers["X-Order-Direct-Cover-Sign-MS"] = f"{cover_sign_ms:.1f}"
     response.headers["X-Order-Sweep-Active"] = "1" if active else "0"
     response.headers["X-Order-Sweep-Last-MS"] = f"{sweep_ms:.1f}"
     response.headers["X-Order-Sweep-Age-MS"] = f"{sweep_age_ms:.1f}"
