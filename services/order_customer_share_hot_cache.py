@@ -1,17 +1,10 @@
 """Keep active ORDER share snapshots hot before customers arrive.
 
-The persistent snapshot removed the large public-page rebuild, but a process-local
-cache miss still had to open TiDB once to validate the token and read the snapshot.
-This module moves that remaining read off the customer request path:
-
-- active share token hashes and persisted snapshots are preloaded at Render startup;
-- a small background sweep refreshes them every 15 seconds;
-- public requests validate the raw token by hashing it locally and looking up the
-  prewarmed hash cache, so a normal first request does not need TiDB;
-- snapshot rebuilds immediately repopulate the same in-process cache instead of
-  invalidating it until the next sweep;
-- startup prewarm retries quickly if TiDB was not ready on the first import attempt;
-- the existing one-row TiDB loader remains the safe fallback if prewarming ever fails.
+The public share path is intentionally kept away from TiDB on normal customer GETs.
+Startup preloads active token hashes + persisted customer snapshots, snapshot rebuilds
+immediately repopulate the same process cache, and cache entries live for one day so
+Gunicorn pre-fork workers do not fall back to TiDB merely because a background thread
+was lost after fork.
 
 No image bytes, B2 credentials, raw share tokens, LAN SQLite data, phone/payment or
 other private fields are cached here.
@@ -20,23 +13,30 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import threading
 import time
 
-from database import get_cursor, get_db_connection, get_row_dict
+from blueprints.b2_test_bp import b2_test_bp
+from database import get_cursor, get_db_connection, get_row_dict, init_database
+from services import order_cloud_service as _cloud_service
 from services import order_customer_share_snapshot as _snapshot
 from services import order_public_share_multi_b2_page as _page
 
-_SWEEP_SECONDS = 15.0
-_HASH_TTL = 180.0
-_SPACE_TTL = 300.0
+# Render/Gunicorn may preload the app and then fork workers. Daemon refresh threads
+# started before fork are not reliable in the child process. Keep the preload cache
+# alive for a full day instead; ORDER/image writers already rebuild+rewarm snapshots,
+# expiry is validated locally on every request, and explicit revoke clears this cache.
+_HASH_TTL = 86400.0
+_SPACE_TTL = 86400.0
 _HASH_TOKEN_CACHE = {}
-_STOP = threading.Event()
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_REBUILD_SNAPSHOT = _snapshot.rebuild_snapshot
+_ORIGINAL_REVOKE_LIVE_SHARE = getattr(_cloud_service, "revoke_live_share", None)
 _LAST_ACTIVE_HASHES = set()
 _LAST_WARM_ERROR = "not-run"
 _LAST_WARM_AT = 0.0
+_STARTUP_DB_READY = False
+_STARTUP_TEMPLATE_READY = False
+_FIRST_REQUEST_INIT_BYPASS_DONE = False
 
 
 def _token_hash(raw_token):
@@ -76,12 +76,7 @@ def _rebuild_snapshot_and_rewarm(customer_key):
 
 
 def _warm_once():
-    """Load active token hashes + persisted snapshots in one query.
-
-    Do not filter expiry in SQL. TiDB/server timezone and legacy rows can differ; the
-    shared Python validator is the canonical expiry check and keeps startup prewarm
-    consistent with the real public-share request path.
-    """
+    """Load active token hashes + persisted snapshots in one TiDB query."""
     global _LAST_ACTIVE_HASHES, _LAST_WARM_ERROR, _LAST_WARM_AT
 
     _snapshot._ensure_table()
@@ -115,7 +110,6 @@ def _warm_once():
 
         active_hashes.add(token_hash)
         _page._cache_put(_HASH_TOKEN_CACHE, token_hash, dict(share), _HASH_TTL)
-
         bundle = _snapshot._decode_snapshot(row.get("snapshot_payload"))
         if bundle:
             _cache_space(customer_key, bundle)
@@ -149,7 +143,7 @@ def _mark_warm_error(exc):
 
 
 def _hot_load_page_data(token):
-    """Serve from prewarmed process memory; fall back to the persistent snapshot loader."""
+    """Serve from process memory; one-row TiDB read remains the safe fallback."""
     token = str(token or "").strip()
     if not token:
         return _ORIGINAL_LOAD_PAGE_DATA(token)
@@ -181,9 +175,6 @@ def _hot_load_page_data(token):
             bundle["data_mode"] = "persistent-snapshot-prewarmed"
             return share, bundle, None
 
-    # Safe fallback: current persistent snapshot route performs one indexed TiDB read.
-    # Tag the response mode so a single curl can tell whether this module is installed
-    # and whether startup prewarm knew this token hash, without exposing the token.
     share, bundle, error = _ORIGINAL_LOAD_PAGE_DATA(token)
     if error:
         return share, bundle, error
@@ -199,33 +190,68 @@ def _hot_load_page_data(token):
     return share, bundle, None
 
 
-def _bootstrap_retry_loop():
-    """Retry quickly during startup; normal 15-second sweeps take over afterwards."""
-    for delay in (1.0, 2.0, 4.0, 8.0):
-        if _STOP.wait(delay):
-            return
-        try:
-            result = _warm_once()
-            if int((result or {}).get("active_tokens") or 0) > 0:
-                return
-        except Exception as exc:
-            _mark_warm_error(exc)
-            print(f"[WARN] ORDER share bootstrap prewarm retry failed: {type(exc).__name__}: {exc}")
+def _revoke_live_share_and_drop_cache(raw_token):
+    changed = _ORIGINAL_REVOKE_LIVE_SHARE(raw_token)
+    if changed:
+        token = str(raw_token or "").strip()
+        token_hash = _token_hash(token)
+        with _page._cache_lock:
+            _HASH_TOKEN_CACHE.pop(token_hash, None)
+            _page._token_cache.pop(token, None)
+    return changed
 
 
-def _sweep_loop():
-    while not _STOP.wait(_SWEEP_SECONDS):
-        try:
-            _warm_once()
-        except Exception as exc:
-            _mark_warm_error(exc)
-            print(f"[WARN] ORDER share hot-cache sweep skipped: {type(exc).__name__}: {exc}")
+@b2_test_bp.record_once
+def _order_share_startup_warm(state):
+    """Pay DB init + Jinja compile during Flask startup, not on the first visitor."""
+    global _STARTUP_DB_READY, _STARTUP_TEMPLATE_READY
+    app = state.app
+
+    try:
+        init_database()
+        _STARTUP_DB_READY = True
+        app.config["ORDER_SHARE_STARTUP_DB_READY"] = True
+        print("[ORDER] startup database initialization complete")
+    except Exception as exc:
+        print(f"[WARN] ORDER startup database initialization skipped: {type(exc).__name__}: {exc}")
+
+    try:
+        with app.app_context():
+            app.jinja_env.get_template("customer_share_live_fast.html")
+        _STARTUP_TEMPLATE_READY = True
+        app.config["ORDER_SHARE_TEMPLATE_READY"] = True
+        print("[ORDER] customer share template precompiled")
+    except Exception as exc:
+        print(f"[WARN] ORDER share template precompile skipped: {type(exc).__name__}: {exc}")
+
+
+@b2_test_bp.before_app_request
+def _skip_duplicate_first_request_database_init():
+    """app.py already has a first-request init hook; skip it only after startup succeeded."""
+    global _FIRST_REQUEST_INIT_BYPASS_DONE
+    if _FIRST_REQUEST_INIT_BYPASS_DONE or not _STARTUP_DB_READY:
+        return None
+    try:
+        from flask import current_app
+
+        for func in current_app.before_request_funcs.get(None, ()):  # app-wide hooks
+            if getattr(func, "__name__", "") == "initialize_database":
+                func.__globals__["_database_initialized"] = True
+                break
+        _FIRST_REQUEST_INIT_BYPASS_DONE = True
+    except Exception:
+        pass
+    return None
 
 
 def install():
     _page._SPACE_TTL = _SPACE_TTL
     _snapshot.rebuild_snapshot = _rebuild_snapshot_and_rewarm
+    if callable(_ORIGINAL_REVOKE_LIVE_SHARE):
+        _cloud_service.revoke_live_share = _revoke_live_share_and_drop_cache
 
+    # Synchronous preload is deliberate: it survives Gunicorn preload/fork as memory
+    # state, whereas a daemon sweep thread created before fork may disappear in workers.
     try:
         _warm_once()
     except Exception as exc:
@@ -233,20 +259,6 @@ def install():
         print(f"[WARN] ORDER share startup prewarm skipped: {type(exc).__name__}: {exc}")
 
     _page._load_page_data = _hot_load_page_data
-
-    retry_thread = threading.Thread(
-        target=_bootstrap_retry_loop,
-        name="order-share-hot-cache-bootstrap",
-        daemon=True,
-    )
-    retry_thread.start()
-
-    sweep_thread = threading.Thread(
-        target=_sweep_loop,
-        name="order-share-hot-cache",
-        daemon=True,
-    )
-    sweep_thread.start()
 
 
 install()
