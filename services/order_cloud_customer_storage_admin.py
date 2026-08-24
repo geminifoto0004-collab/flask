@@ -11,6 +11,7 @@ from services.order_cloud_customer_storage import (
     PRIMARY,
     SECONDARY,
     _TABLE,
+    _INTENT_TABLE,
     assigned_backend,
     backend_ready,
     clear_assignment_cache,
@@ -38,7 +39,7 @@ def _customer_asset_rows(customer_key):
 
 def _prefix_keys(backend, prefix):
     if not backend_ready(backend):
-        return []
+        raise RuntimeError(f"{backend} is not readable/configured")
     cfg = config_for_backend(backend, required=True)
     client = client_for_backend(backend)
     result = []
@@ -62,8 +63,10 @@ def _prefix_keys(backend, prefix):
 
 
 def _delete_exact_all_versions(backend, object_key):
-    if not object_key or not backend_ready(backend):
+    if not object_key:
         return 0
+    if not backend_ready(backend):
+        raise RuntimeError(f"{backend} became unavailable during purge")
     cfg = config_for_backend(backend, required=True)
     client = client_for_backend(backend)
     deleted = 0
@@ -96,6 +99,8 @@ def _delete_exact_all_versions(backend, object_key):
         if deleted:
             return deleted
     except Exception:
+        # Some S3-compatible configurations may not expose version listing. Fall back
+        # to deleting the current exact key; a failure here must still propagate.
         pass
     client.delete_object(Bucket=cfg["bucket_name"], Key=object_key)
     return 1
@@ -190,6 +195,10 @@ def _customer_storage_admin():
                         "DELETE FROM cloud_assets WHERE customer_key=? AND asset_key=?",
                         (customer_key, asset_key),
                     )
+                    cur.execute(
+                        f"DELETE FROM {_INTENT_TABLE} WHERE customer_key=? AND asset_key=?",
+                        (customer_key, asset_key),
+                    )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -212,7 +221,9 @@ def _customer_storage_admin():
         prefix = f"customers/{customer_namespace(customer_key)}/"
         prefix_keys = {}
         scan_errors = {}
+        backend_state = {}
         for backend in (PRIMARY, SECONDARY):
+            backend_state[backend] = bool(backend_ready(backend))
             try:
                 prefix_keys[backend] = _prefix_keys(backend, prefix)
             except Exception as exc:
@@ -229,6 +240,7 @@ def _customer_storage_admin():
             "metadata_object_keys": len(metadata_keys),
             "customer_prefix": prefix,
             "prefix_objects": {key: len(value) for key, value in prefix_keys.items()},
+            "backend_ready": backend_state,
             "scan_errors": scan_errors,
             "execute": execute,
             "confirmation_required": required,
@@ -247,10 +259,11 @@ def _customer_storage_admin():
         deleted = {PRIMARY: 0, SECONDARY: 0}
         errors = []
         for backend in (PRIMARY, SECONDARY):
-            if not backend_ready(backend):
-                continue
             try:
                 keys = set(prefix_keys.get(backend) or [])
+                # Known legacy object keys may live outside the new customer prefix and
+                # may have been duplicated across B2s by old retry logic. Delete exact
+                # known keys from both backends during an explicit full customer purge.
                 keys.update(metadata_keys)
                 for object_key in sorted(keys):
                     deleted[backend] += _delete_exact_all_versions(backend, object_key)
@@ -269,6 +282,7 @@ def _customer_storage_admin():
         cur = get_cursor(conn)
         try:
             cur.execute("DELETE FROM cloud_assets WHERE customer_key=?", (customer_key,))
+            cur.execute(f"DELETE FROM {_INTENT_TABLE} WHERE customer_key=?", (customer_key,))
             if bool(payload.get("reset_assignment", False)):
                 cur.execute(f"DELETE FROM {_TABLE} WHERE customer_key=?", (customer_key,))
             conn.commit()
