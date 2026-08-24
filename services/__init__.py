@@ -189,6 +189,10 @@ from . import order_customer_share_snapshot as _order_customer_share_snapshot  #
 # the persistent one-row loader remains the safe fallback.
 from . import order_customer_share_hot_cache as _order_customer_share_hot_cache  # noqa: E402,F401
 
+# Pre-render token-neutral customer-share HTML so normal public GETs avoid repeating
+# the large Jinja render. Snapshot refreshes invalidate and rebuild the HTML variant.
+from . import order_share_render_cache as _order_share_render_cache  # noqa: E402,F401
+
 # Measure only the existing public-share path. This adds Server-Timing/X-Order-* headers
 # so occasional TTFB spikes can be attributed without changing data/cache behaviour.
 from . import order_share_server_timing as _order_share_server_timing  # noqa: E402,F401
