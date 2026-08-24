@@ -189,6 +189,10 @@ from . import order_customer_share_snapshot as _order_customer_share_snapshot  #
 # the persistent one-row loader remains the safe fallback.
 from . import order_customer_share_hot_cache as _order_customer_share_hot_cache  # noqa: E402,F401
 
+# Measure only the existing public-share path. This adds Server-Timing/X-Order-* headers
+# so occasional TTFB spikes can be attributed without changing data/cache behaviour.
+from . import order_share_server_timing as _order_share_server_timing  # noqa: E402,F401
+
 __all__ = [
     'send_verification_code',
     'verify_code',
