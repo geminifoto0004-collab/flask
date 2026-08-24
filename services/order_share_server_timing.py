@@ -15,6 +15,7 @@ from blueprints.b2_test_bp import b2_test_bp
 from services import order_customer_share_hot_cache as _hot
 from services import order_public_share_fast as _fast
 from services import order_public_share_multi_b2_page as _page
+from services import order_share_direct_cover_cache as _direct_cover_cache  # noqa: F401
 
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_FILTER_SPACE = _fast._filter_space
@@ -103,7 +104,10 @@ def _add_order_share_server_timing(response):
     filter_ms = float(getattr(g, "_order_filter_ms", 0.0) or 0.0)
     render_ms = float(getattr(g, "_order_render_ms", 0.0) or 0.0)
     cover_sign_ms = float(getattr(g, "_order_direct_cover_sign_ms", 0.0) or 0.0)
+    cover_inject_ms = float(getattr(g, "_order_direct_cover_inject_ms", 0.0) or 0.0)
     direct_covers = int(getattr(g, "_order_direct_cover_count", 0) or 0)
+    cover_hits = int(getattr(g, "_order_direct_cover_cache_hits", 0) or 0)
+    cover_misses = int(getattr(g, "_order_direct_cover_cache_misses", 0) or 0)
     rest_ms = max(0.0, app_ms - load_ms - filter_ms - render_ms)
     active, sweep_ms, sweep_age_ms = _sweep_state()
 
@@ -112,6 +116,7 @@ def _add_order_share_server_timing(response):
         f"order_filter;dur={filter_ms:.1f}, "
         f"order_render;dur={render_ms:.1f}, "
         f"order_cover_sign;dur={cover_sign_ms:.1f}, "
+        f"order_cover_inject;dur={cover_inject_ms:.1f}, "
         f"order_rest;dur={rest_ms:.1f}, "
         f"order_app;dur={app_ms:.1f}"
     )
@@ -120,6 +125,9 @@ def _add_order_share_server_timing(response):
     response.headers["X-Order-Render-MS"] = f"{render_ms:.1f}"
     response.headers["X-Order-Direct-Covers"] = str(direct_covers)
     response.headers["X-Order-Direct-Cover-Sign-MS"] = f"{cover_sign_ms:.1f}"
+    response.headers["X-Order-Direct-Cover-Inject-MS"] = f"{cover_inject_ms:.1f}"
+    response.headers["X-Order-Direct-Cover-Cache-Hits"] = str(cover_hits)
+    response.headers["X-Order-Direct-Cover-Cache-Misses"] = str(cover_misses)
     response.headers["X-Order-Sweep-Active"] = "1" if active else "0"
     response.headers["X-Order-Sweep-Last-MS"] = f"{sweep_ms:.1f}"
     response.headers["X-Order-Sweep-Age-MS"] = f"{sweep_age_ms:.1f}"
