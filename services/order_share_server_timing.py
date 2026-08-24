@@ -17,6 +17,7 @@ from services import order_public_share_fast as _fast
 from services import order_public_share_multi_b2_page as _page
 from services import order_share_direct_cover_cache as _direct_cover_cache  # noqa: F401
 from services import order_share_request_copy_fast as _request_copy_fast  # noqa: F401
+from services import order_share_native_order_ui as _native_order_ui  # noqa: F401
 
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_FILTER_SPACE = _fast._filter_space
