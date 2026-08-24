@@ -25,8 +25,10 @@ def main() -> int:
     source_dir = repo / "order_tracking" / "templates" / "tracking"
     page_source = source_dir / "customer_share_public.html"
     macro_source = source_dir / "_guest_share_common.html"
-    if not page_source.is_file() or not macro_source.is_file():
-        missing = [str(p) for p in (page_source, macro_source) if not p.is_file()]
+    runtime_source = source_dir / "_guest_share_runtime_patch.html"
+    sources = (page_source, macro_source, runtime_source)
+    if any(not path.is_file() for path in sources):
+        missing = [str(path) for path in sources if not path.is_file()]
         raise SystemExit(
             "ORDER shared visitor UI is missing. Update the local order_tracking source first:\n  - "
             + "\n  - ".join(missing)
@@ -34,31 +36,41 @@ def main() -> int:
 
     page_bytes = page_source.read_bytes()
     macro_bytes = macro_source.read_bytes()
+    runtime_bytes = runtime_source.read_bytes()
     page_text = page_bytes.decode("utf-8")
     macro_text = macro_bytes.decode("utf-8")
+    runtime_text = runtime_bytes.decode("utf-8")
 
     # Syntax-only guard before replacing Render's known-good page.
     env = Environment()
     env.parse(page_text)
     env.parse(macro_text)
+    env.parse(runtime_text)
 
     render_tracking = repo / "templates" / "tracking"
     render_tracking.mkdir(parents=True, exist_ok=True)
     (render_tracking / "customer_share_public.html").write_text(page_text, "utf-8")
     (render_tracking / "_guest_share_common.html").write_text(macro_text, "utf-8")
+    (render_tracking / "_guest_share_runtime_patch.html").write_text(runtime_text, "utf-8")
 
     page_sha = _digest(page_bytes)
     macro_sha = _digest(macro_bytes)
+    runtime_sha = _digest(runtime_bytes)
+    # Keep all ORDER-owned UI hashes in the tiny root template. order_share_render_cache
+    # fingerprints this file, so changing a shared partial invalidates persisted HTML
+    # automatically without touching the Render-only hot/snapshot/direct-B2 services.
     shim = (
         "{# GENERATED FROM ORDER SHARED UI. "
-        f"page={page_sha} macro={macro_sha} #}}\n"
+        f"page={page_sha} macro={macro_sha} runtime={runtime_sha} #}}\n"
         "{% include 'tracking/customer_share_public.html' %}\n"
+        "{% include 'tracking/_guest_share_runtime_patch.html' %}\n"
     )
     (repo / "templates" / "customer_share_live_fast.html").write_text(shim, "utf-8")
 
     print("ORDER shared visitor UI mirrored for Render")
-    print(f"  page  {page_sha}")
-    print(f"  macro {macro_sha}")
+    print(f"  page    {page_sha}")
+    print(f"  macro   {macro_sha}")
+    print(f"  runtime {runtime_sha}")
     print("Render speed/cache services: unchanged")
     return 0
 
