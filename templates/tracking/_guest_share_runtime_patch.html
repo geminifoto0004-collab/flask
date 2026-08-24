@@ -15,6 +15,8 @@
 <script>
 (function(){
 'use strict';
+
+// Public visitor pages are bilingual only.  Never expose an internal English DB key.
 const VISITOR_STATUS_LABELS={
   es:{
     ACTIVE:'En proceso',NEW_ORDER:'Pedido nuevo',QUOTE_CONFIRMING:'Cotización pendiente de confirmación',QUOTE_SENT:'Cotización enviada',
@@ -31,32 +33,154 @@ const VISITOR_STATUS_LABELS={
     PARTIAL_SHIPPED:'部分出货',ALL_SHIPPED:'已全部出货',SHIPPED:'已出货',COMPLETED:'已完成',CANCELLED:'已取消'
   }
 };
-function visitorLang(){try{return localStorage.getItem('tracking_ui_language')==='zh_cn'?'zh_cn':'es'}catch(_){return'es'}}
-function visitorStatusLabel(value){const key=String(value||'').trim().toUpperCase();const lang=visitorLang();return VISITOR_STATUS_LABELS[lang][key]||(lang==='zh_cn'?'进行中':'En proceso')}
+function visitorLang(){
+  try{return localStorage.getItem('tracking_ui_language')==='zh_cn'?'zh_cn':'es'}catch(_){return'es'}
+}
+function visitorStatusLabel(value){
+  const key=String(value||'').trim().toUpperCase();
+  const lang=visitorLang();
+  return VISITOR_STATUS_LABELS[lang][key]||(lang==='zh_cn'?'进行中':'En proceso');
+}
+// customer_share_public.html declares statusLabel as a normal global function. Replacing
+// the global function keeps its existing language switch/filter code intact while making
+// every current and future unknown status fall back to Chinese/Spanish instead of English.
 try{window.statusLabel=visitorStatusLabel}catch(_){}
-function refreshVisitorStatuses(){document.querySelectorAll('[data-status-label]').forEach(function(el){const raw=el.dataset.statusRaw||el.textContent||'';el.dataset.statusRaw=raw;el.textContent=visitorStatusLabel(raw)})}
-refreshVisitorStatuses();try{if(typeof window.applyShareLanguage==='function')window.applyShareLanguage()}catch(_){refreshVisitorStatuses()}document.addEventListener('tracking:languagechange',refreshVisitorStatuses);
+function refreshVisitorStatuses(){
+  document.querySelectorAll('[data-status-label]').forEach(function(el){
+    const raw=el.dataset.statusRaw||el.textContent||'';
+    el.dataset.statusRaw=raw;
+    el.textContent=visitorStatusLabel(raw);
+  });
+}
+refreshVisitorStatuses();
+try{if(typeof window.applyShareLanguage==='function')window.applyShareLanguage()}catch(_){refreshVisitorStatuses()}
+document.addEventListener('tracking:languagechange',refreshVisitorStatuses);
+
+// Restore the original mobile ORDER behavior: when a card has several images, the user
+// can swipe the card cover left/right before opening the order.  We reuse the already
+// rendered detail-image routes, so this adds ZERO server-side queries.  The original first
+// cover <img> node is moved (not recreated), preserving Render's IntersectionObserver and
+// direct-B2 signed URL injection for the first visible covers.
 document.querySelectorAll('.tile[data-order]').forEach(function(tile){
-  const order=String(tile.dataset.order||'');const cover=tile.querySelector('.cover');const originalImg=cover&&cover.querySelector('.cover-img');if(!cover||!originalImg)return;
-  const detail=document.getElementById('detail-'+order);if(!detail)return;const detailImages=Array.from(detail.querySelectorAll('.detail-img'));if(detailImages.length<=1)return;
-  const urls=detailImages.map(function(img){return img.dataset.thumb||img.dataset.full||''}).filter(Boolean);if(urls.length<=1)return;
-  const firstUrl=originalImg.dataset.src||originalImg.getAttribute('src')||urls[0];urls[0]=firstUrl;const placeholder=cover.querySelector('.img-placeholder');
-  const track=document.createElement('span');track.className='cover-track';track.setAttribute('data-cover-carousel','1');track.dataset.imageCount=String(urls.length);const slideImages=[];
-  urls.forEach(function(url,index){const slide=document.createElement('span');slide.className='cover-slide';let img;if(index===0){img=originalImg;if(placeholder)slide.appendChild(placeholder)}else{img=document.createElement('img');img.className='cover-carousel-img';img.alt=order+' · '+(index+1)+'/'+urls.length;img.decoding='async';img.loading='lazy';img.dataset.src=url}slide.appendChild(img);track.appendChild(slide);slideImages.push(img)});
-  const counter=document.createElement('span');counter.className='cover-image-count';counter.textContent='1/'+urls.length;const dots=document.createElement('span');dots.className='cover-dots';urls.slice(0,8).forEach(function(_,index){const dot=document.createElement('i');if(index===0)dot.className='active';dots.appendChild(dot)});cover.replaceChildren(track,counter,dots);
-  function loadSlide(index){if(index<0||index>=slideImages.length)return;const img=slideImages[index];if(!img.getAttribute('src')&&img.dataset.src)img.src=img.dataset.src}
-  function indexNow(){const width=track.clientWidth||1;return Math.max(0,Math.min(urls.length-1,Math.round(track.scrollLeft/width)))}
-  function sync(){const index=indexNow();loadSlide(index-1);loadSlide(index);loadSlide(index+1);counter.textContent=(index+1)+'/'+urls.length;dots.querySelectorAll('i').forEach(function(dot,i){dot.classList.toggle('active',i===index)})}
-  track.addEventListener('scroll',sync,{passive:true});let startX=0,startY=0,moved=false,suppressUntil=0;
-  track.addEventListener('touchstart',function(event){const touch=event.touches&&event.touches[0];if(!touch)return;startX=touch.clientX;startY=touch.clientY;moved=false;const index=indexNow();loadSlide(index-1);loadSlide(index+1)},{passive:true});
-  track.addEventListener('touchmove',function(event){const touch=event.touches&&event.touches[0];if(!touch)return;const dx=Math.abs(touch.clientX-startX),dy=Math.abs(touch.clientY-startY);if(dx>9&&dx>dy)moved=true},{passive:true});
+  const order=String(tile.dataset.order||'');
+  const cover=tile.querySelector('.cover');
+  const originalImg=cover&&cover.querySelector('.cover-img');
+  if(!cover||!originalImg)return;
+  const detail=document.getElementById('detail-'+order);
+  if(!detail)return;
+  const detailImages=Array.from(detail.querySelectorAll('.detail-img'));
+  if(detailImages.length<=1)return;
+
+  const urls=detailImages.map(function(img){return img.dataset.thumb||img.dataset.full||''}).filter(Boolean);
+  if(urls.length<=1)return;
+  const firstUrl=originalImg.dataset.src||originalImg.getAttribute('src')||urls[0];
+  urls[0]=firstUrl;
+  const placeholder=cover.querySelector('.img-placeholder');
+
+  const track=document.createElement('span');
+  track.className='cover-track';
+  track.setAttribute('data-cover-carousel','1');
+  track.dataset.imageCount=String(urls.length);
+
+  const slideImages=[];
+  urls.forEach(function(url,index){
+    const slide=document.createElement('span');
+    slide.className='cover-slide';
+    let img;
+    if(index===0){
+      img=originalImg;
+      if(placeholder)slide.appendChild(placeholder);
+    }else{
+      img=document.createElement('img');
+      img.className='cover-carousel-img';
+      img.alt=order+' · '+(index+1)+'/'+urls.length;
+      img.decoding='async';
+      img.loading='lazy';
+      img.dataset.src=url;
+    }
+    slide.appendChild(img);
+    track.appendChild(slide);
+    slideImages.push(img);
+  });
+
+  const counter=document.createElement('span');
+  counter.className='cover-image-count';
+  counter.textContent='1/'+urls.length;
+  const dots=document.createElement('span');
+  dots.className='cover-dots';
+  urls.slice(0,8).forEach(function(_,index){
+    const dot=document.createElement('i');
+    if(index===0)dot.className='active';
+    dots.appendChild(dot);
+  });
+  cover.replaceChildren(track,counter,dots);
+
+  function loadSlide(index){
+    if(index<0||index>=slideImages.length)return;
+    const img=slideImages[index];
+    if(!img.getAttribute('src')&&img.dataset.src)img.src=img.dataset.src;
+  }
+  function indexNow(){
+    const width=track.clientWidth||1;
+    return Math.max(0,Math.min(urls.length-1,Math.round(track.scrollLeft/width)));
+  }
+  function sync(){
+    const index=indexNow();
+    loadSlide(index-1);loadSlide(index);loadSlide(index+1);
+    counter.textContent=(index+1)+'/'+urls.length;
+    dots.querySelectorAll('i').forEach(function(dot,i){dot.classList.toggle('active',i===index)});
+  }
+  track.addEventListener('scroll',sync,{passive:true});
+
+  let startX=0,startY=0,moved=false,suppressUntil=0;
+  track.addEventListener('touchstart',function(event){
+    const touch=event.touches&&event.touches[0];if(!touch)return;
+    startX=touch.clientX;startY=touch.clientY;moved=false;
+    const index=indexNow();loadSlide(index-1);loadSlide(index+1);
+  },{passive:true});
+  track.addEventListener('touchmove',function(event){
+    const touch=event.touches&&event.touches[0];if(!touch)return;
+    const dx=Math.abs(touch.clientX-startX),dy=Math.abs(touch.clientY-startY);
+    if(dx>9&&dx>dy)moved=true;
+  },{passive:true});
   track.addEventListener('touchend',function(){if(moved)suppressUntil=Date.now()+550},{passive:true});
+
+  // Mouse/pen drag is useful on desktop too, but never changes the mobile native swipe.
   let pointerDragging=false,pointerId=null,pointerStartScroll=0;
-  track.addEventListener('pointerdown',function(event){if(event.pointerType==='touch'||event.button!==0)return;pointerDragging=true;pointerId=event.pointerId;startX=event.clientX;startY=event.clientY;pointerStartScroll=track.scrollLeft;moved=false;try{track.setPointerCapture(pointerId)}catch(_){}});
-  track.addEventListener('pointermove',function(event){if(!pointerDragging||event.pointerId!==pointerId)return;const rawDx=event.clientX-startX,dx=Math.abs(rawDx),dy=Math.abs(event.clientY-startY);if(!moved&&dx>6&&dx>dy)moved=true;if(!moved)return;event.preventDefault();track.scrollLeft=pointerStartScroll-rawDx},{passive:false});
-  function finishPointer(event){if(!pointerDragging||(event&&event.pointerId!==pointerId))return;const didMove=moved;pointerDragging=false;try{if(pointerId!==null)track.releasePointerCapture(pointerId)}catch(_){}pointerId=null;if(didMove){suppressUntil=Date.now()+550;const width=track.clientWidth||1,index=indexNow();track.scrollTo({left:index*width,behavior:'smooth'});sync()}}
-  track.addEventListener('pointerup',finishPointer);track.addEventListener('pointercancel',finishPointer);track.addEventListener('lostpointercapture',finishPointer);
-  tile.addEventListener('click',function(event){if(Date.now()<suppressUntil||moved){event.preventDefault();event.stopImmediatePropagation();moved=false}},true);
+  track.addEventListener('pointerdown',function(event){
+    if(event.pointerType==='touch'||event.button!==0)return;
+    pointerDragging=true;pointerId=event.pointerId;startX=event.clientX;startY=event.clientY;
+    pointerStartScroll=track.scrollLeft;moved=false;
+    try{track.setPointerCapture(pointerId)}catch(_){}
+  });
+  track.addEventListener('pointermove',function(event){
+    if(!pointerDragging||event.pointerId!==pointerId)return;
+    const rawDx=event.clientX-startX,dx=Math.abs(rawDx),dy=Math.abs(event.clientY-startY);
+    if(!moved&&dx>6&&dx>dy)moved=true;
+    if(!moved)return;
+    event.preventDefault();track.scrollLeft=pointerStartScroll-rawDx;
+  },{passive:false});
+  function finishPointer(event){
+    if(!pointerDragging||(event&&event.pointerId!==pointerId))return;
+    const didMove=moved;pointerDragging=false;
+    try{if(pointerId!==null)track.releasePointerCapture(pointerId)}catch(_){}
+    pointerId=null;
+    if(didMove){
+      suppressUntil=Date.now()+550;
+      const width=track.clientWidth||1,index=indexNow();
+      track.scrollTo({left:index*width,behavior:'smooth'});sync();
+    }
+  }
+  track.addEventListener('pointerup',finishPointer);
+  track.addEventListener('pointercancel',finishPointer);
+  track.addEventListener('lostpointercapture',finishPointer);
+
+  // A horizontal gesture only changes the card image. A normal tap still opens detail.
+  tile.addEventListener('click',function(event){
+    if(Date.now()<suppressUntil||moved){
+      event.preventDefault();event.stopImmediatePropagation();moved=false;
+    }
+  },true);
 });
 })();
 </script>
