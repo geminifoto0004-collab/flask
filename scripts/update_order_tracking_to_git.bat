@@ -2,16 +2,13 @@
 setlocal
 cd /d "%~dp0.."
 
-rem 1) Vendor the local ORDER source into this repo. Do not commit yet.
+rem ORDER is the only UI/source tree maintained by staff.
+rem Render reads the native guest templates/static files directly through its adapter;
+rem Render-only speed/cache services are deliberately not overwritten here.
 python scripts\vendor_order_tracking.py
 if errorlevel 1 goto :fail
 
-rem 2) Mirror ORDER-owned visitor UI into Render's startup-safe template path.
-python scripts\sync_order_shared_ui.py
-if errorlevel 1 goto :fail
-
-rem 3) One commit keeps ORDER UI + Render mirror atomic. Render-only speed services stay untouched.
-git add order_tracking templates\customer_share_live_fast.html templates\tracking\customer_share_public.html templates\tracking\_guest_share_common.html templates\tracking\_guest_share_runtime_patch.html
+git add order_tracking
 if errorlevel 1 goto :fail
 
 git diff --cached --quiet
@@ -19,14 +16,15 @@ if errorlevel 1 (
   git commit -m "Sync latest ORDER source for Render"
   if errorlevel 1 goto :fail
 ) else (
-  echo Git: ORDER source and shared visitor UI already up to date
+  echo Git: ORDER source already up to date
 )
 
 git push
 if errorlevel 1 goto :fail
 
 echo.
-echo ORDER source + shared Render visitor UI synced successfully.
+echo ORDER source synced successfully.
+echo Render native ORDER UI adapter and fast cache services were left unchanged.
 pause
 exit /b 0
 
