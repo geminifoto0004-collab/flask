@@ -11,7 +11,7 @@ python scripts\sync_order_shared_ui.py
 if errorlevel 1 goto :fail
 
 rem 3) One commit keeps ORDER UI + Render mirror atomic. Render-only speed services stay untouched.
-git add order_tracking templates\customer_share_live_fast.html templates\tracking\customer_share_public.html templates\tracking\_guest_share_common.html
+git add order_tracking templates\customer_share_live_fast.html templates\tracking\customer_share_public.html templates\tracking\_guest_share_common.html templates\tracking\_guest_share_runtime_patch.html
 if errorlevel 1 goto :fail
 
 git diff --cached --quiet
