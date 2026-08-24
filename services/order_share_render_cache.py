@@ -8,13 +8,19 @@ Important invariants:
 - raw share tokens are never persisted;
 - no image bytes, B2 credentials, local paths, phone/payment/deposit data are stored;
 - a request normally performs only an in-memory lookup plus placeholder replacement;
-- snapshot refreshes rebuild the HTML skeleton immediately.
+- snapshot refreshes rebuild the HTML skeleton immediately;
+- only the first visible cover images receive short-lived direct B2 GET URLs at
+  response time; the underlying canonical cloud object is never copied or moved.
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import threading
+import time
+from html import escape as _html_escape
+
+from flask import g, has_request_context
 
 from blueprints.b2_test_bp import b2_test_bp
 from database import get_cursor, get_db_connection, get_row_dict
@@ -27,6 +33,8 @@ from services import order_public_share_multi_b2_page as _page
 _TEMPLATE = "customer_share_live_fast.html"
 _TOKEN_PLACEHOLDER = "__ORDER_SHARE_TOKEN_PLACEHOLDER_6E61C970__"
 _TABLE = "cloud_customer_share_html_cache"
+_DIRECT_COVER_LIMIT = 6
+_DIRECT_SIGN_SECONDS = 600
 
 _HTML = {}
 _TOKEN_HTML = {}
@@ -431,12 +439,82 @@ def _cache_space_and_prerender(customer_key, bundle):
     return result
 
 
+def _cover_assets(space, limit=_DIRECT_COVER_LIMIT):
+    """Return the first IMAGE asset for the first visible gallery orders."""
+    result = []
+    orders = (space or {}).get("orders") if isinstance(space, dict) else None
+    if not isinstance(orders, list):
+        return result
+    for order in orders:
+        if not isinstance(order, dict):
+            continue
+        assets = order.get("assets")
+        if not isinstance(assets, list):
+            continue
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            if str(asset.get("asset_type") or "").upper() != "IMAGE":
+                continue
+            if not asset.get("asset_key") or not asset.get("object_key"):
+                continue
+            result.append(asset)
+            break
+        if len(result) >= int(limit):
+            break
+    return result
+
+
+def _inject_direct_cover_urls(html, token, space):
+    """Replace only first gallery cover routes with short-lived direct B2 URLs.
+
+    This removes the extra Browser -> Render -> 302 hop from the images users see
+    first. Detail/full images keep the memory-authorized Render fallback path.
+    """
+    if not isinstance(html, str) or not html or not token:
+        return html
+
+    started = time.perf_counter()
+    signed = 0
+    try:
+        from services import order_cloud_multi_b2_public as _media
+
+        for asset in _cover_assets(space):
+            asset_key = str(asset.get("asset_key") or "").strip().lower()
+            if len(asset_key) != 64:
+                continue
+            route = f"/share/{token}/thumb/{asset_key}"
+            marker = f'data-src="{route}"'
+            if marker not in html:
+                route = f"/share/{token}/image/{asset_key}"
+                marker = f'data-src="{route}"'
+            if marker not in html:
+                continue
+            try:
+                url, _backend = _media._signed_get(asset, seconds=_DIRECT_SIGN_SECONDS)
+            except Exception:
+                continue
+            html = html.replace(
+                marker,
+                f'data-src="{_html_escape(str(url), quote=True)}"',
+                1,
+            )
+            signed += 1
+    finally:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        if has_request_context():
+            g._order_direct_cover_count = signed
+            g._order_direct_cover_sign_ms = elapsed_ms
+    return html
+
+
 def _cached_render_template(template_name, *args, **kwargs):
     if template_name != _TEMPLATE:
         return _ORIGINAL_RENDER_TEMPLATE(template_name, *args, **kwargs)
 
     token = str(kwargs.get("share_token") or "").strip()
     share = kwargs.get("share") or {}
+    space = kwargs.get("space") or {}
     if not token:
         return _ORIGINAL_RENDER_TEMPLATE(template_name, *args, **kwargs)
 
@@ -459,7 +537,8 @@ def _cached_render_template(template_name, *args, **kwargs):
                 "variant_key": variant_key,
                 "html": html,
             }
-        return html.replace(_TOKEN_PLACEHOLDER, token)
+        rendered = html.replace(_TOKEN_PLACEHOLDER, token)
+        return _inject_direct_cover_urls(rendered, token, space)
 
     # Correctness fallback only.  It should not be reached when startup pre-render
     # succeeded, but if it is, immediately seed both memory and persistent cache.
@@ -474,6 +553,7 @@ def _cached_render_template(template_name, *args, **kwargs):
                 f"[WARN] ORDER share HTML fallback persist skipped: "
                 f"{type(exc).__name__}: {exc}"
             )
+        rendered = _inject_direct_cover_urls(rendered, token, space)
     return rendered
 
 
