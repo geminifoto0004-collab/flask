@@ -16,7 +16,7 @@
 (function(){
 'use strict';
 
-// Public visitor pages are bilingual only.  Never expose an internal English DB key.
+// Public visitor pages are bilingual only. Never expose an internal English DB key.
 const VISITOR_STATUS_LABELS={
   es:{
     ACTIVE:'En proceso',NEW_ORDER:'Pedido nuevo',QUOTE_CONFIRMING:'Cotización pendiente de confirmación',QUOTE_SENT:'Cotización enviada',
@@ -41,9 +41,6 @@ function visitorStatusLabel(value){
   const lang=visitorLang();
   return VISITOR_STATUS_LABELS[lang][key]||(lang==='zh_cn'?'进行中':'En proceso');
 }
-// customer_share_public.html declares statusLabel as a normal global function. Replacing
-// the global function keeps its existing language switch/filter code intact while making
-// every current and future unknown status fall back to Chinese/Spanish instead of English.
 try{window.statusLabel=visitorStatusLabel}catch(_){}
 function refreshVisitorStatuses(){
   document.querySelectorAll('[data-status-label]').forEach(function(el){
@@ -56,11 +53,6 @@ refreshVisitorStatuses();
 try{if(typeof window.applyShareLanguage==='function')window.applyShareLanguage()}catch(_){refreshVisitorStatuses()}
 document.addEventListener('tracking:languagechange',refreshVisitorStatuses);
 
-// Restore the original mobile ORDER behavior: when a card has several images, the user
-// can swipe the card cover left/right before opening the order.  We reuse the already
-// rendered detail-image routes, so this adds ZERO server-side queries.  The original first
-// cover <img> node is moved (not recreated), preserving Render's IntersectionObserver and
-// direct-B2 signed URL injection for the first visible covers.
 document.querySelectorAll('.tile[data-order]').forEach(function(tile){
   const order=String(tile.dataset.order||'');
   const cover=tile.querySelector('.cover');
@@ -145,7 +137,6 @@ document.querySelectorAll('.tile[data-order]').forEach(function(tile){
   },{passive:true});
   track.addEventListener('touchend',function(){if(moved)suppressUntil=Date.now()+550},{passive:true});
 
-  // Mouse/pen drag is useful on desktop too, but never changes the mobile native swipe.
   let pointerDragging=false,pointerId=null,pointerStartScroll=0;
   track.addEventListener('pointerdown',function(event){
     if(event.pointerType==='touch'||event.button!==0)return;
@@ -175,7 +166,6 @@ document.querySelectorAll('.tile[data-order]').forEach(function(tile){
   track.addEventListener('pointercancel',finishPointer);
   track.addEventListener('lostpointercapture',finishPointer);
 
-  // A horizontal gesture only changes the card image. A normal tap still opens detail.
   tile.addEventListener('click',function(event){
     if(Date.now()<suppressUntil||moved){
       event.preventDefault();event.stopImmediatePropagation();moved=false;
