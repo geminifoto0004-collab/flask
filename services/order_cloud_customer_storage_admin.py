@@ -14,11 +14,10 @@ from services.order_cloud_customer_storage import (
     assigned_backend,
     backend_ready,
     clear_assignment_cache,
-    config_for_backend,
     customer_namespace,
     existing_distribution,
 )
-from services.order_cloud_multi_b2 import client_for_backend
+from services.order_cloud_multi_b2 import client_for_backend, config_for_backend
 
 
 def _customer_asset_rows(customer_key):
