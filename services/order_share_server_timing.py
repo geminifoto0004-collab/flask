@@ -16,6 +16,7 @@ from services import order_customer_share_hot_cache as _hot
 from services import order_public_share_fast as _fast
 from services import order_public_share_multi_b2_page as _page
 from services import order_share_direct_cover_cache as _direct_cover_cache  # noqa: F401
+from services import order_share_request_copy_fast as _request_copy_fast  # noqa: F401
 
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_FILTER_SPACE = _fast._filter_space
@@ -101,6 +102,8 @@ def _add_order_share_server_timing(response):
 
     app_ms = max(0.0, (time.perf_counter() - started) * 1000.0)
     load_ms = float(getattr(g, "_order_load_ms", 0.0) or 0.0)
+    load_copy_ms = float(getattr(g, "_order_load_copy_ms", 0.0) or 0.0)
+    load_path = str(getattr(g, "_order_load_path", "unknown") or "unknown")
     filter_ms = float(getattr(g, "_order_filter_ms", 0.0) or 0.0)
     render_ms = float(getattr(g, "_order_render_ms", 0.0) or 0.0)
     cover_sign_ms = float(getattr(g, "_order_direct_cover_sign_ms", 0.0) or 0.0)
@@ -113,6 +116,7 @@ def _add_order_share_server_timing(response):
 
     response.headers["Server-Timing"] = (
         f"order_load;dur={load_ms:.1f}, "
+        f"order_load_copy;dur={load_copy_ms:.1f}, "
         f"order_filter;dur={filter_ms:.1f}, "
         f"order_render;dur={render_ms:.1f}, "
         f"order_cover_sign;dur={cover_sign_ms:.1f}, "
@@ -122,6 +126,8 @@ def _add_order_share_server_timing(response):
     )
     response.headers["X-Order-App-MS"] = f"{app_ms:.1f}"
     response.headers["X-Order-Load-MS"] = f"{load_ms:.1f}"
+    response.headers["X-Order-Load-Copy-MS"] = f"{load_copy_ms:.1f}"
+    response.headers["X-Order-Load-Path"] = load_path
     response.headers["X-Order-Render-MS"] = f"{render_ms:.1f}"
     response.headers["X-Order-Direct-Covers"] = str(direct_covers)
     response.headers["X-Order-Direct-Cover-Sign-MS"] = f"{cover_sign_ms:.1f}"
