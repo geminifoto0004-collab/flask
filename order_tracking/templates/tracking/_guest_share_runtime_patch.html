@@ -1,0 +1,176 @@
+{# ORDER-owned compatibility layer for the Render public visitor wall.
+   Local guest_customer.html already has these behaviors natively.  Render keeps
+   its pre-render/hot-cache path and layers the same bilingual/status/carousel UX
+   on top without adding DB/B2 work to the request. #}
+<style>
+.cover-track{position:absolute;inset:0;display:flex;width:100%;height:100%;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;touch-action:pan-x pan-y}
+.cover-track::-webkit-scrollbar{display:none}
+.cover-slide{position:relative;flex:0 0 100%;width:100%;height:100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden}
+.cover-slide img{display:block;width:100%;height:100%;object-fit:cover}
+.cover-image-count{position:absolute;top:7px;right:7px;z-index:4;padding:3px 6px;border-radius:999px;background:rgba(17,18,21,.58);color:#fff;font-size:9px;font-weight:800;line-height:1;pointer-events:none;backdrop-filter:blur(5px)}
+.cover-dots{position:absolute;left:50%;bottom:7px;z-index:4;display:flex;max-width:80%;gap:4px;transform:translateX(-50%);pointer-events:none}
+.cover-dots i{display:block;width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.58);box-shadow:0 0 0 1px rgba(0,0,0,.08)}
+.cover-dots i.active{width:6px;height:6px;background:#fff}
+</style>
+<script>
+(function(){
+'use strict';
+
+// Public visitor pages are bilingual only. Never expose an internal English DB key.
+const VISITOR_STATUS_LABELS={
+  es:{
+    ACTIVE:'En proceso',NEW_ORDER:'Pedido nuevo',QUOTE_CONFIRMING:'Cotización pendiente de confirmación',QUOTE_SENT:'Cotización enviada',
+    DRAFT_MAKING:'Diseño en preparación',DRAFT_CONFIRMING:'Diseño pendiente de confirmación',DRAFT_REVISING:'Diseño en revisión',DRAFT_REVIEW:'Diseño en revisión',
+    PENDING_SAMPLE:'Pendiente de muestra',SAMPLING:'Muestra en preparación',SAMPLE_CONFIRMING:'Muestra pendiente de confirmación',SAMPLE_REVISING:'Muestra en revisión',SAMPLE_REVIEW:'Muestra en revisión',
+    PENDING_PRODUCTION:'Pendiente de producción',PRODUCING:'En producción',PRODUCTION:'En producción',PRODUCTION_STARTED:'En producción',IN_PRODUCTION:'En producción',PRODUCTION_DONE:'Producción terminada',
+    PARTIAL_SHIPPED:'Envío parcial',ALL_SHIPPED:'Envío total',SHIPPED:'Enviado',COMPLETED:'Completado',CANCELLED:'Cancelado'
+  },
+  zh_cn:{
+    ACTIVE:'进行中',NEW_ORDER:'新订单',QUOTE_CONFIRMING:'报价待确认',QUOTE_SENT:'报价已发送',
+    DRAFT_MAKING:'图稿制作中',DRAFT_CONFIRMING:'图稿待确认',DRAFT_REVISING:'图稿修改中',DRAFT_REVIEW:'图稿审核中',
+    PENDING_SAMPLE:'待打样',SAMPLING:'打样中',SAMPLE_CONFIRMING:'打样待确认',SAMPLE_REVISING:'打样修改中',SAMPLE_REVIEW:'样品审核中',
+    PENDING_PRODUCTION:'待生产',PRODUCING:'生产中',PRODUCTION:'生产中',PRODUCTION_STARTED:'生产中',IN_PRODUCTION:'生产中',PRODUCTION_DONE:'生产完成',
+    PARTIAL_SHIPPED:'部分出货',ALL_SHIPPED:'已全部出货',SHIPPED:'已出货',COMPLETED:'已完成',CANCELLED:'已取消'
+  }
+};
+function visitorLang(){
+  try{return localStorage.getItem('tracking_ui_language')==='zh_cn'?'zh_cn':'es'}catch(_){return'es'}
+}
+function visitorStatusLabel(value){
+  const key=String(value||'').trim().toUpperCase();
+  const lang=visitorLang();
+  return VISITOR_STATUS_LABELS[lang][key]||(lang==='zh_cn'?'进行中':'En proceso');
+}
+try{window.statusLabel=visitorStatusLabel}catch(_){}
+function refreshVisitorStatuses(){
+  document.querySelectorAll('[data-status-label]').forEach(function(el){
+    const raw=el.dataset.statusRaw||el.textContent||'';
+    el.dataset.statusRaw=raw;
+    el.textContent=visitorStatusLabel(raw);
+  });
+}
+refreshVisitorStatuses();
+try{if(typeof window.applyShareLanguage==='function')window.applyShareLanguage()}catch(_){refreshVisitorStatuses()}
+document.addEventListener('tracking:languagechange',refreshVisitorStatuses);
+
+document.querySelectorAll('.tile[data-order]').forEach(function(tile){
+  const order=String(tile.dataset.order||'');
+  const cover=tile.querySelector('.cover');
+  const originalImg=cover&&cover.querySelector('.cover-img');
+  if(!cover||!originalImg)return;
+  const detail=document.getElementById('detail-'+order);
+  if(!detail)return;
+  const detailImages=Array.from(detail.querySelectorAll('.detail-img'));
+  if(detailImages.length<=1)return;
+
+  const urls=detailImages.map(function(img){return img.dataset.thumb||img.dataset.full||''}).filter(Boolean);
+  if(urls.length<=1)return;
+  const firstUrl=originalImg.dataset.src||originalImg.getAttribute('src')||urls[0];
+  urls[0]=firstUrl;
+  const placeholder=cover.querySelector('.img-placeholder');
+
+  const track=document.createElement('span');
+  track.className='cover-track';
+  track.setAttribute('data-cover-carousel','1');
+  track.dataset.imageCount=String(urls.length);
+
+  const slideImages=[];
+  urls.forEach(function(url,index){
+    const slide=document.createElement('span');
+    slide.className='cover-slide';
+    let img;
+    if(index===0){
+      img=originalImg;
+      if(placeholder)slide.appendChild(placeholder);
+    }else{
+      img=document.createElement('img');
+      img.className='cover-carousel-img';
+      img.alt=order+' · '+(index+1)+'/'+urls.length;
+      img.decoding='async';
+      img.loading='lazy';
+      img.dataset.src=url;
+    }
+    slide.appendChild(img);
+    track.appendChild(slide);
+    slideImages.push(img);
+  });
+
+  const counter=document.createElement('span');
+  counter.className='cover-image-count';
+  counter.textContent='1/'+urls.length;
+  const dots=document.createElement('span');
+  dots.className='cover-dots';
+  urls.slice(0,8).forEach(function(_,index){
+    const dot=document.createElement('i');
+    if(index===0)dot.className='active';
+    dots.appendChild(dot);
+  });
+  cover.replaceChildren(track,counter,dots);
+
+  function loadSlide(index){
+    if(index<0||index>=slideImages.length)return;
+    const img=slideImages[index];
+    if(!img.getAttribute('src')&&img.dataset.src)img.src=img.dataset.src;
+  }
+  function indexNow(){
+    const width=track.clientWidth||1;
+    return Math.max(0,Math.min(urls.length-1,Math.round(track.scrollLeft/width)));
+  }
+  function sync(){
+    const index=indexNow();
+    loadSlide(index-1);loadSlide(index);loadSlide(index+1);
+    counter.textContent=(index+1)+'/'+urls.length;
+    dots.querySelectorAll('i').forEach(function(dot,i){dot.classList.toggle('active',i===index)});
+  }
+  track.addEventListener('scroll',sync,{passive:true});
+
+  let startX=0,startY=0,moved=false,suppressUntil=0;
+  track.addEventListener('touchstart',function(event){
+    const touch=event.touches&&event.touches[0];if(!touch)return;
+    startX=touch.clientX;startY=touch.clientY;moved=false;
+    const index=indexNow();loadSlide(index-1);loadSlide(index+1);
+  },{passive:true});
+  track.addEventListener('touchmove',function(event){
+    const touch=event.touches&&event.touches[0];if(!touch)return;
+    const dx=Math.abs(touch.clientX-startX),dy=Math.abs(touch.clientY-startY);
+    if(dx>9&&dx>dy)moved=true;
+  },{passive:true});
+  track.addEventListener('touchend',function(){if(moved)suppressUntil=Date.now()+550},{passive:true});
+
+  let pointerDragging=false,pointerId=null,pointerStartScroll=0;
+  track.addEventListener('pointerdown',function(event){
+    if(event.pointerType==='touch'||event.button!==0)return;
+    pointerDragging=true;pointerId=event.pointerId;startX=event.clientX;startY=event.clientY;
+    pointerStartScroll=track.scrollLeft;moved=false;
+    try{track.setPointerCapture(pointerId)}catch(_){}
+  });
+  track.addEventListener('pointermove',function(event){
+    if(!pointerDragging||event.pointerId!==pointerId)return;
+    const rawDx=event.clientX-startX,dx=Math.abs(rawDx),dy=Math.abs(event.clientY-startY);
+    if(!moved&&dx>6&&dx>dy)moved=true;
+    if(!moved)return;
+    event.preventDefault();track.scrollLeft=pointerStartScroll-rawDx;
+  },{passive:false});
+  function finishPointer(event){
+    if(!pointerDragging||(event&&event.pointerId!==pointerId))return;
+    const didMove=moved;pointerDragging=false;
+    try{if(pointerId!==null)track.releasePointerCapture(pointerId)}catch(_){}
+    pointerId=null;
+    if(didMove){
+      suppressUntil=Date.now()+550;
+      const width=track.clientWidth||1,index=indexNow();
+      track.scrollTo({left:index*width,behavior:'smooth'});sync();
+    }
+  }
+  track.addEventListener('pointerup',finishPointer);
+  track.addEventListener('pointercancel',finishPointer);
+  track.addEventListener('lostpointercapture',finishPointer);
+
+  tile.addEventListener('click',function(event){
+    if(Date.now()<suppressUntil||moved){
+      event.preventDefault();event.stopImmediatePropagation();moved=false;
+    }
+  },true);
+});
+})();
+</script>
