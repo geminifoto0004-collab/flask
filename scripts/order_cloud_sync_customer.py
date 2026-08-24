@@ -6,10 +6,11 @@ local ORDER SQLite and never sends local filenames or paths to Render.
 
 For the selected customer it:
 1. syncs current cloud-safe ORDER/workflow/history rows from SQLite;
-2. optimizes every current local image on the PC;
+2. optimizes current local images only for ACTIVE orders (cancelled/skipped/unlocked
+   order rows are never uploaded as customer-share media);
 3. asks Render for customer-pinned direct-B2 PUTs (Render never receives image bytes);
 4. reuses/relinks an existing customer+SHA physical object when order/workflow paths changed;
-5. reconciles TiDB cloud_assets so its logical image rows equal the current SQLite rows;
+5. reconciles TiDB cloud_assets so its logical image rows equal the current ACTIVE SQLite rows;
 6. rebuilds the existing public-share snapshot without creating/changing share tokens.
 
 Typical Windows CMD:
@@ -77,6 +78,35 @@ def _customer_orders(conn: sqlite3.Connection, customer_key: str) -> List[str]:
     seen = set()
     for row in rows:
         if _norm_customer(row[1]) != customer_key:
+            continue
+        number = str(row[0] or "").strip()
+        if number and number not in seen:
+            seen.add(number)
+            result.append(number)
+    return result
+
+
+def _customer_media_orders(conn: sqlite3.Connection, customer_key: str) -> List[str]:
+    """Return only local orders eligible to publish image bytes.
+
+    ORDER lifecycle status is authoritative here. ACTIVE (and blank legacy status) may
+    publish media. CANCELLED, SKIPPED, UNLOCKED and any other non-active pool/lifecycle
+    states remain mirrored as metadata when applicable, but their image bytes are not
+    uploaded to B2 and are omitted from the cloud_assets reconciliation manifest.
+    """
+    cols = image_scan._columns(conn, "orders")
+    status_select = ", status" if "status" in cols else ", NULL AS status"
+    rows = conn.execute(
+        "SELECT order_number, customer_name" + status_select
+        + " FROM orders WHERE order_number IS NOT NULL ORDER BY order_number"
+    ).fetchall()
+    result: List[str] = []
+    seen = set()
+    for row in rows:
+        if _norm_customer(row[1]) != customer_key:
+            continue
+        lifecycle = str(row[2] or "").strip().upper()
+        if lifecycle and lifecycle != "ACTIVE":
             continue
         number = str(row[0] or "").strip()
         if number and number not in seen:
@@ -255,6 +285,7 @@ def sync_customer(customer: str | None, from_order: str | None, dry_run: bool = 
     try:
         customer_name, customer_key = _customer_identity(conn, customer, from_order)
         order_numbers = _customer_orders(conn, customer_key)
+        media_order_numbers = _customer_media_orders(conn, customer_key)
         if not order_numbers:
             raise CustomerSyncError(f"customer has no local orders: {customer_name}")
 
@@ -271,14 +302,18 @@ def sync_customer(customer: str | None, from_order: str | None, dry_run: bool = 
             if str(payload.get("customer_key") or "") == customer_key:
                 order_payloads.append(payload)
 
-        media = _local_customer_media(conn, upload_folder, order_numbers, optimize_cache)
+        media = _local_customer_media(conn, upload_folder, media_order_numbers, optimize_cache)
     finally:
         conn.close()
 
     print(f"ORDER config: {config_path}")
     print(f"ORDER SQLite: {db_path}")
     print(f"Customer: {customer_name} | key={customer_key}")
-    print(f"Orders: {len(order_payloads)} | current local images: {len(media)}")
+    print(
+        f"Orders mirrored: {len(order_payloads)} | media-active orders: {len(media_order_numbers)} "
+        f"| current local images to publish: {len(media)}"
+    )
+    print("Cancelled/skipped/unlocked order images: NOT UPLOADED")
     print("Local filenames/paths: NOT SENT")
 
     if dry_run:
@@ -286,6 +321,7 @@ def sync_customer(customer: str | None, from_order: str | None, dry_run: bool = 
         return {
             "customer_key": customer_key,
             "orders": len(order_payloads),
+            "media_orders": len(media_order_numbers),
             "images": len(media),
             "optimized_bytes": by_size,
             "dry_run": True,
@@ -331,7 +367,8 @@ def sync_customer(customer: str | None, from_order: str | None, dry_run: bool = 
         print(f"IMAGE {index}/{len(media)} OK: {mode} -> {backend}")
 
     # Only reconcile after every current local image has been successfully linked/uploaded.
-    # This is the point where TiDB logical image membership becomes exactly SQLite's set.
+    # This is the point where TiDB logical image membership becomes exactly the image
+    # manifest from ACTIVE local ORDER rows. Cancelled/non-active image metadata is removed.
     reconciled = order_sync._request_json(
         "POST",
         "/api/order-cloud/assets/reconcile",
@@ -359,6 +396,7 @@ def sync_customer(customer: str | None, from_order: str | None, dry_run: bool = 
     return {
         "customer_key": customer_key,
         "orders": len(order_payloads),
+        "media_orders": len(media_order_numbers),
         "images": len(media),
         "uploaded": uploaded,
         "reused": reused,
