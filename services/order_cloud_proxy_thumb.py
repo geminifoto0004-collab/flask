@@ -81,6 +81,7 @@ from . import order_cloud_multi_b2 as _order_cloud_multi_b2  # noqa: E402,F401
 from . import order_cloud_customer_storage as _order_cloud_customer_storage  # noqa: E402,F401
 from . import order_cloud_customer_storage_admin as _order_cloud_customer_storage_admin  # noqa: E402,F401
 from . import order_cloud_customer_reconcile as _order_cloud_customer_reconcile  # noqa: E402,F401
+from . import order_cloud_storage_inventory as _order_cloud_storage_inventory  # noqa: E402,F401
 from . import order_cloud_multi_b2_public as _order_cloud_multi_b2_public  # noqa: E402,F401
 from . import order_public_share_multi_b2_page as _order_public_share_multi_b2_page  # noqa: E402,F401
 from . import order_cloud_nohead_upload as _order_cloud_nohead_upload  # noqa: E402,F401
