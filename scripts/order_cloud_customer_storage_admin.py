@@ -12,7 +12,8 @@ Examples (Windows CMD):
 
 `rebuild` always shows the purge preview and requires typing the exact confirmation
 before deleting cloud image objects. Local SQLite/images are never deleted or modified.
-After purge it repopulates TiDB/B2 from current SQLite and refreshes the same share links.
+After purge it republishes the exact current SQLite customer projection and refreshes the
+same share links without changing their tokens.
 """
 from __future__ import annotations
 
@@ -111,12 +112,12 @@ def main() -> int:
             _purge(customer_key, args.confirm, args.reset_assignment)
             return 0
 
-        # rebuild = explicit full clean cloud image reset, then repopulate from current
-        # local SQLite while preserving the customer's existing B2 assignment by default.
+        # rebuild = explicit full clean cloud image reset, then publish the exact current
+        # SQLite customer projection. Existing B2 assignment is preserved by default.
         _purge(customer_key, args.confirm, args.reset_assignment)
-        import order_cloud_sync_customer as customer_sync
+        import order_cloud_publish_customer as customer_publish
         print("\nREBUILDING FROM CURRENT LOCAL SQLITE...")
-        customer_sync.sync_customer(args.customer, None, dry_run=False)
+        customer_publish.publish_customer(args.customer, None, dry_run=False)
         print("\nCUSTOMER CLOUD REBUILD PASSED")
         return 0
     except KeyboardInterrupt:
