@@ -9,7 +9,7 @@ import uuid
 
 import boto3
 from botocore.exceptions import ClientError
-from flask import Blueprint, Response, jsonify, render_template, request
+from flask import Blueprint, Response, jsonify, redirect, render_template, request
 
 b2_test_bp = Blueprint("b2_test", __name__)
 
@@ -168,7 +168,7 @@ def _ensure_order_cloud_tables():
 def order_cloud_health():
     try:
         _ensure_order_cloud_tables()
-        return jsonify({"ok": True, "service": "order-cloud", "phase": 3, "assets": "sha256-b2"})
+        return jsonify({"ok": True, "service": "order-cloud", "phase": 4, "assets": "direct-b2-with-proxy-fallback"})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -214,10 +214,118 @@ def order_cloud_debug_customer(customer_key):
         _ensure_order_cloud_tables()
         from services.order_cloud_service import get_customer_space
         from services.order_cloud_asset_service import attach_assets_to_space
-        result = get_customer_space(customer_key)
+        result = get_customer_space(customer_key, include_cancelled=False)
         if result is None:
             return jsonify({"ok": False, "error": "not found"}), 404
         return jsonify({"ok": True, "space": attach_assets_to_space(result)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/backend-health", methods=["GET"])
+def order_cloud_asset_backend_health():
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import backend_health
+        return jsonify({"ok": True, "result": backend_health(force=True)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/direct-presign", methods=["POST"])
+def order_cloud_asset_direct_presign():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import direct_presign
+        payload = request.get_json(silent=True) or {}
+        result = direct_presign(
+            payload.get("order_number"), payload.get("workflow_key"),
+            payload.get("sha256"), payload.get("content_type"), payload.get("file_size"),
+            source_site=source_site, avoid_backend=payload.get("avoid_backend"),
+        )
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/direct-register", methods=["POST"])
+def order_cloud_asset_direct_register():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import direct_register
+        payload = request.get_json(silent=True) or {}
+        result = direct_register(
+            payload.get("order_number"), payload.get("workflow_key"), payload.get("sha256"),
+            payload.get("content_type"), payload.get("file_size"), payload.get("object_key"),
+            payload.get("storage_backend"), source_site=source_site,
+        )
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/wan-storage-summary", methods=["POST"])
+def order_cloud_asset_wan_storage_summary():
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import wan_storage_summary
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "result": wan_storage_summary(payload.get("customer_keys") or [])})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/wan-repair-plan", methods=["POST"])
+def order_cloud_asset_wan_repair_plan():
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import wan_repair_plan
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, "result": wan_repair_plan(payload.get("customer_key"))})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/assets/direct-repair-register", methods=["POST"])
+def order_cloud_asset_direct_repair_register():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import direct_repair_register
+        payload = request.get_json(silent=True) or {}
+        result = direct_repair_register(
+            payload.get("asset_key"), payload.get("sha256"), payload.get("content_type"),
+            payload.get("file_size"), payload.get("object_key"), payload.get("storage_backend"),
+            source_site=source_site,
+        )
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -293,7 +401,14 @@ def order_cloud_create_share():
         _ensure_order_cloud_tables()
         from services.order_cloud_service import create_live_share
         payload = request.get_json(silent=True) or {}
-        result = create_live_share(payload.get("customer_key"), source_site=source_site, expires_hours=payload.get("expires_hours", 24), permanent=bool(payload.get("permanent", False)))
+        result = create_live_share(
+            payload.get("customer_key"),
+            source_site=source_site,
+            expires_hours=payload.get("expires_hours", 24),
+            permanent=bool(payload.get("permanent", False)),
+            history_scope=payload.get("history_scope", "current"),
+            include_cancelled=False,
+        )
         token = result.pop("token")
         expires_at = result.get("expires_at")
         result["expires_at"] = expires_at.isoformat() if expires_at else None
@@ -340,7 +455,11 @@ def order_cloud_public_share(token):
         share, error_response = _resolve_public_share_or_response(token)
         if error_response:
             return error_response
-        space = get_customer_space(share.get("customer_key"))
+        space = get_customer_space(
+            share.get("customer_key"),
+            history_scope=share.get("history_scope") or "current",
+            include_cancelled=False,
+        )
         if not space:
             return Response("No hay información disponible.", status=404, mimetype="text/plain")
         attach_assets_to_space(space)
@@ -353,15 +472,15 @@ def order_cloud_public_share(token):
 def order_cloud_public_asset(token, asset_key):
     try:
         _ensure_order_cloud_tables()
-        from services.order_cloud_asset_service import get_asset, read_private_asset
+        from services.order_cloud_asset_service import get_asset, presign_private_asset_read
         share, error_response = _resolve_public_share_or_response(token)
         if error_response:
             return error_response
         asset = get_asset(asset_key)
         if not asset or asset.get("customer_key") != share.get("customer_key"):
             return Response("Archivo no encontrado.", status=404, mimetype="text/plain")
-        data, content_type = read_private_asset(asset)
-        return Response(data, mimetype=content_type, headers={"Cache-Control": "private, max-age=300", "ETag": '"' + str(asset.get("sha256") or "") + '"'})
+        signed_url = presign_private_asset_read(asset, expires_seconds=300)
+        return redirect(signed_url, code=302)
     except FileNotFoundError:
         return Response("Archivo no encontrado.", status=404, mimetype="text/plain")
     except Exception:
