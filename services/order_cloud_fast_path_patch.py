@@ -7,8 +7,6 @@ TiDB. After a successful client PUT, direct-register trusts the successful HTTP
 PUT and writes metadata without a second B2 HEAD round trip.
 """
 
-import os
-
 
 def _configured_backend(svc, avoid_backend=""):
     avoid = str(avoid_backend or "").strip().lower()
@@ -20,6 +18,28 @@ def _configured_backend(svc, avoid_backend=""):
         if cfg.get("configured"):
             return backend, cfg
     raise RuntimeError("Primary / Secondary B2 are not configured")
+
+
+def fast_backend_health(force=False):
+    """Configuration-only health hint. Never perform Render -> B2 probes here."""
+    import services.order_cloud_asset_service as svc
+
+    primary_cfg = svc._backend_config("b2_primary", required=False)
+    secondary_cfg = svc._backend_config("b2_secondary", required=False)
+    primary = {
+        "status": "configured" if primary_cfg.get("configured") else "not_configured",
+        "missing": primary_cfg.get("missing") or [],
+    }
+    secondary = {
+        "status": "configured" if secondary_cfg.get("configured") else "not_configured",
+        "missing": secondary_cfg.get("missing") or [],
+    }
+    selected = ""
+    if primary_cfg.get("configured"):
+        selected = "b2_primary"
+    elif secondary_cfg.get("configured"):
+        selected = "b2_secondary"
+    return {"selected": selected, "primary": primary, "secondary": secondary}
 
 
 def _exact_registered_asset(svc, order_number, workflow_key, sha256_hex):
@@ -117,6 +137,7 @@ def fast_direct_register(order_number, workflow_key, sha256_hex, content_type, f
 
 def install():
     import services.order_cloud_asset_service as svc
+    svc.backend_health = fast_backend_health
     svc.direct_presign = fast_direct_presign
     svc.direct_register = fast_direct_register
     return True
