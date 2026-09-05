@@ -30,6 +30,18 @@ if not _TOWN_STANDALONE:
     from .user_auth_bp import user_auth_bp
     from .b2_test_bp import b2_test_bp
 
+    # Install the nonblocking ORDER direct-B2 control plane before requests arrive.
+    # The route module imports direct_presign/direct_register lazily on each request,
+    # so replacing those service functions here is safe and does not change routes.
+    try:
+        from services.order_cloud_fast_path_patch import install as _install_order_cloud_fast_path
+        _install_order_cloud_fast_path()
+        print('✅ ORDER direct-B2 fast control plane enabled')
+    except Exception as _order_cloud_fast_path_exc:
+        # Never prevent the whole Flask app from booting because of an optional
+        # optimization patch. Existing proxy upload remains available.
+        print(f'⚠️ ORDER direct-B2 fast patch skipped: {_order_cloud_fast_path_exc}')
+
     # AI town is intentionally NOT imported on the main Render service.
     print('✅ AI town disabled on main Render service')
     __all__ = ['user_auth_bp', 'b2_test_bp']
