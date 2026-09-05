@@ -89,6 +89,8 @@ def init_order_cloud_tables():
                 mode VARCHAR(16) NOT NULL DEFAULT 'LIVE',
                 status VARCHAR(16) NOT NULL DEFAULT 'active',
                 source_site VARCHAR(16) NULL,
+                history_scope VARCHAR(16) NOT NULL DEFAULT 'current',
+                include_cancelled BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP NULL,
                 INDEX idx_cloud_share_customer (customer_key),
@@ -120,6 +122,11 @@ def init_order_cloud_tables():
             ("draft_date", "VARCHAR(32) NULL"),
         ):
             _ensure_column(cur, "cloud_workflows", name, definition)
+
+        _ensure_column(cur, "cloud_share_tokens", "history_scope", "VARCHAR(16) NOT NULL DEFAULT 'current'")
+        _ensure_column(cur, "cloud_share_tokens", "include_cancelled", "BOOLEAN NOT NULL DEFAULT FALSE")
+        # Customer links must never expose cancellation even if an old row had it enabled.
+        cur.execute("UPDATE cloud_share_tokens SET include_cancelled=FALSE WHERE include_cancelled<>FALSE")
 
         # Phase-1 had a generic note column. Internal notes are never cloud data.
         if check_column_exists(cur, "cloud_workflows", "note"):
@@ -160,9 +167,6 @@ def _delete_order_exact(cur, order_number):
     cur.execute("DELETE FROM cloud_orders WHERE order_number=?", (order_number,))
     deleted = bool(cur.rowcount)
 
-    # cloud_customers is derived from orders. Remove it when the customer has no
-    # remaining local-mirrored orders. Share tokens can remain; they simply resolve
-    # to no customer space after the last order disappears.
     if customer_key:
         cur.execute("SELECT 1 FROM cloud_orders WHERE customer_key=? LIMIT 1", (customer_key,))
         if not cur.fetchone():
@@ -171,18 +175,11 @@ def _delete_order_exact(cur, order_number):
 
 
 def sync_order(payload, source_site=None):
-    """Upsert one complete customer-safe ORDER snapshot, or hard-delete it.
-
-    Unknown fields are ignored on purpose. In particular, notes, phones, deposits,
-    payment information, internal handler/factory details and arbitrary metadata are
-    never written by this function.
-    """
+    """Upsert one complete customer-safe ORDER snapshot, or hard-delete it."""
     order_number = str(payload.get("order_number") or "").strip()
     if not order_number:
         raise ValueError("order_number is required")
 
-    # The same protected sync endpoint carries deletion events. Deletion is hard,
-    # not active=FALSE, because TiDB is intended to mirror local SQLite presence.
     if bool(payload.get("_deleted")):
         conn = get_db_connection()
         cur = get_cursor(conn)
@@ -256,10 +253,6 @@ def sync_order(payload, source_site=None):
                 vals,
             )
 
-        # Authenticated Render ORDER may need the LAN drawer's operational text.
-        # This JSON deliberately comes from the local whitelist; it contains no media,
-        # local paths, phone, payment or deposit data. Public customer-share routes do
-        # not return this column.
         cur.execute(
             "UPDATE cloud_orders SET render_payload=? WHERE order_number=?",
             (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str), order_number),
@@ -347,8 +340,6 @@ def sync_order(payload, source_site=None):
                         history_values,
                     )
 
-        # Each payload is a complete snapshot of this order. Rows absent from the
-        # local snapshot are hard-deleted so TiDB mirrors SQLite, not a soft-delete log.
         cur.execute("SELECT history_key FROM cloud_workflow_history WHERE order_number=?", (order_number,))
         for row in cur.fetchall():
             data = get_row_dict(row, cur) or {}
@@ -380,6 +371,11 @@ def sync_order(payload, source_site=None):
 
 def _safe_order_dict(row, cur):
     return get_row_dict(row, cur) if row else None
+
+
+def _status_is_cancelled(value):
+    value = str(value or "").strip().upper().replace(" ", "_")
+    return value in {"CANCELLED", "CANCELED", "CANCELADO", "CANCELADA", "已取消"}
 
 
 def get_order(order_number):
@@ -425,7 +421,9 @@ def get_order(order_number):
         conn.close()
 
 
-def get_customer_space(customer_key):
+def get_customer_space(customer_key, history_scope="current", include_cancelled=False):
+    """Return customer-safe space. Cancellation is always internal-only."""
+    customer_key = str(customer_key or "").strip()
     conn = get_db_connection()
     cur = get_cursor(conn)
     try:
@@ -445,16 +443,31 @@ def get_customer_space(customer_key):
     finally:
         conn.close()
 
-    orders = [get_order(number) for number in order_numbers if number]
-    return {"customer": customer, "orders": [x for x in orders if x]}
+    orders = []
+    for number in order_numbers:
+        if not number:
+            continue
+        order = get_order(number)
+        if not order or _status_is_cancelled(order.get("order_status")):
+            continue
+        workflows = order.get("workflows") or []
+        order["workflows"] = [wf for wf in workflows if not _status_is_cancelled(wf.get("status"))]
+        orders.append(order)
+    return {"customer": customer, "orders": orders}
 
 
-def create_live_share(customer_key, source_site=None, expires_hours=24, permanent=False):
+def create_live_share(customer_key, source_site=None, expires_hours=24, permanent=False,
+                      history_scope="current", include_cancelled=False):
     customer_key = str(customer_key or "").strip()
     if not customer_key:
         raise ValueError("customer_key is required")
-    if get_customer_space(customer_key) is None:
+    if get_customer_space(customer_key, history_scope=history_scope, include_cancelled=False) is None:
         raise ValueError("customer not found")
+
+    history_scope = str(history_scope or "current").strip().lower()
+    if history_scope not in {"current", "3m", "6m", "12m", "all"}:
+        history_scope = "current"
+    include_cancelled = False
 
     if permanent:
         expires_at = None
@@ -474,9 +487,9 @@ def create_live_share(customer_key, source_site=None, expires_hours=24, permanen
     try:
         cur.execute(
             """INSERT INTO cloud_share_tokens
-               (token_hash, customer_key, mode, status, source_site, expires_at)
-               VALUES (?, ?, 'LIVE', 'active', ?, ?)""",
-            (token_hash, customer_key, (str(source_site or "").upper()[:16] or None), expires_at),
+               (token_hash, customer_key, mode, status, source_site, history_scope, include_cancelled, expires_at)
+               VALUES (?, ?, 'LIVE', 'active', ?, ?, FALSE, ?)""",
+            (token_hash, customer_key, (str(source_site or "").upper()[:16] or None), history_scope, expires_at),
         )
         conn.commit()
     except Exception:
@@ -484,7 +497,13 @@ def create_live_share(customer_key, source_site=None, expires_hours=24, permanen
         raise
     finally:
         conn.close()
-    return {"token": raw_token, "customer_key": customer_key, "expires_at": expires_at}
+    return {
+        "token": raw_token,
+        "customer_key": customer_key,
+        "expires_at": expires_at,
+        "history_scope": history_scope,
+        "include_cancelled": False,
+    }
 
 
 def resolve_live_share(raw_token):
@@ -496,7 +515,8 @@ def resolve_live_share(raw_token):
     cur = get_cursor(conn)
     try:
         cur.execute(
-            """SELECT token_hash, customer_key, mode, status, source_site, created_at, expires_at
+            """SELECT token_hash, customer_key, mode, status, source_site,
+                      history_scope, include_cancelled, created_at, expires_at
                FROM cloud_share_tokens WHERE token_hash=?""",
             (token_hash,),
         )
@@ -507,6 +527,7 @@ def resolve_live_share(raw_token):
     finally:
         conn.close()
 
+    share["include_cancelled"] = False
     if share.get("status") != "active":
         return share, "revoked"
     expires_at = share.get("expires_at")
