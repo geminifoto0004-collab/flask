@@ -185,6 +185,7 @@ def _fingerprint():
     h = hashlib.sha256()
     for path in (
         Path(__file__), TPL / "guest_customer.html", TPL / "guest_order.html",
+        ROOT / "services" / "order_public_share_fast.py",
         ORDER / "status_definitions.py", STATIC / "css" / "guest.css",
         STATIC / "js" / "ui_i18n.js", STATIC / "js" / "theme.js",
         STATIC / "js" / "guest_reports.js",
