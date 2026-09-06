@@ -204,10 +204,21 @@ def replace_customer_snapshot(
             for row in cur.fetchall() or []
         }
         affected_numbers = sorted(existing_numbers | set(orders))
-        for order_number in affected_numbers:
-            cur.execute("DELETE FROM cloud_workflow_history WHERE order_number=?", (order_number,))
-            cur.execute("DELETE FROM cloud_workflows WHERE order_number=?", (order_number,))
-            cur.execute("DELETE FROM cloud_orders WHERE order_number=?", (order_number,))
+        if affected_numbers:
+            placeholders = ",".join("?" for _ in affected_numbers)
+            params = tuple(affected_numbers)
+            cur.execute(
+                f"DELETE FROM cloud_workflow_history WHERE order_number IN ({placeholders})",
+                params,
+            )
+            cur.execute(
+                f"DELETE FROM cloud_workflows WHERE order_number IN ({placeholders})",
+                params,
+            )
+            cur.execute(
+                f"DELETE FROM cloud_orders WHERE order_number IN ({placeholders})",
+                params,
+            )
         cur.execute("DELETE FROM cloud_customers WHERE customer_key=?", (customer_key,))
 
         if customers:
@@ -219,24 +230,25 @@ def replace_customer_snapshot(
                 list(customers.values()),
             )
         if orders:
+            payload_json = {
+                str(payload.get("order_number") or "").strip(): json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                )
+                for payload in payloads
+            }
             executemany_sql(
                 cur,
                 """INSERT INTO cloud_orders
                    (order_number, customer_key, customer_name, order_status, order_date,
                     expected_delivery_date, production_type, product_name, product_code,
-                    pattern_code, quantity, active, source_site)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                list(orders.values()),
-            )
-            executemany_sql(
-                cur,
-                "UPDATE cloud_orders SET render_payload=? WHERE order_number=?",
+                    pattern_code, quantity, active, source_site, render_payload)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    (
-                        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str),
-                        str(payload.get("order_number") or "").strip(),
-                    )
-                    for payload in payloads
+                    values + (payload_json[order_number],)
+                    for order_number, values in orders.items()
                 ],
             )
         if workflows:
