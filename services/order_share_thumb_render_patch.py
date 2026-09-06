@@ -143,3 +143,6 @@ def _thumb_render_patch_startup(state):
 # Old assets can legitimately predate thumb metadata. Keep them visible by signing
 # their existing WEB object directly while backfill catches up; no B2 HEAD/resize occurs.
 from services import order_share_thumb_legacy_fallback as _legacy_fallback  # noqa: E402,F401
+
+# Share access counters, admin state and mutable expiry are control-plane only.
+from services import order_share_admin_runtime_patch as _share_admin_runtime  # noqa: E402,F401
