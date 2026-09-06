@@ -119,13 +119,15 @@ def _record_access(token):
 
 @b2_test_bp.after_app_request
 def _count_successful_public_share_open(response):
-    """Count one visit per successful HTML page request, never image/API requests."""
+    """Count one real page open; the 45s live-refresh fetch must not inflate visits."""
     try:
         path = str(request.path or "")
         parts = path.strip("/").split("/")
         content_type = str(response.headers.get("Content-Type") or "").lower()
+        auto_refresh = str(request.headers.get("X-Guest-Auto-Refresh") or "").strip().lower() in {"1", "true", "yes", "on"}
         if (
             request.method == "GET"
+            and not auto_refresh
             and len(parts) == 2
             and parts[0] == "share"
             and parts[1] != "test"
@@ -270,13 +272,13 @@ def _update_share_settings_with_expiry():
         conn = get_db_connection()
         cur = get_cursor(conn)
         try:
+            cur.execute("SELECT token_hash FROM cloud_share_tokens WHERE token_hash=? AND status='active' LIMIT 1", (token_hash,))
+            if not cur.fetchone():
+                return jsonify({"ok": False, "error": "active share not found"}), 404
             cur.execute(
                 "UPDATE cloud_share_tokens SET expires_at=? WHERE token_hash=? AND status='active'",
                 (expires_at, token_hash),
             )
-            if not cur.rowcount:
-                conn.rollback()
-                return jsonify({"ok": False, "error": "active share not found"}), 404
             conn.commit()
         except Exception:
             conn.rollback()
