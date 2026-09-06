@@ -311,7 +311,6 @@ def _snapshot_load_page_data(token):
     customer_key = str((share or {}).get("customer_key") or "").strip()
     bundle = _decode_snapshot((data or {}).get("snapshot_payload"))
     if not bundle:
-        # Existing data may predate this table. Serve correctly now, then backfill.
         share, bundle, error = _ORIGINAL_LOAD_PAGE_DATA(token)
         if error:
             return share, bundle, error
@@ -370,15 +369,13 @@ def _sync_order_with_snapshot(payload, source_site=None):
     return result
 
 
-def _create_live_share_with_snapshot(
-    customer_key, source_site=None, expires_hours=24, permanent=False
-):
-    result = _ORIGINAL_CREATE_LIVE_SHARE(
-        customer_key,
-        source_site=source_site,
-        expires_hours=expires_hours,
-        permanent=permanent,
-    )
+def _create_live_share_with_snapshot(customer_key, *args, **kwargs):
+    # Keep this wrapper signature future-proof. create_live_share has gained
+    # share-visibility options over time (history_scope, status_filter_mode,
+    # show_pdf_pages, allow_report_pdf_download, show_images, ...).  The
+    # snapshot hook must never become a second schema that can reject a valid
+    # create call; pass every argument through unchanged to the real service.
+    result = _ORIGINAL_CREATE_LIVE_SHARE(customer_key, *args, **kwargs)
     # Move the expensive assembly to link creation instead of the customer's first GET.
     try:
         rebuild_snapshot(customer_key)
@@ -420,7 +417,6 @@ def _patch_asset_writers():
 
 
 def _backfill_active_shares():
-    # Let normal Flask imports finish, then prebuild only customers with live links.
     time.sleep(0.75)
     try:
         _ensure_table()
