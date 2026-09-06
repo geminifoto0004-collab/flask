@@ -169,6 +169,115 @@ def _build_rows(payloads: list[dict], source_site: str | None):
     return customers, orders, workflows, history
 
 
+def replace_customer_snapshot(
+    customer_key: str,
+    payloads: list[dict],
+    source_site=None,
+) -> dict:
+    """Replace one customer's safe ORDER text rows in one transaction.
+
+    Public-share tokens, B2 objects and cloud_assets metadata are intentionally kept.
+    The caller rebuilds the persisted share snapshot after this transaction commits.
+    """
+    customer_key = str(customer_key or "").strip()
+    if not customer_key:
+        raise ValueError("customer_key is required")
+    if not isinstance(payloads, list):
+        raise ValueError("orders must be a list")
+    if len(payloads) > MAX_ORDERS:
+        raise ValueError(f"too many orders in one customer snapshot (max {MAX_ORDERS})")
+
+    source_site = _normalize_source_site(source_site)
+    customers, orders, workflows, history = _build_rows(payloads, source_site)
+    if len(orders) != len(payloads):
+        raise ValueError("one or more ORDER payloads are invalid or duplicated")
+    if any(str(values[1] or "").strip() != customer_key for values in orders.values()):
+        raise ValueError("all orders must belong to customer_key")
+
+    init_snapshot_state_table()
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        cur.execute("SELECT order_number FROM cloud_orders WHERE customer_key=?", (customer_key,))
+        existing_numbers = {
+            str((get_row_dict(row, cur) or {}).get("order_number") or "").strip()
+            for row in cur.fetchall() or []
+        }
+        affected_numbers = sorted(existing_numbers | set(orders))
+        for order_number in affected_numbers:
+            cur.execute("DELETE FROM cloud_workflow_history WHERE order_number=?", (order_number,))
+            cur.execute("DELETE FROM cloud_workflows WHERE order_number=?", (order_number,))
+            cur.execute("DELETE FROM cloud_orders WHERE order_number=?", (order_number,))
+        cur.execute("DELETE FROM cloud_customers WHERE customer_key=?", (customer_key,))
+
+        if customers:
+            executemany_sql(
+                cur,
+                """INSERT INTO cloud_customers
+                   (customer_key, customer_name, active, source_site)
+                   VALUES (?, ?, ?, ?)""",
+                list(customers.values()),
+            )
+        if orders:
+            executemany_sql(
+                cur,
+                """INSERT INTO cloud_orders
+                   (order_number, customer_key, customer_name, order_status, order_date,
+                    expected_delivery_date, production_type, product_name, product_code,
+                    pattern_code, quantity, active, source_site)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                list(orders.values()),
+            )
+            executemany_sql(
+                cur,
+                "UPDATE cloud_orders SET render_payload=? WHERE order_number=?",
+                [
+                    (
+                        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str),
+                        str(payload.get("order_number") or "").strip(),
+                    )
+                    for payload in payloads
+                ],
+            )
+        if workflows:
+            executemany_sql(
+                cur,
+                """INSERT INTO cloud_workflows
+                   (workflow_key, order_number, workflow_number, workflow_type, status,
+                    production_type, product_name, product_code, quantity,
+                    expected_delivery_date, last_status_change_date, draft_date,
+                    sort_order, active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                list(workflows.values()),
+            )
+        if history:
+            executemany_sql(
+                cur,
+                """INSERT INTO cloud_workflow_history
+                   (history_key, workflow_key, order_number, status, action_date,
+                    sort_order, active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                list(history.values()),
+            )
+        # A customer-scoped replacement makes the previous whole-database hash stale.
+        # Removing its state forces any later whole snapshot publisher to re-check data.
+        cur.execute("DELETE FROM cloud_order_snapshot_state WHERE snapshot_key=?", (SNAPSHOT_KEY,))
+        conn.commit()
+        return {
+            "customer_key": customer_key,
+            "orders": len(orders),
+            "workflows": len(workflows),
+            "timeline_items": len(history),
+            "stale_orders_removed": len(existing_numbers - set(orders)),
+            "physical_objects_deleted": 0,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def replace_snapshot(
     payloads: list[dict],
     snapshot_hash: str,

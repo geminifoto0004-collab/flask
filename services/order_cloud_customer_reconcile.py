@@ -15,7 +15,10 @@ from services.order_cloud_customer_storage import _INTENT_TABLE
 
 @b2_test_bp.before_app_request
 def _reconcile_customer_orders():
-    if request.method != "POST" or request.path != "/api/order-cloud/customer/reconcile-orders":
+    if request.method != "POST" or request.path not in {
+        "/api/order-cloud/customer/reconcile-orders",
+        "/api/order-cloud/customer/snapshot",
+    }:
         return None
 
     _source_site, auth_error = _order_cloud_auth_source()
@@ -29,6 +32,24 @@ def _reconcile_customer_orders():
         raw_orders = payload.get("order_numbers")
         if not customer_key:
             return jsonify({"ok": False, "error": "customer_key is required"}), 400
+
+        if request.path.endswith("/snapshot"):
+            raw_payloads = payload.get("orders")
+            if not isinstance(raw_payloads, list):
+                return jsonify({"ok": False, "error": "orders must be a list"}), 400
+            if not raw_payloads and not bool(payload.get("confirm_empty", False)):
+                return jsonify({"ok": False, "error": "empty customer snapshot requires confirm_empty=true"}), 400
+            from services.order_cloud_snapshot_service import replace_customer_snapshot
+            result = replace_customer_snapshot(
+                customer_key,
+                raw_payloads,
+                source_site=_source_site,
+            )
+            from services import order_customer_share_snapshot as snapshot
+            bundle = snapshot.rebuild_snapshot(customer_key)
+            result["snapshot_present"] = bool(bundle)
+            return jsonify({"ok": True, "result": result})
+
         if not isinstance(raw_orders, list):
             return jsonify({"ok": False, "error": "order_numbers must be a list"}), 400
         if len(raw_orders) > 50000:
