@@ -1,4 +1,5 @@
 <!doctype html>
+{% import 'tracking/_guest_share_common.html' as guest_shared %}
 <html lang="es">
 <head>
     <meta charset="utf-8">
@@ -142,6 +143,7 @@
             </div>
             <div class="guest-card-body">
                 <span class="guest-card-status" data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</span>
+                {{ guest_shared.shipping_badge(order) }}
                 <div class="guest-card-number">{{ order.workflow_number or order.order_number }}</div>
                 {% if order.product_name or order.production_type or order.product_code %}
                 <div class="guest-card-product">{{ order.product_name or order.production_type }}{% if order.product_code %} · {{ order.product_code }}{% endif %}</div>
@@ -167,56 +169,6 @@
         </div>
     </div>
 </div>
-<script>
-// Real waterfall columns, built in JS instead of CSS `column-count`.
-// CSS multi-column balances height on first paint and can slice the first card of a new
-// column mid-content (cover shows, order number/status below it gets clipped) even with
-// break-inside:avoid — this is a known WebKit/Blink limitation, not fixable with tuning.
-// Moving existing card nodes into real column containers avoids that class of bug entirely,
-// and since the cards keep their identity (same elements, same data-* attributes), every
-// script below that queries [data-guest-card] / [data-guest-carousel] still works unchanged.
-(function () {
-    const grid = document.getElementById('guestGrid');
-    if (!grid) return;
-    const cards = Array.from(grid.children).filter(function (node) {
-        return node.matches && node.matches('[data-guest-card]');
-    });
-    if (!cards.length) return;
-
-    function columnCountForWidth() {
-        // Keep the existing phone/tablet behavior, but let desktop WEB use the available
-        // width like a content wall instead of staying trapped in the mobile-sized shell.
-        if (window.innerWidth >= 1500) return 5;
-        if (window.innerWidth >= 1024) return 4;
-        return window.innerWidth >= 680 ? 3 : 2;
-    }
-
-    function distribute() {
-        const count = columnCountForWidth();
-        const existingCols = Array.from(grid.querySelectorAll('.guest-grid-col'));
-        if (existingCols.length === count) return; // already correct shape, avoid needless DOM churn
-        const cols = [];
-        for (let i = 0; i < count; i++) {
-            const col = document.createElement('div');
-            col.className = 'guest-grid-col';
-            cols.push(col);
-        }
-        // Round-robin placement: cover heights are uniform (fixed aspect-ratio), so this
-        // reads as a natural waterfall without needing a height-measurement pass.
-        cards.forEach(function (card, index) {
-            cols[index % count].appendChild(card);
-        });
-        grid.replaceChildren.apply(grid, cols);
-    }
-
-    distribute();
-    let resizeTimer = null;
-    window.addEventListener('resize', function () {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(distribute, 150);
-    }, {passive: true});
-})();
-</script>
 <script>
 // Guest pages follow whatever language the rest of the app is on (window.getTrackingLanguage,
 // shared via the same 'tracking_ui_language' localStorage key from ui_i18n.js) — no separate

@@ -13,6 +13,7 @@ import json
 from threading import Lock
 
 from database import get_cursor, get_db_connection, get_row_dict
+from order_tracking.share_common import apply_shipping_summary, derive_shipping_summary
 
 
 class RenderOrderDataProvider:
@@ -108,7 +109,8 @@ class RenderOrderDataProvider:
         conn = get_db_connection()
         cur = get_cursor(conn)
         try:
-            where = "WHERE o.active=TRUE"
+            where = """WHERE o.active=TRUE
+                       AND UPPER(COALESCE(NULLIF(TRIM(o.order_status),''),'ACTIVE'))='ACTIVE'"""
             params = []
             if customer_name:
                 where += " AND LOWER(o.customer_name)=LOWER(?)"
@@ -141,7 +143,7 @@ class RenderOrderDataProvider:
                     w.sort_order,
                     w.updated_at AS workflow_updated_at
                 FROM cloud_orders o
-                LEFT JOIN cloud_workflows w
+                INNER JOIN cloud_workflows w
                   ON w.order_number=o.order_number AND w.active=TRUE
                 {where}
                 ORDER BY o.order_date DESC, o.order_number DESC, w.sort_order, w.workflow_key
@@ -182,12 +184,6 @@ class RenderOrderDataProvider:
                 "last_shipping_date": "", "last_shipping_status": "", "partial_ship_count": 0, "notes": "",
             }
 
-        shipping_events = [
-            h for h in timeline
-            if str(h.get("status") or "").upper() in {"PARTIAL_SHIPPED", "ALL_SHIPPED", "SHIPPED", "COMPLETED"}
-        ]
-        last_shipping = shipping_events[-1] if shipping_events else {}
-        partial_count = sum(1 for h in timeline if str(h.get("status") or "").upper() == "PARTIAL_SHIPPED")
         row = {
             "order_number": source.get("order_number"),
             "workflow_number": source.get("workflow_number") or workflow_key,
@@ -203,15 +199,40 @@ class RenderOrderDataProvider:
             "expected_delivery_date": source.get("expected_delivery_date") or source.get("order_expected_delivery_date") or "",
             "status_days": self._days_since(last_change), "is_locked": 1, "can_edit_notes": False, "no_workflow": False,
             "last_history_id": None, "last_status_change_date": last_change, "draft_date": source.get("draft_date"),
-            "last_shipping_date": last_shipping.get("action_date") or "",
-            "last_shipping_status": last_shipping.get("status") or "", "partial_ship_count": partial_count, "notes": "",
+            "last_shipping_date": "", "last_shipping_status": "", "partial_ship_count": 0, "notes": "",
         }
+        apply_shipping_summary(row, derive_shipping_summary(timeline))
         row["status_light"], row["status_light_hint"] = self._safe_status_light(row)
         return row
 
+    def _filter_history_scope(self, rows, history_scope="current"):
+        scope = str(history_scope or "current").strip().lower()
+        months = {"current": 3, "3m": 3, "6m": 6, "12m": 12, "all": None}.get(scope, 3)
+        cutoff = self._months_ago(months) if months is not None else None
+        try:
+            from order_tracking.status_definitions import STATUS_KEYS
+            completed = str(STATUS_KEYS["COMPLETED"]).upper()
+            cancelled = str(STATUS_KEYS["CANCELLED"]).upper()
+        except Exception:
+            completed, cancelled = "COMPLETED", "CANCELLED"
+
+        visible = []
+        for row in rows:
+            status = str(row.get("current_status") or "").upper()
+            if status == cancelled:
+                continue
+            if cutoff is None or status != completed:
+                visible.append(row)
+                continue
+            changed = self._date_only(row.get("last_status_change_date") or row.get("status_updated_at"))
+            if changed and changed >= cutoff:
+                visible.append(row)
+        return visible
+
     def load_home_orders(self, role: str, user_id):
         raw_rows, history = self._load_joined_rows()
-        return [self._home_row(row, history.get(str(row.get("workflow_key") or ""), [])) for row in raw_rows]
+        rows = [self._home_row(row, history.get(str(row.get("workflow_key") or ""), [])) for row in raw_rows]
+        return self._filter_history_scope(rows, "current")
 
     def get_order_detail(self, order_number: str):
         self._ensure()
@@ -332,33 +353,9 @@ class RenderOrderDataProvider:
             return {"customer_name": str(customer_name or "").strip(), "data": []}
         exact_name = rows[0].get("customer_name") or str(customer_name or "").strip()
 
-        scope = str(history_scope or "current").strip().lower()
-        months = {"current": 3, "6m": 6, "12m": 12, "all": None}.get(scope, 3)
-        cutoff = self._months_ago(months) if months is not None else None
-        try:
-            from order_tracking.status_definitions import STATUS_KEYS
-            completed = STATUS_KEYS["COMPLETED"]
-            cancelled = STATUS_KEYS["CANCELLED"]
-        except Exception:
-            completed, cancelled = "COMPLETED", "CANCELLED"
-
-        filtered = []
-        for row in rows:
-            status = str(row.get("current_status") or "")
-            if not row.get("workflow_number"):
-                filtered.append(row)
-                continue
-            if status == cancelled and not include_cancelled:
-                continue
-            if cutoff is None:
-                filtered.append(row)
-                continue
-            if status not in {completed, cancelled}:
-                filtered.append(row)
-                continue
-            changed = self._date_only(row.get("last_status_change_date") or row.get("status_updated_at"))
-            if changed and changed >= cutoff:
-                filtered.append(row)
+        # Cancelled rows are internal-only on both LAN and Render. The argument is
+        # retained for interface compatibility with the shared ORDER routes.
+        filtered = self._filter_history_scope(rows, history_scope)
         return {"customer_name": exact_name, "data": filtered}
 
     # Enhanced LAN-compatible drawer readers use render_payload.  Defining these

@@ -18,6 +18,51 @@ from database import (
     get_db_connection,
     get_row_dict,
 )
+from order_tracking.share_common import apply_shipping_summary, derive_shipping_summary
+
+
+_PUBLIC_HISTORY_SCOPES = {"current": 3, "3m": 3, "6m": 6, "12m": 12, "all": None}
+
+
+def _date_only(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value).strip().split()[0], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _months_ago(months):
+    today = datetime.utcnow().date()
+    year, month = today.year, today.month - int(months)
+    while month <= 0:
+        year -= 1
+        month += 12
+    day = today.day
+    while day > 28:
+        try:
+            return today.replace(year=year, month=month, day=day)
+        except ValueError:
+            day -= 1
+    return today.replace(year=year, month=month, day=day)
+
+
+def _workflow_visible_in_scope(workflow, history_scope="current"):
+    if _status_is_cancelled((workflow or {}).get("status")):
+        return False
+    status = str((workflow or {}).get("status") or "").strip().upper()
+    months = _PUBLIC_HISTORY_SCOPES.get(str(history_scope or "current").strip().lower(), 3)
+    if months is None or status != "COMPLETED":
+        return True
+    timeline = list((workflow or {}).get("timeline") or [])
+    changed = (
+        (workflow or {}).get("last_status_change_date")
+        or (timeline[-1].get("action_date") if timeline else None)
+        or (workflow or {}).get("updated_at")
+    )
+    changed_date = _date_only(changed)
+    return bool(changed_date and changed_date >= _months_ago(months))
 
 
 def _ensure_column(cur, table_name, column_name, definition):
@@ -414,8 +459,17 @@ def get_order(order_number):
                 (wf["workflow_key"],),
             )
             wf["timeline"] = [_safe_order_dict(r, cur) for r in cur.fetchall()]
+            apply_shipping_summary(wf, derive_shipping_summary(wf["timeline"]))
             workflows.append(wf)
         order["workflows"] = workflows
+        apply_shipping_summary(
+            order,
+            derive_shipping_summary(
+                event
+                for workflow in workflows
+                for event in (workflow.get("timeline") or [])
+            ),
+        )
         return order
     finally:
         conn.close()
@@ -436,7 +490,10 @@ def get_customer_space(customer_key, history_scope="current", include_cancelled=
             return None
         customer = _safe_order_dict(row, cur)
         cur.execute(
-            "SELECT order_number FROM cloud_orders WHERE customer_key=? AND active=TRUE ORDER BY order_date DESC, order_number DESC",
+            """SELECT order_number FROM cloud_orders
+               WHERE customer_key=? AND active=TRUE
+                 AND UPPER(COALESCE(NULLIF(TRIM(order_status),''),'ACTIVE'))='ACTIVE'
+               ORDER BY order_date DESC, order_number DESC""",
             (customer_key,),
         )
         order_numbers = [(_safe_order_dict(r, cur) or {}).get("order_number") for r in cur.fetchall()]
@@ -450,8 +507,19 @@ def get_customer_space(customer_key, history_scope="current", include_cancelled=
         order = get_order(number)
         if not order or _status_is_cancelled(order.get("order_status")):
             continue
-        workflows = order.get("workflows") or []
-        order["workflows"] = [wf for wf in workflows if not _status_is_cancelled(wf.get("status"))]
+        workflows = list(order.get("workflows") or [])
+        visible_workflows = [wf for wf in workflows if _workflow_visible_in_scope(wf, history_scope)]
+        if workflows and not visible_workflows:
+            continue
+        order["workflows"] = visible_workflows
+        apply_shipping_summary(
+            order,
+            derive_shipping_summary(
+                event
+                for workflow in visible_workflows
+                for event in (workflow.get("timeline") or [])
+            ),
+        )
         orders.append(order)
     return {"customer": customer, "orders": orders}
 

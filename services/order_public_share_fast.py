@@ -132,8 +132,18 @@ def _error_response(state):
 
 
 def _months_ago_first(months):
-    now = datetime.utcnow(); month0 = now.month - 1 - int(months)
-    return datetime(now.year + month0 // 12, month0 % 12 + 1, 1)
+    # SQLite's date('now', '-N months') keeps the day of month. Using the first
+    # day on Render made its "current" share include extra completed workflows.
+    now = datetime.utcnow()
+    month0 = now.month - 1 - int(months)
+    year, month = now.year + month0 // 12, month0 % 12 + 1
+    day = now.day
+    while day > 28:
+        try:
+            return now.replace(year=year, month=month, day=day)
+        except ValueError:
+            day -= 1
+    return now.replace(year=year, month=month, day=day)
 
 
 def _parse_dt(value):
@@ -147,13 +157,18 @@ def _parse_dt(value):
 
 def _wf_visible(wf, scope, include_cancelled):
     status = str((wf or {}).get('status') or '').strip().upper()
-    if scope == 'all':
-        return include_cancelled or status != 'CANCELLED'
-    if status not in {'COMPLETED', 'CANCELLED'}:
-        return True
-    if status == 'CANCELLED' and not include_cancelled:
+    if status in {'CANCELLED', 'CANCELED', 'CANCELADO', 'CANCELADA', '已取消'}:
         return False
-    changed = _parse_dt((wf or {}).get('last_status_change_date') or (wf or {}).get('updated_at'))
+    if scope == 'all':
+        return True
+    if status != 'COMPLETED':
+        return True
+    timeline = list((wf or {}).get('timeline') or [])
+    changed = _parse_dt(
+        (wf or {}).get('last_status_change_date')
+        or (timeline[-1].get('action_date') if timeline else None)
+        or (wf or {}).get('updated_at')
+    )
     if not changed:
         return False
     return changed >= _months_ago_first({'current':3,'6m':6,'12m':12}.get(scope, 3))

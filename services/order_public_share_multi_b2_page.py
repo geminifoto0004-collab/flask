@@ -278,6 +278,7 @@ def _single_roundtrip_rows(token):
         FROM cloud_orders o
         INNER JOIN cloud_share_tokens s ON s.customer_key=o.customer_key
         WHERE s.token_hash=? AND o.active=TRUE
+          AND UPPER(COALESCE(NULLIF(TRIM(o.order_status),''),'ACTIVE'))='ACTIVE'
 
         UNION ALL
 
@@ -305,6 +306,7 @@ def _single_roundtrip_rows(token):
         INNER JOIN cloud_orders o ON o.order_number=a.order_number
                                 AND o.customer_key=s.customer_key
                                 AND o.active=TRUE
+                                AND UPPER(COALESCE(NULLIF(TRIM(o.order_status),''),'ACTIVE'))='ACTIVE'
         WHERE s.token_hash=? AND a.active=TRUE
     """
 
@@ -461,6 +463,7 @@ def _load_customer_bundle(customer_key):
                       updated_at AS row_updated_at, render_payload
                FROM cloud_orders
                WHERE customer_key=? AND active=TRUE
+                 AND UPPER(COALESCE(NULLIF(TRIM(order_status),''),'ACTIVE'))='ACTIVE'
                ORDER BY order_date DESC, order_number DESC""",
             (customer_key,),
         )
