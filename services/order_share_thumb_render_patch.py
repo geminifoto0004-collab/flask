@@ -146,3 +146,6 @@ from services import order_share_thumb_legacy_fallback as _legacy_fallback  # no
 
 # Share access counters, admin state and mutable expiry are control-plane only.
 from services import order_share_admin_runtime_patch as _share_admin_runtime  # noqa: E402,F401
+
+# Render customer wall + order detail expiry use an explicit DDd HHh MMm SSs countdown.
+from services import order_guest_expiry_format_patch as _guest_expiry_format  # noqa: E402,F401
