@@ -70,6 +70,7 @@ def _validate_share(share):
     if expiry and datetime.utcnow() >= expiry:
         return share, Response('Este enlace ha expirado.', 410, mimetype='text/plain')
     share['history_scope'] = str(share.get('history_scope') or 'current')
+    share['status_filter_mode'] = 'full' if str(share.get('status_filter_mode') or '').lower() == 'full' else 'simple'
     share['include_cancelled'] = bool(share.get('include_cancelled'))
     return share, None
 
@@ -227,6 +228,7 @@ def _single_roundtrip_rows(token):
             s.created_at,
             s.expires_at,
             s.history_scope,
+            s.status_filter_mode,
             s.include_cancelled,
             NULL AS order_number,
             NULL AS row_customer_key,
@@ -259,7 +261,7 @@ def _single_roundtrip_rows(token):
 
         SELECT
             'O' AS row_kind,
-            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
             o.order_number,
             o.customer_key,
             o.customer_name,
@@ -284,7 +286,7 @@ def _single_roundtrip_rows(token):
 
         SELECT
             'A' AS row_kind,
-            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
             a.order_number,
             a.customer_key,
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
@@ -336,6 +338,7 @@ def _bundle_from_rows(rows):
                 'created_at': row.get('created_at'),
                 'expires_at': row.get('expires_at'),
                 'history_scope': row.get('history_scope'),
+                'status_filter_mode': row.get('status_filter_mode') or 'simple',
                 'include_cancelled': row.get('include_cancelled'),
             }
         elif kind == 'O':

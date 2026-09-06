@@ -24,7 +24,7 @@
     <script src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
     <script src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
 </head>
-<body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}">
+<body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}">
 <div class="guest-shell">
     <header class="guest-head">
         <div class="guest-brand">
@@ -200,7 +200,8 @@ guestApplyBilingualText();
     tick(); setInterval(tick, 1000);
 })();
 
-// Exact-status filters for the temporary guest customer wall.
+// Customer-friendly filters. The default uses three plain groups; an admin can
+// switch an existing share to exact/full statuses without creating a new URL.
 // The order/media list itself is still rebuilt from current database/file rows on each page load;
 // this only hides/shows cards already authorized for this token/customer.
 (function () {
@@ -208,6 +209,7 @@ guestApplyBilingualText();
     const row = document.getElementById('guestStatusFilterRow');
     const countNode = document.getElementById('guestVisibleCount');
     const cards = Array.from(document.querySelectorAll('[data-guest-card]'));
+    const filterMode = String(document.body.dataset.guestStatusFilterMode || 'simple').toLowerCase() === 'full' ? 'full' : 'simple';
     if (!row || !cards.length) return;
 
     function currentLang() {
@@ -217,17 +219,32 @@ guestApplyBilingualText();
         return currentLang() === 'zh_cn' ? (n + ' 个订单') : (n + (n === 1 ? ' pedido' : ' pedidos'));
     }
 
-    const counts = new Map();
+    const exactCounts = new Map();
+    const simpleGroups = [
+        {key:'unconfirmed', zh:'未确认', es:'Sin confirmar', statuses:new Set(['QUOTE_CONFIRMING','DRAFT_CONFIRMING','SAMPLE_CONFIRMING'])},
+        {key:'confirmed', zh:'已确认', es:'Confirmado', statuses:null},
+        {key:'done', zh:'已完成', es:'Completado', statuses:new Set(['COMPLETED','ALL_SHIPPED','SHIPPED'])}
+    ];
+    function simpleKey(status) {
+        status = String(status || '').trim().toUpperCase();
+        if (simpleGroups[0].statuses.has(status)) return 'unconfirmed';
+        if (simpleGroups[2].statuses.has(status)) return 'done';
+        return 'confirmed';
+    }
     cards.forEach(function (card) {
         const key = String(card.dataset.guestStatusKey || '__order__');
+        card.dataset.guestStatusGroup = simpleKey(key);
         const zh = String(card.dataset.guestStatusZh || '订单');
         const es = String(card.dataset.guestStatusEs || 'Pedido');
-        const item = counts.get(key) || {key:key, zh:zh, es:es, count:0};
+        const item = exactCounts.get(key) || {key:key, zh:zh, es:es, count:0};
         item.count += 1;
-        counts.set(key, item);
+        exactCounts.set(key, item);
     });
 
-    Array.from(counts.values()).forEach(function (item) {
+    const filterItems = filterMode === 'full' ? Array.from(exactCounts.values()) : simpleGroups.map(function (group) {
+        return {...group, count:cards.filter(function (card) { return card.dataset.guestStatusGroup === group.key; }).length};
+    });
+    filterItems.forEach(function (item) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'guest-status-chip';
@@ -246,7 +263,8 @@ guestApplyBilingualText();
     const storageKey = 'trackingGuestStatus:' + guestToken;
     let selected = 'all';
     try { selected = sessionStorage.getItem(storageKey) || 'all'; } catch (_) {}
-    if (selected !== 'all' && !counts.has(selected)) selected = 'all';
+    const availableKeys = new Set(filterItems.map(function (item) { return item.key; }));
+    if (selected !== 'all' && !availableKeys.has(selected)) selected = 'all';
 
     function loadFirstVisibleImage(card) {
         const img = card && card.querySelector('.guest-cover-slide img');
@@ -260,7 +278,8 @@ guestApplyBilingualText();
         key = key || 'all';
         let visible = 0;
         cards.forEach(function (card) {
-            const show = key === 'all' || String(card.dataset.guestStatusKey || '') === key;
+            const cardKey = filterMode === 'full' ? String(card.dataset.guestStatusKey || '') : String(card.dataset.guestStatusGroup || 'confirmed');
+            const show = key === 'all' || cardKey === key;
             card.hidden = !show;
             if (show) {
                 visible += 1;
@@ -274,16 +293,15 @@ guestApplyBilingualText();
         });
         if (countNode) countNode.textContent = countLabel(visible);
         try { sessionStorage.setItem(storageKey, key); } catch (_) {}
-        if (options && options.scroll) {
-            const filter = document.getElementById('guestStatusFilter');
-            if (filter) filter.scrollIntoView({behavior:'smooth', block:'start'});
-        }
     }
 
     row.addEventListener('click', function (event) {
         const btn = event.target.closest('[data-guest-status-filter]');
         if (!btn) return;
-        apply(btn.dataset.guestStatusFilter || 'all', {scroll:true});
+        const top = window.scrollY;
+        apply(btn.dataset.guestStatusFilter || 'all');
+        // Hiding a masonry row must not move the customer's viewport.
+        requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
     });
 
     document.addEventListener('tracking:languagechange', function () {
@@ -291,6 +309,54 @@ guestApplyBilingualText();
     });
 
     apply(selected);
+})();
+
+// Keep a page left open by the customer fresh. Poll markup without loading its images;
+// reload only when order/status/settings changed, and restore the prior reading position.
+(function () {
+    const token = String(document.body.dataset.guestToken || '');
+    if (!token || typeof fetch !== 'function' || typeof DOMParser === 'undefined') return;
+    const scrollKey = 'trackingGuestAutoScroll:' + token;
+    try {
+        const saved = Number(sessionStorage.getItem(scrollKey) || 0);
+        sessionStorage.removeItem(scrollKey);
+        if (saved > 0) requestAnimationFrame(function () { window.scrollTo(0, saved); });
+    } catch (_) {}
+    function signature(root) {
+        const body = root.body || document.body;
+        const parts = [String(body.dataset.guestStatusFilterMode || 'simple')];
+        root.querySelectorAll('[data-guest-card]').forEach(function (card) {
+            const carousel = card.querySelector('[data-guest-carousel]');
+            parts.push([
+                card.dataset.guestOrderKey || '',
+                card.dataset.guestStatusKey || '',
+                carousel ? carousel.dataset.imageCount || '0' : '0',
+                String(card.textContent || '').replace(/\s+/g, ' ').trim()
+            ].join(':'));
+        });
+        return parts.join('|');
+    }
+    let currentSignature = signature(document);
+    let checking = false;
+    setInterval(async function () {
+        if (checking || document.hidden || document.getElementById('guestDesktopDetailOverlay')?.hidden === false) return;
+        checking = true;
+        try {
+            const response = await fetch(location.href, {credentials:'same-origin', cache:'no-store', headers:{'X-Guest-Auto-Refresh':'1'}});
+            if (!response.ok) return;
+            const next = new DOMParser().parseFromString(await response.text(), 'text/html');
+            const nextSignature = signature(next);
+            if (nextSignature !== currentSignature) {
+                currentSignature = nextSignature;
+                try { sessionStorage.setItem(scrollKey, String(window.scrollY || 0)); } catch (_) {}
+                location.reload();
+            }
+        } catch (_) {
+            // A temporary network failure must not disturb an already usable page.
+        } finally {
+            checking = false;
+        }
+    }, 45000);
 })();
 
 // Temporary guest customer wall: swipe each order's media without opening the order.

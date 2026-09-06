@@ -202,6 +202,7 @@ def _customer_context(space, share, token):
         "token": token, "orders": _cards(space, token), "expires_at_epoch": expires,
         "is_permanent": not bool(expires), "allow_pdf_download": False, "pdf_count": 0,
         "allow_report_pdf_download": False, "STATIC_VER": _fingerprint()[:12],
+        "status_filter_mode": str((share or {}).get("status_filter_mode") or "simple"),
         "cloud_guest_base_url": f"/share/{token}",
     }
 

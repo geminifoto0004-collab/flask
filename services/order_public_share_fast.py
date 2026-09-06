@@ -63,6 +63,10 @@ def _scope(value):
     return value if value in _SCOPE_RANK else 'current'
 
 
+def _status_filter_mode(value):
+    return 'full' if str(value or '').strip().lower() in {'full', 'all', 'exact', 'detailed'} else 'simple'
+
+
 def _ensure_share_columns():
     """Run the idempotent migration once per Render process, never per request."""
     global _share_columns_ready
@@ -75,6 +79,8 @@ def _ensure_share_columns():
         try:
             if not check_column_exists(cur, 'cloud_share_tokens', 'history_scope'):
                 cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN history_scope VARCHAR(16) NULL")
+            if not check_column_exists(cur, 'cloud_share_tokens', 'status_filter_mode'):
+                cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN status_filter_mode VARCHAR(16) NOT NULL DEFAULT 'simple'")
             if not check_column_exists(cur, 'cloud_share_tokens', 'include_cancelled'):
                 cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN include_cancelled BOOLEAN NOT NULL DEFAULT FALSE")
             conn.commit()
@@ -100,7 +106,7 @@ def _resolve_share(token):
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute("""SELECT token_hash, customer_key, mode, status, source_site, created_at,
-                              expires_at, history_scope, include_cancelled
+                              expires_at, history_scope, status_filter_mode, include_cancelled
                        FROM cloud_share_tokens WHERE token_hash=? LIMIT 1""", (token_hash,))
         row = cur.fetchone()
         if not row:
@@ -110,6 +116,7 @@ def _resolve_share(token):
     finally:
         conn.close()
     share['history_scope'] = _scope(share.get('history_scope') or 'current')
+    share['status_filter_mode'] = _status_filter_mode(share.get('status_filter_mode'))
     share['include_cancelled'] = bool(share.get('include_cancelled'))
     if str(share.get('status') or '') != 'active':
         state = 'revoked'
@@ -270,6 +277,7 @@ def _create_scoped_share():
     from services.order_cloud_service import create_live_share
     payload = request.get_json(silent=True) or {}
     scope = _scope(payload.get('history_scope'))
+    status_filter_mode = _status_filter_mode(payload.get('status_filter_mode'))
     include_cancelled = bool(payload.get('include_cancelled'))
     try:
         result = create_live_share(payload.get('customer_key'), source_site=source_site,
@@ -278,17 +286,69 @@ def _create_scoped_share():
         token = result.pop('token'); token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
         conn = get_db_connection(); cur = get_cursor(conn)
         try:
-            cur.execute('UPDATE cloud_share_tokens SET history_scope=?, include_cancelled=? WHERE token_hash=?',
-                        (scope, bool(include_cancelled), token_hash)); conn.commit()
+            cur.execute('UPDATE cloud_share_tokens SET history_scope=?, status_filter_mode=?, include_cancelled=? WHERE token_hash=?',
+                        (scope, status_filter_mode, bool(include_cancelled), token_hash)); conn.commit()
         except Exception:
             conn.rollback(); raise
         finally: conn.close()
         expiry = result.get('expires_at'); result['expires_at'] = expiry.isoformat() if expiry else None
-        result['history_scope'] = scope; result['include_cancelled'] = include_cancelled
+        result['history_scope'] = scope; result['status_filter_mode'] = status_filter_mode; result['include_cancelled'] = include_cancelled
         result['share_url'] = request.host_url.rstrip('/') + '/share/' + token
         return jsonify({'ok': True, 'result': result})
     except ValueError as exc: return jsonify({'ok':False,'error':str(exc)}), 400
     except Exception as exc: return jsonify({'ok':False,'error':str(exc)}), 500
+
+
+def _update_share_settings():
+    """Mutate display/range settings for the same public URL and invalidate hot caches."""
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error: return auth_error
+    _ensure_order_cloud_tables(); _ensure_share_columns()
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get('token') or '').strip()
+    if not token:
+        return jsonify({'ok': False, 'error': 'token is required'}), 400
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    scope = _scope(payload.get('history_scope'))
+    status_filter_mode = _status_filter_mode(payload.get('status_filter_mode'))
+    conn = get_db_connection(); cur = get_cursor(conn)
+    try:
+        cur.execute("SELECT customer_key FROM cloud_share_tokens WHERE token_hash=? AND status='active' LIMIT 1", (token_hash,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'ok': False, 'error': 'active share not found'}), 404
+        customer_key = str((get_row_dict(row, cur) or {}).get('customer_key') or '')
+        cur.execute("""UPDATE cloud_share_tokens
+                       SET history_scope=?, status_filter_mode=?, include_cancelled=FALSE
+                       WHERE token_hash=? AND status='active'""",
+                    (scope, status_filter_mode, token_hash))
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        return jsonify({'ok': False, 'error': str(exc)}), 500
+    finally:
+        conn.close()
+
+    with _cache_lock:
+        _share_cache.pop(token, None)
+    # The public page has several deliberate long-lived hot layers. Drop only this
+    # token so the next request reads the final settings while keeping all other users hot.
+    try:
+        from services import order_public_share_multi_b2_page as page
+        from services import order_customer_share_hot_cache as hot
+        from services import order_share_render_cache as html_cache
+        with page._cache_lock:
+            page._token_cache.pop(token, None)
+            hot._HASH_TOKEN_CACHE.pop(token_hash, None)
+        with html_cache._LOCK:
+            html_cache._TOKEN_HTML.pop(token_hash, None)
+    except Exception as exc:
+        print(f'[WARN] share settings cache invalidation skipped: {type(exc).__name__}: {exc}')
+    return jsonify({'ok': True, 'result': {
+        'share_id': token_hash, 'customer_key': customer_key,
+        'history_scope': scope, 'status_filter_mode': status_filter_mode,
+        'include_cancelled': False,
+    }})
 
 
 def _prune_customer_scope():
@@ -328,6 +388,8 @@ def _order_public_share_fast_interceptor():
     path = request.path or ''
     if path == '/api/order-cloud/share/create' and request.method == 'POST':
         return _create_scoped_share()
+    if path == '/api/order-cloud/share/update' and request.method == 'POST':
+        return _update_share_settings()
     if path == '/api/order-cloud/sync/customer-scope' and request.method == 'POST':
         return _prune_customer_scope()
     if not path.startswith('/share/') or path.startswith('/share/test'):

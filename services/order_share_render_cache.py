@@ -58,6 +58,7 @@ def _share_variant(share):
     return (
         str(share.get("customer_key") or "").strip(),
         str(share.get("history_scope") or "current").strip().lower() or "current",
+        "full" if str(share.get("status_filter_mode") or "simple").strip().lower() == "full" else "simple",
         bool(share.get("include_cancelled")),
     )
 
@@ -65,11 +66,11 @@ def _share_variant(share):
 def _variant_key(share):
     if not _TEMPLATE_HASH:
         return ""
-    customer_key, history_scope, include_cancelled = _share_variant(share)
+    customer_key, history_scope, status_filter_mode, include_cancelled = _share_variant(share)
     if not customer_key:
         return ""
     raw = (
-        f"{_TEMPLATE_HASH}\0{customer_key}\0{history_scope}\0"
+        f"{_TEMPLATE_HASH}\0{customer_key}\0{history_scope}\0{status_filter_mode}\0"
         f"{1 if include_cancelled else 0}"
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -136,7 +137,7 @@ def _memory_put(share, html):
 
 def _persist(share, html):
     key = _variant_key(share)
-    customer_key, history_scope, include_cancelled = _share_variant(share)
+    customer_key, history_scope, _status_filter_mode, include_cancelled = _share_variant(share)
     if not key or not customer_key or not html or not _TEMPLATE_HASH:
         return
     _ensure_table()
@@ -265,7 +266,7 @@ def _db_shares():
         try:
             cur.execute(
                 """SELECT token_hash, customer_key, mode, status, source_site,
-                          created_at, expires_at, history_scope, include_cancelled
+                          created_at, expires_at, history_scope, status_filter_mode, include_cancelled
                    FROM cloud_share_tokens
                    WHERE status='active' AND customer_key IS NOT NULL"""
             )

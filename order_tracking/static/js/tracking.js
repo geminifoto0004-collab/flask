@@ -13094,6 +13094,7 @@ document.addEventListener('keydown', event => {
 // ==================== WEB / ADMIN 客户分享管理 ====================
 let desktopGuestShareMinutes = 60;
 let desktopGuestShareScope = 'current';
+let desktopGuestStatusFilterMode = 'simple';
 let desktopGuestShareMode = 'lan';
 let desktopGuestIsPermanent = false;
 let desktopGuestPasswordKind = 'none';
@@ -13425,6 +13426,7 @@ function openDesktopGuestShareDrawer(preferredCustomer='') {
     else if (desktopGuestFilteredCustomers.length>1) desktopGuestRenderCustomerResults('');
 
     desktopGuestShareScope='current'; desktopGuestSetSegment('desktopGuestScope','data-scope','current');
+    desktopGuestStatusFilterMode='simple'; desktopGuestSetSegment('desktopGuestStatusFilterMode','data-status-filter-mode','simple');
     const lanModeButton=modal.querySelector('#desktopGuestMode [data-share-mode="lan"]');
     const renderModeButton=modal.querySelector('#desktopGuestMode [data-share-mode="render"]');
     if (lanModeButton && !lanModeButton.disabled) desktopGuestSetMode('lan');
@@ -13482,7 +13484,8 @@ async function desktopGuestGenerateLink() {
             password_kind:password.kind,password:password.password,allow_pdf_download:false,
             show_pdf_pages:!!document.getElementById('desktopGuestShowPdfPages')?.checked,
             allow_report_pdf_download:!!document.getElementById('desktopGuestAllowReportPdf')?.checked,
-            history_scope:desktopGuestShareScope,include_cancelled:!!document.getElementById('desktopGuestIncludeCancelled')?.checked
+            history_scope:desktopGuestShareScope,status_filter_mode:desktopGuestStatusFilterMode,
+            include_cancelled:!!document.getElementById('desktopGuestIncludeCancelled')?.checked
         })});
         const payload=await response.json().catch(()=>({})); if(!response.ok||payload?.success===false)throw new Error(payload?.error||`HTTP ${response.status}`);
         const data=payload.data||{}; desktopGuestCurrentLinkId=String(data.id||data.share_id||''); desktopGuestCurrentLinkMode=desktopGuestShareMode;
@@ -13634,6 +13637,7 @@ document.addEventListener('click',function(event){
     const mode=event.target.closest('#desktopGuestMode [data-share-mode]');if(mode){desktopGuestSetMode(mode.dataset.shareMode);return;}
     const duration=event.target.closest('#desktopGuestLanDuration [data-minutes],#desktopGuestLanDuration [data-permanent],#desktopGuestRenderDuration [data-minutes],#desktopGuestRenderDuration [data-permanent]');if(duration){desktopGuestSetDuration(duration);return;}
     const scope=event.target.closest('#desktopGuestScope [data-scope]');if(scope){desktopGuestShareScope=scope.dataset.scope||'current';desktopGuestSetSegment('desktopGuestScope','data-scope',desktopGuestShareScope);desktopGuestPreviewScope();return;}
+    const statusMode=event.target.closest('#desktopGuestStatusFilterMode [data-status-filter-mode]');if(statusMode){desktopGuestStatusFilterMode=statusMode.dataset.statusFilterMode||'simple';desktopGuestSetSegment('desktopGuestStatusFilterMode','data-status-filter-mode',desktopGuestStatusFilterMode);return;}
     const pwd=event.target.closest('#desktopGuestPasswordKind [data-password-kind]');if(pwd&&!pwd.disabled){desktopGuestSetPasswordKind(pwd.dataset.passwordKind||'none');return;}
     const active=event.target.closest('[data-active-mode]');if(active){desktopGuestSetActiveMode(active.dataset.activeMode||'all');return;}
 });

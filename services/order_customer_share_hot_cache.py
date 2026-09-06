@@ -53,6 +53,7 @@ def _share_from_row(row):
         "created_at": row.get("created_at"),
         "expires_at": row.get("expires_at"),
         "history_scope": row.get("history_scope"),
+        "status_filter_mode": row.get("status_filter_mode") or "simple",
         "include_cancelled": row.get("include_cancelled"),
     }
 
@@ -85,7 +86,7 @@ def _warm_once():
     try:
         cur.execute(
             f"""SELECT s.token_hash, s.customer_key, s.mode, s.status, s.source_site,
-                       s.created_at, s.expires_at, s.history_scope, s.include_cancelled,
+                       s.created_at, s.expires_at, s.history_scope, s.status_filter_mode, s.include_cancelled,
                        p.payload AS snapshot_payload
                 FROM cloud_share_tokens s
                 LEFT JOIN {_snapshot._TABLE} p ON p.customer_key=s.customer_key

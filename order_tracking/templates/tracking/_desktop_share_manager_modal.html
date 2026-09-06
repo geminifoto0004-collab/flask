@@ -92,11 +92,16 @@
                             <button type="button" data-scope="12m">一年</button>
                             <button type="button" data-scope="all">全部历史</button>
                         </div>
-                        <label class="desktop-guest-switch-row compact"><span><strong>包含取消订单</strong><small>关闭后，取消订单不会显示给客户</small></span><input type="checkbox" id="desktopGuestIncludeCancelled" onchange="desktopGuestPreviewScope()"><i></i></label>
+                        <div class="desktop-share-card-title" style="margin-top:14px"><strong>客户状态显示</strong><small>默认简化为未确认、已确认、已完成；需要时可显示 ORDER 全部状态</small></div>
+                        <div class="desktop-guest-segments two" id="desktopGuestStatusFilterMode">
+                            <button type="button" data-status-filter-mode="simple" class="active">简化 3 类</button>
+                            <button type="button" data-status-filter-mode="full">全部状态</button>
+                        </div>
+                        <input type="checkbox" id="desktopGuestIncludeCancelled" hidden><div class="desktop-guest-scope-preview" style="margin-top:8px;color:#6b7280;">已取消订单仅供内部查询，不会分享给客户</div>
                         <div class="desktop-guest-scope-preview" id="desktopGuestScopePreview">请先选择客户</div>
                     </div>
                     <div class="desktop-share-card access-card">
-                        <div class="desktop-share-card-title"><strong>访问保护</strong><small>永久 Render 链接建议设置密码</small></div>
+                        <div class="desktop-share-card-title"><strong id="desktopGuestAccessTitle">访问保护</strong><small id="desktopGuestAccessHint">永久 Render 链接建议设置密码</small></div>
                         <div class="desktop-guest-segments three" id="desktopGuestPasswordKind">
                             <button type="button" data-password-kind="none" class="active">不设密码</button>
                             <button type="button" data-password-kind="phone" {% if not is_overseas %}disabled{% endif %}>客户手机</button>

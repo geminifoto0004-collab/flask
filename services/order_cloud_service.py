@@ -135,6 +135,7 @@ def init_order_cloud_tables():
                 status VARCHAR(16) NOT NULL DEFAULT 'active',
                 source_site VARCHAR(16) NULL,
                 history_scope VARCHAR(16) NOT NULL DEFAULT 'current',
+                status_filter_mode VARCHAR(16) NOT NULL DEFAULT 'simple',
                 include_cancelled BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 expires_at TIMESTAMP NULL,
@@ -169,6 +170,7 @@ def init_order_cloud_tables():
             _ensure_column(cur, "cloud_workflows", name, definition)
 
         _ensure_column(cur, "cloud_share_tokens", "history_scope", "VARCHAR(16) NOT NULL DEFAULT 'current'")
+        _ensure_column(cur, "cloud_share_tokens", "status_filter_mode", "VARCHAR(16) NOT NULL DEFAULT 'simple'")
         _ensure_column(cur, "cloud_share_tokens", "include_cancelled", "BOOLEAN NOT NULL DEFAULT FALSE")
         # Customer links must never expose cancellation even if an old row had it enabled.
         cur.execute("UPDATE cloud_share_tokens SET include_cancelled=FALSE WHERE include_cancelled<>FALSE")
@@ -584,7 +586,7 @@ def resolve_live_share(raw_token):
     try:
         cur.execute(
             """SELECT token_hash, customer_key, mode, status, source_site,
-                      history_scope, include_cancelled, created_at, expires_at
+                      history_scope, status_filter_mode, include_cancelled, created_at, expires_at
                FROM cloud_share_tokens WHERE token_hash=?""",
             (token_hash,),
         )
