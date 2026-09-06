@@ -147,10 +147,13 @@ def _months_ago_first(months):
     day = now.day
     while day > 28:
         try:
-            return now.replace(year=year, month=month, day=day)
+            # SQLite compares against date('now', '-N months'), i.e. midnight.
+            # Keeping the current clock time incorrectly drops completions from the
+            # boundary day (for example 2026-06-06 on 2026-09-06).
+            return now.replace(year=year, month=month, day=day, hour=0, minute=0, second=0, microsecond=0)
         except ValueError:
             day -= 1
-    return now.replace(year=year, month=month, day=day)
+    return now.replace(year=year, month=month, day=day, hour=0, minute=0, second=0, microsecond=0)
 
 
 def _parse_dt(value):
