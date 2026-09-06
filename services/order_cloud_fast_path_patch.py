@@ -27,11 +27,18 @@ def fast_backend_health(force=False):
     primary_cfg = svc._backend_config("b2_primary", required=False)
     secondary_cfg = svc._backend_config("b2_secondary", required=False)
     primary = {
-        "status": "configured" if primary_cfg.get("configured") else "not_configured",
+        # Keep the legacy backend_health contract. Proxy upload accepts only
+        # status == "ok"; returning "configured" here made it skip every backend
+        # and raise an empty "failed on all B2 backends" error.
+        "status": "ok" if primary_cfg.get("configured") else "not_configured",
+        "configured": bool(primary_cfg.get("configured")),
+        "class_b_ok": bool(primary_cfg.get("configured")),
         "missing": primary_cfg.get("missing") or [],
     }
     secondary = {
-        "status": "configured" if secondary_cfg.get("configured") else "not_configured",
+        "status": "ok" if secondary_cfg.get("configured") else "not_configured",
+        "configured": bool(secondary_cfg.get("configured")),
+        "class_b_ok": bool(secondary_cfg.get("configured")),
         "missing": secondary_cfg.get("missing") or [],
     }
     selected = ""
