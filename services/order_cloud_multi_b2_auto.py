@@ -23,6 +23,41 @@ from services.order_cloud_multi_b2 import (
     put_to_backend,
 )
 
+# Keep the DB schema used by the new prebuilt-thumbnail register path in sync with
+# older TiDB databases.  direct-register-batch writes these four optional columns;
+# without this migration every image can upload to B2 successfully and then fail at
+# the metadata step with "Unknown column ...".
+from database import check_column_exists, get_cursor, get_db_connection
+from services import order_cloud_asset_service as _asset_service
+
+_ORIGINAL_ASSET_TABLE_INIT = _asset_service.init_order_cloud_asset_table
+_ASSET_SCHEMA_LOCK = threading.Lock()
+
+
+def _init_asset_table_with_thumbnail_columns():
+    with _ASSET_SCHEMA_LOCK:
+        _ORIGINAL_ASSET_TABLE_INIT()
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            for name, definition in (
+                ('thumb_object_key', 'VARCHAR(512) NULL'),
+                ('thumb_sha256', 'VARCHAR(64) NULL'),
+                ('thumb_content_type', 'VARCHAR(127) NULL'),
+                ('thumb_file_size', 'BIGINT NULL'),
+            ):
+                if not check_column_exists(cur, 'cloud_assets', name):
+                    cur.execute(f'ALTER TABLE cloud_assets ADD COLUMN {name} {definition}')
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+_asset_service.init_order_cloud_asset_table = _init_asset_table_with_thumbnail_columns
+
 # One never-created object name per Render process. HEAD should return 404 when
 # read/Class-B access is healthy.
 _PROBE_KEY = f"order-cloud/images/__auto_health__/{uuid.uuid4().hex}.probe"
@@ -97,8 +132,6 @@ def probe_backend_class_b(backend, force=False):
     cfg = config_for_backend(backend, required=True)
     try:
         client_for_backend(backend).head_object(Bucket=cfg['bucket_name'], Key=_PROBE_KEY)
-        # Extremely unlikely (the random probe key is never PUT), but readable is what
-        # matters, so treat a successful HEAD as healthy too.
         return _store(backend, {
             'backend': backend,
             'configured': True,
@@ -119,9 +152,6 @@ def probe_backend_class_b(backend, force=False):
                 'note': '404 on missing probe key means Class-B access works',
             }, _HEALTHY_TTL_SECONDS)
 
-        # Backblaze sometimes returns only generic 403 for HEAD after the Class-B cap
-        # is exceeded. Treat every non-404 HEAD failure as unreadable and hold it for
-        # 30 minutes before trying that backend again.
         return _store(backend, {
             'backend': backend,
             'configured': True,
@@ -164,12 +194,7 @@ def select_readable_backend(force_probe=False):
 
 
 def put_auto(object_key, data, content_type, metadata=None, cache_control=None):
-    """Select a readable backend, PUT there, and fail over on write failure.
-
-    Class-B status is checked/cached before choosing a store. This prevents the case
-    where primary PUT succeeds while primary GET/HEAD is capped and customers cannot
-    read the newly uploaded image.
-    """
+    """Select a readable backend, PUT there, and fail over on write failure."""
     selected, selection = select_readable_backend(force_probe=False)
     try:
         put_to_backend(
@@ -182,8 +207,6 @@ def put_auto(object_key, data, content_type, metadata=None, cache_control=None):
         )
         return selected, selection
     except Exception as first_exc:
-        # A write/config failure can happen independently of Class-B health. Mark this
-        # selection stale and try the other readable backend once.
         invalidate_backend_health(selected)
         other = SECONDARY if selected == PRIMARY else PRIMARY
         other_health = probe_backend_class_b(other, force=False)
