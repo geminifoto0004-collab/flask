@@ -216,6 +216,10 @@ from . import order_share_server_timing as _order_share_server_timing  # noqa: E
 # Final compatibility layer for mutable share visibility and flicker-free live updates.
 from . import order_share_visibility_live_patch as _order_share_visibility_live_patch  # noqa: E402,F401
 
+# Final thumbnail read path: metadata first, then render aliases/preload.
+from . import order_share_thumb_metadata_patch as _order_share_thumb_metadata_patch  # noqa: E402,F401
+from . import order_share_thumb_render_patch as _order_share_thumb_render_patch  # noqa: E402,F401
+
 __all__ = [
     'send_verification_code',
     'verify_code',
