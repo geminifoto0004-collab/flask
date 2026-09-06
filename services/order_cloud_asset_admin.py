@@ -124,6 +124,7 @@ def order_cloud_admin_asset_list():
         view = "assets"
     customer_key = str(request.args.get("customer_key") or "").strip()
     order_number = str(request.args.get("order_number") or "").strip()
+    keys_only = str(request.args.get("keys_only") or "").strip().lower() in {"1", "true", "yes", "on"}
     clauses = ["a.active=TRUE"]
     params = []
     if q:
@@ -176,10 +177,10 @@ def order_cloud_admin_asset_list():
                        MAX(COALESCE(a.updated_at,a.created_at)) AS latest_at
             """ + joined + where + " GROUP BY a.customer_key,a.order_number ORDER BY latest_at DESC,a.order_number DESC LIMIT ? OFFSET ?"
         else:
-            sql = _asset_select_base() + where + " ORDER BY a.created_at DESC, a.asset_key DESC LIMIT ? OFFSET ?"
+            sql = (("SELECT a.asset_key" + joined) if keys_only else _asset_select_base()) + where + " ORDER BY a.created_at DESC, a.asset_key DESC LIMIT ? OFFSET ?"
         cur.execute(sql, tuple(params + [page_size, (page - 1) * page_size]))
         raw_rows = [get_row_dict(r, cur) for r in cur.fetchall()]
-        rows = [_row_to_public(row, preview=True) for row in raw_rows] if view == "assets" else raw_rows
+        rows = (raw_rows if keys_only else [_row_to_public(row, preview=True) for row in raw_rows]) if view == "assets" else raw_rows
     finally:
         conn.close()
     return jsonify({"ok": True, "view": view, "items": rows, "page": page, "page_size": page_size, "total": total, "total_pages": pages})
