@@ -138,3 +138,8 @@ def _thumb_render_patch_startup(state):
         print(f"[ORDER] thumb render patch ready version={_PATCH_VERSION} refresh_queued={queued}")
     except Exception as exc:
         print(f"[WARN] thumb render patch startup: {type(exc).__name__}: {exc}")
+
+
+# Old assets can legitimately predate thumb metadata. Keep them visible by signing
+# their existing WEB object directly while backfill catches up; no B2 HEAD/resize occurs.
+from services import order_share_thumb_legacy_fallback as _legacy_fallback  # noqa: E402,F401
