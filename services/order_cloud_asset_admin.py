@@ -59,7 +59,7 @@ def _asset_select_base():
                a.file_size, a.display_name, a.source_site, a.active,
                a.created_at, a.updated_at,
                a.thumb_object_key, a.thumb_sha256, a.thumb_content_type, a.thumb_file_size,
-               o.customer_name
+               o.customer_name, o.order_number AS linked_order_number, o.active AS order_active
         FROM cloud_assets a
         LEFT JOIN cloud_orders o ON o.order_number=a.order_number AND o.customer_key=a.customer_key
     """
@@ -73,12 +73,20 @@ def _row_to_public(row, preview=True):
     item["source_kind_label"] = "业务员图片" if item["source_kind"] == "sales" else "主管参考图"
     item["file_size"] = int(item.get("file_size") or 0)
     item["thumb_file_size"] = int(item.get("thumb_file_size") or 0)
+    linked = bool(str(item.get("linked_order_number") or "").strip())
+    active = linked and item.get("order_active") not in (False, 0, "0")
+    item["reference_state"] = "active" if active else "inactive" if linked else "missing"
+    item["reference_state_label"] = "订单有效" if active else "订单已停用" if linked else "订单不存在"
     if preview:
         thumb_key = str(item.get("thumb_object_key") or _thumb_key_from_sha(item.get("sha256")) or "").strip()
         try:
             item["preview_url"] = _presigned_get(backend, thumb_key, 600) if thumb_key else ""
         except Exception:
             item["preview_url"] = ""
+        try:
+            item["original_url"] = _presigned_get(backend, item.get("object_key"), 600) if item.get("object_key") else ""
+        except Exception:
+            item["original_url"] = ""
     return item
 
 
