@@ -16,7 +16,9 @@ from .user_service import create_user, verify_password, reset_password
 from . import order_cloud_service as _order_cloud_service
 
 
-def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, permanent=False):
+def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, permanent=False,
+                            history_scope='current', include_cancelled=False, status_filter_mode='simple',
+                            show_pdf_pages=True, allow_report_pdf_download=False, show_images=True):
     customer_key = str(customer_key or '').strip()
     if not customer_key:
         raise ValueError('customer_key is required')
@@ -53,12 +55,16 @@ def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, pe
     try:
         cur.execute(
             """INSERT INTO cloud_share_tokens
-               (token_hash, customer_key, mode, status, source_site, expires_at)
-               VALUES (?, ?, 'LIVE', 'active', ?, ?)""",
+               (token_hash, customer_key, mode, status, source_site, history_scope, status_filter_mode,
+                show_pdf_pages, allow_report_pdf_download, show_images, include_cancelled, expires_at)
+               VALUES (?, ?, 'LIVE', 'active', ?, ?, ?, ?, ?, ?, FALSE, ?)""",
             (
                 token_hash,
                 customer_key,
                 (str(source_site or '').upper()[:16] or None),
+                str(history_scope or 'current'),
+                'full' if str(status_filter_mode or '').strip().lower() == 'full' else 'simple',
+                bool(show_pdf_pages), bool(allow_report_pdf_download), bool(show_images),
                 expires_at,
             ),
         )
@@ -69,7 +75,15 @@ def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, pe
     finally:
         conn.close()
 
-    return {'token': raw_token, 'customer_key': customer_key, 'expires_at': expires_at}
+    return {
+        'token': raw_token, 'customer_key': customer_key, 'expires_at': expires_at,
+        'history_scope': str(history_scope or 'current'),
+        'status_filter_mode': 'full' if str(status_filter_mode or '').strip().lower() == 'full' else 'simple',
+        'show_pdf_pages': bool(show_pdf_pages),
+        'allow_report_pdf_download': bool(allow_report_pdf_download),
+        'show_images': bool(show_images),
+        'include_cancelled': False,
+    }
 
 
 def _fast_get_customer_space(customer_key):
@@ -166,9 +180,8 @@ _order_cloud_service.get_customer_space = _fast_get_customer_space
 # app.py registers that blueprint. No B2 credential leaves Render.
 from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 
-# Stable production fallback: upload the small 480px thumbnail through Render to B2.
-# This keeps customer sharing functional even when an office network cannot PUT a
-# presigned B2 URL directly.
+# Compatibility module + multi-B2 extension registration. Its legacy thumbnail
+# upload endpoint is hard-disabled: ORDER image bytes never pass through Render.
 from . import order_cloud_proxy_thumb as _order_cloud_proxy_thumb  # noqa: E402,F401
 
 # Intercept public ORDER share routes before the legacy handlers: persist each link's
@@ -196,6 +209,9 @@ from . import order_share_render_cache as _order_share_render_cache  # noqa: E40
 # Measure only the existing public-share path. This adds Server-Timing/X-Order-* headers
 # so occasional TTFB spikes can be attributed without changing data/cache behaviour.
 from . import order_share_server_timing as _order_share_server_timing  # noqa: E402,F401
+
+# Final compatibility layer for mutable share visibility and flicker-free live updates.
+from . import order_share_visibility_live_patch as _order_share_visibility_live_patch  # noqa: E402,F401
 
 __all__ = [
     'send_verification_code',

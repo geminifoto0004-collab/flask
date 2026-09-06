@@ -92,7 +92,7 @@
                             <button type="button" data-scope="12m">一年</button>
                             <button type="button" data-scope="all">全部历史</button>
                         </div>
-                        <div class="desktop-share-card-title" style="margin-top:14px"><strong>客户状态显示</strong><small>默认简化为未确认、已确认、已完成；需要时可显示 ORDER 全部状态</small></div>
+                        <div class="desktop-share-card-title" style="margin-top:14px"><strong>客户状态显示</strong><small>默认简化为待确认、处理中、已结束；需要时可显示 ORDER 全部状态</small></div>
                         <div class="desktop-guest-segments two" id="desktopGuestStatusFilterMode">
                             <button type="button" data-status-filter-mode="simple" class="active">简化 3 类</button>
                             <button type="button" data-status-filter-mode="full">全部状态</button>
@@ -110,6 +110,7 @@
                         <input class="desktop-share-password" id="desktopGuestCustomPassword" type="password" autocomplete="new-password" placeholder="输入自定义密码（至少 4 位）" hidden>
                         <div class="desktop-share-password-hint" id="desktopGuestPasswordHint">此链接不要求密码</div>
                         <div class="desktop-share-inline-options">
+                            <label class="desktop-guest-switch-row"><span><strong>订单图片</strong><small>关闭后客户页面不显示任何订单图片</small></span><input type="checkbox" id="desktopGuestShowImages" checked><i></i></label>
                             <label class="desktop-guest-switch-row"><span><strong>PDF 拆图</strong><small>在客户页面显示 PDF 页预览</small></span><input type="checkbox" id="desktopGuestShowPdfPages" checked><i></i></label>
                             <label class="desktop-guest-switch-row"><span><strong>PDF 报告</strong><small>允许准备及下载完整报告</small></span><input type="checkbox" id="desktopGuestAllowReportPdf"><i></i></label>
                         </div>
@@ -152,3 +153,100 @@
         </div>
     </section>
 </div>
+<script>
+// Keep Render's large tracking.js untouched: add share-image visibility support here.
+(function () {
+    function guestShareText(zh, es) {
+        try {
+            if (typeof window.mobileGuestLinkText === 'function') return window.mobileGuestLinkText(zh, es);
+        } catch (_) {}
+        const lang = String(document.documentElement.lang || document.body?.dataset?.lang || '').toLowerCase();
+        return lang.startsWith('es') ? es : zh;
+    }
+
+    function ensureMobileImageToggle() {
+        const modal = document.getElementById('mobileGuestLinkModal');
+        if (!modal || modal.querySelector('#mobileGuestLinkShowImages')) return;
+        const anchor = modal.querySelector('#mobileGuestLinkShowPdfPages')?.closest('label.mobile-guest-link-pdf-option');
+        if (!anchor) return;
+        const row = document.createElement('label');
+        row.className = 'mobile-guest-link-pdf-option';
+        row.innerHTML = '<span class="mobile-guest-link-pdf-copy"><strong id="mobileGuestLinkShowImagesTitle"></strong><small id="mobileGuestLinkShowImagesHint"></small></span><input type="checkbox" id="mobileGuestLinkShowImages" checked><span class="mobile-guest-link-switch" aria-hidden="true"><i></i></span>';
+        anchor.parentNode.insertBefore(row, anchor);
+        const title = row.querySelector('#mobileGuestLinkShowImagesTitle');
+        const hint = row.querySelector('#mobileGuestLinkShowImagesHint');
+        if (title) title.textContent = guestShareText('显示订单图片', 'Mostrar imágenes del pedido');
+        if (hint) hint.textContent = guestShareText('关闭后客户页面只显示订单文字资料，不输出图片网址', 'Si se desactiva, el cliente verá solo los datos del pedido, sin URLs de imágenes');
+    }
+
+    function currentShowImages() {
+        const mobile = document.getElementById('mobileGuestLinkShowImages');
+        const desktop = document.getElementById('desktopGuestShowImages');
+        const mobileModal = document.getElementById('mobileGuestLinkModal');
+        if (mobile && mobileModal && !mobileModal.hidden && mobileModal.getAttribute('aria-hidden') !== 'true') return !!mobile.checked;
+        if (desktop) return !!desktop.checked;
+        return true;
+    }
+
+    function shouldPatchSharePayload(url, init, payload) {
+        const target = String(url || '');
+        const method = String(init?.method || 'GET').toUpperCase();
+        if (!['POST', 'PUT', 'PATCH'].includes(method)) return false;
+        if (!(target.includes('guest-link') || target.includes('customer-share'))) return false;
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+        return ('history_scope' in payload) || ('show_pdf_pages' in payload) || ('allow_report_pdf_download' in payload) || ('duration_minutes' in payload);
+    }
+
+    function installFetchPatch() {
+        if (window.__orderShareImageFetchPatch || typeof window.fetch !== 'function') return;
+        window.__orderShareImageFetchPatch = true;
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+            try {
+                const nextInit = init ? Object.assign({}, init) : {};
+                if (typeof nextInit.body === 'string') {
+                    const payload = JSON.parse(nextInit.body);
+                    const url = typeof input === 'string' ? input : (input && input.url) || '';
+                    if (shouldPatchSharePayload(url, nextInit, payload) && !Object.prototype.hasOwnProperty.call(payload, 'show_images')) {
+                        payload.show_images = currentShowImages();
+                        nextInit.body = JSON.stringify(payload);
+                        return nativeFetch(input, nextInit);
+                    }
+                }
+            } catch (_) {}
+            return nativeFetch(input, init);
+        };
+    }
+
+    function installOpenResetPatch() {
+        if (window.__orderShareOpenResetPatch) return;
+        if (typeof window.openDesktopGuestShareDrawer === 'function') {
+            const original = window.openDesktopGuestShareDrawer;
+            window.openDesktopGuestShareDrawer = function () {
+                const result = original.apply(this, arguments);
+                const checkbox = document.getElementById('desktopGuestShowImages');
+                if (checkbox) checkbox.checked = true;
+                return result;
+            };
+            window.__orderShareOpenResetPatch = true;
+        }
+    }
+
+    function install() {
+        installFetchPatch();
+        installOpenResetPatch();
+        ensureMobileImageToggle();
+        const observer = new MutationObserver(ensureMobileImageToggle);
+        observer.observe(document.body, {childList: true, subtree: true});
+        document.addEventListener('tracking:languagechange', function () {
+            const title = document.getElementById('mobileGuestLinkShowImagesTitle');
+            const hint = document.getElementById('mobileGuestLinkShowImagesHint');
+            if (title) title.textContent = guestShareText('显示订单图片', 'Mostrar imágenes del pedido');
+            if (hint) hint.textContent = guestShareText('关闭后客户页面只显示订单文字资料，不输出图片网址', 'Si se desactiva, el cliente verá solo los datos del pedido, sin URLs de imágenes');
+        });
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, {once: true});
+    else install();
+})();
+</script>

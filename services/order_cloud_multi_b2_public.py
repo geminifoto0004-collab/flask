@@ -132,6 +132,8 @@ def _authorized_asset_from_memory(token, asset_key):
     share, error = page._validate_share(share)
     if error:
         return None, error, True
+    if share.get('show_images') is False:
+        return None, Response('Archivo no encontrado.', 404, mimetype='text/plain'), True
 
     customer_key = str((share or {}).get('customer_key') or '').strip()
     if not customer_key:
@@ -157,6 +159,7 @@ def _authorized_asset_from_tidb(token, asset_key):
     try:
         cur.execute(
             """SELECT s.status AS share_status, s.expires_at AS share_expires_at,
+                      s.show_images AS share_show_images,
                       a.asset_key, a.order_number, a.workflow_key, a.sha256,
                       a.object_key, a.content_type, a.file_size, a.storage_backend
                FROM cloud_share_tokens s
@@ -177,6 +180,8 @@ def _authorized_asset_from_tidb(token, asset_key):
         expiry = _parse_expiry(data.get('share_expires_at'))
         if expiry and datetime.utcnow() >= expiry:
             return None, Response('Este enlace ha expirado.', 410, mimetype='text/plain')
+        if data.get('share_show_images') is False or data.get('share_show_images') == 0:
+            return None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
 
         asset = {
             'asset_key': data.get('asset_key'),

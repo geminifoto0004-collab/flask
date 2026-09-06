@@ -263,9 +263,17 @@
         }
     }
 
-    document.querySelectorAll('[data-guest-report-create]').forEach(function (button) {
-        button.addEventListener('click', function () { createJob(button.dataset.guestReportCreate, button); });
-        loadEstimate(button);
+    function bindReportButtons(rootNode) {
+        (rootNode || document).querySelectorAll('[data-guest-report-create]').forEach(function (button) {
+            if (button.dataset.guestReportBound === '1') return;
+            button.dataset.guestReportBound = '1';
+            button.addEventListener('click', function () { createJob(button.dataset.guestReportCreate, button); });
+            loadEstimate(button);
+        });
+    }
+    bindReportButtons(document);
+    document.addEventListener('tracking:guestcardsupdated', function (event) {
+        if (event?.detail?.controlsChanged) bindReportButtons(document);
     });
 
     if (queueButton) {

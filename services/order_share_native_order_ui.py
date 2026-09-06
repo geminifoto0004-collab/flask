@@ -202,7 +202,10 @@ def _customer_context(space, share, token):
         "customer_name": str(customer.get("customer_name") or customer.get("customer_key") or ""),
         "token": token, "orders": _cards(space, token), "expires_at_epoch": expires,
         "is_permanent": not bool(expires), "allow_pdf_download": False, "pdf_count": 0,
-        "allow_report_pdf_download": False, "STATIC_VER": _fingerprint()[:12],
+        "show_pdf_pages": bool((share or {}).get("show_pdf_pages", True)),
+        "allow_report_pdf_download": bool((share or {}).get("allow_report_pdf_download", False)),
+        "show_images": bool((share or {}).get("show_images", True)),
+        "STATIC_VER": _fingerprint()[:12],
         "status_filter_mode": str((share or {}).get("status_filter_mode") or "simple"),
         "cloud_guest_base_url": f"/share/{token}",
     }

@@ -168,7 +168,7 @@ def _ensure_order_cloud_tables():
 def order_cloud_health():
     try:
         _ensure_order_cloud_tables()
-        return jsonify({"ok": True, "service": "order-cloud", "phase": 4, "assets": "direct-b2-with-proxy-fallback"})
+        return jsonify({"ok": True, "service": "order-cloud", "phase": 4, "assets": "direct-b2-batch-with-prebuilt-thumbnails"})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -262,31 +262,12 @@ def order_cloud_asset_register():
 
 @b2_test_bp.route("/api/order-cloud/assets/upload", methods=["POST"])
 def order_cloud_asset_upload():
-    source_site, auth_error = _order_cloud_auth_source()
-    if auth_error:
-        return auth_error
-    try:
-        _ensure_order_cloud_tables()
-        from services.order_cloud_asset_service import MAX_IMAGE_BYTES, upload_image
-        image = request.files.get("file")
-        if image is None:
-            return jsonify({"ok": False, "error": "multipart field 'file' is required"}), 400
-        data = image.read(MAX_IMAGE_BYTES + 1)
-        if len(data) > MAX_IMAGE_BYTES:
-            return jsonify({"ok": False, "error": "image exceeds 15 MB limit"}), 413
-        result = upload_image(
-            request.form.get("order_number"),
-            request.form.get("workflow_key"),
-            data,
-            image.mimetype,
-            source_site=source_site,
-            expected_sha256=request.form.get("sha256"),
-        )
-        return jsonify({"ok": True, "result": result})
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+    # Hard-disabled legacy proxy path. ORDER image bytes must travel PC -> B2 only.
+    return jsonify({
+        "ok": False,
+        "error": "Render image proxy upload is disabled; use direct-presign/direct-B2",
+        "render_receives_image_bytes": False,
+    }), 410
 
 
 @b2_test_bp.route("/api/order-cloud/share/create", methods=["POST"])
@@ -305,6 +286,10 @@ def order_cloud_create_share():
             permanent=bool(payload.get("permanent", False)),
             history_scope=payload.get("history_scope", "current"),
             include_cancelled=False,
+            status_filter_mode=payload.get("status_filter_mode", "simple"),
+            show_pdf_pages=bool(payload.get("show_pdf_pages", True)),
+            allow_report_pdf_download=bool(payload.get("allow_report_pdf_download", False)),
+            show_images=bool(payload.get("show_images", True)),
         )
         token = result.pop("token")
         expires_at = result.get("expires_at")

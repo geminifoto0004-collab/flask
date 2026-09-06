@@ -288,7 +288,8 @@ def _snapshot_load_page_data(token):
         try:
             cur.execute(
                 f"""SELECT s.token_hash, s.customer_key, s.mode, s.status, s.source_site,
-                           s.created_at, s.expires_at, s.history_scope, s.include_cancelled,
+                           s.created_at, s.expires_at, s.history_scope, s.status_filter_mode,
+                           s.show_pdf_pages, s.allow_report_pdf_download, s.show_images, s.include_cancelled,
                            p.payload AS snapshot_payload
                     FROM cloud_share_tokens s
                     LEFT JOIN {_TABLE} p ON p.customer_key=s.customer_key
