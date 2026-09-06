@@ -23,6 +23,22 @@
     </script>
     <script src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
     <script src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
+    <script>
+    // Cards can be visible before the detail-modal code at the end of this large page is parsed.
+    // Intercept desktop clicks immediately and replay an early click once the modal is ready.
+    window.__guestPendingDesktopDetailUrl = '';
+    document.addEventListener('click', function (event) {
+        const card = event.target?.closest?.('[data-guest-card]');
+        const desktop = window.matchMedia?.('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
+        if (!card || !desktop || event.defaultPrevented) return;
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (event.target.closest('[data-guest-nav]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof window.__guestOpenDesktopDetail === 'function') window.__guestOpenDesktopDetail(card.href);
+        else window.__guestPendingDesktopDetailUrl = card.href;
+    }, false);
+    </script>
 </head>
 <body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}">
 <div class="guest-shell">
@@ -632,17 +648,12 @@ guestApplyBilingualText();
         }
     }
 
-    // Use one delegated listener so cards inserted/replaced by the live refresh
-    // behave exactly like cards that were present during the first page render.
-    document.addEventListener('click', function (event) {
-        const card = event.target.closest('[data-guest-card]');
-        if (!card || !isDesktop() || event.defaultPrevented) return;
-        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        if (event.target.closest('[data-guest-nav]')) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openDetail(card.href);
-    }, false);
+    window.__guestOpenDesktopDetail = openDetail;
+    if (window.__guestPendingDesktopDetailUrl) {
+        const pendingUrl = window.__guestPendingDesktopDetailUrl;
+        window.__guestPendingDesktopDetailUrl = '';
+        openDetail(pendingUrl);
+    }
 
     closeButton?.addEventListener('click', closeDetail);
     overlay.addEventListener('click', function (event) {
@@ -746,13 +757,13 @@ guestApplyBilingualText();
         });
     }
 
-    // Capture BEFORE following the detail link, so Back/edge-swipe has an exact card anchor.
-    document.querySelectorAll('[data-guest-card]').forEach(function (card) {
-        card.addEventListener('click', function (event) {
-            // A carousel swipe is prevented by the earlier capture handler; only a real tap reaches here.
-            if (!event.defaultPrevented) saveCardAnchor(card);
-        }, false);
-    });
+    // Capture BEFORE following the detail link, including cards inserted by live refresh.
+    document.addEventListener('click', function (event) {
+        const card = event.target.closest('[data-guest-card]');
+        if (!card) return;
+        // A carousel swipe is prevented by the earlier capture handler; only a real tap reaches here.
+        if (!event.defaultPrevented) saveCardAnchor(card);
+    }, false);
 
     // pageshow is the important event for iOS Safari's back-forward cache / edge swipe.
     window.addEventListener('pageshow', function () {
