@@ -153,6 +153,9 @@ def _cards(space, token):
     for order in (space or {}).get("orders") or []:
         if not isinstance(order, dict):
             continue
+        order_status = _key(order.get("order_status") or order.get("status"))
+        if order_status and order_status != "ACTIVE":
+            continue
         workflows = [w for w in (order.get("workflows") or []) if isinstance(w, dict)]
         if workflows:
             result.extend(_card(order, w, token) for w in workflows)

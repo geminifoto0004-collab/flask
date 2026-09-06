@@ -95,18 +95,23 @@ def _load_build_rows(customer_key):
                       render_payload
                FROM cloud_orders
                WHERE customer_key=? AND active=TRUE
+                 AND UPPER(COALESCE(NULLIF(TRIM(order_status),''),'ACTIVE'))='ACTIVE'
                ORDER BY order_date DESC, order_number DESC""",
             (customer_key,),
         )
         order_rows = [get_row_dict(row, cur) for row in cur.fetchall()]
 
         cur.execute(
-            """SELECT asset_key, customer_key, order_number, workflow_key, asset_type,
-                      sha256, object_key, content_type, file_size, display_name,
-                      source_site, storage_backend, updated_at, created_at
-               FROM cloud_assets
-               WHERE customer_key=? AND active=TRUE
-               ORDER BY order_number, created_at, asset_key""",
+            """SELECT a.asset_key, a.customer_key, a.order_number, a.workflow_key, a.asset_type,
+                      a.sha256, a.object_key, a.content_type, a.file_size, a.display_name,
+                      a.source_site, a.storage_backend, a.updated_at, a.created_at
+               FROM cloud_assets a
+               INNER JOIN cloud_orders o ON o.order_number=a.order_number
+                                      AND o.customer_key=a.customer_key
+                                      AND o.active=TRUE
+                                      AND UPPER(COALESCE(NULLIF(TRIM(o.order_status),''),'ACTIVE'))='ACTIVE'
+               WHERE a.customer_key=? AND a.active=TRUE
+               ORDER BY a.order_number, a.created_at, a.asset_key""",
             (customer_key,),
         )
         assets = [get_row_dict(row, cur) for row in cur.fetchall()]

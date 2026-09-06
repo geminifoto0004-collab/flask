@@ -180,6 +180,14 @@ def _filter_space(space, share):
     include_cancelled = bool((share or {}).get('include_cancelled'))
     filtered = []
     for order in list(space.get('orders') or []):
+        # Persisted snapshots can outlive an order cancellation. The workflow may
+        # still have a non-cancelled production status, so filtering only workflow
+        # status leaks cancelled orders back into the public card count.
+        order_status = str(
+            (order or {}).get('order_status') or (order or {}).get('status') or ''
+        ).strip().upper()
+        if order_status and order_status != 'ACTIVE':
+            continue
         workflows = list(order.get('workflows') or [])
         if workflows:
             visible = [wf for wf in workflows if _wf_visible(wf, scope, include_cancelled)]
