@@ -23,6 +23,11 @@ def _backend(value):
     return value if value in _ALLOWED_BACKENDS else ""
 
 
+def _thumb_key_from_sha(value):
+    sha = str(value or "").strip().lower()
+    return f"order-cloud/thumbs/{sha[:2]}/{sha}.jpg" if len(sha) == 64 else ""
+
+
 def _safe_object_key(value):
     key = str(value or "").strip()
     if not key or not key.startswith(_ALLOWED_PREFIXES):
@@ -69,7 +74,7 @@ def _row_to_public(row, preview=True):
     item["file_size"] = int(item.get("file_size") or 0)
     item["thumb_file_size"] = int(item.get("thumb_file_size") or 0)
     if preview:
-        thumb_key = str(item.get("thumb_object_key") or "").strip()
+        thumb_key = str(item.get("thumb_object_key") or _thumb_key_from_sha(item.get("sha256")) or "").strip()
         try:
             item["preview_url"] = _presigned_get(backend, thumb_key, 600) if thumb_key else ""
         except Exception:
@@ -158,8 +163,9 @@ def order_cloud_admin_asset_delete():
             backend = _backend(row.get("storage_backend")) or PRIMARY
             try:
                 _delete_object(backend, row.get("object_key"))
-                if row.get("thumb_object_key"):
-                    _delete_object(backend, row.get("thumb_object_key"))
+                thumb_key = row.get("thumb_object_key") or _thumb_key_from_sha(row.get("sha256"))
+                if thumb_key:
+                    _delete_object(backend, thumb_key)
                 cur.execute("DELETE FROM cloud_assets WHERE asset_key=?", (asset_key,))
                 customer_keys.add(str(row.get("customer_key") or "")); deleted.append(asset_key)
             except Exception as exc:
@@ -176,11 +182,11 @@ def order_cloud_admin_asset_delete():
 def _known_object_keys():
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
-        cur.execute("SELECT object_key, thumb_object_key FROM cloud_assets WHERE active=TRUE")
+        cur.execute("SELECT object_key, thumb_object_key, sha256 FROM cloud_assets WHERE active=TRUE")
         known = set()
         for r in cur.fetchall():
             d = get_row_dict(r, cur) or {}
-            for k in (d.get("object_key"), d.get("thumb_object_key")):
+            for k in (d.get("object_key"), d.get("thumb_object_key"), _thumb_key_from_sha(d.get("sha256"))):
                 if k: known.add(str(k))
         return known
     finally:
