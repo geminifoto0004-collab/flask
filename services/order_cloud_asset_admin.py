@@ -119,6 +119,11 @@ def order_cloud_admin_asset_list():
     q = str(request.args.get("q") or "").strip()
     backend = _backend(request.args.get("backend"))
     source_kind = str(request.args.get("source_kind") or "all").strip().lower()
+    view = str(request.args.get("view") or "assets").strip().lower()
+    if view not in {"customers", "orders", "assets"}:
+        view = "assets"
+    customer_key = str(request.args.get("customer_key") or "").strip()
+    order_number = str(request.args.get("order_number") or "").strip()
     clauses = ["a.active=TRUE"]
     params = []
     if q:
@@ -132,17 +137,52 @@ def order_cloud_admin_asset_list():
         clauses.append("a.workflow_key IS NOT NULL AND TRIM(a.workflow_key)<>''")
     elif source_kind == "supervisor":
         clauses.append("(a.workflow_key IS NULL OR TRIM(a.workflow_key)='')")
+    if customer_key:
+        clauses.append("a.customer_key=?")
+        params.append(customer_key)
+    if order_number:
+        clauses.append("a.order_number=?")
+        params.append(order_number)
     where = " WHERE " + " AND ".join(clauses)
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
-        cur.execute("SELECT COUNT(*) AS n FROM cloud_assets a LEFT JOIN cloud_orders o ON o.order_number=a.order_number AND o.customer_key=a.customer_key" + where, tuple(params))
+        joined = " FROM cloud_assets a LEFT JOIN cloud_orders o ON o.order_number=a.order_number AND o.customer_key=a.customer_key"
+        if view == "customers":
+            cur.execute("SELECT COUNT(DISTINCT a.customer_key) AS n" + joined + where, tuple(params))
+        elif view == "orders":
+            cur.execute("SELECT COUNT(DISTINCT a.order_number) AS n" + joined + where, tuple(params))
+        else:
+            cur.execute("SELECT COUNT(*) AS n" + joined + where, tuple(params))
         total = int((get_row_dict(cur.fetchone(), cur) or {}).get("n") or 0)
         pages = max(1, math.ceil(total / page_size)); page = min(page, pages)
-        cur.execute(_asset_select_base() + where + " ORDER BY a.created_at DESC, a.asset_key DESC LIMIT ? OFFSET ?", tuple(params + [page_size, (page - 1) * page_size]))
-        rows = [_row_to_public(get_row_dict(r, cur), preview=True) for r in cur.fetchall()]
+        if view == "customers":
+            sql = """
+                SELECT a.customer_key, COALESCE(MAX(o.customer_name), a.customer_key) AS customer_name,
+                       COUNT(DISTINCT a.order_number) AS order_count, COUNT(*) AS image_count,
+                       SUM(CASE WHEN a.workflow_key IS NOT NULL AND TRIM(a.workflow_key)<>'' THEN 1 ELSE 0 END) AS sales_count,
+                       SUM(CASE WHEN a.workflow_key IS NULL OR TRIM(a.workflow_key)='' THEN 1 ELSE 0 END) AS supervisor_count,
+                       SUM(COALESCE(a.file_size,0)+COALESCE(a.thumb_file_size,0)) AS total_size,
+                       MAX(COALESCE(a.updated_at,a.created_at)) AS latest_at
+            """ + joined + where + " GROUP BY a.customer_key ORDER BY customer_name LIMIT ? OFFSET ?"
+        elif view == "orders":
+            sql = """
+                SELECT a.customer_key, a.order_number, COALESCE(MAX(o.customer_name), a.customer_key) AS customer_name,
+                       COUNT(*) AS image_count,
+                       SUM(CASE WHEN a.workflow_key IS NOT NULL AND TRIM(a.workflow_key)<>'' THEN 1 ELSE 0 END) AS sales_count,
+                       SUM(CASE WHEN a.workflow_key IS NULL OR TRIM(a.workflow_key)='' THEN 1 ELSE 0 END) AS supervisor_count,
+                       SUM(COALESCE(a.file_size,0)+COALESCE(a.thumb_file_size,0)) AS total_size,
+                       MAX(CASE WHEN o.order_number IS NOT NULL THEN 1 ELSE 0 END) AS order_linked,
+                       MAX(CASE WHEN o.active=TRUE THEN 1 ELSE 0 END) AS order_active,
+                       MAX(COALESCE(a.updated_at,a.created_at)) AS latest_at
+            """ + joined + where + " GROUP BY a.customer_key,a.order_number ORDER BY latest_at DESC,a.order_number DESC LIMIT ? OFFSET ?"
+        else:
+            sql = _asset_select_base() + where + " ORDER BY a.created_at DESC, a.asset_key DESC LIMIT ? OFFSET ?"
+        cur.execute(sql, tuple(params + [page_size, (page - 1) * page_size]))
+        raw_rows = [get_row_dict(r, cur) for r in cur.fetchall()]
+        rows = [_row_to_public(row, preview=True) for row in raw_rows] if view == "assets" else raw_rows
     finally:
         conn.close()
-    return jsonify({"ok": True, "items": rows, "page": page, "page_size": page_size, "total": total, "total_pages": pages})
+    return jsonify({"ok": True, "view": view, "items": rows, "page": page, "page_size": page_size, "total": total, "total_pages": pages})
 
 
 @b2_test_bp.route("/api/order-cloud/assets/admin-delete", methods=["POST"])
