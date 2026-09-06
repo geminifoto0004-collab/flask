@@ -322,11 +322,13 @@ _page._load_page_data = _load_page
 _page.render_template = _render_template
 
 
-@b2_test_bp.record_once
-def _order_share_image_source_startup(state):
-    try:
-        with state.app.app_context():
-            _ensure_columns()
-        print('[ORDER] share image-source visibility ready')
-    except Exception as exc:
-        print(f'[WARN] share image-source migration skipped: {type(exc).__name__}: {exc}')
+# This module is deliberately imported by a late ``record_once`` handler so its
+# wrappers win over older compatibility layers. Flask forbids registering another
+# blueprint setup callback at that point, therefore initialise directly. Every
+# request path also calls ``_ensure_columns`` and safely retries after a transient
+# database startup failure.
+try:
+    _ensure_columns()
+    print('[ORDER] share image-source visibility ready')
+except Exception as exc:
+    print(f'[WARN] share image-source migration deferred: {type(exc).__name__}: {exc}')
