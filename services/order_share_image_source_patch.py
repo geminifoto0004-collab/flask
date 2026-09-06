@@ -17,6 +17,11 @@ from blueprints.b2_test_bp import b2_test_bp, _ensure_order_cloud_tables, _order
 from database import check_column_exists, get_cursor, get_db_connection, get_row_dict
 from services import order_public_share_fast as _fast
 from services import order_public_share_multi_b2_page as _page
+from services.order_share_image_policy import (
+    asset_allowed as _asset_allowed,
+    bool_default as _bool_default,
+    filter_assets_in_space as _filter_assets_in_space,
+)
 
 try:
     from services import order_share_visibility_live_patch as _visibility
@@ -67,18 +72,6 @@ def _mode(value):
     return _fast._status_filter_mode(value)
 
 
-def _bool_default(value, default=True):
-    if value is None:
-        return bool(default)
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {'0', 'false', 'no', 'off', ''}:
-            return False
-        if text in {'1', 'true', 'yes', 'on'}:
-            return True
-    return bool(value)
-
-
 def _settings(token):
     token = str(token or '').strip()
     token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
@@ -112,38 +105,6 @@ def _settings(token):
     with _LOCK:
         _CACHE[token_hash] = (now + _TTL, dict(result))
     return result
-
-
-def _is_image(asset):
-    if not isinstance(asset, dict):
-        return False
-    return str(asset.get('asset_type') or '').strip().upper() == 'IMAGE' or str(asset.get('content_type') or '').lower().startswith('image/')
-
-
-def _is_pdf_page(asset):
-    return str((asset or {}).get('asset_kind') or '').strip().upper() == 'PDF_PAGE'
-
-
-def _asset_allowed(asset, settings):
-    if not isinstance(asset, dict):
-        return True
-    if _is_pdf_page(asset) and not settings.get('show_pdf_pages', True):
-        return False
-    if not _is_image(asset):
-        return True
-    is_workflow = bool(str(asset.get('workflow_key') or '').strip())
-    if is_workflow:
-        return bool(settings.get('show_workflow_images', True))
-    return bool(settings.get('show_images', True))
-
-
-def _filter_assets_in_space(space, settings):
-    if not isinstance(space, dict):
-        return space
-    for order in list(space.get('orders') or []):
-        if isinstance(order, dict):
-            order['assets'] = [a for a in list(order.get('assets') or []) if _asset_allowed(a, settings)]
-    return space
 
 
 def _drop_caches(token):
@@ -189,17 +150,15 @@ def _load_page(token):
             space = bundle.get('space') if isinstance(bundle, dict) and isinstance(bundle.get('space'), dict) else bundle
             _filter_assets_in_space(space, settings)
     except Exception as exc:
-        print(f'[WARN] ORDER image-source settings load fallback: {type(exc).__name__}: {exc}')
+        print(f'[WARN] ORDER image-source settings unavailable: {type(exc).__name__}: {exc}')
+        return share, None, Response('Servicio temporalmente no disponible.', 503, mimetype='text/plain')
     return share, bundle, error
 
 
 def _resolve_share(token):
     share, state = _BASE_RESOLVE(token)
     if share:
-        try:
-            share = dict(share); share.update(_settings(token))
-        except Exception:
-            pass
+        share = dict(share); share.update(_settings(token))
     return share, state
 
 
@@ -341,6 +300,9 @@ def _update_share_settings():
 def _render_template(template_name, *args, **kwargs):
     if template_name == 'customer_share_live_fast.html':
         share = kwargs.get('share') or {}
+        # Render from a filtered copy even when an older renderer was captured
+        # before the source-specific visibility patch was installed.
+        kwargs['space'] = _filter_assets_in_space(copy.deepcopy(kwargs.get('space') or {}), share)
         show_supervisor = _bool_default(share.get('show_images'), True)
         show_workflow = _bool_default(share.get('show_workflow_images'), True)
         if not (show_supervisor and show_workflow) and _html_cache is not None:

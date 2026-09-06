@@ -23,6 +23,7 @@ from flask import Response, redirect, request
 from blueprints.b2_test_bp import b2_test_bp
 from database import get_cursor, get_db_connection, get_row_dict
 from services.order_cloud_multi_b2 import PRIMARY, SECONDARY, config_for_backend
+from services.order_share_image_policy import asset_allowed
 
 _ALLOWED_BACKENDS = {PRIMARY, SECONDARY}
 _CLIENTS = {}
@@ -99,6 +100,8 @@ def _asset_from_bundle(bundle, asset_key):
                 'asset_key': item.get('asset_key'),
                 'order_number': item.get('order_number') or order.get('order_number'),
                 'workflow_key': item.get('workflow_key'),
+                'asset_type': item.get('asset_type'),
+                'asset_kind': item.get('asset_kind'),
                 'sha256': item.get('sha256'),
                 'object_key': item.get('object_key'),
                 'content_type': item.get('content_type'),
@@ -132,9 +135,6 @@ def _authorized_asset_from_memory(token, asset_key):
     share, error = page._validate_share(share)
     if error:
         return None, error, True
-    if share.get('show_images') is False:
-        return None, Response('Archivo no encontrado.', 404, mimetype='text/plain'), True
-
     customer_key = str((share or {}).get('customer_key') or '').strip()
     if not customer_key:
         return None, None, False
@@ -148,6 +148,15 @@ def _authorized_asset_from_memory(token, asset_key):
         # Do not turn a possibly stale/mid-refresh snapshot into a false 404.  The
         # indexed TiDB query below remains the canonical correctness fallback.
         return None, None, False
+    # The long-lived hot token can contain settings from before the latest save.
+    # Read the same short-lived source settings used to render the share page.
+    from services.order_share_image_source_patch import _settings
+    try:
+        settings = _settings(token)
+    except Exception:
+        return None, None, False
+    if not asset_allowed(asset, settings):
+        return None, Response('Archivo no encontrado.', 404, mimetype='text/plain'), True
     return asset, None, True
 
 
@@ -160,8 +169,10 @@ def _authorized_asset_from_tidb(token, asset_key):
         cur.execute(
             """SELECT s.status AS share_status, s.expires_at AS share_expires_at,
                       s.show_images AS share_show_images,
+                      s.show_workflow_images AS share_show_workflow_images,
+                      s.show_pdf_pages AS share_show_pdf_pages,
                       a.asset_key, a.order_number, a.workflow_key, a.sha256,
-                      a.object_key, a.content_type, a.file_size, a.storage_backend
+                      a.asset_type, a.object_key, a.content_type, a.file_size, a.storage_backend
                FROM cloud_share_tokens s
                INNER JOIN cloud_assets a ON a.asset_key=? AND a.active=TRUE
                INNER JOIN cloud_orders o ON o.order_number=a.order_number
@@ -180,19 +191,24 @@ def _authorized_asset_from_tidb(token, asset_key):
         expiry = _parse_expiry(data.get('share_expires_at'))
         if expiry and datetime.utcnow() >= expiry:
             return None, Response('Este enlace ha expirado.', 410, mimetype='text/plain')
-        if data.get('share_show_images') is False or data.get('share_show_images') == 0:
-            return None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
-
         asset = {
             'asset_key': data.get('asset_key'),
             'order_number': data.get('order_number'),
             'workflow_key': data.get('workflow_key'),
+            'asset_type': data.get('asset_type'),
             'sha256': data.get('sha256'),
             'object_key': data.get('object_key'),
             'content_type': data.get('content_type'),
             'file_size': data.get('file_size'),
             'storage_backend': data.get('storage_backend'),
         }
+        settings = {
+            'show_images': data.get('share_show_images'),
+            'show_workflow_images': data.get('share_show_workflow_images'),
+            'show_pdf_pages': data.get('share_show_pdf_pages'),
+        }
+        if not asset_allowed(asset, settings):
+            return None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
         if not asset.get('object_key'):
             return None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
         return asset, None
@@ -266,7 +282,7 @@ def _multi_b2_public_media_interceptor():
         url, backend = _signed_get(asset, seconds=600)
         sign_ms = (time.perf_counter() - sign_started) * 1000.0
         resp = redirect(url, code=302)
-        resp.headers['Cache-Control'] = 'private, max-age=60'
+        resp.headers['Cache-Control'] = 'no-store'
         resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-memory-first-sigv4'
         resp.headers['X-Order-Storage-Backend'] = backend
         if parts[2] != 'image':

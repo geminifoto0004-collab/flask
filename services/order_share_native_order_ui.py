@@ -20,6 +20,7 @@ from services import order_public_share_multi_b2_page as _page
 from services import order_share_direct_cover_cache as _direct
 from services import order_share_render_cache as _render
 from order_tracking.share_common import apply_shipping_summary, derive_shipping_summary
+from services.order_share_image_policy import filter_assets_in_space, bool_default
 
 ROOT = Path(__file__).resolve().parents[1]
 ORDER = ROOT / "order_tracking"
@@ -28,7 +29,6 @@ STATIC = ORDER / "static"
 _LOCK = threading.RLock()
 _COMPILED = {}
 _ORIG_RENDER = _render._ORIGINAL_RENDER_TEMPLATE
-_ORIG_FILTER = _fast._filter_space
 
 _STATIC_RE = re.compile(r"\{\{\s*url_for\(\s*['\"]tracking_bp\.static['\"]\s*,\s*filename\s*=\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}")
 _GUEST_RE = re.compile(r"\{\{\s*url_for\(\s*['\"]tracking_bp\.local_guest_customer['\"]\s*,\s*token\s*=\s*token\s*\)\s*\}\}")
@@ -196,6 +196,7 @@ def _fingerprint():
 
 
 def _customer_context(space, share, token):
+    space = filter_assets_in_space(copy.deepcopy(space), share)
     customer = (space or {}).get("customer") or {}
     expires = _expiry(share)
     return {
@@ -205,6 +206,7 @@ def _customer_context(space, share, token):
         "show_pdf_pages": bool((share or {}).get("show_pdf_pages", True)),
         "allow_report_pdf_download": bool((share or {}).get("allow_report_pdf_download", False)),
         "show_images": bool((share or {}).get("show_images", True)),
+        "show_workflow_images": bool_default((share or {}).get("show_workflow_images")),
         "STATIC_VER": _fingerprint()[:12],
         "status_filter_mode": str((share or {}).get("status_filter_mode") or "simple"),
         "cloud_guest_base_url": f"/share/{token}",
@@ -232,6 +234,7 @@ def _stages(card, workflow):
 
 
 def _order_context(space, share, token, detail_key):
+    space = filter_assets_in_space(copy.deepcopy(space), share)
     for order in (space or {}).get("orders") or []:
         if not isinstance(order, dict):
             continue
@@ -277,7 +280,7 @@ def _native_skeleton(app, share, bundle):
     space = copy.deepcopy((bundle or {}).get("space") or {})
     if not space:
         return None
-    _ORIG_FILTER(space, share)
+    _fast._filter_space(space, share)
     return _render_native(app, "guest_customer.html", _customer_context(space, share, _render._TOKEN_PLACEHOLDER))
 
 

@@ -19,6 +19,7 @@ from blueprints.b2_test_bp import (
     _order_cloud_auth_source,
 )
 from database import check_column_exists, get_cursor, get_db_connection, get_row_dict
+from services.order_share_image_policy import asset_allowed
 
 _SCOPE_RANK = {'current': 0, '6m': 1, '12m': 2, 'all': 3}
 
@@ -240,6 +241,8 @@ def _asset_for_share(token, asset_key):
         if asset:
             _cache_put(_asset_cache, asset_key, dict(asset), _ASSET_CACHE_TTL)
     if not asset or asset.get('customer_key') != share.get('customer_key'):
+        return share, None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
+    if not asset_allowed(asset, share):
         return share, None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
     return share, dict(asset), None
 

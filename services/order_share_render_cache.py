@@ -59,6 +59,10 @@ def _share_variant(share):
         str(share.get("customer_key") or "").strip(),
         str(share.get("history_scope") or "current").strip().lower() or "current",
         "full" if str(share.get("status_filter_mode") or "simple").strip().lower() == "full" else "simple",
+        True if share.get("show_pdf_pages") is None else bool(share.get("show_pdf_pages")),
+        bool(share.get("allow_report_pdf_download")),
+        True if share.get("show_images") is None else bool(share.get("show_images")),
+        True if share.get("show_workflow_images") is None else bool(share.get("show_workflow_images")),
         bool(share.get("include_cancelled")),
     )
 
@@ -66,12 +70,13 @@ def _share_variant(share):
 def _variant_key(share):
     if not _TEMPLATE_HASH:
         return ""
-    customer_key, history_scope, status_filter_mode, include_cancelled = _share_variant(share)
+    customer_key, history_scope, status_filter_mode, show_pdf_pages, allow_report_pdf_download, show_images, show_workflow_images, include_cancelled = _share_variant(share)
     if not customer_key:
         return ""
     raw = (
         f"{_TEMPLATE_HASH}\0{customer_key}\0{history_scope}\0{status_filter_mode}\0"
-        f"{1 if include_cancelled else 0}"
+        f"{1 if show_pdf_pages else 0}\0{1 if allow_report_pdf_download else 0}\0"
+        f"image-sources-v2\0{1 if show_images else 0}\0{1 if show_workflow_images else 0}\0{1 if include_cancelled else 0}"
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -137,7 +142,7 @@ def _memory_put(share, html):
 
 def _persist(share, html):
     key = _variant_key(share)
-    customer_key, history_scope, _status_filter_mode, include_cancelled = _share_variant(share)
+    customer_key, history_scope, _status_filter_mode, _show_pdf_pages, _allow_report_pdf_download, _show_images, _show_workflow_images, include_cancelled = _share_variant(share)
     if not key or not customer_key or not html or not _TEMPLATE_HASH:
         return
     _ensure_table()
