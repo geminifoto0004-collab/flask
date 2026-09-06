@@ -180,6 +180,9 @@ _order_cloud_service.get_customer_space = _fast_get_customer_space
 # app.py registers that blueprint. No B2 credential leaves Render.
 from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 
+# Admin-only TiDB-indexed B2 image management; B2 credentials stay on Render.
+from . import order_cloud_asset_admin as _order_cloud_asset_admin  # noqa: E402,F401
+
 # Compatibility module + multi-B2 extension registration. Its legacy thumbnail
 # upload endpoint is hard-disabled: ORDER image bytes never pass through Render.
 from . import order_cloud_proxy_thumb as _order_cloud_proxy_thumb  # noqa: E402,F401
