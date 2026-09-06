@@ -6,6 +6,9 @@ this endpoint with the customer's current SQLite order-number set.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+
 from flask import jsonify, request
 
 from blueprints.b2_test_bp import b2_test_bp, _ensure_order_cloud_tables, _order_cloud_auth_source
@@ -16,6 +19,7 @@ from services.order_cloud_customer_storage import _INTENT_TABLE
 @b2_test_bp.before_app_request
 def _reconcile_customer_orders():
     if request.method != "POST" or request.path not in {
+        "/api/order-cloud/customer/manifest",
         "/api/order-cloud/customer/reconcile-orders",
         "/api/order-cloud/customer/snapshot",
     }:
@@ -32,6 +36,45 @@ def _reconcile_customer_orders():
         raw_orders = payload.get("order_numbers")
         if not customer_key:
             return jsonify({"ok": False, "error": "customer_key is required"}), 400
+
+        if request.path.endswith("/manifest"):
+            conn = get_db_connection()
+            cur = get_cursor(conn)
+            try:
+                cur.execute(
+                    "SELECT order_number, render_payload FROM cloud_orders "
+                    "WHERE customer_key=? ORDER BY order_number",
+                    (customer_key,),
+                )
+                items = []
+                for row in cur.fetchall() or []:
+                    data = get_row_dict(row, cur) or {}
+                    order_number = str(data.get("order_number") or "").strip()
+                    payload_hash = None
+                    try:
+                        decoded = json.loads(data.get("render_payload") or "")
+                        canonical = json.dumps(
+                            decoded,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            default=str,
+                        ).encode("utf-8")
+                        payload_hash = hashlib.sha256(canonical).hexdigest()
+                    except Exception:
+                        pass
+                    if order_number:
+                        items.append({
+                            "order_number": order_number,
+                            "payload_sha256": payload_hash,
+                        })
+            finally:
+                conn.close()
+            return jsonify({"ok": True, "result": {
+                "customer_key": customer_key,
+                "orders": items,
+                "order_count": len(items),
+            }})
 
         if request.path.endswith("/snapshot"):
             raw_payloads = payload.get("orders")
