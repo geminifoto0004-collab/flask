@@ -1,0 +1,144 @@
+                 'current_status': workflow.get('current_status'),
+-                'last_status_change_date': workflow.get('status_updated_at')
++                'last_status_change_date': last_action_date_str or cached_status_updated_at
+             }
+             workflow['status_light'] = calculate_status_light(order_obj)
+             workflow['current_status'] = workflow.get('current_status', '')
+-            workflow['status_days'] = workflow.get('status_days', 0)
++            if last_action_date_str:
++                try:
++                    action_date_obj = datetime.strptime(str(last_action_date_str).strip().split()[0], '%Y-%m-%d').date()
++                    workflow['status_days'] = max(0, (today_date - action_date_obj).days)
++                except (ValueError, TypeError):
++                    workflow['status_days'] = 0
++            else:
++                workflow['status_days'] = 0
++            workflow['last_status_change_date'] = last_action_date_str
++            workflow['status_updated_at'] = last_action_date_str or cached_status_updated_at
+             workflow['product_name'] = workflow.get('product_name', '')
+             workflow['product_code'] = workflow.get('product_code', '')
+             workflow['quantity'] = workflow.get('quantity', '')
+@@ -8878,7 +9058,7 @@ def api_global_search():
+             owner_id = workflow.get('handler_id') or workflow.get('created_by_id') or workflow.get('created_by')
+             owner_id_str = str(owner_id) if owner_id is not None else ''
+             current_id_str = str(current_user_id) if current_user_id is not None else ''
+-            workflow['can_edit_notes'] = bool(owner_id_str and owner_id_str == current_id_str) and not workflow['is_locked']
++            workflow['can_edit_notes'] = str(get_current_user_context().get('role') or '').lower() == 'sales' and bool(owner_id_str and owner_id_str == current_id_str) and not workflow['is_locked']
+             workflow['no_workflow'] = False
+             orders_list.append(workflow)
+ 
+diff --git a/order_tracking/config.py b/order_tracking/config.py
+index 6d347e0..dcfa2fc 100644
+--- a/order_tracking/config.py
++++ b/order_tracking/config.py
+@@ -38,7 +38,13 @@ CLOUD_READ_ONLY = _env_bool('TRACKING_CLOUD_READ_ONLY', CLOUD_MODE)
+ #
+ # 本機正式資料路徑永遠保留定義；不同電腦不需要手動註解或修改。
+ # Cloud / Render 模式不會使用這個本機正式路徑。
+-DATA_DIR_CUSTOM = r'E:\upload_xingwang'
++_DATA_DIR_ENV = os.environ.get('TRACKING_DATA_DIR_CUSTOM', '').strip()
++_DATA_DIR_CANDIDATES = [
++    _DATA_DIR_ENV,
++    r'\\PC-20240525TVJA\xingwang\KECHEN',  # 公司正式共享資料路徑
++    r'E:\upload_xingwang',                       # 中國/可攜式既有資料路徑
++]
++DATA_DIR_CUSTOM = next((path for path in _DATA_DIR_CANDIDATES if path and os.path.isdir(path)), _DATA_DIR_ENV)
+ # ==================== 海外模式 ====================
+ # True  = 國外使用（顯示 WhatsApp 按鈕，從 Flask /contacto API 拿電話）
+ # False = 國內使用（不顯示，不呼叫任何外部 API）
+diff --git a/order_tracking/static/css/tracking.css b/order_tracking/static/css/tracking.css
+index feb8233..8505413 100644
+--- a/order_tracking/static/css/tracking.css
++++ b/order_tracking/static/css/tracking.css
+@@ -13937,6 +13937,25 @@ html[data-theme="dark"] .desktop-share-manager .desktop-guest-customer-selected
+         text-overflow: ellipsis;
+         white-space: nowrap;
+     }
++    .home-order-card-status-stack {
++        flex: 0 0 auto;
++        max-width: 48%;
++        display: flex;
++        flex-direction: column;
++        align-items: flex-end;
++        gap: 4px;
++        min-width: 0;
++    }
++    .home-order-card-status-stack .home-order-card-status { max-width: 100%; }
++    .home-order-card-shipping {
++        margin-top: 0;
++        display: flex;
++        align-items: center;
++        justify-content: flex-end;
++        min-width: 0;
++        max-width: 100%;
++    }
++    .home-order-card-shipping .shipping-note-summary { max-width: 100%; }
+     .home-order-card-product {
+         margin-top: 3px;
+         color: var(--text-2, #626b76);
+@@ -14395,6 +14414,34 @@ html[data-theme="dark"] .desktop-share-manager .desktop-guest-customer-selected
+         line-height: 1.15;
+         font-weight: 950;
+     }
++    .home-card-focus-order-line {
++        display: flex;
++        align-items: center;
++        flex-wrap: wrap;
++        gap: 8px;
++        min-width: 0;
++    }
++    .home-card-focus-deposit-badge {
++        appearance: none;
++        border: 1.5px solid #fde047;
++        background: #fef9c3;
++        color: #854d0e;
++        min-height: 25px;
++        padding: 2px 9px 2px 5px;
++        border-radius: 999px;
++        align-items: center;
++        gap: 3px;
++        font: inherit;
++        font-size: 11.5px;
++        font-weight: 900;
++        line-height: 1;
++        white-space: nowrap;
++        cursor: pointer;
++        box-shadow: none;
++    }
++    .home-card-focus-deposit-badge[hidden] { display: none !important; }
++    .home-card-focus-deposit-badge svg { flex: 0 0 auto; }
++    .home-card-focus-deposit-badge:hover { filter: brightness(.98); }
+     .home-card-focus-head p {
+         margin: 6px 0 0;
+         color: var(--text-2, #646c78);
+@@ -15299,3 +15346,57 @@ html[data-theme="dark"] .desktop-share-quick-settings{background:#1d2025;border-
+ html[data-theme="dark"] .desktop-share-quick-settings>strong{color:#f2f4f7}
+ html[data-theme="dark"] .desktop-share-quick-settings-grid select{background:#252930;border-color:#3a414c;color:#f2f4f7}
+ @media(max-width:900px){.desktop-share-quick-settings-grid{grid-template-columns:1fr}}
++
++/* ===== Unified desktop toolbar: preserve company single-row behavior without old share-queue CSS ===== */
++@media (min-width: 769px) {
++    .stage-filters {
++        flex-wrap: nowrap !important;
++        row-gap: 0 !important;
++        gap: .38rem;
++        overflow: visible;
++        min-width: 0;
++    }
++    .stage-filters > .stage-btn,
++    .stage-filters > .stage-filter { flex: 0 0 auto; }
++    .stage-filters .stage-btn {
++        padding-left: .72rem;
++        padding-right: .72rem;
++        gap: .34rem;
++    }
++    .stage-filters .home-toolbar-actions {
++        display: flex;
++        align-items: center;
++        justify-content: flex-end;
++        gap: .42rem;
++        flex: 0 0 auto;
++        min-width: 0;
++        margin-left: auto;
++        white-space: nowrap;
++    }
