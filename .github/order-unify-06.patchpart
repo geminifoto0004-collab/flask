@@ -1,0 +1,146 @@
++        const displayNumber = workflowNumber || orderNumber;
++        if (!matchesMainSearch(displayNumber, customerName, currentFilter.search, order.production_type || order.product_name || '', order.product_code || '', order.factory || '', order.handler_name || '', order.notes || '')) return false;
++    }
++
++    const selectedTeam = currentFilter.teamSales || [];
++    if (selectedTeam.length > 0) {
++        const handlerId = String(order.handler_id || order.handlerId || '');
++        if (!handlerId || !selectedTeam.includes(handlerId)) return false;
++    }
++
++    const light = String(order.status_light || '');
++    if (currentFilter.lights) {
++        if (light && ['red','yellow','green'].includes(light)) {
++            if (currentFilter.lights[light] === false) return false;
++        } else {
++            const allOn = currentFilter.lights.red !== false && currentFilter.lights.yellow !== false && currentFilter.lights.green !== false;
++            if (!allOn) return false;
++        }
++    }
++    return true;
++}
++
+ function updateFilterCountsFromData(data) {
+     const counts = {all:0,new_and_quote:0,draft:0,sampling:0,production:0,shipping:0,waiting_confirm:0,completed:0,cancelled:0,no_workflow:0,red:0,yellow:0,green:0};
+     const sub = {};
+@@ -7840,7 +7916,7 @@ function updateFilterCountsFromData(data) {
+         const status = normalizeStatusForLogic(item.current_status || '');
+         const group = getHomeStageGroup(item);
+         counts.all++;
+-        if (item.no_workflow) counts.no_workflow++;
++        if (item.no_workflow && noWorkflowMatchesCurrentContext(item)) counts.no_workflow++;
+         if (status === STATUS.COMPLETED) counts.completed++;
+         else if (status === STATUS.CANCELLED) counts.cancelled++;
+         else {
+@@ -8808,7 +8884,13 @@ function createOrderRow(order) {
+     const isOwner = currentUserId && handlerId && String(handlerId) === String(currentUserId);
+     const isAdminUser = typeof isAdminRole === 'function' && isAdminRole();
+     const permissionFromServer = order.can_edit_notes;
+-    const canInlineEditNotes = !isCloudReadOnly() && permissionFromServer === true;
++    const currentRoleRaw = String(document.body?.dataset?.userRole || '').trim().toLowerCase();
++    const isSalesRoleForNotes = ['sales', 'seller', 'biz', 'business', '业务员', '業務員'].includes(currentRoleRaw);
++    const canInlineEditNotes = !isCloudReadOnly()
++        && isSalesRoleForNotes
++        && isOwner
++        && !isLocked
++        && permissionFromServer === true;
+ 
+     const currentStatusText = typeof displayStatus === 'function'
+         ? displayStatus(order.current_status)
+@@ -10087,70 +10169,117 @@ document.addEventListener('DOMContentLoaded', function () {
+ 
+ const wsDepositMap = {};  // 全域字典
+ 
+-async function wsLoadDepositMap() {
+-    try {
+-        const res = await fetch('/costo_laboral/deposit_map');
+-        if (!res.ok) return;
+-        const data = await res.json();
+-        if (!data.ok || !data.last6) return;
+-
+-        // last6 的 key 是末6碼純數字，value 是餘額
+-        // 存進全域字典
+-        Object.assign(wsDepositMap, data.last6);
+-        console.log(`[Deposit] 已載入 ${Object.keys(wsDepositMap).length} 筆訂金資料`);
+-    } catch (e) {
+-        console.log('[Deposit] 無法載入訂金資料');
+-    }
++function wsGetDepositBalance(orderNumber) {
++    if (!orderNumber) return null;
++    const digits = String(orderNumber).replace(/\D/g, '');
++    if (!digits) return null;
++    const key6 = ('000000' + digits).slice(-6);
++    const balance = wsDepositMap[key6];
++    if (balance === undefined || balance === null) return null;
++    const numeric = Number(balance);
++    if (!Number.isFinite(numeric) || Math.abs(numeric) < 0.01) return null;
++    return numeric;
+ }
+ 
+-// 開抽屜時呼叫這個函數查字典並更新徽章
+-function wsShowDepositBadge(orderNumber) {
+-    const badge  = document.getElementById('wsDepositBadge');
+-    const amtEl  = document.getElementById('wsDepositAmount');
++function wsPaintDepositBadge(badge, amtEl, orderNumber) {
+     if (!badge || !amtEl) return;
+ 
+-    // 先隱藏
++    // Support both the old WORKSPACE span badge and the new desktop-card button badge.
++    if ('hidden' in badge) badge.hidden = true;
+     badge.style.display = 'none';
+-    if (!orderNumber) return;
+-
+-    // 把訂單號轉成末6碼純數字（跟 deposit_map 的 key 格式對齊）
+-    const digits = String(orderNumber).replace(/\D/g, '');
+-    if (!digits) return;
+-    const key6 = ('000000' + digits).slice(-6);
+ 
+-    const balance = wsDepositMap[key6];
+-    if (balance === undefined || balance === null || Math.abs(balance) < 0.01) return;
++    const balance = wsGetDepositBalance(orderNumber);
++    if (balance === null) return;
+ 
+-    // 格式化金額
+     const fmt = Math.abs(balance).toLocaleString('en-US', {
+         minimumFractionDigits: 2,
+         maximumFractionDigits: 2
+     });
+     amtEl.textContent = (balance < 0 ? '-US$' : 'US$') + fmt;
+ 
+-    // 顏色：正數黃（有訂金未用完）、負數紅（欠款）
+     if (balance < 0) {
+-        badge.style.background  = '#fee2e2';
++        badge.style.background = '#fee2e2';
+         badge.style.borderColor = '#fca5a5';
+-        badge.style.color       = '#991b1b';
++        badge.style.color = '#991b1b';
+     } else {
+-        badge.style.background  = '#fef9c3';
++        badge.style.background = '#fef9c3';
+         badge.style.borderColor = '#fde047';
+-        badge.style.color       = '#854d0e';
++        badge.style.color = '#854d0e';
+     }
++
++    if ('hidden' in badge) badge.hidden = false;
+     badge.style.display = 'inline-flex';
+ }
+ 
+-// 點擊徽章 → 新分頁開訂金頁
+-function wsOpenDepositDetail() {
+-    const orderNum = document.getElementById('wsOrderNumber')?.textContent?.trim();
+-    if (!orderNum || orderNum === '-') return;
++async function wsLoadDepositMap() {
++    try {
++        const res = await fetch('/costo_laboral/deposit_map', {
++            credentials: 'same-origin',
++            cache: 'no-store'
++        });
++        if (!res.ok) return;
++        const data = await res.json();
++        if (!data.ok || !data.last6) return;
++
++        Object.keys(wsDepositMap).forEach(key => delete wsDepositMap[key]);
++        Object.assign(wsDepositMap, data.last6);
++        console.log(`[Deposit] 已載入 ${Object.keys(wsDepositMap).length} 筆訂金資料`);
++
