@@ -1,0 +1,131 @@
++                continue
++            wf_no = str(item.get('workflow_number') or '').strip()
++            order_no = str(item.get('order_number') or '').strip()
++            key = f"w:{wf_no}" if wf_no else (f"o:{order_no}" if order_no else '')
++            if not key or key in seen_selected_keys:
++                continue
++            seen_selected_keys.add(key)
++            wf = export_map.get(key)
++            if wf is None:
++                missing_keys.append(key)
++            else:
++                ordered_workflows.append(wf)
++
++        if missing_keys:
++            conn.close()
++            return jsonify({
++                'success': False,
++                'error': f'前端目前篩選為 {len(seen_selected_keys)} 筆，但後端只能確認 {len(ordered_workflows)} 筆。資料可能剛被更新，請刷新頁面後再導出。'
++            }), 409
++
++        filtered_workflows = ordered_workflows
++
+     # --- 查詢所有相關的時間軸數據 ---
+-    workflow_numbers = [wf['workflow_number'] for wf in filtered_workflows]
++    workflow_numbers = [
++        str(wf.get('workflow_number') or '').strip()
++        for wf in filtered_workflows
++        if str(wf.get('workflow_number') or '').strip()
++    ]
+     
+     # 批量查詢所有時間軸記錄
+     timeline_map = {}  # workflow_number -> [history records]
+@@ -1857,14 +1996,28 @@ def api_export_workflows_xlsx():
+ 
+     # --- 圖片統計資料（主管參考圖=order_files；業務員附件圖=workflow_files）---
+     if selected_items:
+-        wf_map = {str(wf.get('workflow_number') or ''): wf for wf in all_workflows}
++        wf_map = {
++            str(wf.get('workflow_number') or '').strip(): wf
++            for wf in filtered_workflows
++            if str(wf.get('workflow_number') or '').strip()
++        }
++        order_only_map = {
++            str(wf.get('order_number') or '').strip(): wf
++            for wf in filtered_workflows
++            if not str(wf.get('workflow_number') or '').strip() and str(wf.get('order_number') or '').strip()
++        }
+         source_rows = []
++        seen_source_keys = set()
+         for item in selected_items:
+             if not isinstance(item, dict):
+                 continue
+             wf_no = str(item.get('workflow_number') or '').strip()
+             order_no = str(item.get('order_number') or '').strip()
+-            wf = wf_map.get(wf_no, {})
++            source_key = f"w:{wf_no}" if wf_no else (f"o:{order_no}" if order_no else '')
++            if not source_key or source_key in seen_source_keys:
++                continue
++            seen_source_keys.add(source_key)
++            wf = wf_map.get(wf_no, {}) if wf_no else order_only_map.get(order_no, {})
+             source_rows.append({
+                 'workflow_number': wf_no,
+                 'order_number': order_no or wf.get('order_number', ''),
+@@ -5919,11 +6072,11 @@ def api_update_workflow(workflow_number):
+         current_user_id = current_ctx.get('id')
+         current_role = current_ctx.get('role', 'viewer')
+         
+-        # 權限檢查：僅流程負責人或 ADMIN 可更新備註，且鎖單時僅 ADMIN 可改
++        # 備註權限：只有負責此流程的業務員本人可以修改；主管 / ADMIN 不代改。
+         if 'notes' in data:
+-            if not can_manage_by_owner(workflow.get('handler_id'), user_id=current_user_id):
++            if str(current_role or '').lower() != 'sales' or str(workflow.get('handler_id') or '') != str(current_user_id or ''):
+                 conn.close()
+-                return jsonify({'success': False, 'error': '無權限修改此流程的備註'}), 403
++                return jsonify({'success': False, 'error': '只有負責此流程的業務員可以修改備註'}), 403
+             is_locked = False
+             try:
+                 cursor.execute('SELECT is_locked FROM orders WHERE order_number = ?', (workflow.get('order_number'),))
+@@ -5932,7 +6085,7 @@ def api_update_workflow(workflow_number):
+                     is_locked = bool(dict(order_row).get('is_locked'))
+             except Exception:
+                 is_locked = False
+-            if is_locked and not is_admin(current_role):
++            if is_locked:
+                 conn.close()
+                 return jsonify({'success': False, 'error': '訂單已被鎖定，無法修改備註'}), 403
+         
+@@ -8818,11 +8971,26 @@ def api_global_search():
+     try:
+         # ── Part 1：有流程的訂單（原有邏輯）──
+         query = """
++            WITH ranked_history AS (
++                SELECT h.id, h.workflow_number, h.action_date,
++                       ROW_NUMBER() OVER (
++                           PARTITION BY h.workflow_number
++                           ORDER BY h.created_at DESC, h.id DESC
++                       ) AS rn
++                FROM workflow_status_history h
++            ),
++            latest_history AS (
++                SELECT id, workflow_number, action_date
++                FROM ranked_history
++                WHERE rn = 1
++            )
+             SELECT w.*, o.customer_name, o.order_date, o.status as order_status, o.visibility,
+-                   COALESCE(u.real_name, u.display_name, u.username) as handler_name
++                   COALESCE(u.real_name, u.display_name, u.username) as handler_name,
++                   lh.id AS last_history_id, lh.action_date AS last_action_date
+             FROM workflows w
+             INNER JOIN orders o ON w.order_number = o.order_number
+             LEFT JOIN users u ON w.handler_id = u.id
++            LEFT JOIN latest_history lh ON lh.workflow_number = w.workflow_number
+         """
+         params = []
+ 
+@@ -8851,20 +9019,32 @@ def api_global_search():
+ 
+         orders_list = []
+         seen_order_numbers = set()
++        today_date = date.today()
+         for row in rows:
+             workflow = dict(row)
+             seen_order_numbers.add(workflow.get('order_number'))
++            last_action_date_str = workflow.get('last_action_date') or ''
++            cached_status_updated_at = workflow.get('status_updated_at')
+             order_obj = {
+                 'order_number': workflow.get('order_number'),
+                 'order_date': workflow.get('order_date'),
+                 'expected_delivery_date': workflow.get('expected_delivery_date'),
+-                'status_updated_at': workflow.get('status_updated_at'),
++                'status_updated_at': cached_status_updated_at,
