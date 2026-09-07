@@ -1,0 +1,60 @@
+name: Apply ORDER init binding fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/zz_apply_order_init_binding_fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact advanced-search binding fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, subprocess
+
+          path = Path('order_tracking/__init__.py')
+          raw = path.read_bytes()
+          current = subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
+          expected_old = '51103c62c16930aee28babc5e5c7c813c6df5730'
+          expected_new = 'cc423b726a4d53ff392ff8d7d7ca90f559ce97d3'
+          if current == expected_new:
+              print('Fix already present.')
+              raise SystemExit(0)
+          if current != expected_old:
+              raise SystemExit(f'Refusing to patch unexpected __init__.py blob: {current}')
+
+          text = raw.decode('utf-8')
+          old = '''    if selected_statuses:\n        placeholders = ','.join(['?'] * len(selected_statuses))\n        query += f" AND w.current_status IN ({placeholders})"\n    elif status_cancelled and not status_ongoing and not status_completed:\n        pass  # already filtered by o.status = 'CANCELLED' in the WHERE clause\n        params.extend(selected_statuses)\n'''
+          new = '''    if selected_statuses:\n        placeholders = ','.join(['?'] * len(selected_statuses))\n        query += f" AND w.current_status IN ({placeholders})"\n        params.extend(selected_statuses)\n    elif status_cancelled and not status_ongoing and not status_completed:\n        pass  # already filtered by o.status = 'CANCELLED' in the WHERE clause\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected exactly one binding block, got {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8', newline='\n')
+          actual = subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
+          if actual != expected_new:
+              raise SystemExit(f'Unexpected patched blob: {actual}')
+          print(f'Patched blob verified: {actual}')
+          PY
+          python -m py_compile order_tracking/__init__.py
+      - name: Commit fix
+        shell: bash
+        run: |
+          if git diff --quiet -- order_tracking/__init__.py; then
+            echo "No change needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add order_tracking/__init__.py
+          git commit -m "Fix ORDER advanced search parameter binding"
+          git push origin HEAD:main
