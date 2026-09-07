@@ -1,0 +1,128 @@
++    .stage-filters .home-toolbar-actions .customer-search-box {
++        flex: 0 1 180px;
++        width: clamp(120px, 11vw, 200px);
++        min-width: 120px !important;
++        max-width: 200px !important;
++        margin-left: 0 !important;
++    }
++    .stage-filters .home-toolbar-actions .home-view-switch,
++    .stage-filters .home-toolbar-actions .btn.btn-secondary.icon-only { flex: 0 0 auto; }
++}
++@media (min-width: 769px) and (max-width: 1400px) {
++    .stage-filters { gap: .28rem; }
++    .stage-filters .stage-btn {
++        padding-left: .55rem;
++        padding-right: .55rem;
++        gap: .25rem;
++        font-size: .79rem;
++    }
++    .stage-filters .stage-count { padding-left: .28rem; padding-right: .28rem; }
++    .stage-filters .home-toolbar-actions { gap: .3rem; }
++    .stage-filters .home-toolbar-actions .customer-search-box {
++        flex-basis: 135px;
++        width: 135px;
++        min-width: 105px !important;
++        max-width: 150px !important;
++    }
++}
+diff --git a/order_tracking/static/js/notifications.js b/order_tracking/static/js/notifications.js
+index 178c60e..62319f1 100644
+--- a/order_tracking/static/js/notifications.js
++++ b/order_tracking/static/js/notifications.js
+@@ -8,6 +8,10 @@
+     // Render/cloud mode does not use the local SQLite notification subsystem.
+     if (document.body && document.body.dataset.cloudMode === 'true') return;
+ 
++    // 沒有 ORDER 自己的 Session user_id：連第一次 API 都不要送，避免 401。
++    const orderSessionUserId = String(document.body?.dataset?.userId || '').trim();
++    if (!orderSessionUserId) return;
++
+     // ===== 状态 =====
+     let notifCurrentTab = 'unread';
+     let notifPage = 1;
+@@ -16,8 +20,17 @@
+     let panelOpen = false;
+     let unreadCountCache = 0;
+     let unreadPollTimer = null;
++    let notificationAuthBlocked = false;
+     const UNREAD_POLL_MS = 15000; // keep badge responsive without manual refresh
+ 
++    function stopNotificationPollingForAuth() {
++        notificationAuthBlocked = true;
++        if (unreadPollTimer) {
++            clearInterval(unreadPollTimer);
++            unreadPollTimer = null;
++        }
++    }
++
+     // 通知类型 → SVG 图标
+     const TYPE_ICONS = {
+         order_unlocked: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>',
+@@ -74,9 +87,17 @@
+ 
+     // ===== 获取未读数量 =====
+     function fetchUnreadCount() {
++        if (notificationAuthBlocked) return;
+         fetch('/tracking/api/notifications/unread-count', { credentials: 'same-origin' })
+-            .then(r => r.json())
++            .then(async r => {
++                if (r.status === 401 || r.status === 403) {
++                    stopNotificationPollingForAuth();
++                    return null;
++                }
++                return r.json().catch(() => null);
++            })
+             .then(data => {
++                if (!data || notificationAuthBlocked) return;
+                 if (!data.success) return;
+                 const count = Number(data.count || 0);
+                 const increased = count > unreadCountCache;
+diff --git a/order_tracking/static/js/tracking.js b/order_tracking/static/js/tracking.js
+index 6cff557..1954b09 100644
+--- a/order_tracking/static/js/tracking.js
++++ b/order_tracking/static/js/tracking.js
+@@ -1711,7 +1711,11 @@ function exportData() {
+     if (homeDataReady && !isGlobalSearchMode) applyFilters();
+     const sourceRows = (homeDataReady && !isGlobalSearchMode) ? homeFilteredOrdersData : (lastFilteredRowsForExport || []);
+     const selected = buildCustomerReportSelection(sourceRows);
+-    showToast('提示', `正在生成 Excel（${selected.length || '当前'} 笔）`, 'info');
++    if (!selected.length) {
++        showToast('提示', '目前前端篩選結果為 0 筆，沒有可導出的訂單', 'warning');
++        return;
++    }
++    showToast('提示', `正在生成 Excel（${selected.length} 笔）`, 'info');
+     fetch('/tracking/api/workflows/export', {
+         method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+         body: JSON.stringify({selected_items:selected})
+@@ -2374,6 +2378,8 @@ function homeCardFocusEls() {
+         zoomMeta: document.getElementById('homeCardImageZoomMeta'),
+         caption: document.getElementById('homeCardFocusCaption'),
+         orderNumber: document.getElementById('homeCardFocusOrderNumber'),
++        depositBadge: document.getElementById('homeCardFocusDepositBadge'),
++        depositAmount: document.getElementById('homeCardFocusDepositAmount'),
+         customer: document.getElementById('homeCardFocusCustomer'),
+         status: document.getElementById('homeCardFocusStatus'),
+         workflows: document.getElementById('homeCardFocusWorkflows'),
+@@ -2671,6 +2677,8 @@ function homeCardFocusRender() {
+     const statusKey = String(data.current_status || order.current_status || '').trim();
+     const statusText = statusKey && typeof displayStatus === 'function' ? displayStatus(statusKey) : (statusKey || '尚无流程');
+     el.orderNumber.textContent = state.workflowNumber || state.orderNumber || '—';
++    // 訂金一定用真正 orderNumber 查；標題有時顯示的是 workflowNumber。
++    wsShowHomeCardDepositBadge(state.orderNumber);
+     el.customer.textContent = String(data.customer_name || order.customer_name || '—');
+     el.status.textContent = statusText;
+     el.adminNote.textContent = String(data.order_notes || order.order_notes || '').trim() || '暂无备注';
+@@ -2679,12 +2687,19 @@ function homeCardFocusRender() {
+     if (el.share) el.share.hidden = !(rootCustomer && document.getElementById('desktopGuestShareDrawer') && typeof desktopGuestIsAdmin === 'function' && desktopGuestIsAdmin());
+ 
+     ['admin', 'sales'].forEach(type => {
++        const note = type === 'admin' ? el.adminNote : el.salesNote;
++        const box = note?.closest('.home-card-focus-note-box');
++        const isEditing = !!box?.classList.contains('is-editing');
+         const btn = el.root.querySelector(`[data-focus-note-edit="${type}"]`);
++        if (isEditing) {
++            // 自動刷新時不要把正在輸入的備註編輯框關掉。
++            if (btn) btn.hidden = true;
++            return;
++        }
+         if (btn) btn.hidden = !homeCardFocusCanEditNote(type);
