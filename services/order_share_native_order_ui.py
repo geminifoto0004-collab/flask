@@ -145,11 +145,6 @@ def _card(order, workflow, token):
     }
     if workflow:
         apply_shipping_summary(card, derive_shipping_summary(workflow.get("timeline") or []))
-        card["history"] = _history(workflow)
-        card["timeline_stages"] = _stages(card, workflow)
-    else:
-        card["history"] = []
-        card["timeline_stages"] = _stages(card, None)
     return card
 
 
@@ -338,81 +333,44 @@ def _inject(html, token, space):
         if has_request_context():
             g._order_direct_cover_count = count; g._order_direct_cover_sign_ms = sign_ms
             g._order_direct_cover_cache_hits = hits; g._order_direct_cover_cache_misses = misses
-            g._order_direct_cover_ms = (time.perf_counter() - started) * 1000.0
+            g._order_direct_cover_inject_ms = (time.perf_counter() - started) * 1000.0
 
 
-def _public_paths(token):
-    return {f"/share/{token}", f"/share/{token}/"}
-
-
-def _is_native_public_request(token):
-    if not has_request_context():
-        return False
-    return request.method in {"GET", "HEAD"} and request.path in _public_paths(token)
-
-
-def _native_public_html(token, share, bundle, app):
-    if not _is_native_public_request(token):
+@b2_test_bp.before_app_request
+def _native_detail():
+    if request.method != "GET":
         return None
-    customer_key = str((share or {}).get("customer_key") or "").strip()
-    html = None
-    try:
-        html = _render.get_cached_html(share)
-    except Exception:
-        html = None
-    if not html:
-        html = _native_skeleton(app, share, bundle)
-        if html:
-            try:
-                _render.store_rendered_html(share, html)
-            except Exception:
-                pass
-    if not html:
+    parts = (request.path or "").strip("/").split("/")
+    if len(parts) != 4 or parts[0] != "share" or parts[2] != "order":
         return None
-    return Response(_inject(str(html).replace(_render._TOKEN_PLACEHOLDER, token), token, (bundle or {}).get("space") or {}), mimetype="text/html")
-
-
-_ORIGINAL_RENDER_PUBLIC = _page._render_public
-
-
-def _render_public_native(token, share, bundle, app):
-    native = _native_public_html(token, share, bundle, app)
-    if native is not None:
-        return native
-    return _ORIGINAL_RENDER_PUBLIC(token, share, bundle, app)
-
-
-_page._render_public = _render_public_native
-_page._native_skeleton = _native_skeleton
-
-
-_ORIGINAL_DETAIL = _page._public_order_detail
-
-
-def _detail_native(token, order_number):
-    if not request.path.startswith(f"/share/{token}/order/"):
-        return None
-    detail_key = unquote(str(order_number or ""))
-    bundle = _page._bundle_from_memory(token)
-    if not bundle:
-        return _ORIGINAL_DETAIL(token, order_number)
-    share = (bundle or {}).get("share") or {}
-    space = (bundle or {}).get("space") or {}
-    context = _order_context(space, share, token, detail_key)
+    token = parts[1]
+    share, bundle, error = _page._load_page_data(token)
+    if error:
+        return error
+    space = bundle.get("space") or {}; _fast._filter_space(space, share)
+    context = _order_context(space, share, token, unquote(parts[3]))
     if not context:
-        return _ORIGINAL_DETAIL(token, order_number)
-    return Response(_render_native(current_app._get_current_object(), "guest_order.html", context), mimetype="text/html")
+        return Response("Pedido no encontrado.", 404, mimetype="text/plain")
+    response = Response(_render_native(current_app._get_current_object(), "guest_order.html", context), mimetype="text/html")
+    response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+    response.headers["X-Order-UI-Source"] = "order_tracking-native"
+    return response
 
 
-_page._public_order_detail = _detail_native
+@b2_test_bp.after_app_request
+def _ui_header(response):
+    parts = (request.path or "").strip("/").split("/")
+    if parts and parts[0] == "share" and (len(parts) == 2 or (len(parts) == 4 and parts[2] == "order")):
+        response.headers["X-Order-UI-Source"] = "order_tracking-native"
+    return response
 
 
-@b2_test_bp.record_once
-def _native_ui_startup(state):
-    try:
-        app = state.app
-        _render._build_customer_html = lambda share: _native_skeleton(app, share, _page._bundle_for_share(share))
-        _render._native_customer_skeleton = lambda share, bundle: _native_skeleton(app, share, bundle)
-        print("[ORDER] native public UI patch ready")
-    except Exception as exc:
-        print(f"[WARN] native public UI patch startup: {type(exc).__name__}: {exc}")
+def install():
+    _render._compute_template_hash = lambda app: _fingerprint()
+    _render._render_skeleton = _native_skeleton
+    _render._ORIGINAL_RENDER_TEMPLATE = _native_fallback
+    _render._cover_assets = _cover_assets
+    _render._inject_direct_cover_urls = _inject
+
+
+install()
