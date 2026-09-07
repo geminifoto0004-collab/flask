@@ -149,3 +149,6 @@ from services import order_share_admin_runtime_patch as _share_admin_runtime  # 
 
 # Render customer wall + order detail expiry use an explicit DDd HHh MMm SSs countdown.
 from services import order_guest_expiry_format_patch as _guest_expiry_format  # noqa: E402,F401
+
+# Desktop share modal opens immediately from the already-rendered wall, then hydrates in background.
+from services import order_modal_speed_patch as _order_modal_speed  # noqa: E402,F401
