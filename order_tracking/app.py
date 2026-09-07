@@ -24,7 +24,6 @@ from flask import Flask, redirect, url_for, session, request, jsonify
 from werkzeug.exceptions import NotFound
 from order_tracking import tracking_bp, init_db
 from order_tracking.config import SECRET_KEY, CLOUD_MODE
-from order_tracking.search_result_canonical_patch import install_search_result_canonical_patch
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -35,8 +34,6 @@ if not CLOUD_MODE:
 
 # 註冊Blueprint
 app.register_blueprint(tracking_bp)
-# Enter 鍵後端搜尋與首頁共用同一份 canonical ORDER row，避免歷史日期修改後搜尋又顯示舊值。
-install_search_result_canonical_patch(app)
 
 
 # 全局 404 錯誤處理器 - 處理所有未匹配的路由
