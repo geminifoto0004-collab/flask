@@ -1,0 +1,22 @@
+     </div>
+     </div>
+     
+@@ -654,7 +657,17 @@
+                 <header class="home-card-focus-head">
+                     <div>
+                         <span class="home-card-focus-kicker">订单状况</span>
+-                        <h2 id="homeCardFocusOrderNumber">—</h2>
++                        <div class="home-card-focus-order-line">
++                            <h2 id="homeCardFocusOrderNumber">—</h2>
++                            <button type="button" id="homeCardFocusDepositBadge" class="home-card-focus-deposit-badge" hidden
++                                    title="查看订金明细" aria-label="查看订金明细">
++                                <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
++                                    <circle cx="10" cy="10" r="9" fill="#fbbf24" stroke="#d97706" stroke-width="1.2"/>
++                                    <text x="10" y="14.5" text-anchor="middle" font-size="10" font-weight="900" fill="#92400e" font-family="Arial,sans-serif">$</text>
++                                </svg>
++                                <span id="homeCardFocusDepositAmount"></span>
++                            </button>
++                        </div>
+                         <p id="homeCardFocusCustomer">—</p>
+                     </div>
+                     <span class="home-card-focus-status" id="homeCardFocusStatus">—</span>
