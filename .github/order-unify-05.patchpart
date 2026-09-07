@@ -1,0 +1,111 @@
+         const editor = el.root.querySelector(`[data-focus-note-editor="${type}"]`);
+         if (editor) editor.hidden = true;
+-        const p = type === 'admin' ? el.adminNote : el.salesNote;
+-        if (p) p.hidden = false;
++        if (note) note.hidden = false;
+     });
+     homeCardFocusRenderWorkflows();
+     homeCardFocusRenderMeta();
+@@ -3204,6 +3219,8 @@ function createHomeOrderCard(order, pageIndex) {
+     const orderDate = String(order?.order_date || '').trim();
+     const delivery = String(order?.expected_delivery_date || '').trim();
+     const quantity = String(order?.quantity || '').trim();
++    // 卡片與表格共用同一套出貨摘要。
++    const shippingSummaryHtml = (typeof buildShippingSummaryHtml === 'function') ? buildShippingSummaryHtml(order) : '';
+ 
+     const cardKey = String(getHomeOrderKey(order) || displayNumber || '').trim();
+     article.className = `home-order-card light-${light}${order?.no_workflow ? ' is-no-workflow' : ''}${homeCardLastViewedKey && homeCardLastViewedKey === cardKey ? ' is-last-viewed' : ''}`;
+@@ -3234,7 +3251,10 @@ function createHomeOrderCard(order, pageIndex) {
+                 </div>
+                 <div class="home-order-card-customer-row">
+                     <div class="home-order-card-customer">${homeCardEscape(customer)}</div>
+-                    <span class="home-order-card-status">${homeCardEscape(status)}</span>
++                    <div class="home-order-card-status-stack">
++                        <span class="home-order-card-status">${homeCardEscape(status)}</span>
++                        ${shippingSummaryHtml ? `<div class="home-order-card-shipping">${shippingSummaryHtml}</div>` : ''}
++                    </div>
+                 </div>
+                 ${(productType || productCode) ? `<div class="home-order-card-product">${homeCardEscape(productType || '产品')}${productCode ? ` · ${homeCardEscape(productCode)}` : ''}</div>` : ''}
+                 ${notes ? `<div class="home-order-card-note" title="${homeCardEscape(notes)}">${homeCardEscape(notes)}</div>` : '<div class="home-order-card-note is-empty">暂无备注</div>'}
+@@ -4065,6 +4085,10 @@ function sortHomeOrders(data) {
+ function renderHomeOrdersPage() {
+     const tbody = document.getElementById('ordersTableBody');
+     if (!tbody) return;
++    if (tbody.querySelector('tr[data-inline-editing="true"]')) {
++        // 自動刷新/篩選重算時，保留尚未存檔的備註輸入內容。
++        return;
++    }
+     const total = homeFilteredOrdersData.length;
+     const totalPages = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE));
+     if (currentTablePage > totalPages) currentTablePage = totalPages;
+@@ -4486,6 +4510,16 @@ function applyFilters() {
+     isPaginating = false;
+     homeFilteredOrdersData = sortHomeOrders(homeOrdersData.filter(homeOrderMatchesCurrentFilters));
+     lastFilteredRowsForExport = homeFilteredOrdersData.slice();
++
++    // 無流程徽章與實際篩選列表保持一致。
++    const activeGroups = currentFilter.stageGroups || ['all'];
++    const noWorkflowCountEl = document.getElementById('noWorkflowCount');
++    if (noWorkflowCountEl && activeGroups.length === 1 && activeGroups[0] === 'no_workflow') {
++        noWorkflowCountEl.textContent = String(homeFilteredOrdersData.length);
++    } else if (noWorkflowCountEl) {
++        noWorkflowCountEl.textContent = String(homeOrdersData.filter(noWorkflowMatchesCurrentContext).length);
++    }
++
+     renderHomeOrdersPage();
+ }
+ 
+@@ -5996,6 +6030,8 @@ function toggleNoWorkflowOrders(target) {
+         target.classList.toggle('active', isActive);
+     }
+     currentFilter.showNoWorkflow = isActive;
++    // 無流程沒有子狀態，避免前一個階段的 substatus 讓計數與列表不一致。
++    if (isActive) currentFilter.substatus = 'all';
+     const selected = new Set(currentFilter.stageGroups || []);
+     selected.delete('all');
+     if (isActive) {
+@@ -7329,15 +7365,18 @@ function saveNotes(identifier, buttonEl) {
+     buttonEl.disabled = true;
+     buttonEl.textContent = '保存中...';
+ 
+-    const isWorkflowNumber = identifier && identifier.includes('-');
+-    const workflowNumber = notesCell.dataset.workflowNumber || (isWorkflowNumber ? identifier : '');
+-    const orderNumber = notesCell.dataset.orderNumber || (!isWorkflowNumber ? identifier : '');
++    const workflowNumber = String(notesCell.dataset.workflowNumber || '').trim();
++    const orderNumber = String(notesCell.dataset.orderNumber || '').trim();
++    const fallbackIdentifier = String(identifier || '').trim();
+ 
+     let apiUrl;
+-    if (isWorkflowNumber && workflowNumber) {
++    if (workflowNumber) {
+         apiUrl = `/tracking/api/workflows/${encodeURIComponent(workflowNumber)}`;
+     } else if (orderNumber) {
+         apiUrl = `/tracking/api/orders/${encodeURIComponent(orderNumber)}`;
++    } else if (fallbackIdentifier) {
++        // 僅供舊 DOM 相容；正常表格一定應該帶 dataset。
++        apiUrl = `/tracking/api/orders/${encodeURIComponent(fallbackIdentifier)}`;
+     } else {
+         buttonEl.disabled = false;
+         buttonEl.textContent = '保存';
+@@ -7831,8 +7870,45 @@ function updateOrderRowAfterUndo(orderNumber, orderData) {
+ }
+ 
+ /**
+- * 更新筛选按钮的计数（统一使用 STATUS_SYSTEM.js）
++ * 無流程徽章數量必須套用目前的客戶/訂單/搜尋等上下文，
++ * 否則按鈕顯示數量會和點進去的列表不同。
+  */
++function noWorkflowMatchesCurrentContext(order) {
++    if (!order || !order.no_workflow) return false;
++    const workflowNumber = String(order.workflow_number || order.workflowNumber || '');
++    const orderNumber = String(order.order_number || order.orderNumber || '');
++    const customerName = String(order.customer_name || '');
++
++    // 無流程數量必須和點進去後的列表使用相同的「其他篩選條件」。
++    // 這裡刻意不判斷 stageGroups，否則按鈕本身會影響自己的數量。
++    if (!isGlobalSearchMode && selectedOrderNumberFilter) {
++        const wanted = selectedOrderNumberFilter.trim().toLocaleLowerCase();
++        if (orderNumber.toLocaleLowerCase() !== wanted && workflowNumber.toLocaleLowerCase() !== wanted) return false;
++    } else if (!isGlobalSearchMode && selectedCustomerNameFilter) {
++        if (customerName.trim().toLocaleLowerCase() !== selectedCustomerNameFilter.trim().toLocaleLowerCase()) return false;
++    } else if (!isGlobalSearchMode && currentFilter.search) {
