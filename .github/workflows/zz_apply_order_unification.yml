@@ -1,0 +1,77 @@
+name: Apply ORDER unification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/zz_apply_order_unification.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify, apply, test and commit unified ORDER
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Guard against applying the merge to a different source revision.
+          test "$(git hash-object order_tracking/__init__.py)" = "cc423b726a4d53ff392ff8d7d7ca90f559ce97d3"
+          test "$(git hash-object order_tracking/config.py)" = "6d347e0121e807ef92a0e5bfe1229212e06732dd"
+          test "$(git hash-object order_tracking/static/css/tracking.css)" = "feb8233a86b4309e9e48e065342671ebba62ec57"
+          test "$(git hash-object order_tracking/static/js/notifications.js)" = "178c60eb219a8529169cc9f46343260c1a22f7d5"
+          test "$(git hash-object order_tracking/static/js/tracking.js)" = "6cff5570b42e3927db7116519a17525d2bc87b87"
+          test "$(git hash-object order_tracking/static/js/ui_i18n.js)" = "ec5c77c5b9fadd906f7af4d5af90737aed0fafaa"
+          test "$(git hash-object order_tracking/templates/tracking/index.html)" = "7539d97da07d024485d0c4b052d1d26dd678e2eb"
+
+          cat .github/order-unify-*.patchpart > /tmp/order-unified.patch
+          test "$(wc -c < /tmp/order-unified.patch | tr -d ' ')" = "53235"
+          echo "d99fcae1926cb2a02db8b4c69c111898a1d836fabb4c6b8c088703b3fe1d1fc8  /tmp/order-unified.patch" | sha256sum -c -
+
+          git apply --check /tmp/order-unified.patch
+          git apply /tmp/order-unified.patch
+
+          python -m py_compile order_tracking/__init__.py order_tracking/config.py
+          node --check order_tracking/static/js/tracking.js
+          node --check order_tracking/static/js/notifications.js
+          node --check order_tracking/static/js/ui_i18n.js
+
+          # Assert exact candidate blobs produced by the locally validated merge.
+          test "$(git hash-object order_tracking/__init__.py)" = "accd8bdcd1b262f633a04b6da36ec9dfea2a30f2"
+          test "$(git hash-object order_tracking/config.py)" = "dcfa2fcfc144ce43665c60184faf4834e1bb6833"
+          test "$(git hash-object order_tracking/static/css/tracking.css)" = "8505413f212997ed5ac201277ebc696f59d5ebf8"
+          test "$(git hash-object order_tracking/static/js/notifications.js)" = "62319f1e4ab0fce2d1cca187f8fdc54a3139c1d1"
+          test "$(git hash-object order_tracking/static/js/tracking.js)" = "1954b09fa1a7734accb1b9cf5ddde4136fc1c31c"
+          test "$(git hash-object order_tracking/static/js/ui_i18n.js)" = "c44b98b12a61fb38a77c1a6426b5db7502ad3d2b"
+          test "$(git hash-object order_tracking/templates/tracking/index.html)" = "a1ec07ad8c0350f044244494cd8a8d803651df46"
+
+          expected="$(printf '%s\n' \
+            order_tracking/__init__.py \
+            order_tracking/config.py \
+            order_tracking/static/css/tracking.css \
+            order_tracking/static/js/notifications.js \
+            order_tracking/static/js/tracking.js \
+            order_tracking/static/js/ui_i18n.js \
+            order_tracking/templates/tracking/index.html | sort)"
+          actual="$(git diff --name-only | sort)"
+          test "$actual" = "$expected"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            order_tracking/__init__.py \
+            order_tracking/config.py \
+            order_tracking/static/css/tracking.css \
+            order_tracking/static/js/notifications.js \
+            order_tracking/static/js/tracking.js \
+            order_tracking/static/js/ui_i18n.js \
+            order_tracking/templates/tracking/index.html
+          git commit -m "Unify ORDER company China and Git baseline"
+          git push
