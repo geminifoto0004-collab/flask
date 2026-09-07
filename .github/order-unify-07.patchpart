@@ -1,0 +1,133 @@
++        // If either detail UI is already open, refresh its badge after the async map arrives.
++        const wsOrder = document.getElementById('wsOrderNumber')?.textContent?.trim();
++        if (wsOrder && wsOrder !== '-') wsShowDepositBadge(wsOrder);
++        if (homeCardFocusState?.orderNumber) wsShowHomeCardDepositBadge(homeCardFocusState.orderNumber);
++    } catch (e) {
++        // Expected on the China-only standalone ORDER build where COSTO_LABORAL is intentionally absent.
++        console.log('[Deposit] 無法載入訂金資料');
++    }
++}
++
++// Old WORKSPACE drawer badge.
++function wsShowDepositBadge(orderNumber) {
++    wsPaintDepositBadge(
++        document.getElementById('wsDepositBadge'),
++        document.getElementById('wsDepositAmount'),
++        orderNumber
++    );
++}
++
++// New desktop card/modal badge.
++function wsShowHomeCardDepositBadge(orderNumber) {
++    wsPaintDepositBadge(
++        document.getElementById('homeCardFocusDepositBadge'),
++        document.getElementById('homeCardFocusDepositAmount'),
++        orderNumber
++    );
++}
++
++function wsOpenDepositDetail(orderNumber = '') {
++    let orderNum = String(orderNumber || '').trim();
++    if (!orderNum) {
++        orderNum = document.getElementById('wsOrderNumber')?.textContent?.trim() || '';
++    }
++    if (!orderNum || orderNum === '-' || orderNum === '—') return;
+     window.open('/costo_laboral/deposit?nota=' + encodeURIComponent(orderNum), '_blank');
+ }
+ 
++function wsOpenHomeCardDepositDetail() {
++    const orderNum = String(homeCardFocusState?.orderNumber || '').trim();
++    if (!orderNum) return;
++    wsOpenDepositDetail(orderNum);
++}
++
+ // 頁面載入時執行
+ document.addEventListener('DOMContentLoaded', function () {
+     wsLoadDepositMap();
++
++    const homeDepositBadge = document.getElementById('homeCardFocusDepositBadge');
++    if (homeDepositBadge) {
++        homeDepositBadge.addEventListener('click', function (event) {
++            event.preventDefault();
++            event.stopPropagation();
++            wsOpenHomeCardDepositDetail();
++        });
++    }
+ });
+ 
+ 
+diff --git a/order_tracking/static/js/ui_i18n.js b/order_tracking/static/js/ui_i18n.js
+index ec5c77c..c44b98b 100644
+--- a/order_tracking/static/js/ui_i18n.js
++++ b/order_tracking/static/js/ui_i18n.js
+@@ -34,10 +34,10 @@
+             'filter.production': '生产',
+             'filter.shipping': '出货',
+             'stage.new_quote': '新订单/询价',
+-            'stage.draft': '图稿阶段',
+-            'stage.sample': '打样阶段',
+-            'stage.production': '生产阶段',
+-            'stage.shipping': '出货阶段',
++            'stage.draft': '图稿',
++            'stage.sample': '打样',
++            'stage.production': '生产',
++            'stage.shipping': '出货',
+             'stage.waiting_confirm': '等国外确认',
+             'stage.completed': '已完成',
+             'stage.cancelled': '已取消',
+diff --git a/order_tracking/templates/tracking/index.html b/order_tracking/templates/tracking/index.html
+index 7539d97..a1ec07a 100644
+--- a/order_tracking/templates/tracking/index.html
++++ b/order_tracking/templates/tracking/index.html
+@@ -277,7 +277,7 @@
+         <!-- 图稿阶段 -->
+         <div class="stage-filter">
+             <button class="stage-btn" data-stage-group="draft" onclick="toggleSubstatus('draft', this)">
+-                <span data-i18n="stage.draft">图稿阶段</span>
++                <span data-i18n="stage.draft">图稿</span>
+                 <span class="stage-count" id="draftCount">
+                     {{ all_orders | selectattr('current_status','in',['图稿制作中','图稿待确认','图稿修改中']) | list | length }}
+                 </span>
+@@ -315,7 +315,7 @@
+         <!-- 打样阶段 -->
+         <div class="stage-filter">
+             <button class="stage-btn" data-stage-group="sampling" onclick="toggleSubstatus('sampling', this)">
+-                <span data-i18n="stage.sample">打样阶段</span>
++                <span data-i18n="stage.sample">打样</span>
+                 <span class="stage-count" id="samplingCount">
+                     {{ all_orders | selectattr('current_status','in',sampling_statuses) | list | length }}
+                 </span>
+@@ -357,7 +357,7 @@
+         <!-- 生产阶段 -->
+         <div class="stage-filter">
+             <button class="stage-btn" data-stage-group="production" onclick="toggleSubstatus('production', this)">
+-                <span data-i18n="stage.production">生产阶段</span>
++                <span data-i18n="stage.production">生产</span>
+                 <span class="stage-count" id="productionCount">{{ all_orders | selectattr('current_status','in',production_statuses) | list | length }}</span>
+                 <span style="font-size: 0.7rem;">▼</span>
+             </button>
+@@ -398,7 +398,7 @@
+         <!-- 出货阶段 -->
+         <div class="stage-filter">
+             <button class="stage-btn" data-stage-group="shipping" onclick="toggleSubstatus('shipping', this)">
+-                <span data-i18n="stage.shipping">出货阶段</span>
++                <span data-i18n="stage.shipping">出货</span>
+                 <span class="stage-count" id="shippingCount">{{ all_orders | selectattr('current_status','in',shipping_statuses) | list | length }}</span>
+                 <span style="font-size: 0.7rem;">▼</span>
+             </button>
+@@ -446,7 +446,9 @@
+             <span data-i18n="stage.no_workflow">无流程</span> <span class="stage-count" id="noWorkflowCount">0</span>
+         </button>
+         
+-            <div class="search-box customer-search-box" style="min-width:160px; max-width:240px; margin-left:auto;">
++            <!-- Desktop responsive toolbar: keep view/export/share buttons visible when zoom/sidebar width changes -->
++            <div class="home-toolbar-actions">
++            <div class="search-box customer-search-box" style="min-width:160px; max-width:240px;">
+                 <button class="search-icon-btn" type="button" onclick="openAdvancedFilterModal()" title="高级筛选" aria-label="高级筛选">
+                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                         <circle cx="11" cy="11" r="8"></circle>
+@@ -500,6 +502,7 @@
+                     <line x1="8" y1="17" x2="13" y2="17"></line>
+                 </svg>
+             </button>
++            </div><!-- /.home-toolbar-actions -->
