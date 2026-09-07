@@ -1,0 +1,112 @@
+diff --git a/order_tracking/__init__.py b/order_tracking/__init__.py
+index cc423b7..accd8bd 100644
+--- a/order_tracking/__init__.py
++++ b/order_tracking/__init__.py
+@@ -887,7 +887,7 @@ def _load_home_orders_dataset(conn, current_role, current_user_id):
+         workflow['is_locked'] = _normalize_lock_flag(workflow.get('is_locked'))
+         owner_id = workflow.get('handler_id') or workflow.get('created_by_id')
+         owner_id_str = str(owner_id) if owner_id is not None else ''
+-        workflow['can_edit_notes'] = (not cloud_read_only_enabled()) and bool(owner_id_str and owner_id_str == current_id_str) and not workflow['is_locked']
++        workflow['can_edit_notes'] = (not cloud_read_only_enabled()) and str(get_current_user_context().get('role') or '').lower() == 'sales' and bool(owner_id_str and owner_id_str == current_id_str) and not workflow['is_locked']
+         workflow['no_workflow'] = False
+         orders_list.append(workflow)
+ 
+@@ -1056,7 +1056,7 @@ def _load_customer_history_dataset(conn, customer_name, current_role, current_us
+         item['last_status_change_date'] = last_action
+         item['is_locked'] = _normalize_lock_flag(item.get('is_locked'))
+         owner_id = item.get('handler_id') or item.get('created_by_id')
+-        item['can_edit_notes'] = (not cloud_read_only_enabled()) and str(owner_id or '') == current_id_str and not item['is_locked']
++        item['can_edit_notes'] = (not cloud_read_only_enabled()) and str(get_current_user_context().get('role') or '').lower() == 'sales' and str(owner_id or '') == current_id_str and not item['is_locked']
+         item['no_workflow'] = False
+         rows.append(item)
+ 
+@@ -1560,11 +1560,26 @@ def api_orders_advanced_search():
+         order_status_clause = "o.status = 'ACTIVE'"
+ 
+     query = f"""
++        WITH ranked_history AS (
++            SELECT h.id, h.workflow_number, h.action_date,
++                   ROW_NUMBER() OVER (
++                       PARTITION BY h.workflow_number
++                       ORDER BY h.created_at DESC, h.id DESC
++                   ) AS rn
++            FROM workflow_status_history h
++        ),
++        latest_history AS (
++            SELECT id, workflow_number, action_date
++            FROM ranked_history
++            WHERE rn = 1
++        )
+         SELECT w.*, o.customer_name, o.order_date, o.status as order_status, o.visibility,
+-               COALESCE(u.real_name, u.display_name, u.username) as handler_name
++               COALESCE(u.real_name, u.display_name, u.username) as handler_name,
++               lh.id AS last_history_id, lh.action_date AS last_action_date
+         FROM workflows w
+         INNER JOIN orders o ON w.order_number = o.order_number
+         LEFT JOIN users u ON w.handler_id = u.id
++        LEFT JOIN latest_history lh ON lh.workflow_number = w.workflow_number
+         WHERE {order_status_clause}
+     """
+     params = []
+@@ -1628,19 +1643,31 @@ def api_orders_advanced_search():
+     rows = cursor.fetchall()
+ 
+     orders_list = []
++    today_date = date.today()
+     for row in rows:
+         workflow = dict(row)
++        last_action_date_str = workflow.get('last_action_date') or ''
++        cached_status_updated_at = workflow.get('status_updated_at')
+         order_obj = {
+             'order_number': workflow.get('order_number'),
+             'order_date': workflow.get('order_date'),
+             'expected_delivery_date': workflow.get('expected_delivery_date'),
+-            'status_updated_at': workflow.get('status_updated_at'),
++            'status_updated_at': cached_status_updated_at,
+             'current_status': workflow.get('current_status'),
+-            'last_status_change_date': workflow.get('status_updated_at')
++            'last_status_change_date': last_action_date_str or cached_status_updated_at
+         }
+         workflow['status_light'] = calculate_status_light(order_obj)
+         workflow['current_status'] = workflow.get('current_status', '')
+-        workflow['status_days'] = workflow.get('status_days', 0)
++        if last_action_date_str:
++            try:
++                action_date_obj = datetime.strptime(str(last_action_date_str).strip().split()[0], '%Y-%m-%d').date()
++                workflow['status_days'] = max(0, (today_date - action_date_obj).days)
++            except (ValueError, TypeError):
++                workflow['status_days'] = 0
++        else:
++            workflow['status_days'] = 0
++        workflow['last_status_change_date'] = last_action_date_str
++        workflow['status_updated_at'] = last_action_date_str or cached_status_updated_at
+         workflow['product_name'] = workflow.get('product_name', '')
+         workflow['product_code'] = workflow.get('product_code', '')
+         workflow['quantity'] = workflow.get('quantity', '')
+@@ -1693,7 +1720,13 @@ def api_export_workflows_xlsx():
+         return jsonify({'success': False, 'error': 'openpyxl 未安裝，無法導出 Excel'}), 500
+ 
+     request_json = request.get_json(silent=True) if request.method == 'POST' else None
+-    selected_items = (request_json or {}).get('selected_items') or []
++    selected_items_raw = (request_json or {}).get('selected_items') if request.method == 'POST' else None
++    selection_supplied = request.method == 'POST' and isinstance(selected_items_raw, list)
++    selected_items = selected_items_raw if isinstance(selected_items_raw, list) else []
++
++    # POST 匯出以「前端目前篩選結果」為準。0 筆時絕對不能退回成「匯出全部」。
++    if selection_supplied and not selected_items:
++        return jsonify({'success': False, 'error': '目前前端篩選結果為 0 筆，沒有可導出的訂單'}), 400
+ 
+     # --- 解析篩選參數 ---
+     search = (request.args.get('search') or '').strip()
+@@ -1716,27 +1749,33 @@ def api_export_workflows_xlsx():
+     current_role = current_ctx.get('role', 'viewer')
+ 
+     filter_info = get_filtered_resources('workflow', current_role, current_user_id)
+-    
++    selected_mode = selection_supplied
++
++    # 前端按下「導出訂單狀況 Excel」時，selected_items 就是目前前端篩選後的完整結果，
++    # 不是只有當前分頁。因此 selected_mode 下必須允許查回前端可能顯示的 ACTIVE /
++    # UNLOCKED / COMPLETED / CANCELLED，再由 selected_items 精確收斂；權限限制仍在後端執行。
++    order_status_sql = "o.status IN ('ACTIVE', 'UNLOCKED', 'COMPLETED', 'CANCELLED')" if selected_mode else "o.status = 'ACTIVE'"
++
