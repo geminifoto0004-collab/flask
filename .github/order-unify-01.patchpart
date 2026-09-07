@@ -1,0 +1,146 @@
+     if is_admin() or filter_info['rule'] == 'all':
+-        query = """
++        query = f"""
+             SELECT w.*, o.customer_name, o.order_date, o.status as order_status, o.visibility, o.is_locked,
+                    COALESCE(u.real_name, u.display_name, u.username) as handler_name
+             FROM workflows w
+             INNER JOIN orders o ON w.order_number = o.order_number
+             LEFT JOIN users u ON w.handler_id = u.id
+-            WHERE o.status = 'ACTIVE'
++            WHERE {order_status_sql}
+             ORDER BY o.order_date DESC, w.created_at DESC
+         """
+         cursor.execute(query)
+     else:
+-        query = """
++        query = f"""
+             SELECT w.*, o.customer_name, o.order_date, o.status as order_status, o.visibility, o.is_locked,
+                    COALESCE(u.real_name, u.display_name, u.username) as handler_name
+             FROM workflows w
+             INNER JOIN orders o ON w.order_number = o.order_number
+             LEFT JOIN users u ON w.handler_id = u.id
+             WHERE w.handler_id = ?
+-              AND o.status = 'ACTIVE'
++              AND {order_status_sql}
+               AND o.visibility = 'all_sales'
+             ORDER BY o.order_date DESC, w.created_at DESC
+         """
+@@ -1747,7 +1786,7 @@ def api_export_workflows_xlsx():
+     for row in cursor.fetchall():
+         wf = dict(row)
+         wf['is_locked'] = _normalize_lock_flag(wf.get('is_locked'))
+-        
++
+         # 計算狀態燈
+         order_obj = {
+             'order_number': wf.get('order_number'),
+@@ -1760,12 +1799,69 @@ def api_export_workflows_xlsx():
+         wf['status_light'] = calculate_status_light(order_obj)
+         all_workflows.append(wf)
+ 
+-    # Browser-supplied IDs are the source of truth for the current frontend filter result.
+-    selected_workflow_numbers = {str(x.get('workflow_number') or '').strip() for x in selected_items if isinstance(x, dict) and x.get('workflow_number')}
+-    selected_order_numbers = {str(x.get('order_number') or '').strip() for x in selected_items if isinstance(x, dict) and x.get('order_number')}
+-    if selected_items:
+-        all_workflows = [wf for wf in all_workflows if str(wf.get('workflow_number') or '') in selected_workflow_numbers]
+-        # Frontend already applied every filter. Do not filter these selected rows a second time.
++    # selected_items 是前端篩選結果的唯一清單。後端只接受「目前登入者本來就有權限看到」的項目，
++    # 但不再自己重做一套前端篩選，避免前端 N 筆、Excel 卻少幾筆。
++    selected_workflow_numbers = {
++        str(x.get('workflow_number') or '').strip()
++        for x in selected_items
++        if isinstance(x, dict) and str(x.get('workflow_number') or '').strip()
++    }
++    selected_order_only_numbers = {
++        str(x.get('order_number') or '').strip()
++        for x in selected_items
++        if isinstance(x, dict)
++        and not str(x.get('workflow_number') or '').strip()
++        and str(x.get('order_number') or '').strip()
++    }
++
++    if selected_mode:
++        all_workflows = [
++            wf for wf in all_workflows
++            if str(wf.get('workflow_number') or '').strip() in selected_workflow_numbers
++        ]
++
++        # 前端的「無流程」訂單沒有 workflow_number；舊版 export 只查 workflows，會把這些列漏掉。
++        # 這裡只補真正仍然沒有流程的訂單，且業務員仍必須符合 all_sales 可見性。
++        if selected_order_only_numbers:
++            placeholders = ','.join(['?'] * len(selected_order_only_numbers))
++            no_wf_sql = f"""
++                SELECT o.order_number, o.customer_name, o.order_date, o.status as order_status,
++                       o.visibility, o.is_locked
++                FROM orders o
++                LEFT JOIN workflows w ON o.order_number = w.order_number
++                WHERE w.id IS NULL
++                  AND o.order_number IN ({placeholders})
++                  AND o.status IN ('ACTIVE', 'UNLOCKED', 'COMPLETED', 'CANCELLED')
++            """
++            no_wf_params = list(selected_order_only_numbers)
++            if not is_admin():
++                no_wf_sql += " AND o.visibility = 'all_sales'"
++            cursor.execute(no_wf_sql, no_wf_params)
++            for row in cursor.fetchall():
++                o = dict(row)
++                all_workflows.append({
++                    'workflow_number': '',
++                    'order_number': o.get('order_number', ''),
++                    'customer_name': o.get('customer_name', ''),
++                    'order_date': o.get('order_date', ''),
++                    'order_status': o.get('order_status', ''),
++                    'visibility': o.get('visibility', ''),
++                    'is_locked': _normalize_lock_flag(o.get('is_locked')),
++                    'handler_id': None,
++                    'handler_name': '',
++                    'current_status': '',
++                    'status_light': 'grey',
++                    'status_days': 0,
++                    'product_name': '',
++                    'product_code': '',
++                    'quantity': '',
++                    'factory': '',
++                    'production_type': '',
++                    'expected_delivery_date': '',
++                    'notes': '',
++                })
++
++        # 前端已經完成所有篩選。selected_mode 下禁止再次用 query args 二次過濾。
+         search = ''
+         stage_groups = []
+         substatus = ''
+@@ -1833,8 +1929,51 @@ def api_export_workflows_xlsx():
+ 
+         filtered_workflows.append(wf)
+ 
++    if selected_mode:
++        # 保持 Excel 與前端目前篩選結果相同的順序與筆數。
++        # 若前端顯示的某一筆在後端已失去權限、被其他人改動或狀態已變，
++        # 不再靜默輸出較少筆，而是要求刷新後重試，避免使用者誤以為 Excel 是完整資料。
++        export_map = {}
++        for wf in filtered_workflows:
++            wf_no = str(wf.get('workflow_number') or '').strip()
++            order_no = str(wf.get('order_number') or '').strip()
++            key = f"w:{wf_no}" if wf_no else (f"o:{order_no}" if order_no else '')
++            if key and key not in export_map:
++                export_map[key] = wf
++
++        ordered_workflows = []
++        missing_keys = []
++        seen_selected_keys = set()
++        for item in selected_items:
++            if not isinstance(item, dict):
++                continue
++            wf_no = str(item.get('workflow_number') or '').strip()
++            order_no = str(item.get('order_number') or '').strip()
++            key = f"w:{wf_no}" if wf_no else (f"o:{order_no}" if order_no else '')
++            if not key or key in seen_selected_keys:
++                continue
++            seen_selected_keys.add(key)
++            wf = export_map.get(key)
++            if wf is None:
++                missing_keys.append(key)
++            else:
++                ordered_workflows.append(wf)
++
