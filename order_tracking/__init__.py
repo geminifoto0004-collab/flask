@@ -1614,9 +1614,9 @@ def api_orders_advanced_search():
     if selected_statuses:
         placeholders = ','.join(['?'] * len(selected_statuses))
         query += f" AND w.current_status IN ({placeholders})"
+        params.extend(selected_statuses)
     elif status_cancelled and not status_ongoing and not status_completed:
         pass  # already filtered by o.status = 'CANCELLED' in the WHERE clause
-        params.extend(selected_statuses)
 
     if from_dt and to_dt:
         query += " AND o.order_date BETWEEN ? AND ?"
