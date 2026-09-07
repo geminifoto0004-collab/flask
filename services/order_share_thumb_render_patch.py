@@ -152,3 +152,7 @@ from services import order_guest_expiry_format_patch as _guest_expiry_format  # 
 
 # Desktop share modal opens immediately from the already-rendered wall, then hydrates in background.
 from services import order_modal_speed_patch as _order_modal_speed  # noqa: E402,F401
+
+# Customer wall first-paint hot path: serve the already-rendered HTML without copying the
+# whole customer bundle, gzip the large HTML response, and defer below-fold card work.
+from services import order_share_first_paint_patch as _order_first_paint  # noqa: E402,F401
