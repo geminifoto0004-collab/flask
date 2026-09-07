@@ -1,5 +1,6 @@
-// Desktop WEB: keep the instant 480px modal paint, then upgrade only the visible
-// slide to the WEB image in the background. High-quality loading never blocks open.
+// Desktop WEB: keep the instant thumbnail visible at all times, then layer the WEB
+// image above it only after the high-quality bitmap has fully loaded and decoded.
+// The thumbnail is never removed/replaced, so there is no blank-frame flash.
 (function () {
     const root = document.getElementById('guestDesktopDetailMedia');
     if (!root) return;
@@ -12,30 +13,77 @@
         return raw.replace('/thumb/', '/image/');
     }
 
-    function upgradeImage(img) {
-        if (!img || requested.has(img)) return;
-        const high = highQualityUrl(img);
+    function baseImages(gallery) {
+        return Array.from(gallery?.querySelectorAll('.guest-slide img:not([data-modal-hq-overlay])') || []);
+    }
+
+    function revealHighQuality(baseImg, high, loader) {
+        if (!baseImg?.isConnected || baseImg.dataset.modalHighQualitySrc !== high) return;
+        const slide = baseImg.closest('.guest-slide');
+        if (!slide || slide.querySelector('img[data-modal-hq-overlay]')) return;
+
+        const overlay = document.createElement('img');
+        overlay.dataset.modalHqOverlay = '1';
+        overlay.alt = baseImg.alt || '';
+        overlay.src = high;
+        overlay.decoding = 'async';
+        overlay.draggable = false;
+
+        const baseStyle = getComputedStyle(baseImg);
+        const slideStyle = getComputedStyle(slide);
+        if (slideStyle.position === 'static') slide.style.position = 'relative';
+
+        overlay.style.position = 'absolute';
+        overlay.style.inset = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.objectFit = baseStyle.objectFit || 'contain';
+        overlay.style.objectPosition = baseStyle.objectPosition || '50% 50%';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 120ms ease-out';
+        overlay.style.willChange = 'opacity';
+
+        slide.appendChild(overlay);
+        baseImg.dataset.modalHighQualityReady = '1';
+
+        // Keep the thumbnail painted underneath until the decoded WEB image is already
+        // in the DOM. Only opacity changes, so there is no src swap and no white/black flash.
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                if (!overlay.isConnected) return;
+                overlay.style.opacity = '1';
+                window.setTimeout(function () {
+                    if (overlay.isConnected) overlay.style.willChange = 'auto';
+                }, 180);
+            });
+        });
+    }
+
+    function upgradeImage(baseImg) {
+        if (!baseImg || requested.has(baseImg)) return;
+        const high = highQualityUrl(baseImg);
         if (!high) return;
-        requested.add(img);
-        img.dataset.modalHighQualitySrc = high;
+        requested.add(baseImg);
+        baseImg.dataset.modalHighQualitySrc = high;
 
         const loader = new Image();
         loader.decoding = 'async';
-        loader.onload = function () {
-            if (!img.isConnected || img.dataset.modalHighQualitySrc !== high) return;
-            // Keep layout untouched; only replace the bitmap after the WEB image is ready.
-            img.src = high;
-            img.dataset.modalHighQualityReady = '1';
+        loader.src = high;
+
+        const show = function () {
+            // decode() prevents a loaded-but-not-yet-decoded bitmap from causing a repaint hitch.
+            const decoded = (typeof loader.decode === 'function') ? loader.decode().catch(function () {}) : Promise.resolve();
+            decoded.then(function () { revealHighQuality(baseImg, high, loader); });
         };
+
+        if (loader.complete && loader.naturalWidth > 0) show();
+        else loader.onload = show;
+
         loader.onerror = function () {
             // Thumbnail remains visible. A failed quality upgrade must never hurt the modal.
-            img.dataset.modalHighQualityFailed = '1';
+            baseImg.dataset.modalHighQualityFailed = '1';
         };
-        loader.src = high;
-    }
-
-    function galleryImages(gallery) {
-        return Array.from(gallery?.querySelectorAll('.guest-slide img') || []);
     }
 
     function currentIndex(gallery, images) {
@@ -45,7 +93,7 @@
     }
 
     function upgradeCurrent(gallery) {
-        const images = galleryImages(gallery);
+        const images = baseImages(gallery);
         if (!images.length) return;
         const index = currentIndex(gallery, images);
         upgradeImage(images[index]);
@@ -66,7 +114,7 @@
             timer = window.setTimeout(function () { upgradeCurrent(gallery); }, 90);
         }, {passive:true});
 
-        // Two animation frames guarantee the thumb gets a chance to paint first.
+        // Two animation frames guarantee the thumbnail gets the first paint.
         requestAnimationFrame(function () {
             requestAnimationFrame(function () { upgradeCurrent(gallery); });
         });
