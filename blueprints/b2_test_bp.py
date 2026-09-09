@@ -137,21 +137,41 @@ def share_test_image():
 _order_cloud_initialized = False
 
 
+def _render_order_enabled():
+    """Global temporary gate for standalone ORDER clients.
+
+    Render owns this switch. Missing/blank/unknown values are deliberately treated as
+    disabled. This is not a security credential; per-client authentication can be
+    layered on later without changing the public-share API contract.
+    """
+    raw = str(os.environ.get("ORDER") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on", "y"}
+
+
 def _order_cloud_auth_source():
-    import hmac
-    supplied = (request.headers.get("X-Order-Sync-Key") or "").strip()
-    configured = [
-        ("CN", (os.environ.get("ORDER_SYNC_API_KEY_CN") or "").strip()),
-        ("CL", (os.environ.get("ORDER_SYNC_API_KEY_CL") or "").strip()),
-        ("LEGACY", (os.environ.get("ORDER_SYNC_API_KEY") or "").strip()),
-    ]
-    active = [(source, key) for source, key in configured if key]
-    if not active:
-        return None, (jsonify({"ok": False, "error": "ORDER sync API key is not configured"}), 503)
-    for source, key in active:
-        if supplied and hmac.compare_digest(supplied, key):
-            return source, None
-    return None, (jsonify({"ok": False, "error": "unauthorized"}), 401)
+    """Authorize ORDER cloud calls only through Render's global ORDER switch.
+
+    Temporary simple mode requested by the owner: no client API key, no CN/CL split.
+    Every protected request reaches this function, so changing ORDER on Render takes
+    effect on the next request even when a local ORDER app stays open for days.
+    Missing/blank/unknown ORDER values are treated as disabled.
+    """
+    if _render_order_enabled():
+        return "ORDER", None
+    return None, (jsonify({
+        "ok": False,
+        "error": "ORDER WEB sharing is disabled by Render",
+        "code": "ORDER_DISABLED",
+    }), 403)
+
+
+@b2_test_bp.route("/api/order-cloud/order-access", methods=["GET"])
+def order_cloud_order_access():
+    """Expose only the non-secret global standalone ORDER gate state."""
+    enabled = _render_order_enabled()
+    response = jsonify({"ok": True, "enabled": enabled, "order": enabled})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 def _ensure_order_cloud_tables():
