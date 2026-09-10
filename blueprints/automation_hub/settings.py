@@ -3,16 +3,13 @@ from __future__ import annotations
 
 import os
 
+# One server-side encryption key protects all Telegram Bot tokens stored by the Hub.
+# Authentication is NOT duplicated here: the Hub reuses the parent FLASK /login session.
 MASTER_KEY = (os.environ.get("AUTOMATION_MASTER_KEY") or "").strip()
-ADMIN_PASSWORD = (
-    os.environ.get("AUTOMATION_ADMIN_PASSWORD")
-    or os.environ.get("ADUANA_ADMIN_PASSWORD")
-    or ""
-).strip()
-ADMIN_PREFIX = (os.environ.get("AUTOMATION_ADMIN_PREFIX") or "/automation-hub-x7k9").strip()
-if not ADMIN_PREFIX.startswith("/"):
-    ADMIN_PREFIX = "/" + ADMIN_PREFIX
-ADMIN_PREFIX = ADMIN_PREFIX.rstrip("/") or "/automation-hub-x7k9"
+
+# Keep the Automation Hub inside the existing XINGWANG admin console.
+# This path is intentionally fixed so a normal /login -> /admin workflow can reach it.
+ADMIN_PREFIX = "/admin/automation"
 
 PUBLIC_BASE_URL = (
     os.environ.get("AUTOMATION_PUBLIC_BASE_URL")
