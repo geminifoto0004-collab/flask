@@ -30,6 +30,11 @@ if not _TOWN_STANDALONE:
     from .user_auth_bp import user_auth_bp
     from .b2_test_bp import b2_test_bp
 
+    # Isolated Aduana Monitor.  Mount it as a child of an already-registered,
+    # zero-prefix blueprint so app.py and all existing business routes stay untouched.
+    from .aduana_monitor import aduana_bp
+    b2_test_bp.register_blueprint(aduana_bp)
+
     # Install the nonblocking ORDER direct-B2 control plane before requests arrive.
     # The route module imports direct_presign/direct_register lazily on each request,
     # so replacing those service functions here is safe and does not change routes.
@@ -44,7 +49,7 @@ if not _TOWN_STANDALONE:
 
     # AI town is intentionally NOT imported on the main Render service.
     print('✅ AI town disabled on main Render service')
-    __all__ = ['user_auth_bp', 'b2_test_bp']
+    __all__ = ['user_auth_bp', 'b2_test_bp', 'aduana_bp']
 else:
     # Dedicated AI-town service: importing blueprints.* must not drag in ORDER,
     # crawler/B2 helpers, auth pages or other main-service modules.
