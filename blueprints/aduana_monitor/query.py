@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """Aduana Chile Oracle APEX query engine.
 
-Adapted from the user's proven requests.Session implementation.  It keeps one
-APEX session per worker, refreshes hidden state after every POST, splits ranges
-by natural month, deduplicates only rows whose 14 raw fields are identical, and
-sorts by Emisión DESC then Notificación DESC.
+Adapted from the user's proven requests.Session implementation. It keeps one
+APEX session per worker for speed, refreshes hidden state after every POST,
+splits ranges by natural month, deduplicates only rows whose 14 raw fields are
+identical, and sorts by Emisión DESC then Notificación DESC.
+
+A failed request/parse is retried once with a fresh APEX session. This preserves
+the fast worker model while recovering from stale/invalid APEX state.
 """
 from __future__ import annotations
 
@@ -130,6 +133,9 @@ class AduanaApexClient:
         try:
             self._update_state_from_html(response.url, response.text)
         except Exception:
+            # Some valid result pages do not preserve the full search form.
+            # Keep the existing state; a later failure will retry with a fresh
+            # session instead of treating this as a failed query immediately.
             self.referer = response.url
         return response.text
 
@@ -142,36 +148,57 @@ def _looks_like_explicit_no_data(soup: BeautifulSoup) -> bool:
         "no se encontraron registros",
         "no existen registros",
         "sin resultados",
+        "sin datos",
         "no hay datos",
+        "no se encontraron",
     )
     return any(marker in text for marker in markers)
 
 
-def extract_rows(response_html: str):
-    """Return (rows, parse_state).
+def _find_result_table(soup: BeautifulSoup):
+    table = soup.select_one("table.apexir_WORKSHEET_DATA")
+    if table is not None:
+        return table
+    # Match the proven local scraper's fallback: some APEX responses keep the
+    # WORKSHEET_DATA class but with additional/changed class names.
+    for candidate in soup.find_all("table"):
+        classes = " ".join(candidate.get("class") or [])
+        if "WORKSHEET_DATA" in classes.upper():
+            return candidate
+    return None
 
-    Missing report markup is not silently treated as zero rows unless the page
-    explicitly says there are no results. This keeps a HTTP-200 error/APEX
-    layout failure from completing a false baseline.
+
+def extract_rows(response_html: str):
+    """Return ``(rows, parse_state)`` for one Aduana response.
+
+    A result table is authoritative even if the POST response no longer carries
+    every search-control element. Missing result markup is still treated as an
+    error unless Aduana explicitly reports zero results, so a malformed HTTP-200
+    page cannot complete a false monitoring baseline.
     """
     soup = BeautifulSoup(response_html or "", "html.parser")
-    required = ("P1_FECHA_DESDE", "P1_FECHA_HASTA", "P1_ADUANA", "P1_INVOLUCRADO")
-    if not all(soup.find(id=item) is not None for item in required):
-        raise AduanaParseError("La respuesta no corresponde a la página esperada de Aduana")
+    table = _find_result_table(soup)
 
-    table = soup.select_one("table.apexir_WORKSHEET_DATA")
     if table is None:
         if _looks_like_explicit_no_data(soup):
             return [], "ZERO"
-        raise AduanaParseError("No apareció la tabla de resultados ni un mensaje explícito de cero resultados")
+        raise AduanaParseError(
+            "No apareció la tabla de resultados ni un mensaje explícito de cero resultados"
+        )
 
     rows = []
-    for tr in table.find_all("tr")[1:]:
+    trs = table.find_all("tr")
+    if not trs:
+        return [], "ZERO"
+
+    for tr in trs[1:]:
         tds = tr.find_all("td", recursive=False)
         if not tds:
             continue
         if len(tds) != 14:
-            raise AduanaParseError(f"Fila inesperada con {len(tds)} columnas; se esperaban 14")
+            # Ignore non-data rows (pagination/summary rows) exactly as the
+            # proven scraper did; a real data row must have all 14 columns.
+            continue
         values = [td.get_text(" ", strip=True) for td in tds]
         rows.append(dict(zip(settings.COLUMNS, values)))
     return rows, "OK" if rows else "ZERO"
@@ -220,43 +247,62 @@ def sort_rows(rows):
 def _worker(worker_id, periods, aduana, rut):
     client = AduanaApexClient()
     rows, logs = [], []
-    try:
-        client.initialize()
-    except Exception as exc:
-        for d1, d2 in periods:
-            logs.append({
-                "worker": worker_id, "desde": fmt_date(d1), "hasta": fmt_date(d2),
-                "estado": "REQUEST_FAILED", "filas": 0, "segundos": 0.0,
-                "error": str(exc),
-            })
-        return rows, logs
 
     for d1, d2 in periods:
         started = time.perf_counter()
-        try:
-            html = client.query_period(d1, d2, aduana, rut)
-        except Exception as exc:
+        last_state = "REQUEST_FAILED"
+        last_error = ""
+        period_rows = None
+        parse_state = None
+        attempts = 0
+
+        for attempt in (1, 2):
+            attempts = attempt
+            try:
+                html = client.query_period(d1, d2, aduana, rut)
+            except Exception as exc:
+                last_state = "REQUEST_FAILED"
+                last_error = str(exc)
+            else:
+                try:
+                    period_rows, parse_state = extract_rows(html)
+                    last_state = "OK"
+                    last_error = ""
+                    break
+                except Exception as exc:
+                    last_state = "PARSE_FAILED"
+                    last_error = str(exc)
+
+            if attempt == 1:
+                # APEX hidden state/session can become stale. Retry this exact
+                # month from a brand-new session before declaring it failed.
+                client = AduanaApexClient()
+
+        elapsed = round(time.perf_counter() - started, 2)
+        if last_state == "OK":
+            rows.extend(period_rows or [])
             logs.append({
-                "worker": worker_id, "desde": fmt_date(d1), "hasta": fmt_date(d2),
-                "estado": "REQUEST_FAILED", "filas": 0,
-                "segundos": round(time.perf_counter() - started, 2), "error": str(exc),
+                "worker": worker_id,
+                "desde": fmt_date(d1),
+                "hasta": fmt_date(d2),
+                "estado": "OK",
+                "resultado": parse_state,
+                "filas": len(period_rows or []),
+                "segundos": elapsed,
+                "intentos": attempts,
             })
-            continue
-        try:
-            period_rows, parse_state = extract_rows(html)
-        except Exception as exc:
+        else:
             logs.append({
-                "worker": worker_id, "desde": fmt_date(d1), "hasta": fmt_date(d2),
-                "estado": "PARSE_FAILED", "filas": 0,
-                "segundos": round(time.perf_counter() - started, 2), "error": str(exc),
+                "worker": worker_id,
+                "desde": fmt_date(d1),
+                "hasta": fmt_date(d2),
+                "estado": last_state,
+                "filas": 0,
+                "segundos": elapsed,
+                "intentos": attempts,
+                "error": last_error,
             })
-            continue
-        rows.extend(period_rows)
-        logs.append({
-            "worker": worker_id, "desde": fmt_date(d1), "hasta": fmt_date(d2),
-            "estado": "OK", "resultado": parse_state, "filas": len(period_rows),
-            "segundos": round(time.perf_counter() - started, 2),
-        })
+
     return rows, logs
 
 
