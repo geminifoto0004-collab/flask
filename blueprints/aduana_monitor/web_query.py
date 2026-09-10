@@ -35,6 +35,29 @@ WEB_COLUMNS = [
 ]
 
 
+def _failure_examples(logs, limit=4):
+    examples = []
+    seen = set()
+    for item in logs or []:
+        if str(item.get("estado") or "").upper() == "OK":
+            continue
+        error = " ".join(str(item.get("error") or "sin detalle").split())
+        key = (str(item.get("estado") or ""), error)
+        if key in seen:
+            continue
+        seen.add(key)
+        examples.append({
+            "estado": item.get("estado") or "ERROR",
+            "error": error,
+            "desde": item.get("desde") or "",
+            "hasta": item.get("hasta") or "",
+            "worker": item.get("worker") or "",
+        })
+        if len(examples) >= limit:
+            break
+    return examples
+
+
 # Public query page. No XINGWANG/admin login is required.
 # Keep the old admin-prefixed URL as an alias so existing links/bookmarks do not break.
 @aduana_bp.route("/aduana", methods=["GET", "POST"])
@@ -50,6 +73,7 @@ def admin_query():
     rut = ""
     rows = []
     logs = []
+    failure_examples = []
     searched = False
     all_ok = True
     message = ""
@@ -79,6 +103,7 @@ def admin_query():
             started = time.perf_counter()
             rows, logs, all_ok = query.query_years(selected_years, aduana, rut)
             elapsed = round(time.perf_counter() - started, 2)
+            failure_examples = _failure_examples(logs)
 
             failed = sum(1 for item in logs if item.get("estado") != "OK")
             if all_ok:
@@ -101,6 +126,7 @@ def admin_query():
         rut=rut,
         rows=rows,
         logs=logs,
+        failure_examples=failure_examples,
         columns=WEB_COLUMNS,
         searched=searched,
         all_ok=all_ok,
