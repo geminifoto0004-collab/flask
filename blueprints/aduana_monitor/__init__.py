@@ -14,5 +14,7 @@ aduana_bp = Blueprint(
 
 from . import routes as _routes  # noqa: E402,F401
 from . import web_query as _web_query  # noqa: E402,F401
+from . import collector_queue as _collector_queue  # noqa: E402,F401
+from . import collector_bridge as _collector_bridge  # noqa: E402,F401
 
 __all__ = ["aduana_bp"]
