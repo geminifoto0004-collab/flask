@@ -5,7 +5,8 @@ import re
 import time
 from datetime import date
 
-from flask import render_template, request
+import requests
+from flask import jsonify, render_template, request
 
 from . import aduana_bp, query, settings
 
@@ -136,3 +137,39 @@ def admin_query():
         message=message,
         elapsed=elapsed,
     )
+
+
+# Temporary, no-signup proxy connectivity probe.
+# IMPORTANT: this only requests the public Aduana landing page; it never sends a RUT.
+# The proxy is an open Chile HTTP proxy published by Geonode and is deliberately
+# not used by Telegram, cron, or the real query flow.
+@aduana_bp.route("/aduana/proxy-test-public", methods=["GET"])
+def proxy_test_public():
+    proxy_url = "http://45.225.204.11:999"
+    started = time.perf_counter()
+    try:
+        response = requests.get(
+            settings.BASE_URL,
+            headers=settings.HEADERS,
+            proxies={"http": proxy_url, "https": proxy_url},
+            timeout=6,
+            allow_redirects=True,
+        )
+        elapsed = round(time.perf_counter() - started, 2)
+        text = response.text or ""
+        return jsonify({
+            "ok": response.status_code == 200 and "P1_FECHA_DESDE" in text,
+            "status_code": response.status_code,
+            "elapsed_seconds": elapsed,
+            "final_url": response.url,
+            "aduana_form_found": "P1_FECHA_DESDE" in text,
+            "response_bytes": len(response.content or b""),
+            "note": "Public proxy probe only; no RUT was sent.",
+        })
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "elapsed_seconds": round(time.perf_counter() - started, 2),
+            "error": f"{type(exc).__name__}: {exc}",
+            "note": "Public proxy probe only; no RUT was sent.",
+        }), 502
