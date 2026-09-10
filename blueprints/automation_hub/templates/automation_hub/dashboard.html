@@ -1,54 +1,72 @@
 {% extends "automation_hub/base.html" %}
-{% block title %}Automation Hub{% endblock %}
 {% block body %}
-<div class="top">
-  <div><div class="brand">Automation Hub</div><div class="muted">Telegram bots reutilizables para tus automatizaciones</div></div>
-  <a class="btn secondary" href="{{ url_for('.admin_logout') }}">Salir</a>
+<div class="automation-top">
+  <div>
+    <div class="automation-title"><i class="fas fa-robot"></i> 自動化中心</div>
+    <div class="automation-sub">統一管理 Telegram Bot 與爬蟲通知。以後新增 Bot 不需要再建立另一套登入或另一個 Render。</div>
+  </div>
 </div>
 
-{% if message %}<div class="notice">{{ message }}</div>{% endif %}
-{% if not settings.MASTER_KEY %}<div class="notice warn"><b>Falta AUTOMATION_MASTER_KEY.</b> No se pueden guardar tokens hasta configurarlo en Render.</div>{% endif %}
+{% if message %}<div class="hub-notice">{{ message }}</div>{% endif %}
+{% if not settings.MASTER_KEY %}<div class="hub-notice hub-warn"><b>尚未設定 AUTOMATION_MASTER_KEY。</b> 在 Render 設定一次長密鑰後，就能從這裡安全保存所有 Bot Token。</div>{% endif %}
 
-<div class="grid">
-  <div class="stat"><span class="muted">Bots</span><b>{{ bots|length }}</b></div>
-  <div class="stat"><span class="muted">Activos</span><b>{{ bots|selectattr('enabled')|list|length }}</b></div>
-  <div class="stat"><span class="muted">Plugins</span><b>{{ plugins|length }}</b></div>
-  <div class="stat"><span class="muted">Base pública</span><b style="font-size:15px">{{ 'OK' if settings.PUBLIC_BASE_URL else 'FALTA' }}</b></div>
+<div class="automation-grid">
+  <div class="automation-stat"><span class="muted">Telegram Bots</span><b>{{ bots|length }}</b></div>
+  <div class="automation-stat"><span class="muted">啟用中</span><b>{{ bots|selectattr('enabled')|list|length }}</b></div>
+  <div class="automation-stat"><span class="muted">自動化模組</span><b>{{ plugins|length }}</b></div>
+  <div class="automation-stat"><span class="muted">Render 公開網址</span><b style="font-size:15px">{{ '正常' if settings.PUBLIC_BASE_URL else '未取得' }}</b></div>
 </div>
 
-<div class="card">
-  <h3 style="margin-top:0">＋ Añadir Telegram Bot</h3>
-  <form class="formgrid" method="post" action="{{ url_for('.admin_create_bot') }}">
-    <div><label>Bot key</label><input name="bot_key" placeholder="aduana-main" required></div>
-    <div><label>Nombre</label><input name="display_name" placeholder="Aduana Monitor" required></div>
-    <div><label>Plugin</label><select name="plugin_key">{% for p in plugins %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}</select></div>
-    <div><label>Bot Token</label><input type="password" name="token" placeholder="123456:ABC..." required></div>
-    <div><label style="white-space:nowrap"><input type="checkbox" name="make_default" checked style="width:auto;height:auto"> Principal</label><button>Guardar</button></div>
+<div class="automation-card">
+  <h3 style="margin-top:0">自動化模組</h3>
+  <div class="plugin-grid">
+    {% for p in plugins %}
+    <div class="plugin-card">
+      <div>
+        <div class="plugin-name">{{ p.label }}</div>
+        <div class="plugin-key">{{ p.key }} · Telegram Plugin</div>
+      </div>
+      {% if p.admin_path %}<a class="hub-btn hub-secondary" href="{{ p.admin_path }}">管理</a>{% endif %}
+    </div>
+    {% else %}
+    <div class="muted">目前沒有已註冊的自動化模組。</div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="automation-card">
+  <h3 style="margin-top:0">＋ 新增 Telegram Bot</h3>
+  <form class="hub-form hub-formgrid" method="post" action="{{ url_for('.admin_create_bot') }}">
+    <div><label>Bot Key</label><input name="bot_key" placeholder="aduana-main" required></div>
+    <div><label>名稱</label><input name="display_name" placeholder="Aduana Monitor" required></div>
+    <div><label>用途 / Plugin</label><select name="plugin_key">{% for p in plugins %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}</select></div>
+    <div><label>BotFather Token</label><input type="password" name="token" placeholder="123456:ABC..." required></div>
+    <div><label style="white-space:nowrap"><input type="checkbox" name="make_default" checked style="width:auto;height:auto"> 主要 Bot</label><button class="hub-btn">儲存並連線</button></div>
   </form>
-  <p class="muted" style="margin-bottom:0">El token se prueba con Telegram, se cifra antes de guardarse en TiDB y el webhook se conecta automáticamente.</p>
+  <p class="muted" style="margin-bottom:0">系統會先向 Telegram 驗證 Token，再加密存入 TiDB，產生 Webhook Secret 並自動連接 Webhook。</p>
 </div>
 
-<div class="card">
+<div class="automation-card">
   <h3 style="margin-top:0">Telegram Bots</h3>
   {% if not bots %}
-    <div class="muted">Todavía no hay bots registrados.</div>
+    <div class="muted">目前還沒有 Bot。到 BotFather 建立後，把 Token 貼到上面即可。</div>
   {% else %}
-  <table>
-    <thead><tr><th>Bot</th><th>Plugin</th><th>Estado</th><th>Principal</th><th>Token</th><th>Última prueba</th><th>Acciones</th></tr></thead>
+  <table class="hub-table">
+    <thead><tr><th>Bot</th><th>用途</th><th>狀態</th><th>主要</th><th>Token</th><th>最後測試</th><th>操作</th></tr></thead>
     <tbody>
     {% for b in bots %}
       <tr>
         <td><b>{{ b.display_name }}</b><br><span class="muted">@{{ b.bot_username or '—' }} · {{ b.bot_key }}</span></td>
-        <td><span class="badge">{{ b.plugin_key }}</span></td>
-        <td><span class="badge {{ 'on' if b.enabled else 'off' }}">{{ 'ONLINE' if b.enabled else 'OFF' }}</span></td>
-        <td>{{ '★ Sí' if b.is_default else '—' }}</td>
+        <td><span class="hub-badge">{{ b.plugin_key }}</span></td>
+        <td><span class="hub-badge {{ 'hub-on' if b.enabled else 'hub-off' }}">{{ 'ONLINE' if b.enabled else 'OFF' }}</span></td>
+        <td>{{ '★ 是' if b.is_default else '—' }}</td>
         <td>••••{{ b.token_last4 or '' }}</td>
         <td>{% if b.last_error %}<span class="bad">{{ b.last_error[:70] }}</span>{% else %}<span class="good">{{ b.last_test_at or '—' }}</span>{% endif %}</td>
-        <td><div class="actions">
-          <form method="post" action="{{ url_for('.admin_test_bot', bot_id=b.id) }}"><button class="secondary">Test</button></form>
-          <form method="post" action="{{ url_for('.admin_reconnect_webhook', bot_id=b.id) }}"><button class="secondary">Webhook</button></form>
-          {% if not b.is_default %}<form method="post" action="{{ url_for('.admin_set_default', bot_id=b.id) }}"><button class="secondary">Principal</button></form>{% endif %}
-          <form method="post" action="{{ url_for('.admin_toggle_bot', bot_id=b.id) }}"><button class="{{ 'danger' if b.enabled else '' }}">{{ 'Desactivar' if b.enabled else 'Activar' }}</button></form>
+        <td><div class="hub-actions">
+          <form method="post" action="{{ url_for('.admin_test_bot', bot_id=b.id) }}"><button class="hub-btn hub-secondary">測試</button></form>
+          <form method="post" action="{{ url_for('.admin_reconnect_webhook', bot_id=b.id) }}"><button class="hub-btn hub-secondary">重連 Webhook</button></form>
+          {% if not b.is_default %}<form method="post" action="{{ url_for('.admin_set_default', bot_id=b.id) }}"><button class="hub-btn hub-secondary">設為主要</button></form>{% endif %}
+          <form method="post" action="{{ url_for('.admin_toggle_bot', bot_id=b.id) }}"><button class="hub-btn {{ 'hub-danger' if b.enabled else '' }}">{{ '停用' if b.enabled else '啟用' }}</button></form>
         </div></td>
       </tr>
     {% endfor %}
