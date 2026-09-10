@@ -22,6 +22,31 @@
     {% endif %}
   </div>
 
+  <section class="panel" style="border-color:#f1d8d8">
+    <div class="panel-head">
+      <h2>🧪 測試工具</h2>
+      <span class="muted">只操作 Aduana Monitor，不動原本 FLASK 資料</span>
+    </div>
+    <div class="panel-body">
+      <div style="display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap">
+        <form method="post" action="{{ url_for('.admin_reset_scan_history') }}" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap" onsubmit="return confirm(this.rut.value.trim() ? '確定重置這個 RUT 的 Aduana 測試紀錄與 baseline？' : 'RUT 留空會重置全部 Aduana 測試紀錄與 baseline。確定？')">
+          <div>
+            <label style="display:block;font-size:12px;font-weight:700;margin-bottom:6px">重置 RUT（留空＝全部）</label>
+            <input name="rut" type="text" placeholder="Ej. 76315010-0" style="height:38px;min-width:210px;border:1px solid #d8dee8;border-radius:8px;padding:0 10px">
+          </div>
+          <button class="btn danger" type="submit">清除紀錄並重建 Baseline</button>
+        </form>
+
+        <form method="post" action="{{ url_for('.admin_clear_runs') }}" onsubmit="return confirm('確定清除已完成的 Aduana Cron 歷史？')">
+          <button class="btn small" type="submit">清除 Cron 歷史</button>
+        </form>
+      </div>
+      <div class="muted" style="margin-top:10px;font-size:12px">
+        清除紀錄會刪除 Aduana records、notifications、scan target 狀態並把監控 baseline 重設為未建立；<b>不會刪除使用者、RUT 監控設定、OWNER 或 Telegram Bot</b>。下一次完整掃描會重新建立 baseline，舊罰款不應被推送。
+      </div>
+    </div>
+  </section>
+
   <div class="cards">
     <div class="stat"><div class="k">Pendientes</div><div class="n">{{ counts.pending }}</div></div>
     <div class="stat"><div class="k">Usuarios activos</div><div class="n">{{ counts.active }}</div></div>
