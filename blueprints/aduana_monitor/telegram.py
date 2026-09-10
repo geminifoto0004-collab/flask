@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import io
 import json
+import re
 
 import requests
 
@@ -15,6 +16,29 @@ PLUGIN_KEY = "ADUANA"
 
 def escape_html(value):
     return html.escape(str(value if value is not None else ""))
+
+
+def _genericize_rut_examples(text):
+    """Keep help/example RUTs generic; never expose a user's commonly queried RUT as UI copy."""
+    value = str(text if text is not None else "")
+    generic_three = (
+        "Ej.: <code>12345678-9</code>, "
+        "<code>12.345.678-9</code> o <code>123456789</code>"
+    )
+    # Replace only example/help copy, never actual RUT values shown in results or monitors.
+    value = re.sub(
+        r"Ej\.:\s*<code>[^<]+</code>,\s*<code>[^<]+</code>\s*o\s*<code>[^<]+</code>",
+        generic_three,
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        r"Ej\.:\s*<code>[^<]+</code>",
+        "Ej.: <code>12345678-9</code>",
+        value,
+        flags=re.IGNORECASE,
+    )
+    return value
 
 
 def _hub_bot():
@@ -70,7 +94,7 @@ def _post(method, *, data=None, files=None, token=None):
 
 
 def send_message(chat_id, text, reply_markup=None, parse_mode="HTML"):
-    data = {"chat_id": str(chat_id), "text": text}
+    data = {"chat_id": str(chat_id), "text": _genericize_rut_examples(text)}
     if parse_mode:
         data["parse_mode"] = parse_mode
     if reply_markup is not None:
@@ -79,7 +103,11 @@ def send_message(chat_id, text, reply_markup=None, parse_mode="HTML"):
 
 
 def edit_message(chat_id, message_id, text, reply_markup=None, parse_mode="HTML"):
-    data = {"chat_id": str(chat_id), "message_id": str(message_id), "text": text}
+    data = {
+        "chat_id": str(chat_id),
+        "message_id": str(message_id),
+        "text": _genericize_rut_examples(text),
+    }
     if parse_mode:
         data["parse_mode"] = parse_mode
     # Explicitly send an empty inline keyboard when callers want old buttons
