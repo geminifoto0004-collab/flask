@@ -1,0 +1,100 @@
+{% extends 'aduana_admin/base.html' %}
+{% block body %}
+<style>
+.aduana-query .query-card{background:#fff;border:1px solid #dfe5eb;border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 3px 14px rgba(28,44,64,.06)}
+.aduana-query .query-grid{display:grid;grid-template-columns:1.25fr 1fr 1fr auto;gap:16px;align-items:end}
+.aduana-query .field-label{display:block;font-size:12px;font-weight:700;color:#5e6b78;margin-bottom:8px}
+.aduana-query .year-selector,.aduana-query .more-years-grid{display:flex;gap:8px;flex-wrap:wrap}
+.aduana-query .year-option{position:relative}.aduana-query .year-option input{position:absolute;opacity:0;pointer-events:none}
+.aduana-query .year-chip{height:42px;min-width:72px;padding:0 16px;border-radius:9px;border:1px solid #ccd5de;background:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:650;color:#354657}
+.aduana-query .year-option input:checked + .year-chip{background:#173f63;border-color:#173f63;color:#fff}
+.aduana-query .more-years-panel{display:none;margin-top:10px;padding:12px;border:1px solid #dce3e9;border-radius:10px;background:#f8fafb}.aduana-query .more-years-panel.open{display:block}
+.aduana-query .more-years-toggle{margin-top:10px;height:34px;border:1px solid #ccd5de;border-radius:8px;background:#fff;padding:0 12px;cursor:pointer}
+.aduana-query .control{width:100%;height:42px;border:1px solid #ccd5de;border-radius:9px;background:#fff;padding:0 12px;font-size:14px}
+.aduana-query .search-btn{height:42px;min-width:112px;border:0;border-radius:9px;padding:0 20px;background:#174a73;color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+.aduana-query .status-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}.aduana-query .status-badge{padding:7px 10px;border-radius:8px;background:#fff;border:1px solid #dfe5eb;color:#536170;font-size:12px}
+.aduana-query .message{margin:0 0 14px;padding:10px 12px;border-radius:8px;font-size:13px}.aduana-query .message.ok{background:#edf8f2;border:1px solid #cde8d8;color:#256342}.aduana-query .message.error{background:#fff1f1;border:1px solid #f0cdcd;color:#8a3030}
+.aduana-query .table-shell{width:100%;overflow-x:auto;background:#fff;border:1px solid #dfe5eb;border-radius:10px}
+.aduana-query table.apexir_WORKSHEET_DATA{width:100%;min-width:1450px;border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000}
+.aduana-query .apexir_WORKSHEET_DATA th{height:19px;padding:2px 7px;border-right:1px solid #858585;border-bottom:1px solid #686868;color:#fff;text-align:center;white-space:nowrap;background:linear-gradient(to bottom,#999,#747 52%,#666)}
+.aduana-query .apexir_WORKSHEET_DATA td{padding:4px 8px;border-right:1px solid #eee;border-bottom:1px solid #cfcfcf;background:#eee;color:#000;vertical-align:top}
+.aduana-query .apexir_WORKSHEET_DATA tr:nth-child(even) td{background:#e9e9e9}
+.aduana-query .log-details{margin-top:14px;color:#687684;font-size:12px}.aduana-query .log-table{margin-top:8px;border-collapse:collapse;background:#fff;font-size:11px;min-width:900px}.aduana-query .log-table th,.aduana-query .log-table td{border:1px solid #d7dde3;padding:4px 7px;text-transform:none;letter-spacing:0;color:#333;background:#fff}
+@media(max-width:1000px){.aduana-query .query-grid{grid-template-columns:1fr 1fr}.aduana-query .search-btn{width:100%}}@media(max-width:650px){.aduana-query .query-grid{grid-template-columns:1fr}}
+</style>
+<div class="shell aduana-query">
+  <div class="top">
+    <div class="title"><h1>Consulta de Denuncias</h1><p>Servicio Nacional de Aduanas · mismo motor de consulta usado por Telegram</p></div>
+    <div class="nav">
+      <a href="{{ url_for('.admin_dashboard') }}">← Aduana Monitor</a>
+      <a href="/admin/automation">自動化中心</a>
+    </div>
+  </div>
+
+  <form method="post">
+    <div class="query-card">
+      <div class="query-grid">
+        <div>
+          <label class="field-label">Años</label>
+          <div class="year-selector">
+            {% for y in primary_years %}
+            <label class="year-option"><input type="checkbox" name="years" value="{{ y }}" {% if y in selected_years %}checked{% endif %}><span class="year-chip">{{ y }}</span></label>
+            {% endfor %}
+          </div>
+          {% if older_years %}
+          <button type="button" class="more-years-toggle" id="moreYearsToggle" onclick="toggleMoreYears()">+ Más años</button>
+          <div class="more-years-panel" id="moreYearsPanel"><div class="more-years-grid">
+            {% for y in older_years %}
+            <label class="year-option"><input type="checkbox" name="years" value="{{ y }}" {% if y in selected_years %}checked{% endif %}><span class="year-chip">{{ y }}</span></label>
+            {% endfor %}
+          </div></div>
+          {% endif %}
+        </div>
+        <div>
+          <label class="field-label" for="aduana">Aduana</label>
+          <select class="control" id="aduana" name="aduana">
+            {% for value,label in aduanas %}<option value="{{ value }}" {% if value==aduana %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="rut">RUT</label>
+          <input class="control" id="rut" name="rut" value="{{ rut }}" placeholder="Ej. 12345678-9" autocomplete="off">
+        </div>
+        <div><button class="search-btn" type="submit">Buscar</button></div>
+      </div>
+    </div>
+  </form>
+
+  {% if message %}<div class="message {{ 'ok' if all_ok else 'error' }}">{{ message }}</div>{% endif %}
+
+  {% if searched %}
+  <div class="status-row">
+    <div class="status-badge">Años: <strong>{{ selected_years|join(', ') }}</strong></div>
+    <div class="status-badge">Aduana: <strong>{{ aduana_label }}</strong></div>
+    <div class="status-badge">RUT: <strong>{{ rut }}</strong></div>
+    <div class="status-badge">Registros: <strong>{{ rows|length }}</strong></div>
+    {% if elapsed is not none %}<div class="status-badge">Tiempo: <strong>{{ '%.2f'|format(elapsed) }} s</strong></div>{% endif %}
+  </div>
+
+  <div class="table-shell">
+    {% if rows %}
+    <table class="apexir_WORKSHEET_DATA"><tbody>
+      <tr>{% for key,label in columns %}<th>{{ label }}</th>{% endfor %}</tr>
+      {% for row in rows %}<tr>{% for key,label in columns %}<td>{{ row.get(key,'') }}</td>{% endfor %}</tr>{% endfor %}
+    </tbody></table>
+    {% else %}<div style="padding:24px">No se encontraron registros.</div>{% endif %}
+  </div>
+
+  {% if logs %}
+  <details class="log-details"><summary>Ver detalle de consultas mensuales</summary><div style="overflow:auto"><table class="log-table">
+    <tr><th>WORKER</th><th>DESDE</th><th>HASTA</th><th>ESTADO</th><th>RESULTADO</th><th>FILAS</th><th>SEG.</th><th>ERROR</th></tr>
+    {% for row in logs %}<tr><td>{{ row.get('worker','') }}</td><td>{{ row.get('desde','') }}</td><td>{{ row.get('hasta','') }}</td><td>{{ row.get('estado','') }}</td><td>{{ row.get('resultado','') }}</td><td>{{ row.get('filas','') }}</td><td>{{ row.get('segundos','') }}</td><td>{{ row.get('error','') }}</td></tr>{% endfor %}
+  </table></div></details>
+  {% endif %}
+  {% endif %}
+</div>
+<script>
+function toggleMoreYears(){const p=document.getElementById('moreYearsPanel');const b=document.getElementById('moreYearsToggle');if(!p)return;const open=p.classList.toggle('open');if(b)b.textContent=open?'− Ocultar años':'+ Más años';}
+document.addEventListener('DOMContentLoaded',()=>{const p=document.getElementById('moreYearsPanel');if(p&&p.querySelector('input:checked')){p.classList.add('open');const b=document.getElementById('moreYearsToggle');if(b)b.textContent='− Ocultar años';}});
+</script>
+{% endblock %}
