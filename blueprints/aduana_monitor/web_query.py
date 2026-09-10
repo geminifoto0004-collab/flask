@@ -4,22 +4,10 @@ from __future__ import annotations
 import re
 import time
 from datetime import date
-from functools import wraps
 
-from flask import redirect, render_template, request, session, url_for
-from config import admin_config
+from flask import render_template, request
 
 from . import aduana_bp, query, settings
-
-
-def _admin_login_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        allowed_roles = {"admin", admin_config.SUPER_ADMIN_ROLE}
-        if not session.get("logged_in") or session.get("role") not in allowed_roles:
-            return redirect(url_for("login", next=request.path))
-        return view(*args, **kwargs)
-    return wrapped
 
 
 def _normalize_rut(value):
@@ -47,8 +35,10 @@ WEB_COLUMNS = [
 ]
 
 
+# Public query page. No XINGWANG/admin login is required.
+# Keep the old admin-prefixed URL as an alias so existing links/bookmarks do not break.
+@aduana_bp.route("/aduana", methods=["GET", "POST"])
 @aduana_bp.route(f"{settings.ADMIN_PREFIX}/query", methods=["GET", "POST"])
-@_admin_login_required
 def admin_query():
     current_year = date.today().year
     primary_years = [current_year, current_year - 1, current_year - 2]
