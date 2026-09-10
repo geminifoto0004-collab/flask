@@ -42,7 +42,7 @@ def _failure_examples(logs, limit=4):
         if str(item.get("estado") or "").upper() == "OK":
             continue
         error = " ".join(str(item.get("error") or "sin detalle").split())
-        key = (str(item.get("estado") or ""), error)
+        key = (str(item.get("estado") or ""), str(item.get("phase") or ""), error)
         if key in seen:
             continue
         seen.add(key)
@@ -52,6 +52,7 @@ def _failure_examples(logs, limit=4):
             "desde": item.get("desde") or "",
             "hasta": item.get("hasta") or "",
             "worker": item.get("worker") or "",
+            "phase": item.get("phase") or "",
         })
         if len(examples) >= limit:
             break
@@ -68,7 +69,9 @@ def admin_query():
     older_years = list(range(current_year - 3, settings.UNLIMITED_START_YEAR - 1, -1))
     available_years = primary_years + older_years
 
-    selected_years = primary_years.copy() if request.method == "GET" else []
+    # Fast/simple default: current year only. Older years stay available, but
+    # opening the page must not automatically launch a 3-year query selection.
+    selected_years = [current_year] if request.method == "GET" else []
     aduana = "7"
     rut = ""
     rows = []
