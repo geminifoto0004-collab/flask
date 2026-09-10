@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 """Aduana Chile Oracle APEX query engine.
 
-Fast path follows the previously proven ASYNC_4 scraper:
-- each worker owns one requests.Session/APEX state;
-- each worker GETs the Aduana page once, then reuses that state;
+The query path intentionally stays close to the previously proven ASYNC_4
+standalone scraper:
+- each worker owns one requests.Session / APEX state;
+- each worker GETs the Aduana page once;
 - periods are distributed round-robin across workers;
-- the report parser looks for the original WORKSHEET_DATA table and ignores
-  non-data rows that do not contain the expected 14 columns.
+- each period performs one APEX submit;
+- the original 14-column WORKSHEET_DATA table is parsed and exact duplicate
+  rows are removed.
 
-If a period fails on the fast path, only that failed period is retried once
-with the older, also-proven request_one_period behavior: a completely fresh
-session + fresh GET of the Aduana form + one POST. This preserves speed while
-avoiding false failures caused by stale/reused APEX state on Render.
+Important for Render: do not cascade into one fresh-session retry per failed
+month. When the upstream Aduana entry point is blocked or hanging, that retry
+pattern can keep a synchronous web request alive until Gunicorn kills the
+worker. A failed period is reported as failed and the caller can retry later.
 """
 from __future__ import annotations
 
@@ -33,9 +35,6 @@ class AduanaParseError(RuntimeError):
     pass
 
 
-# Manual Telegram queries run inside their own thread. Keep the most recent
-# period log on that same thread so the OWNER can see the real Render/Aduana
-# failure instead of only a generic "Consulta incompleta" message.
 _diag_local = threading.local()
 
 
@@ -44,22 +43,26 @@ def _set_last_diagnostics(logs):
 
 
 def last_failure_summary(max_items=6):
-    """Return a compact, HTML-neutral summary of failures for the current thread."""
+    """Return a compact, HTML-neutral failure summary for the current thread."""
     failures = [
-        item for item in getattr(_diag_local, "logs", [])
+        item
+        for item in getattr(_diag_local, "logs", [])
         if str(item.get("estado") or "").upper() != "OK"
     ]
     if not failures:
         return ""
+
     lines = []
-    for item in failures[:max(1, int(max_items))]:
+    for item in failures[: max(1, int(max_items))]:
         period = f"{item.get('desde', '?')}→{item.get('hasta', '?')}"
         state = str(item.get("estado") or "ERROR")
         error = " ".join(str(item.get("error") or "").split())
         if len(error) > 220:
             error = error[:217] + "..."
-        fallback = " · fresh" if item.get("fallback") else ""
-        lines.append(f"{period} · {state}{fallback} · {error or 'sin detalle'}")
+        phase = str(item.get("phase") or "").strip()
+        phase_text = f" · {phase}" if phase else ""
+        lines.append(f"{period} · {state}{phase_text} · {error or 'sin detalle'}")
+
     if len(failures) > len(lines):
         lines.append(f"+{len(failures) - len(lines)} período(s) con error")
     return "\n".join(lines)
@@ -68,6 +71,7 @@ def last_failure_summary(max_items=6):
 def month_chunks_for_range(start: date, end: date):
     if start > end:
         return
+
     cur = start
     while cur <= end:
         last_day = calendar.monthrange(cur.year, cur.month)[1]
@@ -92,15 +96,17 @@ def _find_main_form(soup: BeautifulSoup):
         form = target.find_parent("form")
         if form:
             return form
+
     forms = soup.find_all("form")
     if forms:
         return max(forms, key=lambda node: len(str(node)))
+
     raise AduanaParseError("No se encontró el formulario principal de Aduana")
 
 
 def _collect_hidden_fields(form):
-    # Old APEX pages can contain duplicate hidden names, so keep list[tuple]
-    # instead of converting to dict.
+    # Old APEX can contain duplicate hidden field names; list[tuple] preserves
+    # them while a dict would silently discard values.
     payload = []
     for tag in form.find_all("input"):
         name = tag.get("name")
@@ -129,6 +135,7 @@ class AduanaApexClient:
         soup = BeautifulSoup(page_html, "html.parser")
         form = _find_main_form(soup)
         payload = _collect_hidden_fields(form)
+
         self.payload_base = _remove_payload_names(
             payload,
             {"p_t02", "p_t03", "p_t04", "p_t05", "p_request"},
@@ -140,6 +147,7 @@ class AduanaApexClient:
     def initialize(self):
         if self.initialized:
             return
+
         response = self.session.get(
             settings.BASE_URL,
             headers=settings.HEADERS,
@@ -155,13 +163,15 @@ class AduanaApexClient:
             self.initialize()
 
         payload = list(self.payload_base)
-        payload.extend([
-            ("p_t02", fmt_date(d1)),
-            ("p_t03", fmt_date(d2)),
-            ("p_t04", str(aduana)),
-            ("p_t05", rut.strip()),
-            ("p_request", "Go"),
-        ])
+        payload.extend(
+            [
+                ("p_t02", fmt_date(d1)),
+                ("p_t03", fmt_date(d2)),
+                ("p_t04", str(aduana)),
+                ("p_t05", rut.strip()),
+                ("p_request", "Go"),
+            ]
+        )
 
         headers = dict(settings.HEADERS)
         headers["Referer"] = self.referer
@@ -185,9 +195,9 @@ class AduanaApexClient:
 
         response.raise_for_status()
 
-        # Same behavior as the proven standalone scraper: try to refresh APEX
-        # state, but a valid result page without a complete form must not make
-        # the current query fail.
+        # The old standalone scraper refreshed APEX state after every submit.
+        # Some result pages do not contain a complete form; in that case keep
+        # the previous state and only advance the referer.
         try:
             self._update_state_from_html(response.url, response.text)
         except Exception:
@@ -200,6 +210,7 @@ def _find_result_table(soup: BeautifulSoup):
     table = soup.select_one("table.apexir_WORKSHEET_DATA")
     if table is not None:
         return table
+
     for candidate in soup.find_all("table"):
         classes = " ".join(candidate.get("class") or [])
         if "WORKSHEET_DATA" in classes.upper():
@@ -208,12 +219,7 @@ def _find_result_table(soup: BeautifulSoup):
 
 
 def extract_rows(response_html: str):
-    """Parse the original Aduana report table.
-
-    This deliberately mirrors the working standalone parser: absence of a
-    report table is treated as an empty result for that period, and rows that
-    are not the 14-column data rows are skipped.
-    """
+    """Parse the original fixed 14-column Aduana result table."""
     soup = BeautifulSoup(response_html or "", "html.parser")
     table = _find_result_table(soup)
     if table is None:
@@ -255,7 +261,14 @@ def _parse_date_for_sort(value):
     text = str(value or "").strip()
     if not text:
         return date.min
-    for fmt in ("%d/%m/%y", "%d-%m-%y", "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
+
+    for fmt in (
+        "%d/%m/%y",
+        "%d-%m-%y",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%Y-%m-%d",
+    ):
         try:
             return datetime.strptime(text, fmt).date()
         except ValueError:
@@ -274,24 +287,34 @@ def sort_rows(rows):
     )
 
 
-def _worker(worker_id, periods, aduana, rut):
-    """One independent APEX worker/session, matching ASYNC_4."""
-    client = AduanaApexClient()
-    rows, logs = [], []
+def _failure_log(worker_id, d1, d2, exc, seconds=0.0, phase="REQUEST"):
+    return {
+        "worker": worker_id,
+        "desde": fmt_date(d1),
+        "hasta": fmt_date(d2),
+        "estado": "REQUEST_FAILED",
+        "filas": 0,
+        "segundos": round(seconds, 2),
+        "error": f"{type(exc).__name__}: {exc}",
+        "phase": phase,
+    }
 
+
+def _worker(worker_id, periods, aduana, rut):
+    """One independent APEX worker/session, matching the ASYNC_4 design."""
+    client = AduanaApexClient()
+    rows = []
+    logs = []
+
+    init_started = time.perf_counter()
     try:
         client.initialize()
     except Exception as exc:
+        elapsed = time.perf_counter() - init_started
         for d1, d2 in periods:
-            logs.append({
-                "worker": worker_id,
-                "desde": fmt_date(d1),
-                "hasta": fmt_date(d2),
-                "estado": "REQUEST_FAILED",
-                "filas": 0,
-                "segundos": 0.0,
-                "error": f"{type(exc).__name__}: {exc}",
-            })
+            logs.append(
+                _failure_log(worker_id, d1, d2, exc, elapsed, phase="INIT")
+            )
         return rows, logs
 
     for d1, d2 in periods:
@@ -300,135 +323,30 @@ def _worker(worker_id, periods, aduana, rut):
             html = client.query_period(d1, d2, aduana, rut)
             period_rows, parse_state = extract_rows(html)
             rows.extend(period_rows)
-            logs.append({
-                "worker": worker_id,
-                "desde": fmt_date(d1),
-                "hasta": fmt_date(d2),
-                "estado": "OK",
-                "resultado": parse_state,
-                "filas": len(period_rows),
-                "segundos": round(time.perf_counter() - started, 2),
-            })
+            logs.append(
+                {
+                    "worker": worker_id,
+                    "desde": fmt_date(d1),
+                    "hasta": fmt_date(d2),
+                    "estado": "OK",
+                    "resultado": parse_state,
+                    "filas": len(period_rows),
+                    "segundos": round(time.perf_counter() - started, 2),
+                }
+            )
         except Exception as exc:
-            logs.append({
-                "worker": worker_id,
-                "desde": fmt_date(d1),
-                "hasta": fmt_date(d2),
-                "estado": "REQUEST_FAILED",
-                "filas": 0,
-                "segundos": round(time.perf_counter() - started, 2),
-                "error": f"{type(exc).__name__}: {exc}",
-            })
+            logs.append(
+                _failure_log(
+                    worker_id,
+                    d1,
+                    d2,
+                    exc,
+                    time.perf_counter() - started,
+                    phase="POST",
+                )
+            )
 
     return rows, logs
-
-
-def _fresh_period(period, aduana, rut):
-    """Retry one period using the original request_one_period flow.
-
-    Unlike the fast path, this does not reuse any APEX state. Every retry gets
-    a new Session, GETs the form, then submits exactly one query POST.
-    """
-    d1, d2 = period
-    started = time.perf_counter()
-    session = requests.Session()
-    session.headers.update(settings.HEADERS)
-    try:
-        first = session.get(
-            settings.BASE_URL,
-            headers=settings.HEADERS,
-            timeout=settings.REQUEST_TIMEOUT,
-            allow_redirects=True,
-        )
-        first.raise_for_status()
-        soup = BeautifulSoup(first.text, "html.parser")
-        form = _find_main_form(soup)
-        payload = _remove_payload_names(
-            _collect_hidden_fields(form),
-            {"p_t02", "p_t03", "p_t04", "p_t05", "p_request"},
-        )
-        payload.extend([
-            ("p_t02", fmt_date(d1)),
-            ("p_t03", fmt_date(d2)),
-            ("p_t04", str(aduana)),
-            ("p_t05", rut.strip()),
-            ("p_request", "Go"),
-        ])
-        action_url = urljoin(first.url, form.get("action") or first.url)
-        method = (form.get("method") or "post").lower()
-        headers = dict(settings.HEADERS)
-        headers["Referer"] = first.url
-        if method == "get":
-            response = session.get(
-                action_url,
-                params=payload,
-                headers=headers,
-                timeout=settings.REQUEST_TIMEOUT,
-                allow_redirects=True,
-            )
-        else:
-            response = session.post(
-                action_url,
-                data=payload,
-                headers=headers,
-                timeout=settings.REQUEST_TIMEOUT,
-                allow_redirects=True,
-            )
-        response.raise_for_status()
-        period_rows, parse_state = extract_rows(response.text)
-        return period_rows, {
-            "worker": "FRESH",
-            "desde": fmt_date(d1),
-            "hasta": fmt_date(d2),
-            "estado": "OK",
-            "resultado": parse_state,
-            "filas": len(period_rows),
-            "segundos": round(time.perf_counter() - started, 2),
-            "fallback": "fresh_session",
-        }
-    except Exception as exc:
-        return [], {
-            "worker": "FRESH",
-            "desde": fmt_date(d1),
-            "hasta": fmt_date(d2),
-            "estado": "REQUEST_FAILED",
-            "filas": 0,
-            "segundos": round(time.perf_counter() - started, 2),
-            "error": f"{type(exc).__name__}: {exc}",
-            "fallback": "fresh_session",
-        }
-
-
-def _retry_failed_periods(periods, logs, aduana, rut):
-    """Retry only fast-path failures with fully fresh APEX sessions."""
-    failed_keys = {
-        (item.get("desde"), item.get("hasta"))
-        for item in logs
-        if item.get("estado") != "OK"
-    }
-    failed_periods = [
-        period for period in periods
-        if (fmt_date(period[0]), fmt_date(period[1])) in failed_keys
-    ]
-    if not failed_periods:
-        return [], logs
-
-    retry_rows = []
-    retry_logs = []
-    workers = min(4, len(failed_periods))
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(_fresh_period, p, aduana, rut) for p in failed_periods]
-        for future in as_completed(futures):
-            rows, item = future.result()
-            retry_rows.extend(rows)
-            retry_logs.append(item)
-
-    retry_map = {(item["desde"], item["hasta"]): item for item in retry_logs}
-    final_logs = []
-    for item in logs:
-        key = (item.get("desde"), item.get("hasta"))
-        final_logs.append(retry_map.get(key, item))
-    return retry_rows, final_logs
 
 
 def _run_periods(periods, aduana, rut, max_workers=None):
@@ -441,7 +359,9 @@ def _run_periods(periods, aduana, rut, max_workers=None):
     for index, period in enumerate(periods):
         groups[index % worker_count].append(period)
 
-    all_rows, all_logs = [], []
+    all_rows = []
+    all_logs = []
+
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = [
             executor.submit(_worker, idx + 1, group, aduana, rut)
@@ -452,30 +372,36 @@ def _run_periods(periods, aduana, rut, max_workers=None):
             all_rows.extend(worker_rows)
             all_logs.extend(worker_logs)
 
-    # A fast-path REQUEST_FAILED is not accepted as final. Retry that exact
-    # period using the old fresh-GET/fresh-POST method that was previously
-    # verified in the standalone Flask scraper.
-    retry_rows, all_logs = _retry_failed_periods(periods, all_logs, aduana, rut)
-    all_rows.extend(retry_rows)
-
+    # Do not retry every failed month here. On Render, an upstream 403 or a
+    # hanging Aduana TLS connection is a target-level failure; multiplying it
+    # by every month only makes Gunicorn kill the web worker before diagnostics
+    # can be returned.
     all_logs.sort(key=lambda item: item.get("desde", ""))
     _set_last_diagnostics(all_logs)
+
     failures = [item for item in all_logs if item.get("estado") != "OK"]
     for item in failures:
         print(
             "[ADUANA][QUERY_FAILED]",
-            item.get("desde"), item.get("hasta"),
-            item.get("estado"), item.get("error") or "",
+            item.get("desde"),
+            item.get("hasta"),
+            item.get("phase") or "",
+            item.get("estado"),
+            item.get("error") or "",
             flush=True,
         )
-    all_ok = (
-        len(all_logs) == len(periods)
-        and not failures
-    )
+
+    all_ok = len(all_logs) == len(periods) and not failures
     return sort_rows(_dedupe_full_rows(all_rows)), all_logs, all_ok
 
 
-def query_range(start_date: date, end_date: date, aduana: str, rut: str, max_workers=None):
+def query_range(
+    start_date: date,
+    end_date: date,
+    aduana: str,
+    rut: str,
+    max_workers=None,
+):
     periods = list(month_chunks_for_range(start_date, end_date))
     return _run_periods(periods, aduana, rut, max_workers=max_workers)
 
@@ -489,10 +415,12 @@ def query_last_n_days(days: int, aduana: str, rut: str, max_workers=None):
 def query_years(years, aduana: str, rut: str, max_workers=None):
     today = date.today()
     periods = []
+
     for year in sorted({int(y) for y in years}, reverse=True):
         if year < settings.UNLIMITED_START_YEAR or year > today.year:
             continue
         start = date(year, 1, 1)
         end = today if year == today.year else date(year, 12, 31)
         periods.extend(month_chunks_for_range(start, end))
+
     return _run_periods(periods, aduana, rut, max_workers=max_workers)
