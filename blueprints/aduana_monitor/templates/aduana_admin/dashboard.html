@@ -6,6 +6,7 @@
     <div class="nav">
       <a href="/admin/automation">← 自動化中心</a>
       <a href="{{ url_for('.admin_dashboard') }}">Usuarios</a>
+      <a href="{{ url_for('.admin_query') }}">🔎 查詢</a>
       <a href="{{ url_for('.admin_runs') }}">Cron</a>
       <form method="post" action="{{ url_for('.admin_run_now') }}"><button class="btn primary">▶ Ejecutar ahora</button></form>
     </div>
@@ -32,7 +33,7 @@
         <form method="post" action="{{ url_for('.admin_reset_scan_history') }}" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap" onsubmit="return confirm(this.rut.value.trim() ? '確定重置這個 RUT 的 Aduana 測試紀錄與 baseline？' : 'RUT 留空會重置全部 Aduana 測試紀錄與 baseline。確定？')">
           <div>
             <label style="display:block;font-size:12px;font-weight:700;margin-bottom:6px">重置 RUT（留空＝全部）</label>
-            <input name="rut" type="text" placeholder="Ej. 76315010-0" style="height:38px;min-width:210px;border:1px solid #d8dee8;border-radius:8px;padding:0 10px">
+            <input name="rut" type="text" placeholder="Ej. 12345678-9" style="height:38px;min-width:210px;border:1px solid #d8dee8;border-radius:8px;padding:0 10px">
           </div>
           <button class="btn danger" type="submit">清除紀錄並重建 Baseline</button>
         </form>
