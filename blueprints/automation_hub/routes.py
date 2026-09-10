@@ -6,6 +6,7 @@ import re
 from functools import wraps
 
 from flask import current_app, jsonify, redirect, render_template, request, session, url_for
+from config import admin_config
 
 from . import automation_hub_bp, registry, settings, storage, telegram
 
@@ -48,33 +49,17 @@ def telegram_webhook(bot_key):
 
 
 def _admin_required(view):
+    """Reuse the parent XINGWANG /login session and its existing admin roles."""
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("automation_hub_admin_ok"):
-            return redirect(url_for(".admin_login"))
+        allowed_roles = {"admin", admin_config.SUPER_ADMIN_ROLE}
+        if not session.get("logged_in") or session.get("role") not in allowed_roles:
+            return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
     return wrapped
 
 
-@automation_hub_bp.route(f"{settings.ADMIN_PREFIX}/login", methods=["GET", "POST"])
-def admin_login():
-    error = None
-    if request.method == "POST":
-        supplied = request.form.get("password") or ""
-        if settings.ADMIN_PASSWORD and hmac.compare_digest(supplied, settings.ADMIN_PASSWORD):
-            session["automation_hub_admin_ok"] = True
-            return redirect(url_for(".admin_dashboard"))
-        error = "Contraseña incorrecta"
-    return render_template("automation_hub/login.html", error=error, settings=settings)
-
-
-@automation_hub_bp.route(f"{settings.ADMIN_PREFIX}/logout", methods=["POST", "GET"])
-def admin_logout():
-    session.pop("automation_hub_admin_ok", None)
-    return redirect(url_for(".admin_login"))
-
-
-@automation_hub_bp.route(f"{settings.ADMIN_PREFIX}/", methods=["GET"])
+@automation_hub_bp.route(settings.ADMIN_PREFIX, methods=["GET"], strict_slashes=False)
 @_admin_required
 def admin_dashboard():
     return render_template(
