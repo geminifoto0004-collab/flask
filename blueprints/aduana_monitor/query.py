@@ -10,13 +10,14 @@ Fast path follows the previously proven ASYNC_4 scraper:
 
 If a period fails on the fast path, only that failed period is retried once
 with the older, also-proven request_one_period behavior: a completely fresh
-session + fresh GET of the Aduana form + one POST.  This preserves speed while
+session + fresh GET of the Aduana form + one POST. This preserves speed while
 avoiding false failures caused by stale/reused APEX state on Render.
 """
 from __future__ import annotations
 
 import calendar
 import hashlib
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
@@ -30,6 +31,38 @@ from . import settings
 
 class AduanaParseError(RuntimeError):
     pass
+
+
+# Manual Telegram queries run inside their own thread. Keep the most recent
+# period log on that same thread so the OWNER can see the real Render/Aduana
+# failure instead of only a generic "Consulta incompleta" message.
+_diag_local = threading.local()
+
+
+def _set_last_diagnostics(logs):
+    _diag_local.logs = [dict(item) for item in (logs or [])]
+
+
+def last_failure_summary(max_items=6):
+    """Return a compact, HTML-neutral summary of failures for the current thread."""
+    failures = [
+        item for item in getattr(_diag_local, "logs", [])
+        if str(item.get("estado") or "").upper() != "OK"
+    ]
+    if not failures:
+        return ""
+    lines = []
+    for item in failures[:max(1, int(max_items))]:
+        period = f"{item.get('desde', '?')}→{item.get('hasta', '?')}"
+        state = str(item.get("estado") or "ERROR")
+        error = " ".join(str(item.get("error") or "").split())
+        if len(error) > 220:
+            error = error[:217] + "..."
+        fallback = " · fresh" if item.get("fallback") else ""
+        lines.append(f"{period} · {state}{fallback} · {error or 'sin detalle'}")
+    if len(failures) > len(lines):
+        lines.append(f"+{len(failures) - len(lines)} período(s) con error")
+    return "\n".join(lines)
 
 
 def month_chunks_for_range(start: date, end: date):
@@ -257,7 +290,7 @@ def _worker(worker_id, periods, aduana, rut):
                 "estado": "REQUEST_FAILED",
                 "filas": 0,
                 "segundos": 0.0,
-                "error": str(exc),
+                "error": f"{type(exc).__name__}: {exc}",
             })
         return rows, logs
 
@@ -284,7 +317,7 @@ def _worker(worker_id, periods, aduana, rut):
                 "estado": "REQUEST_FAILED",
                 "filas": 0,
                 "segundos": round(time.perf_counter() - started, 2),
-                "error": str(exc),
+                "error": f"{type(exc).__name__}: {exc}",
             })
 
     return rows, logs
@@ -293,7 +326,7 @@ def _worker(worker_id, periods, aduana, rut):
 def _fresh_period(period, aduana, rut):
     """Retry one period using the original request_one_period flow.
 
-    Unlike the fast path, this does not reuse any APEX state.  Every retry gets
+    Unlike the fast path, this does not reuse any APEX state. Every retry gets
     a new Session, GETs the form, then submits exactly one query POST.
     """
     d1, d2 = period
@@ -361,7 +394,7 @@ def _fresh_period(period, aduana, rut):
             "estado": "REQUEST_FAILED",
             "filas": 0,
             "segundos": round(time.perf_counter() - started, 2),
-            "error": str(exc),
+            "error": f"{type(exc).__name__}: {exc}",
             "fallback": "fresh_session",
         }
 
@@ -380,8 +413,6 @@ def _retry_failed_periods(periods, logs, aduana, rut):
     if not failed_periods:
         return [], logs
 
-    # Fresh sessions are independent, so a small pool keeps the fallback from
-    # becoming many minutes long while still being gentler than the fast path.
     retry_rows = []
     retry_logs = []
     workers = min(4, len(failed_periods))
@@ -402,6 +433,7 @@ def _retry_failed_periods(periods, logs, aduana, rut):
 
 def _run_periods(periods, aduana, rut, max_workers=None):
     if not periods:
+        _set_last_diagnostics([])
         return [], [], True
 
     worker_count = min(max_workers or settings.PERIOD_WORKERS, len(periods))
@@ -420,16 +452,25 @@ def _run_periods(periods, aduana, rut, max_workers=None):
             all_rows.extend(worker_rows)
             all_logs.extend(worker_logs)
 
-    # A fast-path REQUEST_FAILED is not accepted as final.  Retry that exact
+    # A fast-path REQUEST_FAILED is not accepted as final. Retry that exact
     # period using the old fresh-GET/fresh-POST method that was previously
     # verified in the standalone Flask scraper.
     retry_rows, all_logs = _retry_failed_periods(periods, all_logs, aduana, rut)
     all_rows.extend(retry_rows)
 
     all_logs.sort(key=lambda item: item.get("desde", ""))
+    _set_last_diagnostics(all_logs)
+    failures = [item for item in all_logs if item.get("estado") != "OK"]
+    for item in failures:
+        print(
+            "[ADUANA][QUERY_FAILED]",
+            item.get("desde"), item.get("hasta"),
+            item.get("estado"), item.get("error") or "",
+            flush=True,
+        )
     all_ok = (
         len(all_logs) == len(periods)
-        and all(item.get("estado") == "OK" for item in all_logs)
+        and not failures
     )
     return sort_rows(_dedupe_full_rows(all_rows)), all_logs, all_ok
 
