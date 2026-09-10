@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import hmac
+import re
 from functools import wraps
 
 from flask import jsonify, redirect, render_template, request, session, url_for
 from config import admin_config
 
-from . import aduana_bp, bot, cron, owner_admin, settings, storage, telegram
+from . import aduana_bp, bot, cron, maintenance, owner_admin, settings, storage, telegram
 
 
 @aduana_bp.before_request
@@ -64,6 +65,15 @@ def _admin_login_required(view):
             return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
     return wrapped
+
+
+def _normalize_admin_rut(value):
+    compact = re.sub(r"[^0-9Kk]", "", str(value or "")).upper()
+    if not compact:
+        return None
+    if len(compact) not in (8, 9):
+        raise ValueError("RUT inválido")
+    return compact[:-1] + "-" + compact[-1]
 
 
 @aduana_bp.route(settings.ADMIN_PREFIX, methods=["GET"], strict_slashes=False)
@@ -169,6 +179,37 @@ def admin_runs():
 def admin_run_now():
     cron.start_background_batch()
     return redirect(url_for(".admin_dashboard"))
+
+
+@aduana_bp.route(f"{settings.ADMIN_PREFIX}/maintenance/reset-scan-history", methods=["POST"])
+@_admin_login_required
+def admin_reset_scan_history():
+    try:
+        rut = _normalize_admin_rut(request.form.get("rut"))
+        result = maintenance.reset_scan_history(rut)
+    except ValueError as exc:
+        return redirect(url_for(".admin_dashboard", message=str(exc)))
+    except Exception as exc:
+        return redirect(url_for(".admin_dashboard", message=f"重置失敗: {exc}"))
+
+    scope = result["rut"] or "全部 RUT"
+    message = (
+        f"已重置 {scope}：records {result['records_deleted']}、"
+        f"notifications {result['notifications_deleted']}、"
+        f"targets {result['targets_deleted']}、"
+        f"monitor baseline {result['monitors_reset']}。用戶、監控設定與 Bot 都保留。"
+    )
+    return redirect(url_for(".admin_dashboard", message=message))
+
+
+@aduana_bp.route(f"{settings.ADMIN_PREFIX}/maintenance/clear-runs", methods=["POST"])
+@_admin_login_required
+def admin_clear_runs():
+    try:
+        deleted = maintenance.clear_finished_runs()
+    except Exception as exc:
+        return redirect(url_for(".admin_dashboard", message=f"清除 Cron 歷史失敗: {exc}"))
+    return redirect(url_for(".admin_dashboard", message=f"已清除 {deleted} 筆已完成 Cron 歷史；正在執行的 RUNNING 不會刪除。"))
 
 
 @aduana_bp.route(f"{settings.ADMIN_PREFIX}/telegram/set-webhook", methods=["POST"])
