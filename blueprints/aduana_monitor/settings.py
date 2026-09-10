@@ -7,6 +7,8 @@ only as a backwards-compatible fallback.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 
 # The legacy Consulta Denuncias Oracle APEX endpoint is served over HTTP.
@@ -28,6 +30,42 @@ PERIOD_WORKERS = max(1, min(int(os.environ.get("ADUANA_PERIOD_WORKERS", "4") or 
 TARGET_WORKERS = max(1, min(int(os.environ.get("ADUANA_TARGET_WORKERS", "4") or 4), 6))
 CRON_LOOKBACK_DAYS = max(7, min(int(os.environ.get("ADUANA_CRON_LOOKBACK_DAYS", "31") or 31), 62))
 RUN_LOCK_STALE_MINUTES = max(10, int(os.environ.get("ADUANA_RUN_LOCK_STALE_MINUTES", "120") or 120))
+
+# Residential/ISP worker.
+# On Render we prefer a pull worker because the Aduana APEX site rejects the
+# Render egress. The worker polls Render, so Render never needs to know the
+# worker machine's public IP. An explicit ADUANA_WORKER_TOKEN can be used, but
+# normally we derive a dedicated token from the already-existing Hub master key;
+# the master key itself is never exposed to the worker.
+_EXPLICIT_WORKER_TOKEN = (os.environ.get("ADUANA_WORKER_TOKEN") or "").strip()
+_AUTOMATION_MASTER_KEY = (os.environ.get("AUTOMATION_MASTER_KEY") or "").strip()
+if _EXPLICIT_WORKER_TOKEN:
+    WORKER_TOKEN = _EXPLICIT_WORKER_TOKEN
+elif _AUTOMATION_MASTER_KEY:
+    WORKER_TOKEN = hmac.new(
+        _AUTOMATION_MASTER_KEY.encode("utf-8"),
+        b"aduana-residential-worker-v1",
+        hashlib.sha256,
+    ).hexdigest()
+else:
+    WORKER_TOKEN = ""
+
+_IS_RENDER = bool(
+    (os.environ.get("RENDER") or "").strip()
+    or (os.environ.get("RENDER_EXTERNAL_URL") or "").strip()
+)
+_FORCE_WORKER = (os.environ.get("ADUANA_USE_REMOTE_WORKER") or "").strip().lower()
+if _FORCE_WORKER in ("1", "true", "yes", "on"):
+    WORKER_ENABLED = bool(WORKER_TOKEN)
+elif _FORCE_WORKER in ("0", "false", "no", "off"):
+    WORKER_ENABLED = False
+else:
+    WORKER_ENABLED = bool(WORKER_TOKEN and _IS_RENDER)
+
+# Telegram/cron run in background threads and can wait longer. A normal web
+# request gets a shorter ceiling to stay below common Gunicorn request limits.
+WORKER_WAIT_SECONDS = max(30, min(int(os.environ.get("ADUANA_WORKER_WAIT_SECONDS", "180") or 180), 600))
+WORKER_WEB_WAIT_SECONDS = max(5, min(int(os.environ.get("ADUANA_WORKER_WEB_WAIT_SECONDS", "25") or 25), 28))
 
 # Legacy fallback only. New bots should be added from /admin/automation.
 TELEGRAM_BOT_TOKEN = (os.environ.get("ADUANA_TELEGRAM_BOT_TOKEN") or "").strip()
