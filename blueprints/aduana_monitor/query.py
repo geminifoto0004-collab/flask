@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """Aduana Chile Oracle APEX query engine.
 
-The request path intentionally follows the previously proven standalone
-ASYNC_4 scraper:
+Fast path follows the previously proven ASYNC_4 scraper:
 - each worker owns one requests.Session/APEX state;
 - each worker GETs the Aduana page once, then reuses that state;
 - periods are distributed round-robin across workers;
-- no per-period fresh-session retry is added;
 - the report parser looks for the original WORKSHEET_DATA table and ignores
   non-data rows that do not contain the expected 14 columns.
 
-This keeps the production blueprint's dict-based output while preserving the
-query behavior that was already verified against the Aduana site.
+If a period fails on the fast path, only that failed period is retried once
+with the older, also-proven request_one_period behavior: a completely fresh
+session + fresh GET of the Aduana form + one POST.  This preserves speed while
+avoiding false failures caused by stale/reused APEX state on Render.
 """
 from __future__ import annotations
 
@@ -290,8 +290,117 @@ def _worker(worker_id, periods, aduana, rut):
     return rows, logs
 
 
-def query_range(start_date: date, end_date: date, aduana: str, rut: str, max_workers=None):
-    periods = list(month_chunks_for_range(start_date, end_date))
+def _fresh_period(period, aduana, rut):
+    """Retry one period using the original request_one_period flow.
+
+    Unlike the fast path, this does not reuse any APEX state.  Every retry gets
+    a new Session, GETs the form, then submits exactly one query POST.
+    """
+    d1, d2 = period
+    started = time.perf_counter()
+    session = requests.Session()
+    session.headers.update(settings.HEADERS)
+    try:
+        first = session.get(
+            settings.BASE_URL,
+            headers=settings.HEADERS,
+            timeout=settings.REQUEST_TIMEOUT,
+            allow_redirects=True,
+        )
+        first.raise_for_status()
+        soup = BeautifulSoup(first.text, "html.parser")
+        form = _find_main_form(soup)
+        payload = _remove_payload_names(
+            _collect_hidden_fields(form),
+            {"p_t02", "p_t03", "p_t04", "p_t05", "p_request"},
+        )
+        payload.extend([
+            ("p_t02", fmt_date(d1)),
+            ("p_t03", fmt_date(d2)),
+            ("p_t04", str(aduana)),
+            ("p_t05", rut.strip()),
+            ("p_request", "Go"),
+        ])
+        action_url = urljoin(first.url, form.get("action") or first.url)
+        method = (form.get("method") or "post").lower()
+        headers = dict(settings.HEADERS)
+        headers["Referer"] = first.url
+        if method == "get":
+            response = session.get(
+                action_url,
+                params=payload,
+                headers=headers,
+                timeout=settings.REQUEST_TIMEOUT,
+                allow_redirects=True,
+            )
+        else:
+            response = session.post(
+                action_url,
+                data=payload,
+                headers=headers,
+                timeout=settings.REQUEST_TIMEOUT,
+                allow_redirects=True,
+            )
+        response.raise_for_status()
+        period_rows, parse_state = extract_rows(response.text)
+        return period_rows, {
+            "worker": "FRESH",
+            "desde": fmt_date(d1),
+            "hasta": fmt_date(d2),
+            "estado": "OK",
+            "resultado": parse_state,
+            "filas": len(period_rows),
+            "segundos": round(time.perf_counter() - started, 2),
+            "fallback": "fresh_session",
+        }
+    except Exception as exc:
+        return [], {
+            "worker": "FRESH",
+            "desde": fmt_date(d1),
+            "hasta": fmt_date(d2),
+            "estado": "REQUEST_FAILED",
+            "filas": 0,
+            "segundos": round(time.perf_counter() - started, 2),
+            "error": str(exc),
+            "fallback": "fresh_session",
+        }
+
+
+def _retry_failed_periods(periods, logs, aduana, rut):
+    """Retry only fast-path failures with fully fresh APEX sessions."""
+    failed_keys = {
+        (item.get("desde"), item.get("hasta"))
+        for item in logs
+        if item.get("estado") != "OK"
+    }
+    failed_periods = [
+        period for period in periods
+        if (fmt_date(period[0]), fmt_date(period[1])) in failed_keys
+    ]
+    if not failed_periods:
+        return [], logs
+
+    # Fresh sessions are independent, so a small pool keeps the fallback from
+    # becoming many minutes long while still being gentler than the fast path.
+    retry_rows = []
+    retry_logs = []
+    workers = min(4, len(failed_periods))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_fresh_period, p, aduana, rut) for p in failed_periods]
+        for future in as_completed(futures):
+            rows, item = future.result()
+            retry_rows.extend(rows)
+            retry_logs.append(item)
+
+    retry_map = {(item["desde"], item["hasta"]): item for item in retry_logs}
+    final_logs = []
+    for item in logs:
+        key = (item.get("desde"), item.get("hasta"))
+        final_logs.append(retry_map.get(key, item))
+    return retry_rows, final_logs
+
+
+def _run_periods(periods, aduana, rut, max_workers=None):
     if not periods:
         return [], [], True
 
@@ -311,14 +420,23 @@ def query_range(start_date: date, end_date: date, aduana: str, rut: str, max_wor
             all_rows.extend(worker_rows)
             all_logs.extend(worker_logs)
 
-    # Sort logs chronologically for diagnostics; data itself is sorted newest
-    # first below.
+    # A fast-path REQUEST_FAILED is not accepted as final.  Retry that exact
+    # period using the old fresh-GET/fresh-POST method that was previously
+    # verified in the standalone Flask scraper.
+    retry_rows, all_logs = _retry_failed_periods(periods, all_logs, aduana, rut)
+    all_rows.extend(retry_rows)
+
     all_logs.sort(key=lambda item: item.get("desde", ""))
     all_ok = (
         len(all_logs) == len(periods)
         and all(item.get("estado") == "OK" for item in all_logs)
     )
     return sort_rows(_dedupe_full_rows(all_rows)), all_logs, all_ok
+
+
+def query_range(start_date: date, end_date: date, aduana: str, rut: str, max_workers=None):
+    periods = list(month_chunks_for_range(start_date, end_date))
+    return _run_periods(periods, aduana, rut, max_workers=max_workers)
 
 
 def query_last_n_days(days: int, aduana: str, rut: str, max_workers=None):
@@ -336,32 +454,4 @@ def query_years(years, aduana: str, rut: str, max_workers=None):
         start = date(year, 1, 1)
         end = today if year == today.year else date(year, 12, 31)
         periods.extend(month_chunks_for_range(start, end))
-
-    if not periods:
-        return [], [], True
-
-    # Important: query all selected-year periods in one worker pool, exactly as
-    # the proven ASYNC_4 implementation did, rather than creating a new pool for
-    # every year.
-    worker_count = min(max_workers or settings.PERIOD_WORKERS, len(periods))
-    groups = [[] for _ in range(worker_count)]
-    for index, period in enumerate(periods):
-        groups[index % worker_count].append(period)
-
-    all_rows, all_logs = [], []
-    with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = [
-            executor.submit(_worker, idx + 1, group, aduana, rut)
-            for idx, group in enumerate(groups)
-        ]
-        for future in as_completed(futures):
-            worker_rows, worker_logs = future.result()
-            all_rows.extend(worker_rows)
-            all_logs.extend(worker_logs)
-
-    all_logs.sort(key=lambda item: item.get("desde", ""))
-    all_ok = (
-        len(all_logs) == len(periods)
-        and all(item.get("estado") == "OK" for item in all_logs)
-    )
-    return sort_rows(_dedupe_full_rows(all_rows)), all_logs, all_ok
+    return _run_periods(periods, aduana, rut, max_workers=max_workers)
