@@ -1,0 +1,16 @@
+{% extends "automation_hub/base.html" %}
+{% block title %}Automation Hub Login{% endblock %}
+{% block body %}
+<div style="max-width:420px;margin:10vh auto">
+  <div class="card">
+    <div class="brand" style="margin-bottom:6px">Automation Hub</div>
+    <div class="muted" style="margin-bottom:20px">Panel privado</div>
+    {% if error %}<div class="notice warn">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label>Contraseña</label>
+      <input type="password" name="password" autocomplete="current-password" required>
+      <button style="width:100%;margin-top:14px">Entrar</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
