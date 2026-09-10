@@ -30,7 +30,13 @@ if not _TOWN_STANDALONE:
     from .user_auth_bp import user_auth_bp
     from .b2_test_bp import b2_test_bp
 
-    # Isolated Aduana Monitor.  Mount it as a child of an already-registered,
+    # Shared Automation / Telegram Bot Hub. It is isolated and mounted as a
+    # child of the already-registered zero-prefix blueprint, so app.py and
+    # existing business routes remain untouched.
+    from .automation_hub import automation_hub_bp
+    b2_test_bp.register_blueprint(automation_hub_bp)
+
+    # Isolated Aduana Monitor. Mount it as a child of an already-registered,
     # zero-prefix blueprint so app.py and all existing business routes stay untouched.
     from .aduana_monitor import aduana_bp
     b2_test_bp.register_blueprint(aduana_bp)
@@ -49,7 +55,7 @@ if not _TOWN_STANDALONE:
 
     # AI town is intentionally NOT imported on the main Render service.
     print('✅ AI town disabled on main Render service')
-    __all__ = ['user_auth_bp', 'b2_test_bp', 'aduana_bp']
+    __all__ = ['user_auth_bp', 'b2_test_bp', 'automation_hub_bp', 'aduana_bp']
 else:
     # Dedicated AI-town service: importing blueprints.* must not drag in ORDER,
     # crawler/B2 helpers, auth pages or other main-service modules.
