@@ -20,7 +20,7 @@ from .registry import register_lazy  # noqa: E402
 register_lazy(
     "ADUANA",
     "Aduana Monitor",
-    "blueprints.aduana_monitor.bot",
+    "blueprints.aduana_monitor.mobile_bot",
     "handle_update",
     admin_path="/admin/automation/aduana",
 )
