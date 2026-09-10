@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import os
 
-# Aduana's current public Consulta Denuncias page links to sistemas.aduana.cl
-# through HTTPS. The old standalone script used HTTP, but Render receives 403
-# on that plain-HTTP entry point. Keep an optional override for diagnostics,
-# while defaulting every web/Telegram/cron query to the official HTTPS URL.
+# The legacy Consulta Denuncias Oracle APEX endpoint is served over HTTP.
+# HTTPS connections from Render time out on port 443, while HTTP responds
+# immediately (Render currently receives 403 on that path). Keep an override
+# for diagnostics/alternate collectors, but use the real legacy endpoint by
+# default so local/allowed-network collectors continue to work.
 BASE_URL = (
     os.environ.get("ADUANA_BASE_URL")
-    or "https://sistemas.aduana.cl/pls/htmldb/f?p=114:1"
+    or "http://sistemas.aduana.cl/pls/htmldb/f?p=114:1"
 ).strip()
 ADUANA_PUBLIC_QUERY_PAGE = "https://www.aduana.cl/consulta-denuncias/aduana/2007-02-27/182803.html"
 
