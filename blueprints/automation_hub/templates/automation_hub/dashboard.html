@@ -1,0 +1,59 @@
+{% extends "automation_hub/base.html" %}
+{% block title %}Automation Hub{% endblock %}
+{% block body %}
+<div class="top">
+  <div><div class="brand">Automation Hub</div><div class="muted">Telegram bots reutilizables para tus automatizaciones</div></div>
+  <a class="btn secondary" href="{{ url_for('.admin_logout') }}">Salir</a>
+</div>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+{% if not settings.MASTER_KEY %}<div class="notice warn"><b>Falta AUTOMATION_MASTER_KEY.</b> No se pueden guardar tokens hasta configurarlo en Render.</div>{% endif %}
+
+<div class="grid">
+  <div class="stat"><span class="muted">Bots</span><b>{{ bots|length }}</b></div>
+  <div class="stat"><span class="muted">Activos</span><b>{{ bots|selectattr('enabled')|list|length }}</b></div>
+  <div class="stat"><span class="muted">Plugins</span><b>{{ plugins|length }}</b></div>
+  <div class="stat"><span class="muted">Base pública</span><b style="font-size:15px">{{ 'OK' if settings.PUBLIC_BASE_URL else 'FALTA' }}</b></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">＋ Añadir Telegram Bot</h3>
+  <form class="formgrid" method="post" action="{{ url_for('.admin_create_bot') }}">
+    <div><label>Bot key</label><input name="bot_key" placeholder="aduana-main" required></div>
+    <div><label>Nombre</label><input name="display_name" placeholder="Aduana Monitor" required></div>
+    <div><label>Plugin</label><select name="plugin_key">{% for p in plugins %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}</select></div>
+    <div><label>Bot Token</label><input type="password" name="token" placeholder="123456:ABC..." required></div>
+    <div><label style="white-space:nowrap"><input type="checkbox" name="make_default" checked style="width:auto;height:auto"> Principal</label><button>Guardar</button></div>
+  </form>
+  <p class="muted" style="margin-bottom:0">El token se prueba con Telegram, se cifra antes de guardarse en TiDB y el webhook se conecta automáticamente.</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Telegram Bots</h3>
+  {% if not bots %}
+    <div class="muted">Todavía no hay bots registrados.</div>
+  {% else %}
+  <table>
+    <thead><tr><th>Bot</th><th>Plugin</th><th>Estado</th><th>Principal</th><th>Token</th><th>Última prueba</th><th>Acciones</th></tr></thead>
+    <tbody>
+    {% for b in bots %}
+      <tr>
+        <td><b>{{ b.display_name }}</b><br><span class="muted">@{{ b.bot_username or '—' }} · {{ b.bot_key }}</span></td>
+        <td><span class="badge">{{ b.plugin_key }}</span></td>
+        <td><span class="badge {{ 'on' if b.enabled else 'off' }}">{{ 'ONLINE' if b.enabled else 'OFF' }}</span></td>
+        <td>{{ '★ Sí' if b.is_default else '—' }}</td>
+        <td>••••{{ b.token_last4 or '' }}</td>
+        <td>{% if b.last_error %}<span class="bad">{{ b.last_error[:70] }}</span>{% else %}<span class="good">{{ b.last_test_at or '—' }}</span>{% endif %}</td>
+        <td><div class="actions">
+          <form method="post" action="{{ url_for('.admin_test_bot', bot_id=b.id) }}"><button class="secondary">Test</button></form>
+          <form method="post" action="{{ url_for('.admin_reconnect_webhook', bot_id=b.id) }}"><button class="secondary">Webhook</button></form>
+          {% if not b.is_default %}<form method="post" action="{{ url_for('.admin_set_default', bot_id=b.id) }}"><button class="secondary">Principal</button></form>{% endif %}
+          <form method="post" action="{{ url_for('.admin_toggle_bot', bot_id=b.id) }}"><button class="{{ 'danger' if b.enabled else '' }}">{{ 'Desactivar' if b.enabled else 'Activar' }}</button></form>
+        </div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}
