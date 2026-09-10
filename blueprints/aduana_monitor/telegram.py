@@ -10,20 +10,46 @@ import requests
 from . import settings
 
 TIMEOUT = 20
+PLUGIN_KEY = "ADUANA"
 
 
 def escape_html(value):
     return html.escape(str(value if value is not None else ""))
 
 
-def _api_url(method):
-    if not settings.TELEGRAM_BOT_TOKEN:
-        raise RuntimeError("ADUANA_TELEGRAM_BOT_TOKEN no está configurado")
-    return f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/{method}"
+def _hub_bot():
+    """Return the active Automation Hub bot for Aduana, if configured.
+
+    This lookup is lazy and failure-safe so the existing ADUANA_* environment
+    variable flow keeps working exactly as before until a Hub bot is added.
+    """
+    try:
+        from blueprints.automation_hub import storage as hub_storage
+        return hub_storage.get_active_bot_for_plugin(PLUGIN_KEY, with_token=True)
+    except Exception:
+        return None
 
 
-def _post(method, *, data=None, files=None):
-    response = requests.post(_api_url(method), data=data, files=files, timeout=TIMEOUT)
+def _resolved_token():
+    bot = _hub_bot()
+    if bot and bot.get("token"):
+        return str(bot["token"]).strip()
+    return settings.TELEGRAM_BOT_TOKEN
+
+
+def is_configured():
+    return bool(_resolved_token())
+
+
+def _api_url(method, token=None):
+    token = str(token or _resolved_token() or "").strip()
+    if not token:
+        raise RuntimeError("Telegram Bot Token no está configurado")
+    return f"https://api.telegram.org/bot{token}/{method}"
+
+
+def _post(method, *, data=None, files=None, token=None):
+    response = requests.post(_api_url(method, token=token), data=data, files=files, timeout=TIMEOUT)
     response.raise_for_status()
     payload = response.json()
     if not payload.get("ok"):
@@ -65,6 +91,28 @@ def answer_callback(callback_id, text=None):
 
 
 def set_webhook(url):
+    """Connect the appropriate webhook.
+
+    If an Automation Hub bot exists, connect that bot to the generic Hub
+    endpoint. Otherwise preserve the original Aduana-specific environment flow.
+    """
+    bot = _hub_bot()
+    if bot and bot.get("token"):
+        try:
+            from blueprints.automation_hub import settings as hub_settings
+            from blueprints.automation_hub import telegram as hub_telegram
+            if not hub_settings.PUBLIC_BASE_URL:
+                raise RuntimeError("AUTOMATION_PUBLIC_BASE_URL no está configurado")
+            target = (
+                hub_settings.PUBLIC_BASE_URL
+                + "/api/automation/telegram/"
+                + bot["bot_key"]
+                + "/webhook"
+            )
+            return hub_telegram.set_webhook(bot["token"], target, bot.get("webhook_secret") or "")
+        except Exception:
+            raise
+
     data = {"url": url}
     if settings.TELEGRAM_WEBHOOK_SECRET:
         data["secret_token"] = settings.TELEGRAM_WEBHOOK_SECRET
