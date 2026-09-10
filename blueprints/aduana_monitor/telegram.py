@@ -41,6 +41,39 @@ def _genericize_rut_examples(text):
     return value
 
 
+def _append_owner_query_diagnostics(chat_id, text):
+    """Append the real period error to incomplete-query messages for OWNER only.
+
+    Normal users continue to see the clean generic message. During testing the
+    OWNER can immediately tell whether Render is seeing DNS, timeout, HTTP or
+    another request failure without opening Render logs.
+    """
+    value = str(text if text is not None else "")
+    if "Consulta incompleta" not in value:
+        return value
+    try:
+        from . import owner_admin, query
+
+        owner = owner_admin.get_owner()
+        if not owner or int(owner.get("chat_id") or 0) != int(chat_id):
+            return value
+        detail = query.last_failure_summary()
+        if not detail:
+            return value
+        return (
+            value
+            + "\n\n🔧 <b>Diagnóstico OWNER</b>\n"
+            + f"<code>{escape_html(detail)}</code>"
+        )
+    except Exception:
+        return value
+
+
+def _prepare_text(chat_id, text):
+    value = _genericize_rut_examples(text)
+    return _append_owner_query_diagnostics(chat_id, value)
+
+
 def _hub_bot():
     """Return the appropriate Automation Hub bot for Aduana, if configured.
 
@@ -94,7 +127,7 @@ def _post(method, *, data=None, files=None, token=None):
 
 
 def send_message(chat_id, text, reply_markup=None, parse_mode="HTML"):
-    data = {"chat_id": str(chat_id), "text": _genericize_rut_examples(text)}
+    data = {"chat_id": str(chat_id), "text": _prepare_text(chat_id, text)}
     if parse_mode:
         data["parse_mode"] = parse_mode
     if reply_markup is not None:
@@ -106,7 +139,7 @@ def edit_message(chat_id, message_id, text, reply_markup=None, parse_mode="HTML"
     data = {
         "chat_id": str(chat_id),
         "message_id": str(message_id),
-        "text": _genericize_rut_examples(text),
+        "text": _prepare_text(chat_id, text),
     }
     if parse_mode:
         data["parse_mode"] = parse_mode
