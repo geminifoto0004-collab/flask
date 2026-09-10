@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Configuration for the Aduana Telegram monitor blueprint.
 
-Sensitive values stay in Render environment variables.  This module deliberately
-reuses the parent Flask application's database connection instead of defining a
-second database URL.
+The module reuses the parent FLASK database and parent /login admin session.
+Telegram may come from the shared Automation Hub; ADUANA_* token variables remain
+only as a backwards-compatible fallback.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ TARGET_WORKERS = max(1, min(int(os.environ.get("ADUANA_TARGET_WORKERS", "4") or 
 CRON_LOOKBACK_DAYS = max(7, min(int(os.environ.get("ADUANA_CRON_LOOKBACK_DAYS", "31") or 31), 62))
 RUN_LOCK_STALE_MINUTES = max(10, int(os.environ.get("ADUANA_RUN_LOCK_STALE_MINUTES", "120") or 120))
 
+# Legacy fallback only. New bots should be added from /admin/automation.
 TELEGRAM_BOT_TOKEN = (os.environ.get("ADUANA_TELEGRAM_BOT_TOKEN") or "").strip()
 TELEGRAM_WEBHOOK_SECRET = (os.environ.get("ADUANA_TELEGRAM_WEBHOOK_SECRET") or "").strip()
 OWNER_TELEGRAM_ID_RAW = (os.environ.get("ADUANA_OWNER_TELEGRAM_ID") or "").strip()
@@ -25,11 +26,7 @@ except ValueError:
     OWNER_TELEGRAM_ID = 0
 
 CRON_SECRET = (os.environ.get("ADUANA_CRON_SECRET") or "").strip()
-ADMIN_PASSWORD = (os.environ.get("ADUANA_ADMIN_PASSWORD") or "").strip()
-ADMIN_PREFIX = (os.environ.get("ADUANA_ADMIN_PREFIX") or "/aduana-admin-x7k9").strip()
-if not ADMIN_PREFIX.startswith("/"):
-    ADMIN_PREFIX = "/" + ADMIN_PREFIX
-ADMIN_PREFIX = ADMIN_PREFIX.rstrip("/") or "/aduana-admin-x7k9"
+ADMIN_PREFIX = "/admin/automation/aduana"
 PUBLIC_BASE_URL = (
     os.environ.get("ADUANA_PUBLIC_BASE_URL")
     or os.environ.get("RENDER_EXTERNAL_URL")
