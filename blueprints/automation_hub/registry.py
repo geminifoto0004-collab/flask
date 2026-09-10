@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Small plugin registry for Telegram update dispatch."""
+"""Small plugin registry for Telegram update dispatch and admin navigation."""
 from __future__ import annotations
 
 import importlib
@@ -11,7 +11,13 @@ _PLUGINS = {}
 _CURRENT_BOT_KEY = ContextVar("automation_hub_current_bot_key", default=None)
 
 
-def register_lazy(key: str, label: str, module: str, handler_name: str) -> None:
+def register_lazy(
+    key: str,
+    label: str,
+    module: str,
+    handler_name: str,
+    admin_path: str | None = None,
+) -> None:
     normalized = str(key or "").strip().upper()
     if not normalized:
         raise ValueError("plugin key required")
@@ -21,6 +27,7 @@ def register_lazy(key: str, label: str, module: str, handler_name: str) -> None:
             "label": label or normalized,
             "module": module,
             "handler_name": handler_name,
+            "admin_path": admin_path or "",
         }
 
 
