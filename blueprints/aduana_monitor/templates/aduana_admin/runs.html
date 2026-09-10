@@ -1,0 +1,13 @@
+{% extends 'aduana_admin/base.html' %}
+{% block body %}
+<div class="shell">
+  <div class="top"><div class="title"><h1>Historial de Cron</h1><p>Últimas 100 ejecuciones</p></div><div class="nav"><a href="{{ url_for('.admin_dashboard') }}">← Usuarios</a></div></div>
+  <section class="panel"><div class="table-wrap"><table>
+    <thead><tr><th>Inicio</th><th>Fin</th><th>Estado</th><th>Targets</th><th>Filas</th><th>Nuevos</th><th>Telegram OK</th><th>Fallidos</th><th>Error</th></tr></thead>
+    <tbody>{% for r in runs %}<tr>
+      <td>{{ r.started_at }}</td><td>{{ r.finished_at or '—' }}</td><td><span class="badge {{ r.status|lower }}">{{ r.status }}</span></td>
+      <td>{{ r.unique_queries }}</td><td>{{ r.records_found }}</td><td>{{ r.new_records_found }}</td><td>{{ r.notifications_sent }}</td><td>{{ r.notifications_failed }}</td><td class="muted">{{ r.error_message or '—' }}</td>
+    </tr>{% else %}<tr><td colspan="9" class="empty">Todavía no hay ejecuciones.</td></tr>{% endfor %}</tbody>
+  </table></div></section>
+</div>
+{% endblock %}
