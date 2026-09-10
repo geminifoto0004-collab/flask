@@ -11,10 +11,21 @@ from datetime import date
 from . import permissions, query, settings, storage, telegram
 
 log = logging.getLogger(__name__)
-RUT_RE = re.compile(r"^\d{7,8}-[0-9Kk]$")
+RUT_RE = re.compile(r"^\d{7,8}-[0-9K]$")
 
 
 def _normalize_rut(value):
+    """Accept common Chilean RUT formats and store/send one canonical form.
+
+    Examples accepted:
+      76315010-0
+      76.315.010-0
+      763150100
+    All become 76315010-0.
+    """
+    compact = re.sub(r"[^0-9Kk]", "", str(value or "").strip()).upper()
+    if len(compact) in (8, 9) and compact[:-1].isdigit() and compact[-1] in "0123456789K":
+        return f"{compact[:-1]}-{compact[-1]}"
     return re.sub(r"[^0-9Kk-]", "", str(value or "").strip()).upper()
 
 
@@ -116,7 +127,10 @@ def _start_query(user):
     _set_pending(user["id"])
     if user.get("role") == "OWNER":
         _set_pending(user["id"], "QUERY_RUT_OWNER", {})
-        return telegram.send_message(user["chat_id"], "Ingresa el RUT que quieres consultar:")
+        return telegram.send_message(
+            user["chat_id"],
+            "Ingresa el RUT que quieres consultar:\nEj.: 76315010-0, 76.315.010-0 o 763150100",
+        )
     ruts = storage.distinct_ruts(user["id"])
     if not ruts:
         return _main_menu(user["chat_id"], "Aún no tienes RUT agregados. Usa “Agregar RUT” primero.")
@@ -231,9 +245,18 @@ def _manual_worker(chat_id, kind, **kwargs):
 
 
 def _send_results(chat_id, rows, rut, aduana, all_ok):
+    if not rows and not all_ok:
+        # Never tell the user "no results" when one or more Aduana periods
+        # actually failed. That would be a false negative.
+        return _main_menu(
+            chat_id,
+            "⚠️ La consulta no pudo completarse correctamente en Aduana.\n\n"
+            "No podemos afirmar que no existan resultados. Intenta nuevamente en unos minutos.",
+        )
+
     warning = "⚠️ La consulta quedó incompleta por un error del sitio Aduana.\n\n" if not all_ok else ""
     if not rows:
-        return _main_menu(chat_id, warning + "Sin resultados para ese período.")
+        return _main_menu(chat_id, "Sin resultados para ese período.")
     if len(rows) <= 12:
         lines = [warning + f"<b>{len(rows)} resultado(s)</b>\n"]
         for row in rows:
@@ -260,7 +283,10 @@ def _start_add(user):
     except permissions.PermissionDenied as exc:
         return telegram.send_message(user["chat_id"], str(exc))
     _set_pending(user["id"], "ADD_RUT", {})
-    telegram.send_message(user["chat_id"], "Ingresa el RUT que quieres monitorear:")
+    telegram.send_message(
+        user["chat_id"],
+        "Ingresa el RUT que quieres monitorear:\nEj.: 76315010-0, 76.315.010-0 o 763150100",
+    )
 
 
 def _add_rut_text(user, text):
