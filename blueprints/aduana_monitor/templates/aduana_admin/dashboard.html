@@ -11,12 +11,14 @@
     </div>
   </div>
 
+  {% if message %}<div class="error" style="background:#eef6ff;color:#174ea6;margin-bottom:14px">{{ message }}</div>{% endif %}
+
   <div class="config-strip">
     <span class="chip">Bot: {{ 'configurado' if telegram_configured else '尚未加入' }}</span>
-    <span class="chip">OWNER: {{ settings.OWNER_TELEGRAM_ID or 'sin configurar' }}</span>
+    <span class="chip">OWNER: {% if owner_user %}{{ owner_user.first_name or owner_user.username or owner_user.telegram_user_id }}{% else %}尚未設定{% endif %}</span>
     <span class="chip">Cron secret: {{ 'OK' if settings.CRON_SECRET else 'faltante' }}</span>
-    {% if telegram_configured and settings.PUBLIC_BASE_URL %}
-    <form method="post" action="{{ url_for('.admin_set_webhook') }}"><button class="btn small">Conectar webhook</button></form>
+    {% if telegram_configured and settings.PUBLIC_BASE_URL and settings.TELEGRAM_BOT_TOKEN %}
+    <form method="post" action="{{ url_for('.admin_set_webhook') }}"><button class="btn small">Conectar webhook legado</button></form>
     {% endif %}
   </div>
 
@@ -46,6 +48,9 @@
           <label class="check"><input type="checkbox" name="can_query" checked> Consultar</label>
           <label class="check"><input type="checkbox" name="can_monitor" checked> Monitorear</label>
           <button class="btn primary small" type="submit">Aprobar</button>
+          {% if not owner_user %}
+          <button class="btn small" style="background:#5b4bc4;color:#fff" type="submit" formaction="{{ url_for('.admin_make_owner', user_id=u.id) }}">★ 設為 OWNER</button>
+          {% endif %}
           <button class="btn danger small" type="submit" formaction="{{ url_for('.admin_reject', user_id=u.id) }}">Rechazar</button>
         </form>
       </div>
