@@ -73,7 +73,7 @@ def send_message(chat_id, text, reply_markup=None, parse_mode="HTML"):
     data = {"chat_id": str(chat_id), "text": text}
     if parse_mode:
         data["parse_mode"] = parse_mode
-    if reply_markup:
+    if reply_markup is not None:
         data["reply_markup"] = reply_markup
     return _post("sendMessage", data=data)
 
@@ -82,9 +82,17 @@ def edit_message(chat_id, message_id, text, reply_markup=None, parse_mode="HTML"
     data = {"chat_id": str(chat_id), "message_id": str(message_id), "text": text}
     if parse_mode:
         data["parse_mode"] = parse_mode
-    if reply_markup:
+    # Explicitly send an empty inline keyboard when callers want old buttons
+    # removed from the same message.
+    if reply_markup is not None:
         data["reply_markup"] = reply_markup
     return _post("editMessageText", data=data)
+
+
+def delete_message(chat_id, message_id):
+    if not message_id:
+        return None
+    return _post("deleteMessage", data={"chat_id": str(chat_id), "message_id": str(message_id)})
 
 
 def send_document(chat_id, filename, content_bytes, caption=None):
@@ -136,6 +144,9 @@ def reply_keyboard(rows):
     return json.dumps({
         "keyboard": [[{"text": text} for text in row] for row in rows],
         "resize_keyboard": True,
+        "is_persistent": True,
+        "one_time_keyboard": False,
+        "input_field_placeholder": "Elige una opción",
     }, ensure_ascii=False)
 
 
@@ -149,6 +160,7 @@ def inline_keyboard(rows):
 
 
 MAIN_MENU = reply_keyboard([
-    ["🔍 Consultar"],
-    ["➕ Agregar RUT", "📋 Mis monitoreos"],
+    ["📋 Mis monitoreos"],
+    ["➕ Agregar RUT", "🔍 Consulta manual"],
+    ["🧹 Limpiar pantalla"],
 ])
