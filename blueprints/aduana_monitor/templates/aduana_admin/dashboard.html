@@ -1,0 +1,82 @@
+{% extends 'aduana_admin/base.html' %}
+{% block body %}
+<div class="shell">
+  <div class="top">
+    <div class="title"><h1>Aduana Monitor</h1><p>Usuarios, permisos y monitoreo automático</p></div>
+    <div class="nav">
+      <a href="{{ url_for('.admin_dashboard') }}">Usuarios</a>
+      <a href="{{ url_for('.admin_runs') }}">Cron</a>
+      <form method="post" action="{{ url_for('.admin_run_now') }}"><button class="btn primary">▶ Ejecutar ahora</button></form>
+      <a href="{{ url_for('.admin_logout') }}">Salir</a>
+    </div>
+  </div>
+
+  <div class="config-strip">
+    <span class="chip">Bot: {{ 'configurado' if settings.TELEGRAM_BOT_TOKEN else 'falta token' }}</span>
+    <span class="chip">OWNER: {{ settings.OWNER_TELEGRAM_ID or 'sin configurar' }}</span>
+    <span class="chip">Cron secret: {{ 'OK' if settings.CRON_SECRET else 'faltante' }}</span>
+    <span class="chip">Webhook secret: {{ 'OK' if settings.TELEGRAM_WEBHOOK_SECRET else 'faltante' }}</span>
+    {% if settings.PUBLIC_BASE_URL %}
+    <form method="post" action="{{ url_for('.admin_set_webhook') }}"><button class="btn small">Conectar webhook</button></form>
+    {% endif %}
+  </div>
+
+  <div class="cards">
+    <div class="stat"><div class="k">Pendientes</div><div class="n">{{ counts.pending }}</div></div>
+    <div class="stat"><div class="k">Usuarios activos</div><div class="n">{{ counts.active }}</div></div>
+    <div class="stat"><div class="k">Monitoreos activos</div><div class="n">{{ counts.monitors }}</div></div>
+    <div class="stat"><div class="k">RUT distintos</div><div class="n">{{ counts.ruts }}</div></div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Solicitudes pendientes</h2><span class="badge pending">{{ pending|length }}</span></div>
+    <div class="panel-body">
+      {% for u in pending %}
+      <div class="pending-card">
+        <div class="pending-main">
+          <strong>{{ u.first_name or 'Usuario Telegram' }}</strong>
+          <div class="pending-meta">@{{ u.username or 'sin_username' }} · ID {{ u.telegram_user_id }}</div>
+        </div>
+        <form class="approval" method="post" action="{{ url_for('.admin_approve', user_id=u.id) }}">
+          <select name="permission_level">
+            <option value="MONTH">1 mes</option>
+            <option value="THREE_MONTHS" selected>3 meses</option>
+            <option value="YEAR">1 año</option>
+          </select>
+          <input type="number" name="max_ruts" min="1" max="999" value="3" style="width:78px" title="Máximo RUT">
+          <label class="check"><input type="checkbox" name="can_query" checked> Consultar</label>
+          <label class="check"><input type="checkbox" name="can_monitor" checked> Monitorear</label>
+          <button class="btn primary small" type="submit">Aprobar</button>
+          <button class="btn danger small" type="submit" formaction="{{ url_for('.admin_reject', user_id=u.id) }}">Rechazar</button>
+        </form>
+      </div>
+      {% else %}<div class="empty">No hay solicitudes pendientes.</div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Usuarios</h2>
+      {% if latest_run %}<span class="muted">Último Cron: <span class="badge {{ latest_run.status|lower }}">{{ latest_run.status }}</span> · {{ latest_run.started_at }}</span>{% endif %}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Permiso</th><th>RUT</th><th>Monitoreos</th><th></th></tr></thead>
+        <tbody>
+        {% for u in users %}
+          <tr>
+            <td><span class="user-name">{{ u.first_name or 'Telegram' }}</span><span class="sub">@{{ u.username or '-' }} · {{ u.telegram_user_id }}</span></td>
+            <td><span class="badge {{ 'owner' if u.role=='OWNER' else '' }}">{{ u.role }}</span></td>
+            <td><span class="badge {{ u.status|lower }}">{{ u.status }}</span></td>
+            <td>{{ 'Sin límite' if u.permission_level=='UNLIMITED' else {'MONTH':'1 mes','THREE_MONTHS':'3 meses','YEAR':'1 año'}.get(u.permission_level,u.permission_level) }}</td>
+            <td>{{ u.rut_count or 0 }} / {{ '∞' if u.role=='OWNER' else u.max_ruts }}</td>
+            <td>{{ u.monitor_count or 0 }}</td>
+            <td><a class="btn small" href="{{ url_for('.admin_user', user_id=u.id) }}">Administrar</a></td>
+          </tr>
+        {% else %}<tr><td colspan="7" class="empty">Todavía no hay usuarios.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

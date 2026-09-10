@@ -1,0 +1,45 @@
+{% extends 'aduana_admin/base.html' %}
+{% block body %}
+<div class="shell">
+  <div class="top">
+    <div class="title"><h1>{{ user.first_name or 'Usuario Telegram' }}</h1><p>@{{ user.username or '-' }} · Telegram ID {{ user.telegram_user_id }}</p></div>
+    <div class="nav"><a href="{{ url_for('.admin_dashboard') }}">← Usuarios</a><a href="{{ url_for('.admin_runs') }}">Cron</a></div>
+  </div>
+
+  <div class="detail-grid">
+    <section class="panel">
+      <div class="panel-head"><h2>Permisos</h2><span class="badge {{ 'owner' if user.role=='OWNER' else user.status|lower }}">{{ user.role }}</span></div>
+      <div class="panel-body">
+        <form method="post">
+          <div class="field"><label>Estado</label><select name="status" {% if user.role=='OWNER' %}disabled{% endif %}>
+            {% for s in ['ACTIVE','DISABLED','PENDING','REJECTED'] %}<option value="{{ s }}" {% if user.status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+          </select></div>
+          <div class="field"><label>Rango máximo de consulta</label><select name="permission_level" {% if user.role=='OWNER' %}disabled{% endif %}>
+            {% if user.role=='OWNER' %}<option selected>UNLIMITED</option>{% else %}
+            <option value="MONTH" {% if user.permission_level=='MONTH' %}selected{% endif %}>1 mes</option>
+            <option value="THREE_MONTHS" {% if user.permission_level=='THREE_MONTHS' %}selected{% endif %}>3 meses</option>
+            <option value="YEAR" {% if user.permission_level=='YEAR' %}selected{% endif %}>1 año</option>
+            {% endif %}
+          </select></div>
+          <div class="field"><label>Máximo RUT</label><input type="number" name="max_ruts" min="1" max="999" value="{{ user.max_ruts }}" {% if user.role=='OWNER' %}disabled{% endif %}></div>
+          <div class="field"><label class="check"><input type="checkbox" name="can_query" {% if user.can_query %}checked{% endif %} {% if user.role=='OWNER' %}disabled{% endif %}> Puede consultar</label></div>
+          <div class="field"><label class="check"><input type="checkbox" name="can_monitor" {% if user.can_monitor %}checked{% endif %} {% if user.role=='OWNER' %}disabled{% endif %}> Puede monitorear</label></div>
+          <button class="btn primary" type="submit">Guardar cambios</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Monitoreos</h2><span class="badge active">{{ monitors|length }}</span></div>
+      <div class="panel-body">
+        {% for m in monitors %}
+        <div class="monitor">
+          <div><strong>{{ m.rut }}</strong><span class="sub">{{ 'TODAS' if m.aduana=='ALL' else settings.ADUANA_LABELS.get(m.aduana,m.aduana) }}</span></div>
+          <div><span class="badge {{ 'active' if m.enabled else 'disabled' }}">{{ 'ACTIVO' if m.enabled else 'PAUSADO' }}</span><span class="sub">Baseline: {{ 'sí' if m.baseline_done else 'pendiente' }}</span></div>
+        </div>
+        {% else %}<div class="empty">Este usuario aún no agregó RUT.</div>{% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
