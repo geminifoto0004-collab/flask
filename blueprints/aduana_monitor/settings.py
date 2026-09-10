@@ -9,7 +9,16 @@ from __future__ import annotations
 
 import os
 
-BASE_URL = "http://sistemas.aduana.cl/pls/htmldb/f?p=114:1"
+# Aduana's current public Consulta Denuncias page links to sistemas.aduana.cl
+# through HTTPS. The old standalone script used HTTP, but Render receives 403
+# on that plain-HTTP entry point. Keep an optional override for diagnostics,
+# while defaulting every web/Telegram/cron query to the official HTTPS URL.
+BASE_URL = (
+    os.environ.get("ADUANA_BASE_URL")
+    or "https://sistemas.aduana.cl/pls/htmldb/f?p=114:1"
+).strip()
+ADUANA_PUBLIC_QUERY_PAGE = "https://www.aduana.cl/consulta-denuncias/aduana/2007-02-27/182803.html"
+
 REQUEST_TIMEOUT = int(os.environ.get("ADUANA_REQUEST_TIMEOUT", "45") or 45)
 PERIOD_WORKERS = max(1, min(int(os.environ.get("ADUANA_PERIOD_WORKERS", "4") or 4), 6))
 TARGET_WORKERS = max(1, min(int(os.environ.get("ADUANA_TARGET_WORKERS", "4") or 4), 6))
@@ -43,6 +52,8 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
     "Connection": "keep-alive",
+    # Normal browser navigation path from Aduana's own public Consulta page.
+    "Referer": ADUANA_PUBLIC_QUERY_PAGE,
 }
 
 ADUANAS = [
