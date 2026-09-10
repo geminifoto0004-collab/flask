@@ -19,7 +19,10 @@ BASE_URL = (
 ).strip()
 ADUANA_PUBLIC_QUERY_PAGE = "https://www.aduana.cl/consulta-denuncias/aduana/2007-02-27/182803.html"
 
-REQUEST_TIMEOUT = int(os.environ.get("ADUANA_REQUEST_TIMEOUT", "45") or 45)
+# Keep an individual upstream request comfortably below the web worker's
+# timeout. If Aduana is blocked/hanging from Render we need to return a useful
+# diagnostic instead of letting Gunicorn kill the whole worker first.
+REQUEST_TIMEOUT = max(3, min(int(os.environ.get("ADUANA_REQUEST_TIMEOUT", "8") or 8), 20))
 PERIOD_WORKERS = max(1, min(int(os.environ.get("ADUANA_PERIOD_WORKERS", "4") or 4), 6))
 TARGET_WORKERS = max(1, min(int(os.environ.get("ADUANA_TARGET_WORKERS", "4") or 4), 6))
 CRON_LOOKBACK_DAYS = max(7, min(int(os.environ.get("ADUANA_CRON_LOOKBACK_DAYS", "31") or 31), 62))
