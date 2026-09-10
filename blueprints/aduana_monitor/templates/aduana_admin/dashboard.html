@@ -4,19 +4,18 @@
   <div class="top">
     <div class="title"><h1>Aduana Monitor</h1><p>Usuarios, permisos y monitoreo automático</p></div>
     <div class="nav">
+      <a href="/admin/automation">← 自動化中心</a>
       <a href="{{ url_for('.admin_dashboard') }}">Usuarios</a>
       <a href="{{ url_for('.admin_runs') }}">Cron</a>
       <form method="post" action="{{ url_for('.admin_run_now') }}"><button class="btn primary">▶ Ejecutar ahora</button></form>
-      <a href="{{ url_for('.admin_logout') }}">Salir</a>
     </div>
   </div>
 
   <div class="config-strip">
-    <span class="chip">Bot: {{ 'configurado' if settings.TELEGRAM_BOT_TOKEN else 'falta token' }}</span>
+    <span class="chip">Bot: {{ 'configurado' if telegram_configured else '尚未加入' }}</span>
     <span class="chip">OWNER: {{ settings.OWNER_TELEGRAM_ID or 'sin configurar' }}</span>
     <span class="chip">Cron secret: {{ 'OK' if settings.CRON_SECRET else 'faltante' }}</span>
-    <span class="chip">Webhook secret: {{ 'OK' if settings.TELEGRAM_WEBHOOK_SECRET else 'faltante' }}</span>
-    {% if settings.PUBLIC_BASE_URL %}
+    {% if telegram_configured and settings.PUBLIC_BASE_URL %}
     <form method="post" action="{{ url_for('.admin_set_webhook') }}"><button class="btn small">Conectar webhook</button></form>
     {% endif %}
   </div>
