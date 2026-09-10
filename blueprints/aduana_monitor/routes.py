@@ -5,6 +5,7 @@ import hmac
 from functools import wraps
 
 from flask import jsonify, redirect, render_template, request, session, url_for
+from config import admin_config
 
 from . import aduana_bp, bot, cron, settings, storage, telegram
 
@@ -18,12 +19,14 @@ def _aduana_schema_guard():
 def health():
     return jsonify({
         "ok": True,
-        "telegram_configured": bool(settings.TELEGRAM_BOT_TOKEN),
+        "telegram_configured": telegram.is_configured(),
         "owner_configured": bool(settings.OWNER_TELEGRAM_ID),
         "cron_secret_configured": bool(settings.CRON_SECRET),
     })
 
 
+# Legacy webhook kept only for backwards compatibility with ADUANA_TELEGRAM_BOT_TOKEN.
+# New bots created in Automation Hub use /api/automation/telegram/<bot_key>/webhook.
 @aduana_bp.route("/api/aduana/telegram/webhook", methods=["POST"])
 def telegram_webhook():
     if not settings.TELEGRAM_WEBHOOK_SECRET:
@@ -52,33 +55,17 @@ def check_all():
 
 
 def _admin_login_required(view):
+    """Use the exact same parent FLASK admin session as /admin."""
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("aduana_admin_ok"):
-            return redirect(url_for(".admin_login"))
+        allowed_roles = {"admin", admin_config.SUPER_ADMIN_ROLE}
+        if not session.get("logged_in") or session.get("role") not in allowed_roles:
+            return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
     return wrapped
 
 
-@aduana_bp.route(f"{settings.ADMIN_PREFIX}/login", methods=["GET", "POST"])
-def admin_login():
-    error = None
-    if request.method == "POST":
-        supplied = request.form.get("password") or ""
-        if settings.ADMIN_PASSWORD and hmac.compare_digest(supplied, settings.ADMIN_PASSWORD):
-            session["aduana_admin_ok"] = True
-            return redirect(url_for(".admin_dashboard"))
-        error = "Contraseña incorrecta"
-    return render_template("aduana_admin/login.html", error=error)
-
-
-@aduana_bp.route(f"{settings.ADMIN_PREFIX}/logout", methods=["POST", "GET"])
-def admin_logout():
-    session.pop("aduana_admin_ok", None)
-    return redirect(url_for(".admin_login"))
-
-
-@aduana_bp.route(f"{settings.ADMIN_PREFIX}/", methods=["GET"])
+@aduana_bp.route(settings.ADMIN_PREFIX, methods=["GET"], strict_slashes=False)
 @_admin_login_required
 def admin_dashboard():
     return render_template(
@@ -87,6 +74,7 @@ def admin_dashboard():
         pending=storage.list_pending_users(),
         users=storage.list_users(),
         latest_run=storage.latest_run(),
+        telegram_configured=telegram.is_configured(),
         settings=settings,
     )
 
