@@ -38,7 +38,7 @@ def telegram_webhook(bot_key):
         return jsonify({"ok": False}), 403
     update = request.get_json(silent=True) or {}
     try:
-        registry.dispatch(bot["plugin_key"], update)
+        registry.dispatch(bot["plugin_key"], update, bot_key=bot["bot_key"])
     except Exception as exc:
         current_app.logger.exception(
             "Automation Hub Telegram dispatch failed bot=%s plugin=%s: %s",
