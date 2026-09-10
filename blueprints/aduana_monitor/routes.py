@@ -7,7 +7,7 @@ from functools import wraps
 from flask import jsonify, redirect, render_template, request, session, url_for
 from config import admin_config
 
-from . import aduana_bp, bot, cron, settings, storage, telegram
+from . import aduana_bp, bot, cron, owner_admin, settings, storage, telegram
 
 
 @aduana_bp.before_request
@@ -17,10 +17,11 @@ def _aduana_schema_guard():
 
 @aduana_bp.route("/api/aduana/health", methods=["GET"])
 def health():
+    owner = owner_admin.get_owner()
     return jsonify({
         "ok": True,
         "telegram_configured": telegram.is_configured(),
-        "owner_configured": bool(settings.OWNER_TELEGRAM_ID),
+        "owner_configured": bool(owner or settings.OWNER_TELEGRAM_ID),
         "cron_secret_configured": bool(settings.CRON_SECRET),
     })
 
@@ -74,7 +75,9 @@ def admin_dashboard():
         pending=storage.list_pending_users(),
         users=storage.list_users(),
         latest_run=storage.latest_run(),
+        owner_user=owner_admin.get_owner(),
         telegram_configured=telegram.is_configured(),
+        message=request.args.get("message") or "",
         settings=settings,
     )
 
@@ -99,6 +102,29 @@ def admin_approve(user_id):
         except Exception:
             pass
     return redirect(url_for(".admin_dashboard"))
+
+
+@aduana_bp.route(f"{settings.ADMIN_PREFIX}/users/<int:user_id>/make-owner", methods=["POST"])
+@_admin_login_required
+def admin_make_owner(user_id):
+    try:
+        user = owner_admin.promote_to_owner(user_id)
+    except ValueError as exc:
+        return redirect(url_for(".admin_dashboard", message=str(exc)))
+
+    if not user:
+        return redirect(url_for(".admin_dashboard", message="Usuario no encontrado"))
+
+    try:
+        telegram.send_message(
+            user["chat_id"],
+            "⭐ <b>Tu cuenta fue configurada como OWNER.</b>\n\n"
+            "Tienes acceso sin límite de RUT, consulta histórica completa y todas las aduanas.",
+            reply_markup=telegram.MAIN_MENU,
+        )
+    except Exception:
+        pass
+    return redirect(url_for(".admin_dashboard", message="OWNER configurado correctamente"))
 
 
 @aduana_bp.route(f"{settings.ADMIN_PREFIX}/users/<int:user_id>/reject", methods=["POST"])
