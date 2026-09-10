@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 """Aduana Chile Oracle APEX query engine.
 
-Adapted from the user's proven requests.Session implementation. It keeps one
-APEX session per worker for speed, refreshes hidden state after every POST,
-splits ranges by natural month, deduplicates only rows whose 14 raw fields are
-identical, and sorts by Emisión DESC then Notificación DESC.
+The request path intentionally follows the previously proven standalone
+ASYNC_4 scraper:
+- each worker owns one requests.Session/APEX state;
+- each worker GETs the Aduana page once, then reuses that state;
+- periods are distributed round-robin across workers;
+- no per-period fresh-session retry is added;
+- the report parser looks for the original WORKSHEET_DATA table and ignores
+  non-data rows that do not contain the expected 14 columns.
 
-A failed request/parse is retried once with a fresh APEX session. This preserves
-the fast worker model while recovering from stale/invalid APEX state.
+This keeps the production blueprint's dict-based output while preserving the
+query behavior that was already verified against the Aduana site.
 """
 from __future__ import annotations
 
@@ -38,7 +42,11 @@ def month_chunks_for_range(start: date, end: date):
         yield cur, chunk_end
         if chunk_end >= end:
             break
-        cur = date(cur.year + (1 if cur.month == 12 else 0), 1 if cur.month == 12 else cur.month + 1, 1)
+        cur = date(
+            cur.year + (1 if cur.month == 12 else 0),
+            1 if cur.month == 12 else cur.month + 1,
+            1,
+        )
 
 
 def fmt_date(value: date) -> str:
@@ -58,6 +66,8 @@ def _find_main_form(soup: BeautifulSoup):
 
 
 def _collect_hidden_fields(form):
+    # Old APEX pages can contain duplicate hidden names, so keep list[tuple]
+    # instead of converting to dict.
     payload = []
     for tag in form.find_all("input"):
         name = tag.get("name")
@@ -87,7 +97,8 @@ class AduanaApexClient:
         form = _find_main_form(soup)
         payload = _collect_hidden_fields(form)
         self.payload_base = _remove_payload_names(
-            payload, {"p_t02", "p_t03", "p_t04", "p_t05", "p_request"}
+            payload,
+            {"p_t02", "p_t03", "p_t04", "p_t05", "p_request"},
         )
         self.action_url = urljoin(page_url, form.get("action") or page_url)
         self.method = (form.get("method") or "post").lower()
@@ -109,6 +120,7 @@ class AduanaApexClient:
     def query_period(self, d1: date, d2: date, aduana: str, rut: str) -> str:
         if not self.initialized:
             self.initialize()
+
         payload = list(self.payload_base)
         payload.extend([
             ("p_t02", fmt_date(d1)),
@@ -117,50 +129,44 @@ class AduanaApexClient:
             ("p_t05", rut.strip()),
             ("p_request", "Go"),
         ])
+
         headers = dict(settings.HEADERS)
         headers["Referer"] = self.referer
+
         if self.method == "get":
             response = self.session.get(
-                self.action_url, params=payload, headers=headers,
-                timeout=settings.REQUEST_TIMEOUT, allow_redirects=True,
+                self.action_url,
+                params=payload,
+                headers=headers,
+                timeout=settings.REQUEST_TIMEOUT,
+                allow_redirects=True,
             )
         else:
             response = self.session.post(
-                self.action_url, data=payload, headers=headers,
-                timeout=settings.REQUEST_TIMEOUT, allow_redirects=True,
+                self.action_url,
+                data=payload,
+                headers=headers,
+                timeout=settings.REQUEST_TIMEOUT,
+                allow_redirects=True,
             )
+
         response.raise_for_status()
+
+        # Same behavior as the proven standalone scraper: try to refresh APEX
+        # state, but a valid result page without a complete form must not make
+        # the current query fail.
         try:
             self._update_state_from_html(response.url, response.text)
         except Exception:
-            # Some valid result pages do not preserve the full search form.
-            # Keep the existing state; a later failure will retry with a fresh
-            # session instead of treating this as a failed query immediately.
             self.referer = response.url
+
         return response.text
-
-
-def _looks_like_explicit_no_data(soup: BeautifulSoup) -> bool:
-    text = " ".join(soup.stripped_strings).lower()
-    markers = (
-        "no data found",
-        "no se encontraron datos",
-        "no se encontraron registros",
-        "no existen registros",
-        "sin resultados",
-        "sin datos",
-        "no hay datos",
-        "no se encontraron",
-    )
-    return any(marker in text for marker in markers)
 
 
 def _find_result_table(soup: BeautifulSoup):
     table = soup.select_one("table.apexir_WORKSHEET_DATA")
     if table is not None:
         return table
-    # Match the proven local scraper's fallback: some APEX responses keep the
-    # WORKSHEET_DATA class but with additional/changed class names.
     for candidate in soup.find_all("table"):
         classes = " ".join(candidate.get("class") or [])
         if "WORKSHEET_DATA" in classes.upper():
@@ -169,22 +175,16 @@ def _find_result_table(soup: BeautifulSoup):
 
 
 def extract_rows(response_html: str):
-    """Return ``(rows, parse_state)`` for one Aduana response.
+    """Parse the original Aduana report table.
 
-    A result table is authoritative even if the POST response no longer carries
-    every search-control element. Missing result markup is still treated as an
-    error unless Aduana explicitly reports zero results, so a malformed HTTP-200
-    page cannot complete a false monitoring baseline.
+    This deliberately mirrors the working standalone parser: absence of a
+    report table is treated as an empty result for that period, and rows that
+    are not the 14-column data rows are skipped.
     """
     soup = BeautifulSoup(response_html or "", "html.parser")
     table = _find_result_table(soup)
-
     if table is None:
-        if _looks_like_explicit_no_data(soup):
-            return [], "ZERO"
-        raise AduanaParseError(
-            "No apareció la tabla de resultados ni un mensaje explícito de cero resultados"
-        )
+        return [], "ZERO"
 
     rows = []
     trs = table.find_all("tr")
@@ -193,14 +193,11 @@ def extract_rows(response_html: str):
 
     for tr in trs[1:]:
         tds = tr.find_all("td", recursive=False)
-        if not tds:
-            continue
         if len(tds) != 14:
-            # Ignore non-data rows (pagination/summary rows) exactly as the
-            # proven scraper did; a real data row must have all 14 columns.
             continue
         values = [td.get_text(" ", strip=True) for td in tds]
         rows.append(dict(zip(settings.COLUMNS, values)))
+
     return rows, "OK" if rows else "ZERO"
 
 
@@ -245,62 +242,49 @@ def sort_rows(rows):
 
 
 def _worker(worker_id, periods, aduana, rut):
+    """One independent APEX worker/session, matching ASYNC_4."""
     client = AduanaApexClient()
     rows, logs = [], []
 
+    try:
+        client.initialize()
+    except Exception as exc:
+        for d1, d2 in periods:
+            logs.append({
+                "worker": worker_id,
+                "desde": fmt_date(d1),
+                "hasta": fmt_date(d2),
+                "estado": "REQUEST_FAILED",
+                "filas": 0,
+                "segundos": 0.0,
+                "error": str(exc),
+            })
+        return rows, logs
+
     for d1, d2 in periods:
         started = time.perf_counter()
-        last_state = "REQUEST_FAILED"
-        last_error = ""
-        period_rows = None
-        parse_state = None
-        attempts = 0
-
-        for attempt in (1, 2):
-            attempts = attempt
-            try:
-                html = client.query_period(d1, d2, aduana, rut)
-            except Exception as exc:
-                last_state = "REQUEST_FAILED"
-                last_error = str(exc)
-            else:
-                try:
-                    period_rows, parse_state = extract_rows(html)
-                    last_state = "OK"
-                    last_error = ""
-                    break
-                except Exception as exc:
-                    last_state = "PARSE_FAILED"
-                    last_error = str(exc)
-
-            if attempt == 1:
-                # APEX hidden state/session can become stale. Retry this exact
-                # month from a brand-new session before declaring it failed.
-                client = AduanaApexClient()
-
-        elapsed = round(time.perf_counter() - started, 2)
-        if last_state == "OK":
-            rows.extend(period_rows or [])
+        try:
+            html = client.query_period(d1, d2, aduana, rut)
+            period_rows, parse_state = extract_rows(html)
+            rows.extend(period_rows)
             logs.append({
                 "worker": worker_id,
                 "desde": fmt_date(d1),
                 "hasta": fmt_date(d2),
                 "estado": "OK",
                 "resultado": parse_state,
-                "filas": len(period_rows or []),
-                "segundos": elapsed,
-                "intentos": attempts,
+                "filas": len(period_rows),
+                "segundos": round(time.perf_counter() - started, 2),
             })
-        else:
+        except Exception as exc:
             logs.append({
                 "worker": worker_id,
                 "desde": fmt_date(d1),
                 "hasta": fmt_date(d2),
-                "estado": last_state,
+                "estado": "REQUEST_FAILED",
                 "filas": 0,
-                "segundos": elapsed,
-                "intentos": attempts,
-                "error": last_error,
+                "segundos": round(time.perf_counter() - started, 2),
+                "error": str(exc),
             })
 
     return rows, logs
@@ -310,6 +294,7 @@ def query_range(start_date: date, end_date: date, aduana: str, rut: str, max_wor
     periods = list(month_chunks_for_range(start_date, end_date))
     if not periods:
         return [], [], True
+
     worker_count = min(max_workers or settings.PERIOD_WORKERS, len(periods))
     groups = [[] for _ in range(worker_count)]
     for index, period in enumerate(periods):
@@ -317,14 +302,22 @@ def query_range(start_date: date, end_date: date, aduana: str, rut: str, max_wor
 
     all_rows, all_logs = [], []
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = [executor.submit(_worker, idx + 1, group, aduana, rut) for idx, group in enumerate(groups)]
+        futures = [
+            executor.submit(_worker, idx + 1, group, aduana, rut)
+            for idx, group in enumerate(groups)
+        ]
         for future in as_completed(futures):
             worker_rows, worker_logs = future.result()
             all_rows.extend(worker_rows)
             all_logs.extend(worker_logs)
 
+    # Sort logs chronologically for diagnostics; data itself is sorted newest
+    # first below.
     all_logs.sort(key=lambda item: item.get("desde", ""))
-    all_ok = len(all_logs) == len(periods) and all(item.get("estado") == "OK" for item in all_logs)
+    all_ok = (
+        len(all_logs) == len(periods)
+        and all(item.get("estado") == "OK" for item in all_logs)
+    )
     return sort_rows(_dedupe_full_rows(all_rows)), all_logs, all_ok
 
 
@@ -336,15 +329,39 @@ def query_last_n_days(days: int, aduana: str, rut: str, max_workers=None):
 
 def query_years(years, aduana: str, rut: str, max_workers=None):
     today = date.today()
-    all_rows, all_logs = [], []
-    all_ok = True
+    periods = []
     for year in sorted({int(y) for y in years}, reverse=True):
         if year < settings.UNLIMITED_START_YEAR or year > today.year:
             continue
         start = date(year, 1, 1)
         end = today if year == today.year else date(year, 12, 31)
-        rows, logs, ok = query_range(start, end, aduana, rut, max_workers=max_workers)
-        all_rows.extend(rows)
-        all_logs.extend(logs)
-        all_ok = all_ok and ok
+        periods.extend(month_chunks_for_range(start, end))
+
+    if not periods:
+        return [], [], True
+
+    # Important: query all selected-year periods in one worker pool, exactly as
+    # the proven ASYNC_4 implementation did, rather than creating a new pool for
+    # every year.
+    worker_count = min(max_workers or settings.PERIOD_WORKERS, len(periods))
+    groups = [[] for _ in range(worker_count)]
+    for index, period in enumerate(periods):
+        groups[index % worker_count].append(period)
+
+    all_rows, all_logs = [], []
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [
+            executor.submit(_worker, idx + 1, group, aduana, rut)
+            for idx, group in enumerate(groups)
+        ]
+        for future in as_completed(futures):
+            worker_rows, worker_logs = future.result()
+            all_rows.extend(worker_rows)
+            all_logs.extend(worker_logs)
+
+    all_logs.sort(key=lambda item: item.get("desde", ""))
+    all_ok = (
+        len(all_logs) == len(periods)
+        and all(item.get("estado") == "OK" for item in all_logs)
+    )
     return sort_rows(_dedupe_full_rows(all_rows)), all_logs, all_ok
