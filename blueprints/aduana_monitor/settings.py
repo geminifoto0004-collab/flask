@@ -7,8 +7,6 @@ only as a backwards-compatible fallback.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 
 # The legacy Consulta Denuncias Oracle APEX endpoint is served over HTTP.
@@ -31,24 +29,11 @@ TARGET_WORKERS = max(1, min(int(os.environ.get("ADUANA_TARGET_WORKERS", "4") or 
 CRON_LOOKBACK_DAYS = max(7, min(int(os.environ.get("ADUANA_CRON_LOOKBACK_DAYS", "31") or 31), 62))
 RUN_LOCK_STALE_MINUTES = max(10, int(os.environ.get("ADUANA_RUN_LOCK_STALE_MINUTES", "120") or 120))
 
-# Residential/ISP worker.
-# On Render we prefer a pull worker because the Aduana APEX site rejects the
-# Render egress. The worker polls Render, so Render never needs to know the
-# worker machine's public IP. An explicit ADUANA_WORKER_TOKEN can be used, but
-# normally we derive a dedicated token from the already-existing Hub master key;
-# the master key itself is never exposed to the worker.
-_EXPLICIT_WORKER_TOKEN = (os.environ.get("ADUANA_WORKER_TOKEN") or "").strip()
-_AUTOMATION_MASTER_KEY = (os.environ.get("AUTOMATION_MASTER_KEY") or "").strip()
-if _EXPLICIT_WORKER_TOKEN:
-    WORKER_TOKEN = _EXPLICIT_WORKER_TOKEN
-elif _AUTOMATION_MASTER_KEY:
-    WORKER_TOKEN = hmac.new(
-        _AUTOMATION_MASTER_KEY.encode("utf-8"),
-        b"aduana-residential-worker-v1",
-        hashlib.sha256,
-    ).hexdigest()
-else:
-    WORKER_TOKEN = ""
+# Residential/ISP pull worker.
+# Keep this credential fully independent from AUTOMATION_MASTER_KEY and Telegram.
+# Render stores ADUANA_WORKER_TOKEN as an Environment Variable; the Windows /
+# Raspberry Pi worker stores only the same dedicated token in its local config.
+WORKER_TOKEN = (os.environ.get("ADUANA_WORKER_TOKEN") or "").strip()
 
 _IS_RENDER = bool(
     (os.environ.get("RENDER") or "").strip()
