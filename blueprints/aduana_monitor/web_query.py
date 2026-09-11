@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import io
 import json
 import re
 import time
@@ -14,8 +15,12 @@ from flask import (
     render_template,
     render_template_string,
     request,
+    send_file,
     url_for,
 )
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 from . import aduana_bp, collector_queue, query, settings
 
@@ -97,6 +102,7 @@ def _render_query(
     all_ok=True,
     message="",
     elapsed=None,
+    export_url="",
 ):
     _current_year, primary_years, older_years, _available = _year_choices()
     rows = rows or []
@@ -118,6 +124,7 @@ def _render_query(
         all_ok=all_ok,
         message=message,
         elapsed=elapsed,
+        export_url=export_url,
     )
 
 
@@ -165,6 +172,84 @@ def _job_elapsed(job):
         return None
 
 
+def _job_result_payload(job, request_id):
+    status = str(job.get("status") or "UNKNOWN").upper()
+    selected_years = _job_selected_years(job)
+    aduana = str(job.get("aduana") or "7")
+    rut = str(job.get("rut") or "")
+    elapsed = _job_elapsed(job)
+
+    if status in ("PENDING", "RUNNING"):
+        return {
+            "ready": False,
+            "status": status,
+            "selected_years": selected_years,
+            "aduana": aduana,
+            "aduana_label": settings.ADUANA_LABELS.get(aduana, aduana),
+            "rut": rut,
+            "elapsed": elapsed,
+        }
+
+    if status == "DONE":
+        try:
+            result = json.loads(job.get("result_json") or "{}")
+        except Exception as exc:
+            result = {}
+            status = "FAILED"
+            job["error_message"] = f"Invalid worker result: {exc}"
+
+    if status == "DONE":
+        rows = result.get("rows") if isinstance(result.get("rows"), list) else []
+        logs = result.get("logs") if isinstance(result.get("logs"), list) else []
+        all_ok = bool(result.get("all_ok"))
+        failed = sum(1 for item in logs if item.get("estado") != "OK")
+        message = (
+            f"查詢完成，共 {len(rows)} 筆。"
+            if all_ok
+            else f"查詢完成，共 {len(rows)} 筆；{failed} 個月份查詢失敗。"
+        )
+    else:
+        rows = []
+        error = str(job.get("error_message") or f"Worker job {status}")
+        logs = [{
+            "worker": job.get("worker_id") or "REMOTE",
+            "desde": "",
+            "hasta": "",
+            "estado": "REQUEST_FAILED",
+            "resultado": "",
+            "filas": 0,
+            "segundos": 0,
+            "phase": "WORKER",
+            "error": error,
+        }]
+        all_ok = False
+        message = f"查詢失敗：{error}"
+
+    export_url = ""
+    if rows:
+        export_url = url_for(
+            ".public_query_export",
+            job_id=int(job["id"]),
+            request_id=request_id,
+        )
+
+    return {
+        "ready": True,
+        "status": status,
+        "selected_years": selected_years,
+        "aduana": aduana,
+        "aduana_label": settings.ADUANA_LABELS.get(aduana, aduana),
+        "rut": rut,
+        "rows": rows,
+        "logs": logs,
+        "failure_examples": _failure_examples(logs),
+        "all_ok": all_ok,
+        "message": message,
+        "elapsed": elapsed,
+        "export_url": export_url,
+    }
+
+
 _WAIT_HTML = """
 <!doctype html>
 <html lang="zh-Hant">
@@ -175,34 +260,26 @@ _WAIT_HTML = """
 body{margin:0;background:#f4f6f8;color:#18212f;font-family:Inter,'Segoe UI',Arial,'Microsoft JhengHei',sans-serif}
 .wrap{max-width:820px;margin:70px auto;padding:0 18px}.card{background:#fff;border:1px solid #dfe5eb;border-radius:14px;padding:26px;box-shadow:0 3px 14px rgba(28,44,64,.06)}
 .spinner{width:34px;height:34px;border:4px solid #dce5ec;border-top-color:#174a73;border-radius:50%;animation:r 1s linear infinite;margin-bottom:18px}@keyframes r{to{transform:rotate(360deg)}}
-h2{margin:0 0 10px;font-size:20px}.muted{color:#6f7c89;font-size:13px}.state{margin-top:18px;padding:10px 12px;background:#f5f8fa;border-radius:8px;font-size:13px}code{font-family:Consolas,monospace}
+h2{margin:0 0 10px;font-size:20px}.muted{color:#6f7c89;font-size:13px}.state{margin-top:18px;padding:10px 12px;background:#f5f8fa;border-radius:8px;font-size:13px}
 </style>
 </head>
 <body><div class="wrap"><div class="card">
 <div class="spinner"></div><h2>正在查詢 Aduana…</h2>
-<div class="muted">工作已送到 Render Queue。Windows Worker 會主動取走，不會再讓這個網頁佔住 Render 的請求。</div>
+<div class="muted">Windows Worker 正在處理。</div>
 <div class="state" id="state">狀態：等待 Windows Worker…</div>
 </div></div>
 <script>
 const statusUrl={{ status_url|tojson }};
 const resultUrl={{ result_url|tojson }};
-let failures=0;
 async function poll(){
   try{
     const r=await fetch(statusUrl,{cache:'no-store'});
-    if(!r.ok) throw new Error('HTTP '+r.status);
     const d=await r.json();
-    failures=0;
     const el=document.getElementById('state');
     if(d.status==='PENDING') el.textContent='狀態：等待 Windows Worker…';
     else if(d.status==='RUNNING') el.textContent='狀態：Windows Worker 已接到工作，正在查詢…';
-    else if(['DONE','FAILED','EXPIRED'].includes(d.status)){
-      window.location.replace(resultUrl); return;
-    } else el.textContent='狀態：'+d.status;
-  }catch(e){
-    failures++;
-    document.getElementById('state').textContent='Render 暫時沒有回應，正在重試… ('+failures+')';
-  }
+    else if(['DONE','FAILED','EXPIRED'].includes(d.status)){window.location.replace(resultUrl);return;}
+  }catch(e){document.getElementById('state').textContent='Render 暫時沒有回應，正在重試…';}
   setTimeout(poll,900);
 }
 poll();
@@ -210,8 +287,6 @@ poll();
 """
 
 
-# Public query page. No XINGWANG/admin login is required.
-# Keep the old admin-prefixed URL as an alias so existing links/bookmarks do not break.
 @aduana_bp.route("/aduana", methods=["GET", "POST"])
 @aduana_bp.route(f"{settings.ADMIN_PREFIX}/query", methods=["GET", "POST"])
 def admin_query():
@@ -220,6 +295,7 @@ def admin_query():
     if request.method == "GET":
         return _render_query(selected_years=[current_year])
 
+    ajax = request.headers.get("X-Requested-With") == "AduanaAjax"
     selected_years = []
     aduana = str(request.form.get("aduana") or "7").strip()
     rut_input = str(request.form.get("rut") or "").strip()
@@ -239,10 +315,6 @@ def admin_query():
             raise ValueError("請選擇 Aduana")
         rut = _normalize_rut(rut_input)
 
-        # IMPORTANT: never block the public Flask request while waiting for the
-        # pull worker. On a single sync Gunicorn worker that creates a deadlock:
-        # /aduana waits for Windows while Windows /worker/next cannot be served.
-        # Create the DB job and return immediately, then poll from the browser.
         if settings.WORKER_ENABLED:
             periods = _periods_for_years(selected_years)
             job_id = collector_queue.create_job(
@@ -254,16 +326,32 @@ def admin_query():
             job = collector_queue.get_job(job_id)
             if not job:
                 raise RuntimeError("Worker job could not be created")
+            request_id = str(job.get("request_id") or "")
+            if ajax:
+                return jsonify({
+                    "ok": True,
+                    "job_id": int(job_id),
+                    "request_id": request_id,
+                    "status_url": url_for(
+                        ".public_query_status",
+                        job_id=job_id,
+                        request_id=request_id,
+                    ),
+                    "result_api_url": url_for(
+                        ".public_query_result_api",
+                        job_id=job_id,
+                        request_id=request_id,
+                    ),
+                })
             return redirect(
                 url_for(
                     ".public_query_wait",
                     job_id=job_id,
-                    request_id=job.get("request_id"),
+                    request_id=request_id,
                 ),
                 code=303,
             )
 
-        # Local/development fallback only: direct APEX query.
         started = time.perf_counter()
         rows, logs, all_ok = query.query_years(selected_years, aduana, rut)
         elapsed = round(time.perf_counter() - started, 2)
@@ -273,6 +361,25 @@ def admin_query():
             if all_ok
             else f"查詢完成，共 {len(rows)} 筆；{failed} 個月份查詢失敗。"
         )
+        if ajax:
+            return jsonify({
+                "ok": True,
+                "direct_result": {
+                    "ready": True,
+                    "status": "DONE" if all_ok else "FAILED",
+                    "selected_years": selected_years,
+                    "aduana": aduana,
+                    "aduana_label": settings.ADUANA_LABELS.get(aduana, aduana),
+                    "rut": rut,
+                    "rows": rows,
+                    "logs": logs,
+                    "failure_examples": _failure_examples(logs),
+                    "all_ok": all_ok,
+                    "message": message,
+                    "elapsed": elapsed,
+                    "export_url": "",
+                },
+            })
         return _render_query(
             selected_years=selected_years,
             aduana=aduana,
@@ -285,6 +392,8 @@ def admin_query():
             elapsed=elapsed,
         )
     except Exception as exc:
+        if ajax:
+            return jsonify({"ok": False, "error": str(exc)}), 400
         return _render_query(
             selected_years=selected_years or [current_year],
             aduana=aduana,
@@ -330,64 +439,76 @@ def public_query_status(job_id, request_id):
     })
 
 
+@aduana_bp.route("/api/aduana/public-query/<int:job_id>/<request_id>/result", methods=["GET"])
+def public_query_result_api(job_id, request_id):
+    job = _public_job(job_id, request_id)
+    payload = _job_result_payload(job, request_id)
+    return jsonify({"ok": True, **payload}), (200 if payload.get("ready") else 202)
+
+
 @aduana_bp.route("/aduana/result/<int:job_id>/<request_id>", methods=["GET"])
 def public_query_result(job_id, request_id):
     job = _public_job(job_id, request_id)
-    status = str(job.get("status") or "").upper()
-    if status in ("PENDING", "RUNNING"):
+    payload = _job_result_payload(job, request_id)
+    if not payload.get("ready"):
         return redirect(
             url_for(".public_query_wait", job_id=job_id, request_id=request_id),
             code=303,
         )
-
-    selected_years = _job_selected_years(job)
-    aduana = str(job.get("aduana") or "7")
-    rut = str(job.get("rut") or "")
-    elapsed = _job_elapsed(job)
-
-    if status == "DONE":
-        try:
-            result = json.loads(job.get("result_json") or "{}")
-        except Exception as exc:
-            result = {}
-            status = "FAILED"
-            job["error_message"] = f"Invalid worker result: {exc}"
-        rows = result.get("rows") if isinstance(result.get("rows"), list) else []
-        logs = result.get("logs") if isinstance(result.get("logs"), list) else []
-        all_ok = bool(result.get("all_ok"))
-        failed = sum(1 for item in logs if item.get("estado") != "OK")
-        message = (
-            f"查詢完成，共 {len(rows)} 筆。"
-            if all_ok
-            else f"查詢完成，共 {len(rows)} 筆；{failed} 個月份查詢失敗。"
-        )
-    else:
-        rows = []
-        error = str(job.get("error_message") or f"Worker job {status}")
-        logs = [{
-            "worker": job.get("worker_id") or "REMOTE",
-            "desde": "",
-            "hasta": "",
-            "estado": "REQUEST_FAILED",
-            "resultado": "",
-            "filas": 0,
-            "segundos": 0,
-            "phase": "WORKER",
-            "error": error,
-        }]
-        all_ok = False
-        message = f"查詢失敗：{error}"
-
     return _render_query(
-        selected_years=selected_years,
-        aduana=aduana,
-        rut=rut,
-        rows=rows,
-        logs=logs,
+        selected_years=payload["selected_years"],
+        aduana=payload["aduana"],
+        rut=payload["rut"],
+        rows=payload["rows"],
+        logs=payload["logs"],
         searched=True,
-        all_ok=all_ok,
-        message=message,
-        elapsed=elapsed,
+        all_ok=payload["all_ok"],
+        message=payload["message"],
+        elapsed=payload["elapsed"],
+        export_url=payload.get("export_url") or "",
+    )
+
+
+@aduana_bp.route("/aduana/export/<int:job_id>/<request_id>.xlsx", methods=["GET"])
+def public_query_export(job_id, request_id):
+    job = _public_job(job_id, request_id)
+    payload = _job_result_payload(job, request_id)
+    if not payload.get("ready"):
+        return jsonify({"ok": False, "error": "query still running"}), 409
+    rows = payload.get("rows") or []
+    if not rows:
+        return jsonify({"ok": False, "error": "no rows to export"}), 404
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Aduana"
+    headers = [label for _key, label in WEB_COLUMNS]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    for row in rows:
+        ws.append([str(row.get(key, "") or "") for key, _label in WEB_COLUMNS])
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    for index, (key, label) in enumerate(WEB_COLUMNS, start=1):
+        sample = [label] + [str(row.get(key, "") or "") for row in rows[:200]]
+        width = min(42, max(10, max(len(value) for value in sample) + 2))
+        ws.column_dimensions[get_column_letter(index)].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    years = "-".join(str(y) for y in payload.get("selected_years") or []) or "consulta"
+    label = re.sub(r"[^A-Za-z0-9_-]+", "_", str(payload.get("aduana_label") or "ADUANA"))
+    rut = re.sub(r"[^0-9Kk-]+", "", str(payload.get("rut") or ""))
+    filename = f"ADUANA_{label}_{rut}_{years}.xlsx"
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
