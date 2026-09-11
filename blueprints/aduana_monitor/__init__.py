@@ -17,5 +17,6 @@ from . import web_query as _web_query  # noqa: E402,F401
 from . import collector_queue as _collector_queue  # noqa: E402,F401
 from . import collector_bridge as _collector_bridge  # noqa: E402,F401
 from . import telegram_ui_patch as _telegram_ui_patch  # noqa: E402,F401
+from . import telegram_result_patch as _telegram_result_patch  # noqa: E402,F401
 
 __all__ = ["aduana_bp"]
