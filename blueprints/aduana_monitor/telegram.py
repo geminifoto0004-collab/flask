@@ -156,11 +156,11 @@ def delete_message(chat_id, message_id):
     return _post("deleteMessage", data={"chat_id": str(chat_id), "message_id": str(message_id)})
 
 
-def send_document(chat_id, filename, content_bytes, caption=None):
+def send_document(chat_id, filename, content_bytes, caption=None, mimetype="text/csv"):
     data = {"chat_id": str(chat_id)}
     if caption:
         data["caption"] = caption
-    files = {"document": (filename, io.BytesIO(content_bytes), "text/csv")}
+    files = {"document": (filename, io.BytesIO(content_bytes), mimetype or "application/octet-stream")}
     return _post("sendDocument", data=data, files=files)
 
 
