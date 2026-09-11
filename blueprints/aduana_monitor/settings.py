@@ -7,6 +7,8 @@ only as a backwards-compatible fallback.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 
 # The legacy Consulta Denuncias Oracle APEX endpoint is served over HTTP.
@@ -30,10 +32,19 @@ CRON_LOOKBACK_DAYS = max(7, min(int(os.environ.get("ADUANA_CRON_LOOKBACK_DAYS", 
 RUN_LOCK_STALE_MINUTES = max(10, int(os.environ.get("ADUANA_RUN_LOCK_STALE_MINUTES", "120") or 120))
 
 # Residential/ISP pull worker.
-# Keep this credential fully independent from AUTOMATION_MASTER_KEY and Telegram.
-# Render stores ADUANA_WORKER_TOKEN as an Environment Variable; the Windows /
-# Raspberry Pi worker stores only the same dedicated token in its local config.
-WORKER_TOKEN = (os.environ.get("ADUANA_WORKER_TOKEN") or "").strip()
+# Keep Render's environment simple: AUTOMATION_MASTER_KEY remains the single
+# master secret. We derive a purpose-specific worker credential with HMAC and
+# expose only that derived credential to the Windows/Raspberry Pi worker.
+# The master key itself never leaves Render.
+_AUTOMATION_MASTER_KEY = (os.environ.get("AUTOMATION_MASTER_KEY") or "").strip()
+if _AUTOMATION_MASTER_KEY:
+    WORKER_TOKEN = hmac.new(
+        _AUTOMATION_MASTER_KEY.encode("utf-8"),
+        b"aduana-residential-worker-v1",
+        hashlib.sha256,
+    ).hexdigest()
+else:
+    WORKER_TOKEN = ""
 
 _IS_RENDER = bool(
     (os.environ.get("RENDER") or "").strip()
