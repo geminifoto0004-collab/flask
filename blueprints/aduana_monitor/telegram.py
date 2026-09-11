@@ -171,6 +171,32 @@ def answer_callback(callback_id, text=None):
     return _post("answerCallbackQuery", data=data)
 
 
+def set_commands(commands=None):
+    """Configure Telegram's native command menu shown beside the input box."""
+    commands = commands or [
+        {"command": "menu", "description": "Abrir menú principal"},
+        {"command": "query", "description": "Consulta manual"},
+        {"command": "monitors", "description": "Mis monitoreos"},
+        {"command": "add", "description": "Agregar RUT"},
+        {"command": "clear", "description": "Limpiar pantalla"},
+    ]
+    return _post("setMyCommands", data={"commands": json.dumps(commands, ensure_ascii=False)})
+
+
+def set_native_menu_button():
+    """Force the private-chat menu button to open the native command list."""
+    return _post(
+        "setChatMenuButton",
+        data={"menu_button": json.dumps({"type": "commands"}, ensure_ascii=False)},
+    )
+
+
+def configure_native_menu():
+    """Install both the native command list and the always-available menu button."""
+    set_commands()
+    return set_native_menu_button()
+
+
 def set_webhook(url):
     """Connect the appropriate webhook.
 
@@ -189,12 +215,22 @@ def set_webhook(url):
             + bot["bot_key"]
             + "/webhook"
         )
-        return hub_telegram.set_webhook(bot["token"], target, bot.get("webhook_secret") or "")
+        result = hub_telegram.set_webhook(bot["token"], target, bot.get("webhook_secret") or "")
+        try:
+            configure_native_menu()
+        except Exception:
+            pass
+        return result
 
     data = {"url": url}
     if settings.TELEGRAM_WEBHOOK_SECRET:
         data["secret_token"] = settings.TELEGRAM_WEBHOOK_SECRET
-    return _post("setWebhook", data=data)
+    result = _post("setWebhook", data=data)
+    try:
+        configure_native_menu()
+    except Exception:
+        pass
+    return result
 
 
 def get_webhook_info():
