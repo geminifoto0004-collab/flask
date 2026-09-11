@@ -46,16 +46,10 @@ if _AUTOMATION_MASTER_KEY:
 else:
     WORKER_TOKEN = ""
 
-# Pull-worker mode is the production architecture for Aduana.  Do not depend on
-# Render-specific environment flags here: if this deployment has the Hub master
-# key, the dedicated derived Worker Token exists and Aduana queries should go to
-# the queue.  ADUANA_USE_REMOTE_WORKER=0 remains an explicit emergency/local
-# override for direct APEX access.
-_FORCE_WORKER = (os.environ.get("ADUANA_USE_REMOTE_WORKER") or "").strip().lower()
-if _FORCE_WORKER in ("0", "false", "no", "off"):
-    WORKER_ENABLED = False
-else:
-    WORKER_ENABLED = bool(WORKER_TOKEN)
+# Pull-worker is now the only production Aduana query path whenever the Hub
+# master key exists.  Do not let an old ADUANA_USE_REMOTE_WORKER environment
+# value silently send queries back through Render's blocked datacenter egress.
+WORKER_ENABLED = bool(WORKER_TOKEN)
 
 # Telegram/cron run in background threads and can wait longer. A normal web
 # request gets a shorter ceiling to stay below common Gunicorn request limits.
