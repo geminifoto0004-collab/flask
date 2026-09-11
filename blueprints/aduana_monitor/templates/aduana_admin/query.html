@@ -11,7 +11,7 @@
 <body>
 <div class="page">
   <div class="hero"><h1>Consulta de Denuncias</h1><p>Servicio Nacional de Aduanas · consulta pública</p></div>
-  <form method="post">
+  <form method="post" action="/aduana">
     <div class="query-card"><div class="query-grid">
       <div><label class="field-label">Años</label><div class="year-selector">{% for y in primary_years %}<label class="year-option"><input type="checkbox" name="years" value="{{ y }}" {% if y in selected_years %}checked{% endif %}><span class="year-chip">{{ y }}</span></label>{% endfor %}</div>{% if older_years %}<button type="button" class="more-years-toggle" id="moreYearsToggle" onclick="toggleMoreYears()">+ Más años</button><div class="more-years-panel" id="moreYearsPanel"><div class="more-years-grid">{% for y in older_years %}<label class="year-option"><input type="checkbox" name="years" value="{{ y }}" {% if y in selected_years %}checked{% endif %}><span class="year-chip">{{ y }}</span></label>{% endfor %}</div></div>{% endif %}</div>
       <div><label class="field-label" for="aduana">Aduana</label><select class="control" id="aduana" name="aduana">{% for value,label in aduanas %}<option value="{{ value }}" {% if value==aduana %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
@@ -27,6 +27,18 @@
   {% if logs %}<details class="log-details" {% if not all_ok %}open{% endif %}><summary>Ver detalle de consultas mensuales</summary><div style="overflow:auto"><table class="log-table"><tr><th>WORKER</th><th>DESDE</th><th>HASTA</th><th>ESTADO</th><th>RESULTADO</th><th>FILAS</th><th>SEG.</th><th>ERROR</th></tr>{% for row in logs %}<tr><td>{{ row.get('worker','') }}</td><td>{{ row.get('desde','') }}</td><td>{{ row.get('hasta','') }}</td><td>{{ row.get('estado','') }}</td><td>{{ row.get('resultado','') }}</td><td>{{ row.get('filas','') }}</td><td>{{ row.get('segundos','') }}</td><td>{{ row.get('error','') }}</td></tr>{% endfor %}</table></div></details>{% endif %}
   {% endif %}
 </div>
-<script>function toggleMoreYears(){const p=document.getElementById('moreYearsPanel'),b=document.getElementById('moreYearsToggle');if(!p)return;const open=p.classList.toggle('open');if(b)b.textContent=open?'− Ocultar años':'+ Más años';}document.addEventListener('DOMContentLoaded',()=>{const p=document.getElementById('moreYearsPanel');if(p&&p.querySelector('input:checked')){p.classList.add('open');const b=document.getElementById('moreYearsToggle');if(b)b.textContent='− Ocultar años';}});</script>
+<script>
+function toggleMoreYears(){const p=document.getElementById('moreYearsPanel'),b=document.getElementById('moreYearsToggle');if(!p)return;const open=p.classList.toggle('open');if(b)b.textContent=open?'− Ocultar años':'+ Más años';}
+document.addEventListener('DOMContentLoaded',()=>{
+  const p=document.getElementById('moreYearsPanel');
+  if(p&&p.querySelector('input:checked')){p.classList.add('open');const b=document.getElementById('moreYearsToggle');if(b)b.textContent='− Ocultar años';}
+  // Results are rendered from /aduana/result/<job>/<token>. Once the result is
+  // on screen, make the browser address canonical again. A refresh then returns
+  // to the normal search page instead of pinning the user to an old job URL.
+  if(window.location.pathname.startsWith('/aduana/result/')){
+    window.history.replaceState({},'', '/aduana');
+  }
+});
+</script>
 </body>
 </html>
