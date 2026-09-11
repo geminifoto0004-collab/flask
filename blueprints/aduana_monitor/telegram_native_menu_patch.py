@@ -2,9 +2,12 @@
 """Expose an always-available native Telegram menu in private chats.
 
 Inline buttons belong to individual messages, so they can be pushed upward by
-results or Excel documents.  Telegram's native bot menu sits beside the input
-field and remains reachable regardless of chat history.  This patch configures
-that menu lazily and maps its slash commands onto the existing Aduana flows.
+results or Excel documents. Telegram's native bot menu sits beside the input
+field and remains reachable regardless of chat history.
+
+The menu is configured proactively when the Aduana blueprint is imported. If
+Telegram/DB is temporarily unavailable during startup, later user updates retry
+configuration automatically.
 """
 from __future__ import annotations
 
@@ -13,7 +16,8 @@ import threading
 from . import bot, telegram
 
 _BASE_HANDLE_UPDATE = bot.handle_update
-_MENU_CONFIG_STARTED = False
+_MENU_CONFIG_RUNNING = False
+_MENU_CONFIGURED = False
 _MENU_CONFIG_LOCK = threading.Lock()
 
 _COMMAND_MAP = {
@@ -25,21 +29,33 @@ _COMMAND_MAP = {
 }
 
 
-def _configure_menu_once():
-    global _MENU_CONFIG_STARTED
+def _configure_menu_async():
+    """Configure the global Telegram command/menu button without blocking Flask.
+
+    We intentionally do not permanently mark a failed startup attempt as done;
+    the next incoming Telegram update can retry.
+    """
+    global _MENU_CONFIG_RUNNING
     with _MENU_CONFIG_LOCK:
-        if _MENU_CONFIG_STARTED:
+        if _MENU_CONFIGURED or _MENU_CONFIG_RUNNING:
             return
-        _MENU_CONFIG_STARTED = True
+        _MENU_CONFIG_RUNNING = True
 
     def _worker():
+        global _MENU_CONFIG_RUNNING, _MENU_CONFIGURED
+        ok = False
         try:
             telegram.configure_native_menu()
+            ok = True
         except Exception as exc:
             try:
                 bot.log.debug("Telegram native menu setup failed: %s", exc)
             except Exception:
                 pass
+        finally:
+            with _MENU_CONFIG_LOCK:
+                _MENU_CONFIGURED = ok
+                _MENU_CONFIG_RUNNING = False
 
     threading.Thread(target=_worker, daemon=True, name="aduana-telegram-menu").start()
 
@@ -56,7 +72,8 @@ def _normalize_command(text):
 
 
 def _handle_update(update):
-    _configure_menu_once()
+    # Retry if startup configuration failed for any transient reason.
+    _configure_menu_async()
 
     message = (update or {}).get("message") or {}
     text = str(message.get("text") or "")
@@ -78,6 +95,11 @@ def install():
         return
     bot.handle_update = _handle_update
     bot._telegram_native_menu_patch_installed = True
+
+    # Configure immediately on Render startup, not only after the first user
+    # message. This is important when a user has cleared the chat and therefore
+    # there is no existing reply keyboard or bot message to interact with.
+    _configure_menu_async()
 
 
 install()
