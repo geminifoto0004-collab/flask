@@ -46,17 +46,16 @@ if _AUTOMATION_MASTER_KEY:
 else:
     WORKER_TOKEN = ""
 
-_IS_RENDER = bool(
-    (os.environ.get("RENDER") or "").strip()
-    or (os.environ.get("RENDER_EXTERNAL_URL") or "").strip()
-)
+# Pull-worker mode is the production architecture for Aduana.  Do not depend on
+# Render-specific environment flags here: if this deployment has the Hub master
+# key, the dedicated derived Worker Token exists and Aduana queries should go to
+# the queue.  ADUANA_USE_REMOTE_WORKER=0 remains an explicit emergency/local
+# override for direct APEX access.
 _FORCE_WORKER = (os.environ.get("ADUANA_USE_REMOTE_WORKER") or "").strip().lower()
-if _FORCE_WORKER in ("1", "true", "yes", "on"):
-    WORKER_ENABLED = bool(WORKER_TOKEN)
-elif _FORCE_WORKER in ("0", "false", "no", "off"):
+if _FORCE_WORKER in ("0", "false", "no", "off"):
     WORKER_ENABLED = False
 else:
-    WORKER_ENABLED = bool(WORKER_TOKEN and _IS_RENDER)
+    WORKER_ENABLED = bool(WORKER_TOKEN)
 
 # Telegram/cron run in background threads and can wait longer. A normal web
 # request gets a shorter ceiling to stay below common Gunicorn request limits.
