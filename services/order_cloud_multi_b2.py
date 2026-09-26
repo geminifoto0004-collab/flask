@@ -10,6 +10,7 @@ migrated to b2_primary and existing primary configuration continues to work unch
 from __future__ import annotations
 
 import os
+import threading
 
 import boto3
 
@@ -19,6 +20,8 @@ from services import order_cloud_asset_service as asset_service
 PRIMARY = 'b2_primary'
 SECONDARY = 'b2_secondary'
 _ALLOWED = {PRIMARY, SECONDARY}
+_STORAGE_BACKEND_SCHEMA_READY = False
+_STORAGE_BACKEND_SCHEMA_LOCK = threading.Lock()
 
 
 def _env_first(*names):
@@ -119,18 +122,31 @@ def put_with_failover(object_key, data, content_type, metadata=None, cache_contr
 
 
 def _ensure_storage_backend_column():
-    conn = get_db_connection()
-    cur = get_cursor(conn)
-    try:
-        if not check_column_exists(cur, 'cloud_assets', 'storage_backend'):
-            cur.execute("ALTER TABLE cloud_assets ADD COLUMN storage_backend VARCHAR(32) NULL")
-        cur.execute("UPDATE cloud_assets SET storage_backend=? WHERE storage_backend IS NULL OR storage_backend=''", (PRIMARY,))
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    global _STORAGE_BACKEND_SCHEMA_READY
+    if _STORAGE_BACKEND_SCHEMA_READY:
+        return
+
+    with _STORAGE_BACKEND_SCHEMA_LOCK:
+        if _STORAGE_BACKEND_SCHEMA_READY:
+            return
+
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            if not check_column_exists(cur, 'cloud_assets', 'storage_backend'):
+                cur.execute("ALTER TABLE cloud_assets ADD COLUMN storage_backend VARCHAR(32) NULL")
+            cur.execute(
+                "UPDATE cloud_assets SET storage_backend=? "
+                "WHERE storage_backend IS NULL OR storage_backend=''",
+                (PRIMARY,),
+            )
+            conn.commit()
+            _STORAGE_BACKEND_SCHEMA_READY = True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 
 def upsert_asset_metadata_multi(order_number, workflow_key, sha256_hex, object_key,
