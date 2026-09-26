@@ -7,7 +7,7 @@ import threading
 import time
 import json
 import hashlib
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Dict, Optional
 from database import get_db_connection, get_cursor
 from utils.time_utils import get_chile_time_naive
@@ -82,14 +82,18 @@ def _find_recent_active_task(task_type: str, task_config_id: int, max_age_second
     cursor = get_cursor(conn)
 
     try:
+        now = get_chile_time_naive()
+        cutoff = (now - timedelta(seconds=max_age_seconds)).strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute('''
             SELECT task_id, task_config, created_at
             FROM async_tasks
-            WHERE task_type = ? AND status IN (?, ?)
+            WHERE task_type = ?
+              AND status IN (?, ?)
+              AND created_at >= ?
             ORDER BY created_at DESC
-        ''', (task_type, TASK_STATUS_PENDING, TASK_STATUS_RUNNING))
+            LIMIT 50
+        ''', (task_type, TASK_STATUS_PENDING, TASK_STATUS_RUNNING, cutoff))
 
-        now = get_chile_time_naive()
         rows = cursor.fetchall() or []
         for row in rows:
             if isinstance(row, dict):
