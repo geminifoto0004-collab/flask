@@ -47,14 +47,33 @@ class Config:
     # 或者分別設置：MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
     # 或者使用簡短名稱：DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
     DATABASE_URL = os.environ.get('DATABASE_URL', '')
-    
+
+    # TiDB 快速切換：
+    # - TIDB1 = 沿用原本 DB_* / MYSQL_* 設定
+    # - TIDB2 = 使用 TIDB2_HOST / TIDB2_PORT / TIDB2_USER / TIDB2_PASSWORD / TIDB2_NAME
+    # 沒有設定 DB_TARGET 時完全維持舊行為。
+    DB_TARGET = (os.environ.get('DB_TARGET') or '').strip().upper()
+    if DB_TARGET not in ('', 'TIDB1', 'TIDB2'):
+        raise ValueError("DB_TARGET must be TIDB1 or TIDB2")
+
     # MySQL/TiDB 單獨配置（可選，如果 DATABASE_URL 為空時使用）
     # 支持兩種環境變數名稱：MYSQL_* 或 DB_*
-    MYSQL_HOST = os.environ.get('MYSQL_HOST') or os.environ.get('DB_HOST', 'localhost')
-    MYSQL_PORT = int(os.environ.get('MYSQL_PORT') or os.environ.get('DB_PORT', '4000'))  # TiDB 默認端口 4000
-    MYSQL_USER = os.environ.get('MYSQL_USER') or os.environ.get('DB_USER', '')
-    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD') or os.environ.get('DB_PASSWORD', '')
-    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE') or os.environ.get('DB_NAME', '')
+    if DB_TARGET == 'TIDB2':
+        MYSQL_HOST = os.environ.get('TIDB2_HOST', '')
+        MYSQL_PORT = int(os.environ.get('TIDB2_PORT', '4000'))
+        MYSQL_USER = os.environ.get('TIDB2_USER', '')
+        MYSQL_PASSWORD = os.environ.get('TIDB2_PASSWORD', '')
+        MYSQL_DATABASE = os.environ.get('TIDB2_NAME', '')
+        if not MYSQL_HOST or not MYSQL_USER or not MYSQL_DATABASE:
+            raise ValueError("DB_TARGET=TIDB2 but TIDB2_HOST/TIDB2_USER/TIDB2_NAME is incomplete")
+        # Avoid an old DATABASE_URL overriding the selected TiDB2 DB_* values.
+        DATABASE_URL = ''
+    else:
+        MYSQL_HOST = os.environ.get('MYSQL_HOST') or os.environ.get('DB_HOST', 'localhost')
+        MYSQL_PORT = int(os.environ.get('MYSQL_PORT') or os.environ.get('DB_PORT', '4000'))  # TiDB 默認端口 4000
+        MYSQL_USER = os.environ.get('MYSQL_USER') or os.environ.get('DB_USER', '')
+        MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD') or os.environ.get('DB_PASSWORD', '')
+        MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE') or os.environ.get('DB_NAME', '')
     
     # Session 配置
     PERMANENT_SESSION_LIFETIME = 3600  # 1小時（秒）
