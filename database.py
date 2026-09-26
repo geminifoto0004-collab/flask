@@ -840,6 +840,13 @@ def init_database():
         ))
         print("async_tasks è¡¨å·²å°±ç?")
 
+        # Keep the five-minute monitor de-dup lookup cheap as async_tasks grows.
+        if not check_index_exists(cursor, 'async_tasks', 'idx_async_tasks_type_status_created'):
+            cursor.execute(
+                "CREATE INDEX idx_async_tasks_type_status_created "
+                "ON async_tasks (task_type, status, created_at)"
+            )
+
         # container access admin
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS container_access_admin (
