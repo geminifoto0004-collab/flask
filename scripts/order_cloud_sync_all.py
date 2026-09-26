@@ -56,18 +56,26 @@ def _load_state(path: Path) -> dict:
         raw = json.loads(path.read_text("utf-8"))
         if isinstance(raw, dict) and raw.get("version") == STATE_VERSION:
             raw.setdefault("fingerprints", {})
+            raw["_safe_bootstrap_required"] = False
             return raw
     except FileNotFoundError:
         pass
     except Exception:
-        # Corrupt/mismatched state must never block ORDER; rebuild by full safe sync.
         pass
-    return {"version": STATE_VERSION, "fingerprints": {}, "last_success_at": None}
+    # Missing/corrupt state must never silently turn a normal startup sync into a
+    # full cloud rewrite. A deliberate --full run is required to bootstrap again.
+    return {
+        "version": STATE_VERSION,
+        "fingerprints": {},
+        "last_success_at": None,
+        "_safe_bootstrap_required": True,
+    }
 
 
 def _save_state(path: Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(state, ensure_ascii=False, sort_keys=True, indent=2)
+    persisted = {k: v for k, v in state.items() if not str(k).startswith("_")}
+    payload = json.dumps(persisted, ensure_ascii=False, sort_keys=True, indent=2)
     fd, temp_name = tempfile.mkstemp(prefix="order_cloud_sync_", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -268,6 +276,15 @@ def sync_all(
                 prepare_failed += 1
                 if not quiet:
                     print(f"PREPARE FAILED: {order_number}: {type(exc).__name__}: {exc}")
+
+        # Safety guard: if the local fingerprint state disappeared/corrupted,
+        # do not let a normal ORDER startup re-upload every order to TiDB.
+        # A deliberate --full run is required once to establish a new baseline.
+        if state.get("_safe_bootstrap_required") and not full and jobs:
+            raise one.SyncError(
+                "ORDER cloud sync state is missing or invalid; automatic bulk re-upload was blocked. "
+                "Run order_cloud_sync_all.py --full once intentionally to rebuild the baseline."
+            )
 
         # Orders removed from SQLite are hard-deleted from TiDB.
         already_delete = {j["order_number"] for j in jobs if j["delete"]}
