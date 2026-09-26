@@ -842,10 +842,18 @@ def init_database():
 
         # Keep the five-minute monitor de-dup lookup cheap as async_tasks grows.
         if not check_index_exists(cursor, 'async_tasks', 'idx_async_tasks_type_status_created'):
-            cursor.execute(
-                "CREATE INDEX idx_async_tasks_type_status_created "
-                "ON async_tasks (task_type, status, created_at)"
-            )
+            if config.DATABASE_TYPE in ('mysql', 'tidb'):
+                # async_tasks.task_type/status are TEXT on existing TiDB schemas;
+                # MySQL/TiDB requires prefix lengths when indexing TEXT columns.
+                cursor.execute(
+                    "CREATE INDEX idx_async_tasks_type_status_created "
+                    "ON async_tasks (task_type(64), status(32), created_at)"
+                )
+            else:
+                cursor.execute(
+                    "CREATE INDEX idx_async_tasks_type_status_created "
+                    "ON async_tasks (task_type, status, created_at)"
+                )
 
         # container access admin
         cursor.execute('''
