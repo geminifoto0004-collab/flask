@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import threading
 from datetime import datetime
 
 from flask import Response, has_request_context, redirect, request
@@ -18,11 +19,269 @@ from services import order_cloud_asset_service as _asset_service
 from services import order_cloud_multi_b2_public as _media
 from services import order_customer_share_snapshot as _snapshot
 from services import order_public_share_fast as _fast
-from services.order_cloud_multi_b2 import PRIMARY
+from services.order_cloud_multi_b2 import PRIMARY, _backend_order, client_for_backend, config_for_backend
 from services.order_share_image_policy import asset_allowed
 
 
+
+_B2_RECOVERY_LOCK = threading.Lock()
+_B2_RECOVERY_DONE = set()
+
+_B2_CONTENT_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+
+def _b2_safe_component(value, fallback):
+    """Mirror order_cloud_direct_multi_b2._safe_component exactly."""
+    raw = str(value or "").strip()
+    if not raw:
+        return fallback
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-.") or fallback
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+    return f"{slug[:72]}-{digest}"
+
+
+def _b2_customer_namespace(customer_key):
+    """Mirror the direct-B2 customer namespace; it is stable and never uses share tokens."""
+    value = str(customer_key or "").strip()
+    if not value:
+        raise ValueError("customer_key is required")
+    return "c_" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+
+
+def _asset_insert_sql():
+    """Idempotent insert syntax for the DB engines supported by database.py."""
+    try:
+        import config
+        db_type = str(getattr(config, "DATABASE_TYPE", "") or "").strip().lower()
+    except Exception:
+        db_type = ""
+    columns = (
+        "(asset_key, customer_key, order_number, workflow_key, asset_type, sha256, "
+        "object_key, storage_backend, content_type, file_size, display_name, source_site, active)"
+    )
+    values = "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    if db_type in ("mysql", "tidb"):
+        return f"INSERT IGNORE INTO cloud_assets {columns} {values}"
+    if db_type == "postgresql":
+        return f"INSERT INTO cloud_assets {columns} {values} ON CONFLICT (asset_key) DO NOTHING"
+    return f"INSERT OR IGNORE INTO cloud_assets {columns} {values}"
+
+
+def _recover_customer_assets_from_b2(customer_key):
+    """Rebuild deterministic B2 -> ORDER metadata after switching to a fresh TiDB.
+
+    Image ownership is encoded in the canonical B2 path:
+      customers/<customer>/orders/<order>/workflows/<workflow>/images/<sha>.<ext>
+
+    Therefore a TiDB failover does not require re-uploading image bytes.  We list the
+    customer's B2 prefix, map the deterministic path back to the already-synced ORDER
+    rows, and recreate only missing cloud_assets rows.  Existing rows (including
+    inactive/manual exceptions) are never overwritten.
+    """
+    customer_key = str(customer_key or "").strip()
+    if not customer_key or customer_key in _B2_RECOVERY_DONE:
+        return 0
+
+    with _B2_RECOVERY_LOCK:
+        if customer_key in _B2_RECOVERY_DONE:
+            return 0
+
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        scan_succeeded = False
+        inserted = 0
+        try:
+            cur.execute(
+                """SELECT order_number
+                   FROM cloud_orders
+                   WHERE customer_key=? AND active=TRUE""",
+                (customer_key,),
+            )
+            order_numbers = []
+            for row in cur.fetchall():
+                data = get_row_dict(row, cur) or {}
+                number = str(data.get("order_number") or "").strip()
+                if number:
+                    order_numbers.append(number)
+            if not order_numbers:
+                # ORDER sync may still be running.  Do not mark this customer done;
+                # a later request can retry after cloud_orders arrives.
+                return 0
+
+            order_by_component = {
+                _b2_safe_component(number, "order"): number
+                for number in order_numbers
+            }
+
+            cur.execute(
+                """SELECT w.order_number, w.workflow_key
+                   FROM cloud_workflows w
+                   INNER JOIN cloud_orders o ON o.order_number=w.order_number
+                   WHERE o.customer_key=? AND o.active=TRUE AND w.active=TRUE""",
+                (customer_key,),
+            )
+            workflow_by_component = {}
+            for row in cur.fetchall():
+                data = get_row_dict(row, cur) or {}
+                number = str(data.get("order_number") or "").strip()
+                workflow_key = str(data.get("workflow_key") or "").strip()
+                if number and workflow_key:
+                    workflow_by_component[
+                        (number, _b2_safe_component(workflow_key, "_order"))
+                    ] = workflow_key
+
+            # Include inactive rows in this set: an intentionally disabled image must
+            # not be silently resurrected merely because the B2 object still exists.
+            cur.execute(
+                "SELECT asset_key FROM cloud_assets WHERE customer_key=?",
+                (customer_key,),
+            )
+            existing_keys = {
+                str((get_row_dict(row, cur) or {}).get("asset_key") or "").strip().lower()
+                for row in cur.fetchall()
+            }
+
+            root = f"customers/{_b2_customer_namespace(customer_key)}/orders/"
+            discovered = []
+            seen_keys = set()
+
+            for backend in _backend_order():
+                try:
+                    cfg = config_for_backend(backend, required=True)
+                    client = client_for_backend(backend)
+                    continuation = None
+                    while True:
+                        kwargs = {
+                            "Bucket": cfg["bucket_name"],
+                            "Prefix": root,
+                            "MaxKeys": 1000,
+                        }
+                        if continuation:
+                            kwargs["ContinuationToken"] = continuation
+                        page = client.list_objects_v2(**kwargs)
+                        scan_succeeded = True
+
+                        for obj in page.get("Contents") or []:
+                            object_key = str(obj.get("Key") or "")
+                            if not object_key.startswith(root):
+                                continue
+                            relative = object_key[len(root):]
+                            parts = relative.split("/")
+                            if (
+                                len(parts) != 5
+                                or parts[1] != "workflows"
+                                or parts[3] != "images"
+                            ):
+                                continue
+
+                            order_number = order_by_component.get(parts[0])
+                            if not order_number:
+                                continue
+
+                            workflow_component = parts[2]
+                            if workflow_component == "_order":
+                                workflow_key = None
+                            else:
+                                workflow_key = workflow_by_component.get(
+                                    (order_number, workflow_component)
+                                )
+                                if not workflow_key:
+                                    continue
+
+                            filename = parts[4]
+                            match = re.fullmatch(
+                                r"([0-9a-fA-F]{64})(\.(?:jpg|jpeg|png|webp))",
+                                filename,
+                            )
+                            if not match:
+                                continue
+                            sha256_hex = match.group(1).lower()
+                            extension = match.group(2).lower()
+                            content_type = _B2_CONTENT_TYPES.get(extension)
+                            if not content_type:
+                                continue
+
+                            asset_key = _asset_service._asset_key(
+                                order_number, workflow_key, sha256_hex
+                            )
+                            if asset_key in existing_keys or asset_key in seen_keys:
+                                continue
+                            seen_keys.add(asset_key)
+                            discovered.append(
+                                (
+                                    asset_key,
+                                    customer_key,
+                                    order_number,
+                                    workflow_key,
+                                    "IMAGE",
+                                    sha256_hex,
+                                    object_key,
+                                    backend,
+                                    content_type,
+                                    int(obj.get("Size") or 0),
+                                    f"Imagen {order_number}",
+                                    "B2_RECOVER",
+                                    True,
+                                )
+                            )
+
+                        if not page.get("IsTruncated"):
+                            break
+                        continuation = page.get("NextContinuationToken")
+                        if not continuation:
+                            break
+                except Exception as exc:
+                    print(
+                        f"[WARN] ORDER B2 metadata recovery backend {backend} skipped: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
+            if not scan_succeeded:
+                # B2 may be temporarily unavailable. Keep retry capability.
+                return 0
+
+            sql = _asset_insert_sql()
+            for values in discovered:
+                cur.execute(sql, values)
+                try:
+                    inserted += max(int(cur.rowcount or 0), 0)
+                except Exception:
+                    pass
+            conn.commit()
+            _B2_RECOVERY_DONE.add(customer_key)
+            if discovered:
+                print(
+                    f"[ORDER] B2 metadata auto-recovery discovered={len(discovered)} "
+                    f"inserted={inserted}"
+                )
+            return inserted
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+def _safe_recover_customer_assets(customer_key):
+    try:
+        return _recover_customer_assets_from_b2(customer_key)
+    except Exception as exc:
+        # Fail open: an existing TiDB metadata path must continue to work even when
+        # B2 listing is temporarily unavailable.
+        print(
+            f"[WARN] ORDER B2 metadata auto-recovery skipped: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        return 0
+
+
 def _list_customer_assets(customer_key):
+    _safe_recover_customer_assets(customer_key)
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute(
@@ -65,6 +324,7 @@ _asset_service.get_asset = _get_asset
 
 def _load_build_rows(customer_key):
     """Rebuilt persisted snapshots carry the same thumb metadata as TiDB."""
+    _safe_recover_customer_assets(customer_key)
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute(
