@@ -7,7 +7,7 @@ import unittest
 SOURCE = pathlib.Path(__file__).resolve().parents[1] / 'services' / 'order_tidb_cloud_reconcile.py'
 tree = ast.parse(SOURCE.read_text(encoding='utf-8'))
 names = {'_qi', '_table_exists', '_upsert_table', '_standby_only_counts',
-         '_invalidate_derived_views'}
+         '_invalidate_derived_views', '_worker'}
 nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
 scope = {'_IDENT': __import__('re').compile(r'^[A-Za-z_][A-Za-z0-9_]*$'),
          '_TABLES': ('cloud_assets',), '_PRIMARY_KEYS': {'cloud_assets': 'asset_key'},
@@ -60,6 +60,30 @@ class Connection:
 
 
 class ReconcileSafetyTests(unittest.TestCase):
+    def test_periodic_pass_skips_equal_versions_after_startup(self):
+        class StopWorker(Exception):
+            pass
+        class Event:
+            waits = 0
+            def is_set(self):
+                return False
+            def clear(self):
+                pass
+            def wait(self, timeout):
+                self.waits += 1
+                self_test.assertEqual(timeout, 1800.0)
+                if self.waits > 1:
+                    raise StopWorker()
+        self_test = self
+        calls = []
+        scope['_mirror_version'] = lambda _target: 123
+        scope['cloud_mirror_dirty_event'] = Event
+        scope['reconcile_once'] = lambda: calls.append(True)
+        scope['time'] = type('FakeTime', (), {'sleep': staticmethod(lambda _seconds: None)})
+        with self.assertRaises(StopWorker):
+            scope['_worker']()
+        self.assertEqual(len(calls), 1)
+
     def test_empty_primary_preserves_standby_only_image(self):
         source = Connection([])
         standby = Connection([{'asset_key': 'image-only-on-standby'}])

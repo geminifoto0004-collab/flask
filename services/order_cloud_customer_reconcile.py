@@ -150,17 +150,18 @@ def _reconcile_customer_orders():
         finally:
             conn.close()
 
-        # Rebuild/invalidate the same existing share snapshots immediately. If the
-        # customer was removed because SQLite has no orders, rebuild_snapshot returns None.
+        # Rebuilding here can enumerate every B2 object for this customer. Large
+        # customers would time out this control-plane POST (502), even though the
+        # SQL changes were already committed. Invalidate now and rebuild off-request.
         from services import order_customer_share_snapshot as snapshot
-        bundle = snapshot.rebuild_snapshot(customer_key)
+        snapshot.queue_snapshot_refresh(customer_key, delay=0.05)
         return jsonify({"ok": True, "result": {
             "customer_key": customer_key,
             "expected_orders": len(expected),
             "stale_orders_removed": len(stale),
             "remaining_orders": remaining,
             "physical_objects_deleted": 0,
-            "snapshot_present": bool(bundle),
+            "snapshot_refresh_queued": True,
         }})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc), "error_type": type(exc).__name__}), 500

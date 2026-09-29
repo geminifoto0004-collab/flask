@@ -339,10 +339,19 @@ def _worker():
     first = True
     while True:
         if not first:
-            event.wait(timeout=300.0)
+            event.wait(timeout=1800.0)
+        dirty = event.is_set()
+        was_first = first
         first = False
         event.clear()
         try:
+            if not dirty and not was_first:
+                # The first pass repairs preexisting drift. After that, two equal
+                # stream versions mean no write was missed. Free TiDB instances
+                # should not copy every ORDER row every five minutes just to check.
+                versions = (_mirror_version('TIDB1'), _mirror_version('TIDB2'))
+                if versions[0] is not None and versions[0] == versions[1] and versions[0] > 0:
+                    continue
             reconcile_once()
         except Exception as exc:
             print(f'[WARN] TiDB cloud reconcile pending: {type(exc).__name__}: {exc}')
