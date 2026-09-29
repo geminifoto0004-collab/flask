@@ -11,7 +11,7 @@ SOURCE = Path(__file__).resolve().parents[1] / 'services/order_cloud_direct_mult
 
 
 class StablePresignTests(unittest.TestCase):
-    def _run(self, physical=None):
+    def _run(self, physical=None, *, file_size=500000, b2_found=True):
         tree = ast.parse(SOURCE.read_text(encoding='utf-8'))
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_direct_presign_result')
         scope = {
@@ -22,10 +22,11 @@ class StablePresignTests(unittest.TestCase):
             '_scoped_object_key': lambda *args: 'old-scoped-key',
             '_object_key': lambda *args: 'legacy-key',
             '_b2_existing_object': (lambda *_: self.fail('B2 HEAD is unnecessary for registered customer SHA')) if physical else
-                                   (lambda keys, size=0: ('b2_primary', keys[0], size)),
+                                   (lambda keys, size=0: ('b2_primary', keys[0], size) if b2_found else None),
             '_upsert_registered_asset': lambda *args, **kwargs: {'asset_key': 'repaired-key'},
             '_thumb_object_key': lambda sha: 'thumb/' + sha,
             '_NEW_IMAGE_MAX_BYTES': 1_000_000,
+            '_LEGACY_MAX_BYTES': 15 * 1024 * 1024,
             'PRIMARY': 'b2_primary',
             'SECONDARY': 'b2_secondary',
             '_ALLOWED_BACKENDS': {'b2_primary', 'b2_secondary'},
@@ -40,7 +41,7 @@ class StablePresignTests(unittest.TestCase):
                                       'services.order_cloud_customer_storage': customer_module}):
             result = scope['_direct_presign_result']({
                 'order_number': '1007874', 'workflow_key': '1007874-1',
-                'sha256': 'a' * 64, 'content_type': 'image/jpeg', 'file_size': 500000,
+                'sha256': 'a' * 64, 'content_type': 'image/jpeg', 'file_size': file_size,
             }, conn=object(), selected_backend='b2_primary')
         return result
 
@@ -56,6 +57,16 @@ class StablePresignTests(unittest.TestCase):
                             'content_type': 'image/jpeg', 'storage_backend': 'b2_primary'})
         self.assertEqual(result['object_key'], 'other-order-object')
         self.assertEqual(result['upload_mode'], 'customer_sha_relinked_without_upload')
+
+    def test_legacy_oversized_b2_object_rebuilds_tidb_without_reupload(self):
+        result = self._run(file_size=1_500_000)
+        self.assertTrue(result['exists'])
+        self.assertEqual(result['file_size'], 1_500_000)
+        self.assertNotIn('upload_url', result)
+
+    def test_missing_oversized_object_cannot_receive_upload_url(self):
+        with self.assertRaisesRegex(ValueError, 'optimized image exceeds'):
+            self._run(file_size=1_500_000, b2_found=False)
 
 
 if __name__ == '__main__':
