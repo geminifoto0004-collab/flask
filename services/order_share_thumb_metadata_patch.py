@@ -7,8 +7,10 @@ and never performs B2 HEAD/GET/resize/PUT work while a customer is swiping.
 from __future__ import annotations
 
 import hashlib
+import queue
 import re
 import threading
+import time
 from datetime import datetime
 
 from flask import Response, has_request_context, redirect, request
@@ -25,7 +27,12 @@ from services.order_share_image_policy import asset_allowed
 
 
 _B2_RECOVERY_LOCK = threading.Lock()
-_B2_RECOVERY_DONE = set()
+_B2_RECOVERY_DONE = {}
+_B2_RECOVERY_INTERVAL_SECONDS = 300
+_B2_RECOVERY_SCHEDULE_LOCK = threading.Lock()
+_B2_RECOVERY_PENDING = set()
+_B2_RECOVERY_QUEUE = queue.Queue()
+_B2_RECOVERY_THREAD = None
 
 _B2_CONTENT_TYPES = {
     ".jpg": "image/jpeg",
@@ -92,7 +99,7 @@ def _recover_customer_assets_from_b2(customer_key):
         # AUTO can switch TiDB within one Render process. A customer scanned on
         # TiDB1 must still be scanned when TiDB2 becomes active.
         recovery_key = (str(getattr(conn, 'active_target', '') or 'single'), customer_key)
-        if recovery_key in _B2_RECOVERY_DONE:
+        if time.monotonic() - _B2_RECOVERY_DONE.get(recovery_key, float('-inf')) < _B2_RECOVERY_INTERVAL_SECONDS:
             conn.close()
             return 0
         cur = get_cursor(conn)
@@ -256,7 +263,7 @@ def _recover_customer_assets_from_b2(customer_key):
                 except Exception:
                     pass
             conn.commit()
-            _B2_RECOVERY_DONE.add(recovery_key)
+            _B2_RECOVERY_DONE[recovery_key] = time.monotonic()
             if discovered:
                 print(
                     f"[ORDER] B2 metadata auto-recovery discovered={len(discovered)} "
@@ -281,6 +288,41 @@ def _safe_recover_customer_assets(customer_key):
             f"{type(exc).__name__}: {exc}"
         )
         return 0
+
+
+def _b2_recovery_worker():
+    """Do slow B2 listing outside the order-sync and public-share request paths."""
+    while True:
+        customer_key = _B2_RECOVERY_QUEUE.get()
+        try:
+            if _safe_recover_customer_assets(customer_key):
+                # Rebuild the persisted page and hot HTML after missing metadata
+                # arrives; the next customer page request sees the new images.
+                _snapshot.queue_snapshot_refresh(customer_key, delay=0.05)
+        finally:
+            with _B2_RECOVERY_SCHEDULE_LOCK:
+                _B2_RECOVERY_PENDING.discard(customer_key)
+            _B2_RECOVERY_QUEUE.task_done()
+
+
+def _queue_customer_asset_recovery(customer_key):
+    global _B2_RECOVERY_QUEUE, _B2_RECOVERY_THREAD
+    customer_key = str(customer_key or '').strip()
+    if not customer_key:
+        return
+    with _B2_RECOVERY_SCHEDULE_LOCK:
+        # Gunicorn may preload and then fork: a thread object from the parent is
+        # not alive in the child, so discard its inherited pending work.
+        if _B2_RECOVERY_THREAD is None or not _B2_RECOVERY_THREAD.is_alive():
+            _B2_RECOVERY_QUEUE = queue.Queue()
+            _B2_RECOVERY_PENDING.clear()
+            _B2_RECOVERY_THREAD = threading.Thread(
+                target=_b2_recovery_worker, name='order-b2-metadata-recovery', daemon=True,
+            )
+            _B2_RECOVERY_THREAD.start()
+        if customer_key not in _B2_RECOVERY_PENDING:
+            _B2_RECOVERY_PENDING.add(customer_key)
+            _B2_RECOVERY_QUEUE.put(customer_key)
 
 
 def _list_customer_assets(customer_key):
@@ -327,7 +369,7 @@ _asset_service.get_asset = _get_asset
 
 def _load_build_rows(customer_key):
     """Rebuilt persisted snapshots carry the same thumb metadata as TiDB."""
-    _safe_recover_customer_assets(customer_key)
+    _queue_customer_asset_recovery(customer_key)
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute(
