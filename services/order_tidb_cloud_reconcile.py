@@ -6,8 +6,8 @@ This repair pass exists for two cases:
 2. The standby was temporarily unreachable and missed one or more writes.
 
 It copies only ORDER cloud tables, never unrelated application tables, and never B2
-image bytes. Rows are upserted from the selected TiDB into the standby; automatic
-repair intentionally does not delete standby-only rows to avoid destructive recovery.
+image bytes. Rows are upserted from the authoritative/newer TiDB into the standby, and
+standby-only rows are deleted for the known ORDER cloud tables so both sides converge.
 """
 from __future__ import annotations
 
