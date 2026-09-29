@@ -146,6 +146,47 @@ def _existing_asset(order_number, workflow_key, sha256_hex, conn=None):
             conn.close()
 
 
+def _b2_existing_object(object_keys, expected_size=0):
+    """Probe B2 only after TiDB lost its asset row (for example after failover).
+
+    A missing TiDB row does not mean that the image bytes need uploading again.
+    Probe both configured B2 stores and both scoped/legacy key conventions. A
+    read error is not a 404: do not overwrite an object we could not check.
+    """
+    from botocore.exceptions import ClientError
+
+    checked = 0
+    errors = []
+    for backend in (PRIMARY, SECONDARY):
+        if not backend_ready(backend):
+            continue
+        cfg = config_for_backend(backend, required=True)
+        client = _client_for_backend(backend)
+        for object_key in dict.fromkeys(object_keys):
+            try:
+                info = client.head_object(Bucket=cfg['bucket_name'], Key=object_key)
+            except ClientError as exc:
+                code = str((exc.response.get('Error') or {}).get('Code') or '')
+                status = (exc.response.get('ResponseMetadata') or {}).get('HTTPStatusCode')
+                if code in {'404', 'NoSuchKey', 'NotFound'} or status == 404:
+                    checked += 1
+                    continue
+                errors.append(exc)
+                continue
+            except Exception as exc:
+                errors.append(exc)
+                continue
+            size = int(info.get('ContentLength') or 0)
+            if size <= 0 or (expected_size and size != expected_size):
+                raise RuntimeError('existing B2 image has an unexpected size')
+            return backend, object_key, size
+    if errors:
+        raise RuntimeError('cannot confirm whether image already exists in B2') from errors[0]
+    if not checked:
+        raise RuntimeError('no readable B2 backend is configured')
+    return None
+
+
 def _upsert_registered_asset(order_number, customer_key, workflow_key, sha256_hex,
                              object_key, content_type, file_size, source_site,
                              storage_backend, thumb_object_key=None, thumb_sha256=None,
@@ -295,6 +336,41 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
             file_size = 0
         if file_size and file_size > _NEW_IMAGE_MAX_BYTES:
             raise ValueError('optimized image exceeds 1,000,000-byte policy')
+
+        # A newly selected TiDB can lack cloud_assets even though B2 already has
+        # the image. Restore its metadata without another PC -> B2 upload. This
+        # path runs only for a signed, authenticated publication request; public
+        # page reads never guess visibility from the mere presence of a B2 file.
+        found = _b2_existing_object(
+            (object_key, _object_key(asset_sha256, content_type)), file_size,
+        )
+        if found:
+            backend, found_key, found_size = found
+            thumb_key = _thumb_object_key(asset_sha256)
+            try:
+                thumb = _b2_existing_object((thumb_key,))
+            except RuntimeError:
+                # A thumbnail is optional; losing its backend must not cause a
+                # second upload of a confirmed existing WEB image.
+                thumb = None
+            thumb_size = thumb[2] if thumb and thumb[0] == backend else None
+            registered = _upsert_registered_asset(
+                order_number, customer_key, workflow_key, asset_sha256,
+                found_key, content_type, found_size, None, backend,
+                thumb_object_key=thumb_key if thumb_size else None,
+                thumb_content_type='image/jpeg' if thumb_size else None,
+                thumb_file_size=thumb_size, conn=conn,
+            )
+            return {
+                'exists': True, 'reused': True, 'variant': 'image',
+                'sha256': asset_sha256, 'asset_sha256': asset_sha256,
+                'content_type': content_type, 'file_size': found_size,
+                'object_key': found_key, 'storage_backend': backend,
+                'asset_key': registered['asset_key'],
+                'upload_mode': 'b2_existing_object_tidb_metadata_repair',
+                'render_receives_image_bytes': False,
+                'b2_head_calls_per_image': 1,
+            }
     else:
         object_key = _object_key(asset_sha256, content_type)
 

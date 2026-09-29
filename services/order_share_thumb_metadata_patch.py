@@ -84,14 +84,17 @@ def _recover_customer_assets_from_b2(customer_key):
     inactive/manual exceptions) are never overwritten.
     """
     customer_key = str(customer_key or "").strip()
-    if not customer_key or customer_key in _B2_RECOVERY_DONE:
+    if not customer_key:
         return 0
 
     with _B2_RECOVERY_LOCK:
-        if customer_key in _B2_RECOVERY_DONE:
-            return 0
-
         conn = get_db_connection()
+        # AUTO can switch TiDB within one Render process. A customer scanned on
+        # TiDB1 must still be scanned when TiDB2 becomes active.
+        recovery_key = (str(getattr(conn, 'active_target', '') or 'single'), customer_key)
+        if recovery_key in _B2_RECOVERY_DONE:
+            conn.close()
+            return 0
         cur = get_cursor(conn)
         scan_succeeded = False
         inserted = 0
@@ -253,7 +256,7 @@ def _recover_customer_assets_from_b2(customer_key):
                 except Exception:
                     pass
             conn.commit()
-            _B2_RECOVERY_DONE.add(customer_key)
+            _B2_RECOVERY_DONE.add(recovery_key)
             if discovered:
                 print(
                     f"[ORDER] B2 metadata auto-recovery discovered={len(discovered)} "
