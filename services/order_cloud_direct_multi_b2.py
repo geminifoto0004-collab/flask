@@ -334,8 +334,8 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
             file_size = int(payload.get('file_size') or 0)
         except Exception:
             file_size = 0
-        if file_size and file_size > _NEW_IMAGE_MAX_BYTES:
-            raise ValueError('optimized image exceeds 1,000,000-byte policy')
+        if file_size > _LEGACY_MAX_BYTES:
+            raise ValueError('file_size is outside the allowed range')
 
         # A newly selected TiDB can lack cloud_assets even though B2 already has
         # the image. Restore its metadata without another PC -> B2 upload. This
@@ -394,6 +394,11 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
                 'render_receives_image_bytes': False,
                 'b2_head_calls_per_image': 1,
             }
+        # Historical images may be larger than the current upload policy. They
+        # can be linked only after confirming their bytes already exist in B2;
+        # never issue a new PUT URL for an oversized image.
+        if file_size > _NEW_IMAGE_MAX_BYTES:
+            raise ValueError('optimized image exceeds 1,000,000-byte policy')
     else:
         object_key = _object_key(asset_sha256, content_type)
 
