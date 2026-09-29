@@ -6,8 +6,9 @@ This repair pass exists for two cases:
 2. The standby was temporarily unreachable and missed one or more writes.
 
 It copies only ORDER cloud tables, never unrelated application tables, and never B2
-image bytes. Rows are upserted from the authoritative/newer TiDB into the standby, and
-standby-only rows are deleted for the known ORDER cloud tables so both sides converge.
+image bytes. Rows unique to the standby are preserved for an explicit audit: absence
+cannot distinguish an intentional delete from a write missed during an outage.
+For matching keys the newer stream version selects the source of truth.
 """
 from __future__ import annotations
 
@@ -127,37 +128,6 @@ def _ensure_destination_schema(source_cur, dest_cur, table):
         dest_cur.execute(f'ALTER TABLE {_qi(table)} ADD COLUMN {definition}')
 
 
-def _delete_destination_extras(source_cur, dest_cur, table):
-    pk = _PRIMARY_KEYS.get(table)
-    if not pk:
-        return 0
-    source_cur.execute(f'SELECT {_qi(pk)} FROM {_qi(table)}')
-    source_keys = set()
-    for row in source_cur.fetchall() or []:
-        value = row.get(pk) if isinstance(row, dict) else (row[0] if row else None)
-        if value is not None:
-            source_keys.add(value)
-    dest_cur.execute(f'SELECT {_qi(pk)} FROM {_qi(table)}')
-    extras = []
-    for row in dest_cur.fetchall() or []:
-        value = row.get(pk) if isinstance(row, dict) else (row[0] if row else None)
-        if value is not None and value not in source_keys:
-            extras.append(value)
-    deleted = 0
-    for pos in range(0, len(extras), 250):
-        chunk = extras[pos:pos + 250]
-        placeholders = ','.join(['?'] * len(chunk))
-        dest_cur.execute(
-            f'DELETE FROM {_qi(table)} WHERE {_qi(pk)} IN ({placeholders})',
-            tuple(chunk),
-        )
-        try:
-            deleted += max(int(dest_cur.rowcount or 0), 0)
-        except Exception:
-            deleted += len(chunk)
-    return deleted
-
-
 def _upsert_table(source_conn, dest_conn, table):
     source_cur = source_conn.cursor()
     dest_cur = dest_conn.cursor()
@@ -170,9 +140,7 @@ def _upsert_table(source_conn, dest_conn, table):
     source_cur.execute(f'SELECT * FROM {_qi(table)}')
     first = source_cur.fetchmany(250)
     if not first:
-        deleted = _delete_destination_extras(source_cur, dest_cur, table)
-        dest_conn.commit()
-        return {'table': table, 'rows': 0, 'deleted': deleted}
+        return {'table': table, 'rows': 0, 'changed': 0}
 
     sample = first[0]
     if not isinstance(sample, dict):
@@ -184,23 +152,72 @@ def _upsert_table(source_conn, dest_conn, table):
     placeholders = ','.join(['?'] * len(columns))
     quoted = ','.join(_qi(x) for x in columns)
     updates = ','.join(f'{_qi(x)}=VALUES({_qi(x)})' for x in columns)
-    sql = (
-        f'INSERT INTO {_qi(table)} ({quoted}) VALUES ({placeholders}) '
-        f'ON DUPLICATE KEY UPDATE {updates}'
-    )
+    sql = (f'INSERT INTO {_qi(table)} ({quoted}) VALUES ({placeholders}) '
+           f'ON DUPLICATE KEY UPDATE {updates}')
 
     total = 0
+    changed = 0
     batch = first
     while batch:
         values = [tuple(row.get(col) for col in columns) for row in batch]
         dest_cur.executemany(sql, values)
+        changed += max(int(dest_cur.rowcount or 0), 0)
         total += len(values)
         if total % 1000 == 0:
             dest_conn.commit()
         batch = source_cur.fetchmany(250)
-    deleted = _delete_destination_extras(source_cur, dest_cur, table)
     dest_conn.commit()
-    return {'table': table, 'rows': total, 'deleted': deleted}
+    return {'table': table, 'rows': total, 'changed': changed}
+
+
+def _invalidate_derived_views(conn):
+    """Snapshots and rendered HTML may omit newly merged image/share rows."""
+    cur = conn.cursor()
+    for table in ('cloud_customer_share_snapshot', 'cloud_customer_share_html_cache'):
+        if _table_exists(cur, table):
+            cur.execute(f'DELETE FROM {_qi(table)}')
+    conn.commit()
+
+
+def _invalidate_process_views():
+    # A Render process can continue serving the same share after AUTO changes target.
+    # Do not let one day's prewarmed HTML hide rows just recovered in TiDB.
+    try:
+        from services import order_public_share_multi_b2_page as page
+        from services import order_share_render_cache as render
+        with page._cache_lock:
+            page._space_cache.clear()
+            page._token_cache.clear()
+        with render._LOCK:
+            render._HTML.clear()
+            render._TOKEN_HTML.clear()
+    except Exception as exc:
+        print(f'[WARN] TiDB reconciled, local share cache reset skipped: {exc}')
+
+
+def _standby_only_counts(source_conn, dest_conn):
+    """Report divergent keys without resurrecting a removed image or share."""
+    counts = {}
+    source_cur, dest_cur = source_conn.cursor(), dest_conn.cursor()
+    for table in _TABLES:
+        if table in ('cloud_customer_share_snapshot', _STATE_TABLE):
+            continue
+        pk = _PRIMARY_KEYS.get(table)
+        if not pk or not _table_exists(source_cur, table) or not _table_exists(dest_cur, table):
+            continue
+        source_cur.execute(f'SELECT {_qi(pk)} FROM {_qi(table)}')
+        source_keys = {
+            row.get(pk) if isinstance(row, dict) else row[0]
+            for row in source_cur.fetchall() or []
+        }
+        dest_cur.execute(f'SELECT {_qi(pk)} FROM {_qi(table)}')
+        count = sum(
+            1 for row in dest_cur.fetchall() or []
+            if (row.get(pk) if isinstance(row, dict) else row[0]) not in source_keys
+        )
+        if count:
+            counts[table] = count
+    return counts
 
 
 def _mirror_version(target):
@@ -270,20 +287,30 @@ def reconcile_once(source_target=None):
     results = []
     try:
         destination = get_db_connection_for_target(destination_target, pooled=False)
+        # Never infer a DELETE from absence. The standby may have a still-valid
+        # order, or an intentionally deleted image. Keep it and report the drift.
+        standby_only = _standby_only_counts(source, destination)
         for table in _TABLES:
             results.append(_upsert_table(source, destination, table))
+        if standby_only or any(item.get('changed') for item in results if item['table'] not in
+                               ('cloud_customer_share_snapshot', _STATE_TABLE)):
+            _invalidate_derived_views(destination)
+            _invalidate_process_views()
         clear_cloud_mirror_dirty()
         print(
             f'[ORDER] TiDB cloud reconcile {source_target}->{destination_target} complete: '
             + ', '.join(
-                f"{x['table']}={x.get('rows', 0)}/del{x.get('deleted', 0)}" for x in results
+                f"{x['table']}={x.get('rows', 0)}/changed{x.get('changed', 0)}" for x in results
             )
         )
+        if standby_only:
+            print(f'[WARN] TiDB standby-only ORDER rows retained for audit: {standby_only}')
         return {
             'ok': True,
             'source': source_target,
             'destination': destination_target,
             'versions_before': versions,
+            'standby_only': standby_only,
             'tables': results,
         }
     except Exception:
