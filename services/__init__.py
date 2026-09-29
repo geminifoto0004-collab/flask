@@ -220,6 +220,9 @@ from . import order_share_visibility_live_patch as _order_share_visibility_live_
 from . import order_share_thumb_metadata_patch as _order_share_thumb_metadata_patch  # noqa: E402,F401
 from . import order_share_thumb_render_patch as _order_share_thumb_render_patch  # noqa: E402,F401
 
+# Keep TiDB1/TiDB2 ORDER cloud metadata synchronized and repair drift in background.
+from . import order_tidb_cloud_reconcile as _order_tidb_cloud_reconcile  # noqa: E402,F401
+
 __all__ = [
     'send_verification_code',
     'verify_code',

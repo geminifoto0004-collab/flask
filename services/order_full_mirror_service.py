@@ -14,7 +14,11 @@ import json
 import re
 from typing import Any
 
-from services.order_tidb_connection import get_order_tidb_connection
+from services.order_tidb_connection import (
+    get_order_tidb_connection,
+    get_order_tidb_connection_for_target,
+)
+from tidb_targets import mirror_enabled, other_target, preferred_target, target_configured
 
 _STATE_TABLE = '__order_mirror_state'
 _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -145,23 +149,63 @@ def _ensure_state_table(conn):
     conn.commit()
 
 
+def _empty_full_mirror_state() -> dict:
+    return {
+        'snapshot_hash': None,
+        'source_watermark': None,
+        'source_site': None,
+        'table_count': 0,
+        'row_count': 0,
+        'committed_at': None,
+    }
+
+
+def _read_full_mirror_state(conn) -> dict:
+    _ensure_state_table(conn)
+    cur = conn.cursor()
+    cur.execute(f'SELECT * FROM {_qi(_STATE_TABLE)} WHERE id=1')
+    row = cur.fetchone() or {}
+    return dict(row) if row else _empty_full_mirror_state()
+
+
 def get_full_mirror_state() -> dict:
+    """Force the desktop snapshot to resend when the reachable standby is stale."""
     conn = get_order_tidb_connection()
     try:
-        _ensure_state_table(conn)
-        cur = conn.cursor()
-        cur.execute(f'SELECT * FROM {_qi(_STATE_TABLE)} WHERE id=1')
-        row = cur.fetchone() or {}
-        return dict(row) if row else {
-            'snapshot_hash': None,
-            'source_watermark': None,
-            'source_site': None,
-            'table_count': 0,
-            'row_count': 0,
-            'committed_at': None,
-        }
+        state = _read_full_mirror_state(conn)
+        active_target = str(getattr(conn, 'active_target', '') or preferred_target()).upper()
     finally:
         conn.close()
+
+    state['active_target'] = active_target
+    state['mirror_needs_sync'] = False
+    if not mirror_enabled():
+        return state
+
+    mirror_target = other_target(active_target)
+    if not target_configured(mirror_target, require_database=False):
+        return state
+
+    try:
+        mirror_conn = get_order_tidb_connection_for_target(mirror_target)
+        try:
+            mirror_state = _read_full_mirror_state(mirror_conn)
+        finally:
+            mirror_conn.close()
+    except Exception as exc:
+        state['mirror_target'] = mirror_target
+        state['mirror_reachable'] = False
+        state['mirror_error'] = f'{type(exc).__name__}: {exc}'[:240]
+        return state
+
+    state['mirror_target'] = mirror_target
+    state['mirror_reachable'] = True
+    state['mirror_snapshot_hash'] = mirror_state.get('snapshot_hash')
+    if mirror_state.get('snapshot_hash') != state.get('snapshot_hash'):
+        state['active_snapshot_hash'] = state.get('snapshot_hash')
+        state['mirror_needs_sync'] = True
+        state['snapshot_hash'] = None
+    return state
 
 
 def _normalize_tables(tables: Any) -> tuple[list[dict], int]:

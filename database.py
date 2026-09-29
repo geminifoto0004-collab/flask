@@ -5,9 +5,22 @@ Flask ?æ?ç®¡ç?ç³»çµ± - è³æ?åº«ç®¡??
 """
 
 import os
+import re
+import threading
+import time
 from datetime import datetime
 from config import config
 from utils.time_utils import get_chile_time_naive
+from tidb_targets import (
+    failover_enabled as tidb_failover_enabled,
+    mirror_enabled as tidb_mirror_enabled,
+    other_target as tidb_other_target,
+    preferred_target as tidb_preferred_target,
+    pymysql_kwargs as tidb_pymysql_kwargs,
+    selected_target as tidb_selected_target,
+    target_candidates as tidb_target_candidates,
+    target_configured as tidb_target_configured,
+)
 
 # ?¹æ?è³æ?åº«é??å??¥ç¸?æ¨¡çµ?
 POSTGRESQL_AVAILABLE = None
@@ -47,7 +60,54 @@ try:
 except ImportError:
     POOLEDDB_AVAILABLE = False
 
-_MYSQL_POOL = None
+_MYSQL_POOLS = {}
+_MYSQL_POOLS_LOCK = threading.Lock()
+_CLOUD_MIRROR_DIRTY = threading.Event()
+_CLOUD_MIRROR_WARNED = set()
+_CLOUD_MIRROR_SOURCE_HINT = None
+_CLOUD_MIRROR_STATE_TABLE = 'cloud_tidb_mirror_state'
+_CLOUD_WRITE_RE = re.compile(
+    r'^\s*(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP|TRUNCATE|RENAME)\b',
+    re.IGNORECASE,
+)
+_CLOUD_TABLE_RE = re.compile(r'\bcloud_[A-Za-z0-9_]+\b', re.IGNORECASE)
+
+
+def cloud_mirror_dirty_event():
+    return _CLOUD_MIRROR_DIRTY
+
+
+def mark_cloud_mirror_dirty():
+    _CLOUD_MIRROR_DIRTY.set()
+
+
+def clear_cloud_mirror_dirty():
+    _CLOUD_MIRROR_DIRTY.clear()
+
+
+def get_cloud_mirror_source_hint():
+    return _CLOUD_MIRROR_SOURCE_HINT
+
+
+def _set_cloud_mirror_source_hint(target):
+    global _CLOUD_MIRROR_SOURCE_HINT
+    value = str(target or '').strip().upper()
+    if value in {'TIDB1', 'TIDB2'}:
+        _CLOUD_MIRROR_SOURCE_HINT = value
+
+
+def _is_cloud_write(sql):
+    text = str(sql or '')
+    return bool(_CLOUD_WRITE_RE.search(text) and _CLOUD_TABLE_RE.search(text))
+
+
+def _mirror_error_is_idempotent(exc):
+    code = None
+    try:
+        code = int((getattr(exc, 'args', None) or [None])[0])
+    except Exception:
+        code = None
+    return code in {1050, 1060, 1061, 1068, 1091}
 
 import sqlite3  # noqa: F401
 
@@ -105,140 +165,108 @@ def executemany_sql(cursor, sql, params_list):
 
 
 # ========== è³æ?åº«é?¥ ==========
+def _mysql_pool_key(target, kwargs):
+    return (
+        str(target or '').upper(),
+        kwargs.get('host'), int(kwargs.get('port') or 0), kwargs.get('user'),
+        kwargs.get('database'),
+    )
+
+
+def _raw_mysql_connection_for_target(target, *, pooled=True):
+    if not MYSQL_AVAILABLE:
+        raise ImportError("MySQL/TiDB module is not installed; run pip install PyMySQL")
+    import pymysql
+    import pymysql.cursors
+
+    kwargs = tidb_pymysql_kwargs(
+        target, require_database=True, connect_timeout=10, read_timeout=10, write_timeout=10
+    )
+    kwargs['cursorclass'] = pymysql.cursors.DictCursor
+
+    if pooled and POOLEDDB_AVAILABLE:
+        key = _mysql_pool_key(target, kwargs)
+        with _MYSQL_POOLS_LOCK:
+            pool = _MYSQL_POOLS.get(key)
+            if pool is None:
+                pool = PooledDB(
+                    creator=pymysql,
+                    mincached=0,
+                    maxcached=5,
+                    maxconnections=10,
+                    blocking=True,
+                    ping=1,
+                    **kwargs,
+                )
+                _MYSQL_POOLS[key] = pool
+        return pool.connection()
+    return pymysql.connect(**kwargs)
+
+
+def get_db_connection_for_target(target, *, pooled=True):
+    """Connect to one exact TiDB target without failover or mirrored writes."""
+    target = str(target or '').strip().upper()
+    if target not in {'TIDB1', 'TIDB2'}:
+        raise ValueError('target must be TIDB1 or TIDB2')
+    return AdaptedConnection(_raw_mysql_connection_for_target(target, pooled=pooled))
+
+
+def _select_mysql_connection():
+    preferred = tidb_preferred_target()
+    errors = []
+    for target in tidb_target_candidates(
+        preferred,
+        allow_failover=tidb_failover_enabled() or tidb_selected_target() == 'AUTO',
+    ):
+        if not tidb_target_configured(target):
+            continue
+        try:
+            return AdaptedConnection(_raw_mysql_connection_for_target(target, pooled=True)), target
+        except Exception as exc:
+            errors.append((target, exc))
+            continue
+    if errors:
+        target, exc = errors[-1]
+        raise RuntimeError(f'No TiDB target is reachable; last target {target}: {exc}') from exc
+    raise RuntimeError('No TiDB target is configured')
+
+
 def get_db_connection():
-    """
-    ?²å?è³æ?åº«é?¥
-    è¿å?ï¼è??åº«??¥å°è±¡ï¼SQLite?PostgreSQL ??MySQL/TiDBï¼?
-    """
+    """Create a DB connection with TiDB failover and ORDER cloud-table mirroring."""
     try:
         if config.DATABASE_TYPE == 'postgresql':
             if not POSTGRESQL_AVAILABLE:
-                raise ImportError("PostgreSQL æ¨¡ç??ªå?è£ï?è«é?è¡? pip install psycopg2-binary")
-            
+                raise ImportError("PostgreSQL module is not installed; run pip install psycopg2-binary")
             if not config.DATABASE_URL:
-                raise ValueError("DATABASE_URL ?°å?è®æ¸?ªè¨­ç½®ï?Render ?èª?æ?ä¾ï?")
-            
-            # PostgreSQL ??¥
+                raise ValueError("DATABASE_URL is not configured")
             conn = psycopg2.connect(config.DATABASE_URL)
-            # è¨­ç½®?ªå??äº¤??Falseï¼è? SQLite è¡çºä¸?´ï?
             conn.autocommit = False
-            # ?
-# è???¥ä»¥èª?é©??cursor
             return AdaptedConnection(conn)
-        elif config.DATABASE_TYPE in ('mysql', 'tidb'):
-            if not MYSQL_AVAILABLE:
-                raise ImportError("MySQL/TiDB æ¨¡ç??ªå?è£ï?è«é?è¡? pip install PyMySQL")
-            
-            import pymysql
-            
-            # ?ªå?ä½¿ç¨ DATABASE_URLï¼å??æ??å?ä½¿ç¨?®ç¨?é?ç½?
-            if config.DATABASE_URL:
-                # è§?? MySQL URL ?¼å?ï¼mysql://user:password@host:port/database
-                # ?è?TiDB URL ?¼å?é¡ä¼¼
-                import urllib.parse
-                parsed = urllib.parse.urlparse(config.DATABASE_URL)
-                db_config = {
-                    'host': parsed.hostname or config.MYSQL_HOST,
-                    'port': parsed.port or config.MYSQL_PORT,
-                    'user': parsed.username or config.MYSQL_USER,
-                    'password': parsed.password or config.MYSQL_PASSWORD,
-                    'database': parsed.path.lstrip('/') if parsed.path else config.MYSQL_DATABASE,
-                    'charset': 'utf8mb4',
-                    'autocommit': False
-                }
-                # æª¢æ¥ URL ?æ¸ä¸­æ¯?¦æ? SSL è¨­ç½®
-                if parsed.query:
-                    query_params = urllib.parse.parse_qs(parsed.query)
-                    if query_params.get('ssl_mode') == ['REQUIRED']:
-                        # TiDB Cloud è¦æ? SSL ??¥
-                        db_config['ssl'] = {'check_hostname': False}
-            else:
-                if not config.MYSQL_HOST or not config.MYSQL_USER or not config.MYSQL_DATABASE:
-                    raise ValueError("MySQL/TiDB ??¥?ç½®?ªè¨­ç½®ï?è«è¨­ç½?DATABASE_URL ??MYSQL_HOST/MYSQL_USER/MYSQL_DATABASE")
-                db_config = {
-                    'host': config.MYSQL_HOST,
-                    'port': config.MYSQL_PORT,
-                    'user': config.MYSQL_USER,
-                    'password': config.MYSQL_PASSWORD,
-                    'database': config.MYSQL_DATABASE,
-                    'charset': 'utf8mb4',
-                    'autocommit': False
-                }
-            
-            # TiDB Cloud è¦æ? SSL ??¥ï¼èª?å???SSL
-            # å¦æ? host ?
-# å« tidbcloud.comï¼èª?å???SSL
-            if 'tidbcloud.com' in db_config.get('host', '').lower():
-                db_config['ssl'] = {'check_hostname': False}
-            
-            # è¨­ç½®é»è?ä½¿ç¨ DictCursorï¼è??å??¸æ ¼å¼ï?
-            import pymysql.cursors
-            db_config['cursorclass'] = pymysql.cursors.DictCursor
-            
-            # æ·»å?è¶
-# æ?è¨­ç½®ï¼é¿?å¨ Render ä¸å¡ä½ï?
-            # connect_timeout: ??¥è¶
-# æ?ï¼ç?ï¼?
-            # read_timeout: è®?è??ï?ç§ï?
-            # write_timeout: å¯«å
-# ¥è¶
-# æ?ï¼ç?ï¼?
-            db_config['connect_timeout'] = 10  # 10 ç§é?¥è¶
-# æ?
-            db_config['read_timeout'] = 10     # 10 ç§è??è???
-            db_config['write_timeout'] = 10    # 10 ç§å¯«?¥è???
-            
-            # MySQL/TiDB ??¥
-            global _MYSQL_POOL
-            if POOLEDDB_AVAILABLE:
-                if _MYSQL_POOL is None:
-                    _MYSQL_POOL = PooledDB(
-                        creator=pymysql,
-                        mincached=1,
-                        maxcached=5,
-                        maxconnections=10,
-                        blocking=True,
-                        ping=1,
-                        **db_config,
-                    )
-                conn = _MYSQL_POOL.connection()
-            else:
-                conn = pymysql.connect(**db_config)
-            # ?
-# è???¥ä»¥èª?é©??cursor
-            return AdaptedConnection(conn)
-        else:
-            # SQLite ??¥
-            # ç¢ºä?è³æ?åº«ç®?å???
-            db_dir = os.path.dirname(config.DATABASE_PATH)
-            if db_dir and not os.path.exists(db_dir):
-                os.makedirs(db_dir, exist_ok=True)
-            
-            # SQLite ??¥?ç½®ï¼åª?ä¸¦?¼æ§è½ï¼é¿?å¨ Render ä¸å¡ä½ï?
-            # timeout: 20 ç§ï?ç­å??å??è??æ??ï??¿å??¡æ­»ï¼?
-            # check_same_thread: Falseï¼å?è¨±å?ç·ç?è¨ªå?ï¼Flask ?¯å?ç·ç??ï?
-            conn = sqlite3.connect(
-                config.DATABASE_PATH,
-                timeout=20.0,  # 20 ç§è??ï??¿å??·æ??ç?å¾
-# é?å®?
-                check_same_thread=False  # ?è¨±å¤ç?ç¨è¨ª??
-            )
-            conn.row_factory = sqlite3.Row  # ä½¿æ¥è©¢ç??å¯ä»¥å?å­å
-# ¸ä¸æ¨?¨ª??
-            
-            # ?ç¨ WAL æ¨¡å?ï¼Write-Ahead Loggingï¼æ?é«ä¸¦?¼æ§è½
-            # WAL æ¨¡å??è¨±å¤åè??å?ä¸?å¯«?¥å??é²è?ï¼æ?å°é?å®?
-            try:
-                conn.execute('PRAGMA journal_mode=WAL')
-            except Exception:
-                # å¦æ??ç¨ WAL å¤±æ?ï¼ä?å¦æ?äºåªè®?ä»¶ç³»çµ±ï¼ï?å¿½ç¥?¯èª¤
-                pass
-            
-            # ?
-# è???¥ä»¥èª?é©??cursorï¼å³ä½?SQLite ä¸é?è¦è??ï?ä¹ä??ä??´æ§ï?
-            return AdaptedConnection(conn)
+
+        if config.DATABASE_TYPE in ('mysql', 'tidb'):
+            active, active_target = _select_mysql_connection()
+            mirror_target = tidb_other_target(active_target)
+            if (
+                tidb_mirror_enabled()
+                and tidb_target_configured(mirror_target)
+                and mirror_target != active_target
+            ):
+                return CloudMirroredConnection(active, active_target, mirror_target)
+            active.active_target = active_target
+            return active
+
+        db_dir = os.path.dirname(config.DATABASE_PATH)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+        conn = sqlite3.connect(config.DATABASE_PATH, timeout=20.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute('PRAGMA journal_mode=WAL')
+        except Exception:
+            pass
+        return AdaptedConnection(conn)
     except Exception as e:
-        print(f"è³æ?åº«é?¥å¤±æ?: {e}")
+        print(f"Database connection failed: {e}")
         raise
 
 
@@ -369,6 +397,165 @@ class AdaptedConnection:
         else:
             cursor = self._conn.cursor(*args, **kwargs)
         return AdaptedCursor(cursor)
+
+
+class CloudMirroredCursor:
+    """Read from selected TiDB; mirror only mutations touching cloud_* tables."""
+    def __init__(self, connection, active_cursor):
+        self._connection = connection
+        self._active_cursor = active_cursor
+
+    def __getattr__(self, name):
+        return getattr(self._active_cursor, name)
+
+    def execute(self, sql, params=None):
+        if params is None:
+            result = self._active_cursor.execute(sql)
+        else:
+            result = self._active_cursor.execute(sql, params)
+        if _is_cloud_write(sql):
+            self._connection._cloud_written = True
+            self._connection._mirror_execute(sql, params, many=False)
+        return result
+
+    def executemany(self, sql, params_list):
+        if _is_cloud_write(sql):
+            rows = params_list if isinstance(params_list, (list, tuple)) else list(params_list)
+            result = self._active_cursor.executemany(sql, rows)
+            self._connection._cloud_written = True
+            self._connection._mirror_execute(sql, rows, many=True)
+            return result
+        return self._active_cursor.executemany(sql, params_list)
+
+
+class CloudMirroredConnection:
+    """Best-effort TiDB1/TiDB2 dual writer for ORDER cloud_* metadata only."""
+    def __init__(self, active, active_target, mirror_target):
+        self._active = active
+        self.active_target = str(active_target or '').upper()
+        self.mirror_target = str(mirror_target or '').upper()
+        self._mirror = None
+        self._mirror_failed = False
+        self._cloud_written = False
+
+    def __getattr__(self, name):
+        return getattr(self._active, name)
+
+    def cursor(self, *args, **kwargs):
+        return CloudMirroredCursor(self, self._active.cursor(*args, **kwargs))
+
+    def _get_mirror(self):
+        if self._mirror_failed:
+            return None
+        if self._mirror is None:
+            try:
+                self._mirror = get_db_connection_for_target(self.mirror_target, pooled=True)
+            except Exception as exc:
+                self._mark_mirror_failed(exc)
+                return None
+        return self._mirror
+
+    def _mark_mirror_failed(self, exc):
+        self._mirror_failed = True
+        mark_cloud_mirror_dirty()
+        key = (self.active_target, self.mirror_target, type(exc).__name__, str(exc)[:160])
+        if key not in _CLOUD_MIRROR_WARNED:
+            _CLOUD_MIRROR_WARNED.add(key)
+            print(
+                f"[WARN] TiDB cloud mirror {self.active_target}->{self.mirror_target} "
+                f"temporarily skipped: {type(exc).__name__}: {exc}"
+            )
+        if self._mirror is not None:
+            try:
+                self._mirror.rollback()
+            except Exception:
+                pass
+            try:
+                self._mirror.close()
+            except Exception:
+                pass
+            self._mirror = None
+
+    def _mirror_execute(self, sql, params, *, many):
+        mirror = self._get_mirror()
+        if mirror is None:
+            return
+        try:
+            cur = mirror.cursor()
+            if many:
+                cur.executemany(sql, params)
+            elif params is None:
+                cur.execute(sql)
+            else:
+                cur.execute(sql, params)
+        except Exception as exc:
+            if _mirror_error_is_idempotent(exc):
+                return
+            self._mark_mirror_failed(exc)
+
+    def _write_mirror_state(self, conn, version):
+        cur = conn.cursor()
+        cur.execute(
+            f"""CREATE TABLE IF NOT EXISTS {_CLOUD_MIRROR_STATE_TABLE} (
+                stream_key VARCHAR(64) PRIMARY KEY,
+                version BIGINT NOT NULL,
+                writer_target VARCHAR(16) NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        cur.execute(
+            f"""INSERT INTO {_CLOUD_MIRROR_STATE_TABLE}
+                (stream_key, version, writer_target) VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE version=VALUES(version),
+                    writer_target=VALUES(writer_target), updated_at=CURRENT_TIMESTAMP""",
+            ('order_cloud', int(version), self.active_target),
+        )
+
+    def commit(self):
+        if self._cloud_written:
+            version = time.time_ns()
+            try:
+                self._write_mirror_state(self._active, version)
+            except Exception as exc:
+                print(f'[WARN] TiDB mirror state write skipped on {self.active_target}: {exc}')
+            if self._mirror is not None and not self._mirror_failed:
+                try:
+                    self._write_mirror_state(self._mirror, version)
+                except Exception as exc:
+                    self._mark_mirror_failed(exc)
+
+        result = self._active.commit()
+        if self._mirror is not None and not self._mirror_failed:
+            try:
+                self._mirror.commit()
+            except Exception as exc:
+                self._mark_mirror_failed(exc)
+        if self._cloud_written:
+            _set_cloud_mirror_source_hint(self.active_target)
+            self._cloud_written = False
+        return result
+
+    def rollback(self):
+        try:
+            result = self._active.rollback()
+        finally:
+            if self._mirror is not None:
+                try:
+                    self._mirror.rollback()
+                except Exception:
+                    pass
+        return result
+
+    def close(self):
+        try:
+            self._active.close()
+        finally:
+            if self._mirror is not None:
+                try:
+                    self._mirror.close()
+                except Exception:
+                    pass
+                self._mirror = None
 
 
 def get_cursor(conn, use_adapter=True):
