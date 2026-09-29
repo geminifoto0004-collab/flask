@@ -341,8 +341,31 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
         # the image. Restore its metadata without another PC -> B2 upload. This
         # path runs only for a signed, authenticated publication request; public
         # page reads never guess visibility from the mere presence of a B2 file.
+        # Customer-pinned uploads use a stable customer/SHA object path. Older
+        # batches only probed order-scoped and legacy paths, so a TiDB switch
+        # could miss the existing B2 bytes and report every cached item failed.
+        from services.order_cloud_customer_storage import stable_object_key, find_customer_sha_asset
+        physical = find_customer_sha_asset(customer_key, asset_sha256)
+        if physical and physical.get('object_key'):
+            linked = _upsert_registered_asset(
+                order_number, customer_key, workflow_key, asset_sha256,
+                physical['object_key'], physical.get('content_type') or content_type,
+                int(physical.get('file_size') or file_size), None,
+                physical.get('storage_backend') or PRIMARY, conn=conn,
+            )
+            return {
+                'exists': True, 'reused': True, 'variant': 'image',
+                'sha256': asset_sha256, 'asset_sha256': asset_sha256,
+                'content_type': physical.get('content_type') or content_type,
+                'file_size': int(physical.get('file_size') or file_size),
+                'object_key': physical['object_key'],
+                'storage_backend': physical.get('storage_backend') or PRIMARY,
+                'asset_key': linked['asset_key'],
+                'upload_mode': 'customer_sha_relinked_without_upload',
+            }
         found = _b2_existing_object(
-            (object_key, _object_key(asset_sha256, content_type)), file_size,
+            (stable_object_key(customer_key, asset_sha256, content_type),
+             object_key, _object_key(asset_sha256, content_type)), file_size,
         )
         if found:
             backend, found_key, found_size = found
@@ -494,10 +517,17 @@ def order_cloud_asset_direct_presign_batch():
 
         # Select the normal upload backend once per request. Existing registered assets
         # retain their own recorded backend. No image bytes ever reach this endpoint.
-        selected_backend, selection = _choose_upload_backend(payload.get('avoid_backend'))
+        # A missing upload backend must not block an already registered asset;
+        # individual new uploads still fail closed in _direct_presign_result.
+        try:
+            selected_backend, selection = _choose_upload_backend(payload.get('avoid_backend'))
+        except Exception as exc:
+            print(f'[ORDER Cloud] presign batch backend probe unavailable: {type(exc).__name__}: {exc}')
+            selected_backend, selection = None, None
         conn = get_db_connection()
         owner_cache = {}
         results = []
+        repaired_customers = set()
         try:
             for index, raw in enumerate(items):
                 item = dict(raw or {})
@@ -509,6 +539,14 @@ def order_cloud_asset_direct_presign_batch():
                         expires_seconds=expires_seconds,
                     )
                     results.append({'client_id': client_id, 'ok': True, 'result': result})
+                    if result.get('upload_mode') in {
+                        'customer_sha_relinked_without_upload',
+                        'b2_existing_object_tidb_metadata_repair',
+                    }:
+                        resolved = owner_cache.get((str(item.get('order_number') or '').strip(),
+                                                    str(item.get('workflow_key') or '').strip()))
+                        if resolved and resolved[1]:
+                            repaired_customers.add(str(resolved[1]))
                 except Exception as exc:
                     results.append({
                         'client_id': client_id, 'ok': False, 'error': str(exc),
@@ -516,6 +554,10 @@ def order_cloud_asset_direct_presign_batch():
                     })
         finally:
             conn.close()
+        if repaired_customers:
+            from services.order_customer_share_snapshot import queue_snapshot_refresh
+            for customer_key in repaired_customers:
+                queue_snapshot_refresh(customer_key)
         return jsonify({'ok': True, 'result': {
             'items': results, 'count': len(results),
             'selected_backend': selected_backend, 'expires_seconds': expires_seconds,
