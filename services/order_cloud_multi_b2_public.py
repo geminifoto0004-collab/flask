@@ -148,13 +148,14 @@ def _authorized_asset_from_memory(token, asset_key):
         # Do not turn a possibly stale/mid-refresh snapshot into a false 404.  The
         # indexed TiDB query below remains the canonical correctness fallback.
         return None, None, False
-    # The long-lived hot token can contain settings from before the latest save.
-    # Read the same short-lived source settings used to render the share page.
-    from services.order_share_image_source_patch import _settings
-    try:
-        settings = _settings(token)
-    except Exception:
-        return None, None, False
+    # The hot share row already carries the visibility flags. Admin setting writes
+    # explicitly invalidate these token caches, so a media request does not need an
+    # extra TiDB settings read just to authorize an already-prewarmed thumbnail.
+    settings = {
+        'show_images': share.get('show_images'),
+        'show_workflow_images': share.get('show_workflow_images'),
+        'show_pdf_pages': share.get('show_pdf_pages'),
+    }
     if not asset_allowed(asset, settings):
         return None, Response('Archivo no encontrado.', 404, mimetype='text/plain'), True
     return asset, None, True
