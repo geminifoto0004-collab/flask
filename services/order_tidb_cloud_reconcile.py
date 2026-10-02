@@ -334,7 +334,11 @@ def reconcile_once(source_target=None):
 
 
 def _worker():
-    time.sleep(4.0)
+    # Let Render bind its HTTP port and pass startup health checks before the
+    # standby-repair worker opens extra TiDB connections. Local processes keep the
+    # shorter delay for faster repair.
+    import os
+    time.sleep(30.0 if (os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_NAME')) else 4.0)
     event = cloud_mirror_dirty_event()
     first = True
     while True:
