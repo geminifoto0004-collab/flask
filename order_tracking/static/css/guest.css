@@ -42,9 +42,12 @@ button, input { font: inherit; }
 .guest-count { margin: 10px 2px 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .guest-count h2 { margin: 0; font-size: 17px; }
 .guest-count span { color: var(--guest-muted); font-size: 12px; }
-.guest-status-filter { margin: -2px 0 13px; }
+.guest-status-filter { margin: -2px 0 10px; }
+.guest-sort-filter { margin: -3px 0 13px; }
 .guest-status-filter-label { margin: 0 2px 6px; color: var(--guest-muted); font-size: 10px; font-weight: 750; letter-spacing: .04em; }
 .guest-status-filter-row { display: flex; gap: 7px; overflow-x: auto; overflow-y: hidden; padding: 0 1px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.guest-sort-row { display:flex; gap:7px; padding:0 1px 2px; }
+.guest-sort-row .guest-status-chip { min-height:31px; padding:0 12px; }
 .guest-status-filter-row::-webkit-scrollbar { display: none; }
 .guest-status-chip { min-height: 35px; flex: 0 0 auto; padding: 0 11px; border: 1px solid var(--guest-border); border-radius: 999px; background: var(--guest-surface); color: var(--guest-text); display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; font-size: 11px; font-weight: 730; }
 .guest-status-chip small { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--guest-muted) 10%, transparent); color: inherit; font-size: 9px; font-weight: 820; }
