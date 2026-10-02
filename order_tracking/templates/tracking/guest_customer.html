@@ -135,7 +135,7 @@
                     <div class="guest-cover-track" data-guest-carousel data-image-count="{{ display_images|length }}">
                         {% for image in display_images %}
                         <span class="guest-cover-slide">
-                            <img {% if loop.first %}src="{{ image.preview_url or image.url }}"{% else %}data-src="{{ image.preview_url or image.url }}"{% endif %}
+                            <img {% if loop.first and card_loop.index <= 2 %}src="{{ image.preview_url or image.url }}"{% else %}data-src="{{ image.preview_url or image.url }}"{% endif %}
                                  alt="{{ order.order_number }} · {{ loop.index }}/{{ display_images|length }}"
                                  loading="{% if loop.first and card_loop.index <= 4 %}eager{% else %}lazy{% endif %}"
                                  decoding="async"{% if loop.first and card_loop.index <= 2 %} fetchpriority="high"{% endif %}>
@@ -290,6 +290,25 @@ guestApplyBilingualText();
         }
     }
 
+    // Only cards near the viewport may request their first thumbnail.
+    // This keeps a large customer wall from opening dozens of thumbnail requests at once.
+    const firstImageObserver = ('IntersectionObserver' in window)
+        ? new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                firstImageObserver.unobserve(entry.target);
+                loadFirstVisibleImage(entry.target);
+            });
+        }, {rootMargin:'420px 0px'})
+        : null;
+
+    function watchFirstVisibleImage(card) {
+        const img = card && card.querySelector('.guest-cover-slide img');
+        if (!img || img.getAttribute('src') || !img.dataset.src) return;
+        if (firstImageObserver) firstImageObserver.observe(card);
+        else loadFirstVisibleImage(card);
+    }
+
     function apply(key, options) {
         key = key || 'all';
         let visible = 0;
@@ -299,7 +318,9 @@ guestApplyBilingualText();
             card.hidden = !show;
             if (show) {
                 visible += 1;
-                loadFirstVisibleImage(card);
+                watchFirstVisibleImage(card);
+            } else if (firstImageObserver) {
+                firstImageObserver.unobserve(card);
             }
         });
         row.querySelectorAll('[data-guest-status-filter]').forEach(function (btn) {
