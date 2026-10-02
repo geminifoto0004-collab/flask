@@ -93,6 +93,20 @@
     </div>
     {% endif %}
 
+    {% if orders %}
+    <div class="guest-sort-filter" id="guestSortFilter" aria-label="Ordenar pedidos">
+        <div class="guest-status-filter-label" data-guest-zh="排序" data-guest-es="Ordenar">Ordenar</div>
+        <div class="guest-sort-row" id="guestSortRow">
+            <button type="button" class="guest-status-chip active" data-guest-sort="order" aria-pressed="true">
+                <span data-guest-zh="訂單" data-guest-es="Pedido">Pedido</span>
+            </button>
+            <button type="button" class="guest-status-chip" data-guest-sort="shipping" aria-pressed="false">
+                <span data-guest-zh="出貨日期" data-guest-es="Envío">Envío</span>
+            </button>
+        </div>
+    </div>
+    {% endif %}
+
     {% if allow_pdf_download and pdf_count > 0 %}
     <a class="guest-pdf-bundle" href="{{ url_for('tracking_bp.local_guest_pdf_bundle', token=token) }}">
         <span class="guest-pdf-bundle-icon" aria-hidden="true">
@@ -123,7 +137,7 @@
     <main class="guest-grid" id="guestGrid">
         {% for order in orders %}
         {% set card_loop = loop %}
-        <a class="guest-card" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-status-key="{{ order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}">
+        <a class="guest-card" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}">
             <div class="guest-cover">
                 {% if order.images %}
                     {# UI-only ordering: salesperson/workflow real images first, then supervisor/order images, PDF pages last. #}
@@ -223,10 +237,12 @@ guestApplyBilingualText();
 (function () {
     const guestToken = {{ token|tojson }};
     const row = document.getElementById('guestStatusFilterRow');
+    const sortRow = document.getElementById('guestSortRow');
+    const grid = document.getElementById('guestGrid');
     const countNode = document.getElementById('guestVisibleCount');
     const cards = Array.from(document.querySelectorAll('[data-guest-card]'));
     const filterMode = String(document.body.dataset.guestStatusFilterMode || 'simple').toLowerCase() === 'full' ? 'full' : 'simple';
-    if (!row || !cards.length) return;
+    if (!row || !grid || !cards.length) return;
 
     function currentLang() {
         return (typeof window.getTrackingLanguage === 'function') ? window.getTrackingLanguage() : 'es';
@@ -277,10 +293,46 @@ guestApplyBilingualText();
     });
 
     const storageKey = 'trackingGuestStatus:' + guestToken;
+    const sortStorageKey = 'trackingGuestSort:' + guestToken;
     let selected = 'all';
-    try { selected = sessionStorage.getItem(storageKey) || 'all'; } catch (_) {}
+    let selectedSort = 'order';
+    try {
+        selected = sessionStorage.getItem(storageKey) || 'all';
+        selectedSort = sessionStorage.getItem(sortStorageKey) || 'order';
+    } catch (_) {}
     const availableKeys = new Set(filterItems.map(function (item) { return item.key; }));
     if (selected !== 'all' && !availableKeys.has(selected)) selected = 'all';
+    if (!['order','shipping'].includes(selectedSort)) selectedSort = 'order';
+
+    function compareOrder(a, b) {
+        const av = String(a.dataset.guestSortOrder || a.dataset.guestOrderKey || '');
+        const bv = String(b.dataset.guestSortOrder || b.dataset.guestOrderKey || '');
+        return bv.localeCompare(av, undefined, {numeric:true, sensitivity:'base'});
+    }
+
+    function compareShipping(a, b) {
+        const av = String(a.dataset.guestShippingDate || '').slice(0, 10);
+        const bv = String(b.dataset.guestShippingDate || '').slice(0, 10);
+        if (av && !bv) return -1;
+        if (!av && bv) return 1;
+        if (av !== bv) return bv.localeCompare(av);
+        return compareOrder(a, b);
+    }
+
+    function sortCards(mode) {
+        mode = mode === 'shipping' ? 'shipping' : 'order';
+        const sorted = cards.slice().sort(mode === 'shipping' ? compareShipping : compareOrder);
+        sorted.forEach(function (card) { grid.appendChild(card); });
+        if (sortRow) {
+            sortRow.querySelectorAll('[data-guest-sort]').forEach(function (btn) {
+                const active = String(btn.dataset.guestSort || '') === mode;
+                btn.classList.toggle('active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        }
+        selectedSort = mode;
+        try { sessionStorage.setItem(sortStorageKey, mode); } catch (_) {}
+    }
 
     function loadFirstVisibleImage(card) {
         const img = card && card.querySelector('.guest-cover-slide img');
@@ -341,10 +393,20 @@ guestApplyBilingualText();
         requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
     });
 
+    sortRow?.addEventListener('click', function (event) {
+        const btn = event.target.closest('[data-guest-sort]');
+        if (!btn) return;
+        const top = window.scrollY;
+        sortCards(btn.dataset.guestSort || 'order');
+        // Keep the reading position stable when the card order changes.
+        requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
+    });
+
     document.addEventListener('tracking:languagechange', function () {
         apply(row.querySelector('.guest-status-chip.active')?.dataset.guestStatusFilter || selected);
     });
 
+    sortCards(selectedSort);
     apply(selected);
 })();
 
@@ -361,17 +423,19 @@ guestApplyBilingualText();
     } catch (_) {}
     function signature(root) {
         const body = root.body || document.body;
-        const parts = [String(body.dataset.guestStatusFilterMode || 'simple')];
+        const cardParts = [];
         root.querySelectorAll('[data-guest-card]').forEach(function (card) {
             const carousel = card.querySelector('[data-guest-carousel]');
-            parts.push([
+            cardParts.push([
                 card.dataset.guestOrderKey || '',
                 card.dataset.guestStatusKey || '',
                 carousel ? carousel.dataset.imageCount || '0' : '0',
                 String(card.textContent || '').replace(/\s+/g, ' ').trim()
             ].join(':'));
         });
-        return parts.join('|');
+        // Client-side sorting must not look like a server data change.
+        cardParts.sort();
+        return [String(body.dataset.guestStatusFilterMode || 'simple')].concat(cardParts).join('|');
     }
     let currentSignature = signature(document);
     let checking = false;
