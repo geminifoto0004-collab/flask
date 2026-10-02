@@ -52,7 +52,11 @@
         <div class="guest-gallery" aria-label="Imágenes del pedido" data-guest-detail-gallery data-image-count="{{ order.images|length }}">
             {% for image in order.images %}
             <div class="guest-slide">
-                <img src="{{ image.url }}" alt="{{ image.name }}" loading="{% if loop.first %}eager{% else %}lazy{% endif %}">
+                <img {% if loop.index <= 2 %}src="{{ image.preview_url or image.url }}"{% else %}data-src="{{ image.preview_url or image.url }}"{% endif %}
+                     data-full="{{ image.url }}"
+                     alt="{{ image.name }}"
+                     loading="{% if loop.index <= 2 %}eager{% else %}lazy{% endif %}"
+                     decoding="async">
                 {% if image.media_type == 'pdf_page' %}<span class="guest-pdf-badge">PDF {{ image.pdf_page_number }}/{{ image.pdf_page_count }}</span>{% endif %}
             </div>
             {% endfor %}
@@ -206,6 +210,90 @@ guestOrderApplyBilingualText();
  function sync(){const width=gallery.clientWidth||1,idx=Math.max(0,Math.min(count-1,Math.round(gallery.scrollLeft/width)));if(prev)prev.disabled=idx<=0;if(next)next.disabled=idx>=count-1;}
  function move(delta){const width=gallery.clientWidth||1,idx=Math.max(0,Math.min(count-1,Math.round(gallery.scrollLeft/width))),target=Math.max(0,Math.min(count-1,idx+delta));gallery.scrollTo({left:target*width,behavior:'smooth'});setTimeout(sync,260);}
  prev?.addEventListener('click',e=>{e.preventDefault();move(-1)});next?.addEventListener('click',e=>{e.preventDefault();move(1)});gallery.addEventListener('scroll',sync,{passive:true});sync();
+})();
+</script>
+<script>
+// Detail gallery: thumbnails first, upgrade only the slide the customer is viewing.
+(function () {
+    const gallery = document.querySelector('[data-guest-detail-gallery]');
+    if (!gallery) return;
+
+    const slides = Array.from(gallery.querySelectorAll('.guest-slide'));
+    const requested = new WeakSet();
+    let scrollTimer = 0;
+
+    function imageAt(index) {
+        return slides[index]?.querySelector('img') || null;
+    }
+
+    function ensureThumb(index) {
+        const img = imageAt(index);
+        if (!img) return null;
+        if (!img.getAttribute('src') && img.dataset.src) {
+            img.src = img.dataset.src;
+            img.removeAttribute('data-src');
+        }
+        return img;
+    }
+
+    function currentIndex() {
+        const width = gallery.clientWidth || 1;
+        return Math.max(0, Math.min(slides.length - 1, Math.round(gallery.scrollLeft / width)));
+    }
+
+    function upgrade(index) {
+        const img = ensureThumb(index);
+        if (!img || requested.has(img)) return;
+
+        const full = String(img.dataset.full || '').trim();
+        if (!full) return;
+
+        let current = '';
+        try { current = new URL(img.currentSrc || img.src || '', location.href).href; } catch (_) {}
+        let target = full;
+        try { target = new URL(full, location.href).href; } catch (_) {}
+        if (current && target === current) return;
+
+        requested.add(img);
+        const loader = new Image();
+        loader.decoding = 'async';
+        loader.src = full;
+
+        const reveal = function () {
+            const decoded = (typeof loader.decode === 'function')
+                ? loader.decode().catch(function () {})
+                : Promise.resolve();
+            decoded.then(function () {
+                if (!img.isConnected) return;
+                img.src = full;
+                img.dataset.hqReady = '1';
+            });
+        };
+
+        if (loader.complete && loader.naturalWidth > 0) reveal();
+        else loader.onload = reveal;
+        loader.onerror = function () { img.dataset.hqFailed = '1'; };
+    }
+
+    function activate() {
+        const index = currentIndex();
+        // Keep the current and adjacent thumbnail ready; never fetch distant slides.
+        ensureThumb(index);
+        ensureThumb(index + 1);
+        ensureThumb(index - 1);
+        // High quality belongs only to the slide actually being viewed.
+        upgrade(index);
+    }
+
+    gallery.addEventListener('scroll', function () {
+        window.clearTimeout(scrollTimer);
+        scrollTimer = window.setTimeout(activate, 90);
+    }, {passive:true});
+
+    // Guarantee thumbnail paint wins the race before any original image is requested.
+    requestAnimationFrame(function () {
+        requestAnimationFrame(activate);
+    });
 })();
 </script>
 <script src="{{ url_for('tracking_bp.static', filename='js/guest_reports.js') }}?v={{ STATIC_VER }}"></script>
