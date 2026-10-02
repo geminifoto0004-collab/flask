@@ -477,6 +477,19 @@ class CloudMirroredConnection:
             self._mirror = None
 
     def _mirror_execute(self, sql, params, *, many):
+        # Render must never block startup or a public/API request on the standby
+        # TiDB.  From the first dual-TiDB deploy onward, schema/setup writes could
+        # synchronously open TIDB2 during module import; an unavailable/sleeping
+        # standby then delayed Gunicorn long enough for Render to fail the deploy.
+        #
+        # On Render we commit only to the active target here, mark the cloud mirror
+        # dirty, and let services.order_tidb_cloud_reconcile repair the standby in
+        # its daemon worker.  Local/non-Render environments keep the original
+        # synchronous best-effort mirror behaviour.
+        if os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_NAME'):
+            mark_cloud_mirror_dirty()
+            return
+
         mirror = self._get_mirror()
         if mirror is None:
             return
