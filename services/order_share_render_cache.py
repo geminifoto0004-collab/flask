@@ -40,6 +40,7 @@ _HTML = {}
 _HTML_CHECKED_AT = {}
 _TOKEN_HTML = {}
 _PERSISTED_RECHECK_SECONDS = 3.0
+_REFRESHING = set()
 _LOCK = threading.RLock()
 _TABLE_LOCK = threading.Lock()
 _TABLE_READY = False
@@ -252,6 +253,33 @@ def _load_one_persisted(share):
             f"{type(exc).__name__}: {exc}"
         )
     return None
+
+
+def _queue_persisted_recheck(share):
+    """Refresh one persisted HTML variant without making the visitor wait."""
+    key = _variant_key(share)
+    if not key:
+        return
+    with _LOCK:
+        if key in _REFRESHING:
+            return
+        _REFRESHING.add(key)
+
+    payload = dict(share or {})
+
+    def worker():
+        try:
+            _load_one_persisted(payload)
+        finally:
+            with _LOCK:
+                _REFRESHING.discard(key)
+
+    thread = threading.Thread(
+        target=worker,
+        name="order-share-html-recheck",
+        daemon=True,
+    )
+    thread.start()
 
 
 def _hot_shares():
@@ -562,13 +590,15 @@ def _cached_render_template(template_name, *args, **kwargs):
             if memory_html and now - memory_checked <= _PERSISTED_RECHECK_SECONDS:
                 html = memory_html
 
-    # Render can have multiple Gunicorn workers. A direct-register request may rebuild
-    # the persistent HTML in worker A while worker B still owns yesterday's in-memory
-    # skeleton. Recheck the indexed TiDB row briefly instead of letting that process
-    # cache live for a full day. If TiDB is temporarily unavailable, keep serving the
-    # last known HTML rather than failing the public link.
-    if not html:
-        html = _load_one_persisted(share) or stale_html
+    # Never block a public visitor on TiDB merely to recheck a variant that is
+    # already available in process memory. Serve the known-good HTML immediately and
+    # refresh the persisted copy in a daemon thread. A blocking TiDB read is reserved
+    # for a true cold miss where this worker has no HTML at all.
+    if not html and stale_html:
+        html = stale_html
+        _queue_persisted_recheck(share)
+    elif not html:
+        html = _load_one_persisted(share)
 
     if html:
         with _LOCK:
@@ -579,7 +609,20 @@ def _cached_render_template(template_name, *args, **kwargs):
                 "checked_at": time.monotonic(),
             }
         rendered = html.replace(_TOKEN_PLACEHOLDER, token)
-        return _inject_direct_cover_urls(rendered, token, space)
+
+        # first-paint may deliberately pass an empty request bundle because the HTML
+        # skeleton is already cached. Reuse the hot canonical snapshot only for
+        # read-only cover lookup so the first thumbnail URLs can go Browser -> B2
+        # directly instead of Browser -> Render -> 302 -> B2.
+        cover_space = space
+        if not isinstance(cover_space, dict) or not (cover_space.get("orders") or []):
+            customer_key = str((share or {}).get("customer_key") or "").strip()
+            hot_bundle = _page._cache_get(_page._space_cache, customer_key) if customer_key else None
+            hot_space = (hot_bundle or {}).get("space") if isinstance(hot_bundle, dict) else None
+            if isinstance(hot_space, dict) and hot_space.get("orders"):
+                cover_space = hot_space
+
+        return _inject_direct_cover_urls(rendered, token, cover_space)
 
     # Correctness fallback only.  It should not be reached when startup pre-render
     # succeeded, but if it is, immediately seed both memory and persistent cache.
