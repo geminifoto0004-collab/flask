@@ -18,6 +18,7 @@ import copy
 import hashlib
 import threading
 import time
+import traceback
 from html import escape as _html_escape
 
 from flask import g, has_request_context
@@ -379,16 +380,18 @@ def _bundle_for(customer_key):
 
 
 def _render_skeleton(app, share, bundle):
-    if not app or not share or not bundle:
+    if not app:
         return None
-    # Keep the ENTIRE background pre-render path inside one synthetic request context.
-    # Some late-installed share patches can leave request-local values inside the hot
-    # snapshot, so even deepcopy() may dereference a LocalProxy before filtering starts.
+    # Do not even truth-test share/bundle before a request context exists. Late share
+    # patches may leave Flask LocalProxy values in these objects; bool()/get()/deepcopy()
+    # can dereference them immediately.
     with app.test_request_context(
         f"/share/{_TOKEN_PLACEHOLDER}",
         method="GET",
         base_url="https://flask-393d.onrender.com",
     ):
+        if not share or not bundle:
+            return None
         space = copy.deepcopy((bundle or {}).get("space") or {})
         if not space:
             return None
@@ -419,7 +422,7 @@ def _build_variant(share, bundle=None, persist=True):
     except Exception as exc:
         print(
             f"[WARN] ORDER share HTML pre-render failed for {customer_key}: "
-            f"{type(exc).__name__}: {exc}"
+            f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
         )
         return False
     if not html:
