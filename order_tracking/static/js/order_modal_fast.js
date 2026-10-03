@@ -296,24 +296,10 @@
         if (card) prefetchDetail(card.getAttribute('href'));
     });
 
-    function setupNearPrefetch() {
-        if (!('IntersectionObserver' in window) || !isDesktop()) return;
-        const observer = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (!entry.isIntersecting) return;
-                const card = entry.target;
-                observer.unobserve(card);
-                const run = function () { prefetchDetail(card.getAttribute('href')); };
-                if ('requestIdleCallback' in window) requestIdleCallback(run, {timeout:1500});
-                else setTimeout(run, 300);
-            });
-        }, {rootMargin:'650px 0px'});
-        document.querySelectorAll('[data-guest-card]').forEach(card => observer.observe(card));
-    }
-    // Never compete with the initial wall/thumbnail load. Automatic prefetch begins only
-    // after the window load event; hover/focus can still warm the exact card immediately.
-    if (document.readyState === 'complete') setTimeout(setupNearPrefetch, 120);
-    else window.addEventListener('load', function () { setTimeout(setupNearPrefetch, 120); }, {once:true});
+    // Do not automatically prefetch nearby order-detail HTML.
+    // The wall already opens an instant thumbnail shell on click; hover/focus prefetch
+    // above is enough to make deliberate desktop navigation fast without downloading
+    // many unseen 16-23KB detail pages and competing with thumbnail traffic.
 
     closeButton?.addEventListener('click', closeDetail);
     overlay.addEventListener('click', function (event) {
