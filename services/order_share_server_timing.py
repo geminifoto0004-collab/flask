@@ -9,7 +9,7 @@ from __future__ import annotations
 import threading
 import time
 
-from flask import g, request
+from flask import g, has_request_context, request
 
 from blueprints.b2_test_bp import b2_test_bp
 from services import order_customer_share_hot_cache as _hot
@@ -31,6 +31,10 @@ _SWEEP_LAST_END = 0.0
 
 
 def _is_share_page():
+    # Timing is diagnostic only. Background HTML pre-render has no HTTP request
+    # context, so it must bypass this wrapper instead of breaking cache rebuilds.
+    if not has_request_context():
+        return False
     if request.method != "GET":
         return False
     path = request.path or ""
