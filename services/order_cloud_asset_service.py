@@ -291,7 +291,6 @@ def ensure_order_owners_batch(orders, source_site=None):
                         wf_values,
                     )
 
-            synced.push?.();
             synced.append(order_number)
         conn.commit()
         return {"count": len(synced), "orders": synced, "customer_keys": sorted(customers)}
