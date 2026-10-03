@@ -61,6 +61,9 @@ except ImportError:
     POOLEDDB_AVAILABLE = False
 
 _MYSQL_POOLS = {}
+# Backward-compatibility name kept for older modules that still import the former
+# single-pool symbol. New code must use _MYSQL_POOLS.
+_MYSQL_POOL = None
 _MYSQL_POOLS_LOCK = threading.Lock()
 _CLOUD_MIRROR_DIRTY = threading.Event()
 _CLOUD_MIRROR_WARNED = set()
