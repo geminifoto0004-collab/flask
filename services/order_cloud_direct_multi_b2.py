@@ -337,76 +337,77 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
         if file_size > _LEGACY_MAX_BYTES:
             raise ValueError('file_size is outside the allowed range')
 
-        # A newly selected TiDB can lack cloud_assets even though B2 already has
-        # the image. Restore its metadata without another PC -> B2 upload. This
-        # path runs only for a signed, authenticated publication request; public
-        # page reads never guess visibility from the mere presence of a B2 file.
-        # Customer-pinned uploads use a stable customer/SHA object path. Older
-        # batches only probed order-scoped and legacy paths, so a TiDB switch
-        # could miss the existing B2 bytes and report every cached item failed.
-        from services.order_cloud_customer_storage import stable_object_key, find_customer_sha_asset
-        physical = find_customer_sha_asset(customer_key, asset_sha256)
-        if physical and physical.get('object_key'):
-            linked = _upsert_registered_asset(
-                order_number, customer_key, workflow_key, asset_sha256,
-                physical['object_key'], physical.get('content_type') or content_type,
-                int(physical.get('file_size') or file_size), None,
-                physical.get('storage_backend') or PRIMARY, conn=conn,
-            )
-            return {
-                'exists': True, 'reused': True, 'variant': 'image',
-                'sha256': asset_sha256, 'asset_sha256': asset_sha256,
-                'content_type': physical.get('content_type') or content_type,
-                'file_size': int(physical.get('file_size') or file_size),
-                'object_key': physical['object_key'],
-                'storage_backend': physical.get('storage_backend') or PRIMARY,
-                'asset_key': linked['asset_key'],
-                'upload_mode': 'customer_sha_relinked_without_upload',
-            }
-        # Existing-object probing is only an optimization for TiDB failover repair.
-        # A transient B2 HEAD/permission/network error must not block a valid new upload:
-        # the object key is SHA-derived, so retransmitting the same bytes is idempotent.
-        # Keep the warning for diagnostics, then continue to normal direct presign/PUT.
+        # Manual repair can explicitly skip historical B2 existence probing.
+        # Those items are already known failures and use SHA-derived object keys, so a
+        # direct overwrite is idempotent and much faster than two rounds of B2 HEADs.
+        skip_existing_probe = bool(payload.get('skip_existing_probe'))
         b2_probe_warning = ''
-        try:
-            found = _b2_existing_object(
-                (stable_object_key(customer_key, asset_sha256, content_type),
-                 object_key, _object_key(asset_sha256, content_type)), file_size,
-            )
-        except RuntimeError as exc:
-            found = None
-            b2_probe_warning = f'{type(exc).__name__}: {exc}'[:600]
-            print(
-                f'[ORDER Cloud] B2_EXISTENCE_PROBE_DEFERRED order={order_number} '
-                f'sha={asset_sha256[:12]} warning={b2_probe_warning}'
-            )
-        if found:
-            backend, found_key, found_size = found
-            thumb_key = _thumb_object_key(asset_sha256)
+        if not skip_existing_probe:
+            # A newly selected TiDB can lack cloud_assets even though B2 already has
+            # the image. Restore its metadata without another PC -> B2 upload. This
+            # remains the normal path for ordinary publishes.
+            from services.order_cloud_customer_storage import stable_object_key, find_customer_sha_asset
+            physical = find_customer_sha_asset(customer_key, asset_sha256)
+            if physical and physical.get('object_key'):
+                linked = _upsert_registered_asset(
+                    order_number, customer_key, workflow_key, asset_sha256,
+                    physical['object_key'], physical.get('content_type') or content_type,
+                    int(physical.get('file_size') or file_size), None,
+                    physical.get('storage_backend') or PRIMARY, conn=conn,
+                )
+                return {
+                    'exists': True, 'reused': True, 'variant': 'image',
+                    'sha256': asset_sha256, 'asset_sha256': asset_sha256,
+                    'content_type': physical.get('content_type') or content_type,
+                    'file_size': int(physical.get('file_size') or file_size),
+                    'object_key': physical['object_key'],
+                    'storage_backend': physical.get('storage_backend') or PRIMARY,
+                    'asset_key': linked['asset_key'],
+                    'upload_mode': 'customer_sha_relinked_without_upload',
+                }
+            # Existing-object probing is only an optimization for TiDB failover repair.
             try:
-                thumb = _b2_existing_object((thumb_key,))
-            except RuntimeError:
-                # A thumbnail is optional; losing its backend must not cause a
-                # second upload of a confirmed existing WEB image.
-                thumb = None
-            thumb_size = thumb[2] if thumb and thumb[0] == backend else None
-            registered = _upsert_registered_asset(
-                order_number, customer_key, workflow_key, asset_sha256,
-                found_key, content_type, found_size, None, backend,
-                thumb_object_key=thumb_key if thumb_size else None,
-                thumb_content_type='image/jpeg' if thumb_size else None,
-                thumb_file_size=thumb_size, conn=conn,
+                found = _b2_existing_object(
+                    (stable_object_key(customer_key, asset_sha256, content_type),
+                     object_key, _object_key(asset_sha256, content_type)), file_size,
+                )
+            except RuntimeError as exc:
+                found = None
+                b2_probe_warning = f'{type(exc).__name__}: {exc}'[:600]
+                print(
+                    f'[ORDER Cloud] B2_EXISTENCE_PROBE_DEFERRED order={order_number} '
+                    f'sha={asset_sha256[:12]} warning={b2_probe_warning}'
+                )
+            if found:
+                backend, found_key, found_size = found
+                thumb_key = _thumb_object_key(asset_sha256)
+                try:
+                    thumb = _b2_existing_object((thumb_key,))
+                except RuntimeError:
+                    thumb = None
+                thumb_size = thumb[2] if thumb and thumb[0] == backend else None
+                registered = _upsert_registered_asset(
+                    order_number, customer_key, workflow_key, asset_sha256,
+                    found_key, content_type, found_size, None, backend,
+                    thumb_object_key=thumb_key if thumb_size else None,
+                    thumb_content_type='image/jpeg' if thumb_size else None,
+                    thumb_file_size=thumb_size, conn=conn,
+                )
+                return {
+                    'exists': True, 'reused': True, 'variant': 'image',
+                    'sha256': asset_sha256, 'asset_sha256': asset_sha256,
+                    'content_type': content_type, 'file_size': found_size,
+                    'object_key': found_key, 'storage_backend': backend,
+                    'asset_key': registered['asset_key'],
+                    'upload_mode': 'b2_existing_object_tidb_metadata_repair',
+                    'render_receives_image_bytes': False,
+                    'b2_head_calls_per_image': 1,
+                }
+        else:
+            print(
+                f'[ORDER Cloud] B2_EXISTENCE_PROBE_SKIPPED order={order_number} '
+                f'sha={asset_sha256[:12]}'
             )
-            return {
-                'exists': True, 'reused': True, 'variant': 'image',
-                'sha256': asset_sha256, 'asset_sha256': asset_sha256,
-                'content_type': content_type, 'file_size': found_size,
-                'object_key': found_key, 'storage_backend': backend,
-                'asset_key': registered['asset_key'],
-                'upload_mode': 'b2_existing_object_tidb_metadata_repair',
-                'render_receives_image_bytes': False,
-                'b2_head_calls_per_image': 1,
-            }
         # Historical images may be larger than the current upload policy. They
         # can be linked only after confirming their bytes already exist in B2;
         # never issue a new PUT URL for an oversized image.
