@@ -133,11 +133,19 @@ def _inject_direct_cover_urls(html, token, space):
                 continue
 
             cover_marker = None
-            for marker in _route_markers(token, asset_key, "data-src"):
-                if marker in html:
-                    cover_marker = marker
+            cover_attr = None
+            # The first eager covers use src= while below-fold cards use data-src=.
+            # Support both so the most important first-paint thumbnails can bypass
+            # Render and go directly to the signed B2 thumbnail URL.
+            for attr in ("src", "data-src"):
+                for marker in _route_markers(token, asset_key, attr):
+                    if marker in html:
+                        cover_marker = marker
+                        cover_attr = attr
+                        break
+                if cover_marker:
                     break
-            if not cover_marker:
+            if not cover_marker or not cover_attr:
                 continue
 
             try:
@@ -148,7 +156,7 @@ def _inject_direct_cover_urls(html, token, space):
             escaped_url = _html_escape(str(url), quote=True)
             html = html.replace(
                 cover_marker,
-                f'data-src="{escaped_url}"',
+                f'{cover_attr}="{escaped_url}"',
                 1,
             )
 
