@@ -209,6 +209,30 @@ def order_cloud_sync_order():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@b2_test_bp.route("/api/order-cloud/sync/owners-batch", methods=["POST"])
+def order_cloud_sync_owners_batch():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        body = request.get_json(silent=True) or {}
+        orders = body.get("orders") or []
+        from services.order_cloud_asset_service import ensure_order_owners_batch
+        result = ensure_order_owners_batch(orders, source_site=source_site)
+        try:
+            from services.order_customer_share_snapshot import queue_snapshot_refresh
+            for customer_key in result.get("customer_keys") or []:
+                queue_snapshot_refresh(customer_key)
+        except Exception as exc:
+            print(f"[WARN] ORDER owner batch snapshot refresh deferred: {type(exc).__name__}: {exc}")
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @b2_test_bp.route("/api/order-cloud/debug/order/<path:order_number>", methods=["GET"])
 def order_cloud_debug_order(order_number):
     _source_site, auth_error = _order_cloud_auth_source()
