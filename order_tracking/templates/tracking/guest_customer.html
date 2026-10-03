@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="robots" content="noindex,nofollow,noarchive">
     <title>{{ customer_name }} · Pedidos</title>
+    <link rel="preconnect" href="https://s3.us-east-005.backblazeb2.com" crossorigin>
+    <link rel="dns-prefetch" href="//s3.us-east-005.backblazeb2.com">
     <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest.css') }}?v={{ STATIC_VER }}">
     <script>
     // Guest pages manage Back/edge-swipe restoration themselves. Safari's automatic
@@ -21,8 +23,8 @@
         if (!localStorage.getItem('tracking_ui_language')) localStorage.setItem('tracking_ui_language', 'es');
     } catch (_) {}
     </script>
-    <script src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
-    <script src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
+    <script defer src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
+    <script defer src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
     <script>
     // Cards can be visible before the detail-modal code at the end of this large page is parsed.
     // Intercept desktop clicks immediately and replay an early click once the modal is ready.
