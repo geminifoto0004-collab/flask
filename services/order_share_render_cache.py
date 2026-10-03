@@ -381,18 +381,17 @@ def _bundle_for(customer_key):
 def _render_skeleton(app, share, bundle):
     if not app or not share or not bundle:
         return None
-    space = copy.deepcopy((bundle or {}).get("space") or {})
-    if not space:
-        return None
-    # Several late-installed share/visibility patches legitimately consult request-
-    # scoped Flask helpers. Keep BOTH filtering and Jinja rendering inside one minimal
-    # synthetic request context; doing only template.render() here is too late because
-    # _fast._filter_space itself may already touch request/session.
+    # Keep the ENTIRE background pre-render path inside one synthetic request context.
+    # Some late-installed share patches can leave request-local values inside the hot
+    # snapshot, so even deepcopy() may dereference a LocalProxy before filtering starts.
     with app.test_request_context(
         f"/share/{_TOKEN_PLACEHOLDER}",
         method="GET",
         base_url="https://flask-393d.onrender.com",
     ):
+        space = copy.deepcopy((bundle or {}).get("space") or {})
+        if not space:
+            return None
         _fast._filter_space(space, share)
         template = app.jinja_env.get_template(_TEMPLATE)
         return template.render(
