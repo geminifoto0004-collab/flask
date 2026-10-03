@@ -179,6 +179,129 @@ def _resolve_order_and_workflow(cur, order_number, workflow_key=None):
     return order_number, order.get("customer_key"), workflow_key
 
 
+def ensure_order_owners_batch(orders, source_site=None):
+    """Ensure many image-presign owners in one TiDB transaction."""
+    if not isinstance(orders, list):
+        raise ValueError("orders must be a list")
+    if not orders:
+        return {"count": 0, "orders": [], "customer_keys": []}
+    if len(orders) > 100:
+        raise ValueError("owners batch limit is 100")
+
+    from services.order_cloud_service import _upsert_customer
+
+    source_site = (str(source_site or "").strip().upper()[:16] or None)
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    synced = []
+    customers = set()
+    try:
+        for payload in orders:
+            if not isinstance(payload, dict):
+                raise ValueError("each order must be an object")
+            order_number = str(payload.get("order_number") or "").strip()
+            customer_name = str(payload.get("customer_name") or "").strip()
+            customer_key = str(payload.get("customer_key") or customer_name).strip()
+            if not order_number:
+                raise ValueError("order_number is required")
+            if not customer_name or not customer_key:
+                raise ValueError(f"customer_name is required for {order_number}")
+
+            _upsert_customer(cur, customer_key, customer_name, source_site)
+            customers.add(customer_key)
+
+            order_values = (
+                customer_key,
+                customer_name,
+                payload.get("order_status") or payload.get("current_status"),
+                payload.get("order_date"),
+                payload.get("expected_delivery_date") or payload.get("delivery_date"),
+                payload.get("production_type"),
+                payload.get("product_name"),
+                payload.get("product_code"),
+                payload.get("pattern_code"),
+                str(payload.get("quantity")) if payload.get("quantity") is not None else None,
+                source_site,
+                order_number,
+            )
+            cur.execute("SELECT order_number FROM cloud_orders WHERE order_number=?", (order_number,))
+            if cur.fetchone():
+                cur.execute(
+                    """UPDATE cloud_orders
+                       SET customer_key=?, customer_name=?, order_status=?, order_date=?,
+                           expected_delivery_date=?, production_type=?, product_name=?,
+                           product_code=?, pattern_code=?, quantity=?, active=TRUE,
+                           source_site=?, updated_at=CURRENT_TIMESTAMP
+                       WHERE order_number=?""",
+                    order_values,
+                )
+            else:
+                cur.execute(
+                    """INSERT INTO cloud_orders
+                       (customer_key, customer_name, order_status, order_date,
+                        expected_delivery_date, production_type, product_name,
+                        product_code, pattern_code, quantity, source_site, order_number)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    order_values,
+                )
+
+            for pos, wf in enumerate(payload.get("workflows") or []):
+                if not isinstance(wf, dict):
+                    continue
+                workflow_number = str(wf.get("workflow_number") or "").strip()
+                workflow_key = str(
+                    wf.get("workflow_key") or workflow_number or wf.get("id") or f"{order_number}:{pos}"
+                ).strip()
+                if not workflow_key:
+                    continue
+                wf_values = (
+                    order_number,
+                    workflow_number or workflow_key,
+                    wf.get("workflow_type") or wf.get("production_type") or wf.get("type"),
+                    wf.get("status") or wf.get("current_status"),
+                    wf.get("production_type"),
+                    wf.get("product_name"),
+                    wf.get("product_code"),
+                    str(wf.get("quantity")) if wf.get("quantity") is not None else None,
+                    wf.get("expected_delivery_date"),
+                    wf.get("last_status_change_date"),
+                    wf.get("draft_date"),
+                    int(wf.get("sort_order", pos) or 0),
+                    workflow_key,
+                )
+                cur.execute("SELECT workflow_key FROM cloud_workflows WHERE workflow_key=?", (workflow_key,))
+                if cur.fetchone():
+                    cur.execute(
+                        """UPDATE cloud_workflows
+                           SET order_number=?, workflow_number=?, workflow_type=?, status=?,
+                               production_type=?, product_name=?, product_code=?, quantity=?,
+                               expected_delivery_date=?, last_status_change_date=?, draft_date=?,
+                               sort_order=?, active=TRUE, updated_at=CURRENT_TIMESTAMP
+                           WHERE workflow_key=?""",
+                        wf_values,
+                    )
+                else:
+                    cur.execute(
+                        """INSERT INTO cloud_workflows
+                           (order_number, workflow_number, workflow_type, status,
+                            production_type, product_name, product_code, quantity,
+                            expected_delivery_date, last_status_change_date, draft_date,
+                            sort_order, workflow_key)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        wf_values,
+                    )
+
+            synced.push?.();
+            synced.append(order_number)
+        conn.commit()
+        return {"count": len(synced), "orders": synced, "customer_keys": sorted(customers)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def _validate_order_target(order_number, workflow_key=None):
     conn = get_db_connection()
     cur = get_cursor(conn)
