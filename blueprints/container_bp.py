@@ -10,7 +10,7 @@ import config
 from database import (
     MYSQL_AVAILABLE,
     POOLEDDB_AVAILABLE,
-    _MYSQL_POOL,
+    _MYSQL_POOLS,
     get_db_connection,
     get_cursor,
     get_row_dict,
@@ -559,7 +559,7 @@ def debug_db_pool():
             "db_type": config.DATABASE_TYPE,
             "mysql_available": bool(MYSQL_AVAILABLE),
             "pooleddb_available": bool(POOLEDDB_AVAILABLE),
-            "pool_initialized": _MYSQL_POOL is not None,
+            "pool_initialized": bool(_MYSQL_POOLS),
         }
     )
 
