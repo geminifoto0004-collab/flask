@@ -44,6 +44,21 @@ app.register_blueprint(b2_test_bp)
 # 如果要在 PythonAnywhere 上使用代理功能，取消下面的註釋
 app.register_blueprint(email_proxy_bp)
 
+# ========== Lightweight keepalive ==========
+# This endpoint is intentionally database-free. External uptime checks may call it
+# every few minutes to keep the Render web process warm without consuming TiDB.
+@app.route('/ping', methods=['GET', 'HEAD'])
+def render_keepalive_ping():
+    response = app.response_class(
+        response='' if request.method == 'HEAD' else 'OK',
+        status=200,
+        mimetype='text/plain',
+    )
+    response.headers['Cache-Control'] = 'no-store, no-cache, max-age=0, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['X-ORDER-Keepalive'] = '1'
+    return response
+
 # ========== Render ORDER（TiDB 唯讀） ==========
 # Render 直接掛載同一份 vendored order_tracking UI。
 # 本機正式 ORDER 不會走到這裡；只有 Render（或明確開啟環境變數）才啟用。
@@ -177,6 +192,12 @@ _database_initialized = False
 def initialize_database():
     """在首次請求前初始化資料庫"""
     global _database_initialized
+
+    # /ping is deliberately DB-free so a five-minute keepalive does not wake or
+    # consume TiDB. It must bypass this global request-time bootstrap entirely.
+    if request.path == '/ping':
+        return None
+
     if not _database_initialized:
         try:
             init_database()
