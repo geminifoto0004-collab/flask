@@ -33,7 +33,7 @@ from services import order_public_share_multi_b2_page as _page
 _TEMPLATE = "customer_share_live_fast.html"
 _TOKEN_PLACEHOLDER = "__ORDER_SHARE_TOKEN_PLACEHOLDER_6E61C970__"
 _TABLE = "cloud_customer_share_html_cache"
-_DIRECT_COVER_LIMIT = 6
+_DIRECT_COVER_LIMIT = 12
 _DIRECT_SIGN_SECONDS = 600
 
 _HTML = {}
