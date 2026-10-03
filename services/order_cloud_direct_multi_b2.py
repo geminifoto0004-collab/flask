@@ -363,10 +363,23 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
                 'asset_key': linked['asset_key'],
                 'upload_mode': 'customer_sha_relinked_without_upload',
             }
-        found = _b2_existing_object(
-            (stable_object_key(customer_key, asset_sha256, content_type),
-             object_key, _object_key(asset_sha256, content_type)), file_size,
-        )
+        # Existing-object probing is only an optimization for TiDB failover repair.
+        # A transient B2 HEAD/permission/network error must not block a valid new upload:
+        # the object key is SHA-derived, so retransmitting the same bytes is idempotent.
+        # Keep the warning for diagnostics, then continue to normal direct presign/PUT.
+        b2_probe_warning = ''
+        try:
+            found = _b2_existing_object(
+                (stable_object_key(customer_key, asset_sha256, content_type),
+                 object_key, _object_key(asset_sha256, content_type)), file_size,
+            )
+        except RuntimeError as exc:
+            found = None
+            b2_probe_warning = f'{type(exc).__name__}: {exc}'[:600]
+            print(
+                f'[ORDER Cloud] B2_EXISTENCE_PROBE_DEFERRED order={order_number} '
+                f'sha={asset_sha256[:12]} warning={b2_probe_warning}'
+            )
         if found:
             backend, found_key, found_size = found
             thumb_key = _thumb_object_key(asset_sha256)
@@ -422,6 +435,8 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
     }
     if customer_key:
         result['customer_namespace'] = _customer_namespace(customer_key)
+    if 'b2_probe_warning' in locals() and b2_probe_warning:
+        result['b2_probe_warning'] = b2_probe_warning
     if selection:
         result['backend_selection'] = {
             'selected': selection.get('selected'),
