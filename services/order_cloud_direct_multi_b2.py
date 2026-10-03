@@ -417,6 +417,25 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
         object_key = _object_key(asset_sha256, content_type)
 
     backend = selected_backend
+    # Manual repair must not depend on synthetic Class-B/read probes. Reuse the
+    # customer's persisted storage assignment and let the real PUT decide whether
+    # the backend is writable. This also supports B2 application keys restricted
+    # to customer/object prefixes, where a fake health-probe key legitimately 403s.
+    if not backend and bool(payload.get('skip_existing_probe')) and customer_key:
+        try:
+            from services.order_cloud_customer_storage import assigned_backend
+            repair_backend = assigned_backend(customer_key)
+            if backend_ready(repair_backend):
+                backend = repair_backend
+                selection = {
+                    'selected': backend,
+                    'mode': 'customer_assignment_no_read_probe',
+                }
+        except Exception as exc:
+            print(
+                f'[ORDER Cloud] repair backend assignment unavailable '
+                f'order={order_number} error={type(exc).__name__}: {exc}'
+            )
     if not backend:
         backend, selection = _choose_upload_backend(payload.get('avoid_backend'))
     elif str(payload.get('avoid_backend') or '').strip().lower() == backend:
@@ -540,11 +559,21 @@ def order_cloud_asset_direct_presign_batch():
         # retain their own recorded backend. No image bytes ever reach this endpoint.
         # A missing upload backend must not block an already registered asset;
         # individual new uploads still fail closed in _direct_presign_result.
-        try:
-            selected_backend, selection = _choose_upload_backend(payload.get('avoid_backend'))
-        except Exception as exc:
-            print(f'[ORDER Cloud] presign batch backend probe unavailable: {type(exc).__name__}: {exc}')
-            selected_backend, selection = None, None
+        repair_no_probe = all(
+            bool((raw or {}).get('skip_existing_probe'))
+            for raw in items
+        )
+        if repair_no_probe:
+            selected_backend, selection = None, {
+                'selected': None,
+                'mode': 'repair_customer_assignment_no_read_probe',
+            }
+        else:
+            try:
+                selected_backend, selection = _choose_upload_backend(payload.get('avoid_backend'))
+            except Exception as exc:
+                print(f'[ORDER Cloud] presign batch backend probe unavailable: {type(exc).__name__}: {exc}')
+                selected_backend, selection = None, None
         conn = get_db_connection()
         owner_cache = {}
         results = []
