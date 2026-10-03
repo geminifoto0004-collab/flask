@@ -384,18 +384,16 @@ def _render_skeleton(app, share, bundle):
     space = copy.deepcopy((bundle or {}).get("space") or {})
     if not space:
         return None
-    _fast._filter_space(space, share)
-    # Render the cached customer wall inside a minimal synthetic request context.
-    # Several late-installed share/Jinja patches legitimately consult request-scoped
-    # Flask helpers even though this rebuild runs in a background thread. app_context()
-    # alone is therefore insufficient and caused:
-    #   RuntimeError: Working outside of request context
-    # which left persistent share HTML stale for hours.
+    # Several late-installed share/visibility patches legitimately consult request-
+    # scoped Flask helpers. Keep BOTH filtering and Jinja rendering inside one minimal
+    # synthetic request context; doing only template.render() here is too late because
+    # _fast._filter_space itself may already touch request/session.
     with app.test_request_context(
         f"/share/{_TOKEN_PLACEHOLDER}",
         method="GET",
         base_url="https://flask-393d.onrender.com",
     ):
+        _fast._filter_space(space, share)
         template = app.jinja_env.get_template(_TEMPLATE)
         return template.render(
             space=space,
