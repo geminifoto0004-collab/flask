@@ -151,22 +151,17 @@ def _share_admin_state():
         conn = get_db_connection()
         cur = get_cursor(conn)
         try:
-            if source_site and str(source_site).upper() != "LEGACY":
-                cur.execute(
-                    """SELECT token_hash, customer_key, status, source_site, created_at, expires_at,
-                              access_count, last_accessed_at
-                       FROM cloud_share_tokens
-                       WHERE source_site=?
-                       ORDER BY created_at DESC""",
-                    (str(source_site).upper(),),
-                )
-            else:
-                cur.execute(
-                    """SELECT token_hash, customer_key, status, source_site, created_at, expires_at,
-                              access_count, last_accessed_at
-                       FROM cloud_share_tokens
-                       ORDER BY created_at DESC"""
-                )
+            # ORDER currently uses one global Render gate (no per-client CN/CL split).
+            # Historical shares can therefore carry older source_site values such as
+            # LEGACY/NULL/previous site names. Filtering by the current literal "ORDER"
+            # hides valid old links from the desktop admin mirror even though the public
+            # token remains active. Return the full share control-plane history here.
+            cur.execute(
+                """SELECT token_hash, customer_key, status, source_site, created_at, expires_at,
+                          access_count, last_accessed_at
+                   FROM cloud_share_tokens
+                   ORDER BY created_at DESC"""
+            )
             rows = []
             now = int(time.time())
             for raw in cur.fetchall():
