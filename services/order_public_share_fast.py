@@ -84,6 +84,26 @@ def _ensure_share_columns():
                 cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN status_filter_mode VARCHAR(16) NOT NULL DEFAULT 'simple'")
             if not check_column_exists(cur, 'cloud_share_tokens', 'include_cancelled'):
                 cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN include_cancelled BOOLEAN NOT NULL DEFAULT FALSE")
+            if not check_column_exists(cur, 'cloud_share_tokens', 'show_pdf_pages'):
+                cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN show_pdf_pages BOOLEAN NOT NULL DEFAULT TRUE")
+            if not check_column_exists(cur, 'cloud_share_tokens', 'allow_report_pdf_download'):
+                cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN allow_report_pdf_download BOOLEAN NOT NULL DEFAULT FALSE")
+            if not check_column_exists(cur, 'cloud_share_tokens', 'show_images'):
+                cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN show_images BOOLEAN NOT NULL DEFAULT TRUE")
+            if not check_column_exists(cur, 'cloud_share_tokens', 'show_workflow_images'):
+                cur.execute("ALTER TABLE cloud_share_tokens ADD COLUMN show_workflow_images BOOLEAN NOT NULL DEFAULT TRUE")
+            cur.execute(
+                """CREATE TABLE IF NOT EXISTS cloud_share_order_visibility (
+                       token_hash VARCHAR(64) NOT NULL,
+                       order_number VARCHAR(191) NOT NULL,
+                       show_order BOOLEAN NOT NULL DEFAULT TRUE,
+                       show_images BOOLEAN NULL,
+                       show_workflow_images BOOLEAN NULL,
+                       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                       PRIMARY KEY (token_hash, order_number),
+                       INDEX idx_share_visibility_order (order_number)
+                   )"""
+            )
             conn.commit()
             _share_columns_ready = True
         except Exception:
@@ -107,18 +127,38 @@ def _resolve_share(token):
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute("""SELECT token_hash, customer_key, mode, status, source_site, created_at,
-                              expires_at, history_scope, status_filter_mode, include_cancelled
+                              expires_at, history_scope, status_filter_mode, include_cancelled,
+                              show_pdf_pages, allow_report_pdf_download,
+                              show_images, show_workflow_images
                        FROM cloud_share_tokens WHERE token_hash=? LIMIT 1""", (token_hash,))
         row = cur.fetchone()
         if not row:
             _cache_put(_share_cache, token, (None, 'not_found'), 10.0)
             return None, 'not_found'
         share = get_row_dict(row, cur) or {}
+        cur.execute(
+            """SELECT order_number, show_order, show_images, show_workflow_images
+               FROM cloud_share_order_visibility WHERE token_hash=?""",
+            (token_hash,),
+        )
+        share['order_visibility'] = {
+            str(item.get('order_number') or ''): {
+                'show_order': bool(item.get('show_order')),
+                'show_images': None if item.get('show_images') is None else bool(item.get('show_images')),
+                'show_workflow_images': None if item.get('show_workflow_images') is None else bool(item.get('show_workflow_images')),
+            }
+            for item in (get_row_dict(r, cur) or {} for r in cur.fetchall())
+            if str(item.get('order_number') or '').strip()
+        }
     finally:
         conn.close()
     share['history_scope'] = _scope(share.get('history_scope') or 'current')
     share['status_filter_mode'] = _status_filter_mode(share.get('status_filter_mode'))
     share['include_cancelled'] = bool(share.get('include_cancelled'))
+    share['show_pdf_pages'] = bool(share.get('show_pdf_pages'))
+    share['allow_report_pdf_download'] = bool(share.get('allow_report_pdf_download'))
+    share['show_images'] = bool(share.get('show_images'))
+    share['show_workflow_images'] = bool(share.get('show_workflow_images'))
     if str(share.get('status') or '') != 'active':
         state = 'revoked'
     else:
@@ -186,11 +226,18 @@ def _wf_visible(wf, scope, include_cancelled):
 
 
 def _filter_space(space, share):
-    if not isinstance(space, dict): return space
+    if not isinstance(space, dict):
+        return space
     scope = _scope((share or {}).get('history_scope'))
     include_cancelled = bool((share or {}).get('include_cancelled'))
+    visibility = (share or {}).get('order_visibility') or {}
     filtered = []
     for order in list(space.get('orders') or []):
+        order_number = str((order or {}).get('order_number') or '').strip()
+        override = visibility.get(order_number) if isinstance(visibility, dict) else None
+        if isinstance(override, dict) and override.get('show_order') is False:
+            continue
+
         # Persisted snapshots can outlive an order cancellation. The workflow may
         # still have a non-cancelled production status, so filtering only workflow
         # status leaks cancelled orders back into the public card count.
@@ -202,8 +249,16 @@ def _filter_space(space, share):
         workflows = list(order.get('workflows') or [])
         if workflows:
             visible = [wf for wf in workflows if _wf_visible(wf, scope, include_cancelled)]
-            if not visible: continue
+            if not visible:
+                continue
             order['workflows'] = visible
+
+        # Uploading an asset never implies that the customer may see it. Apply both
+        # global share switches and per-order overrides before HTML is rendered.
+        order['assets'] = [
+            asset for asset in (order.get('assets') or [])
+            if asset_allowed(asset, share)
+        ]
         filtered.append(order)
     space['orders'] = filtered
     return space
