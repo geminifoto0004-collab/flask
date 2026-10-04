@@ -43,7 +43,18 @@ button, input { font: inherit; }
 .guest-count h2 { margin: 0; font-size: 17px; }
 .guest-count span { color: var(--guest-muted); font-size: 12px; }
 .guest-status-filter { margin: -2px 0 10px; }
-.guest-sort-filter { margin: -3px 0 13px; }
+.guest-sort-filter { margin: -3px 0 8px; }
+.guest-logistics-pop { position:relative; margin:-2px 0 12px; display:flex; justify-content:flex-end; }
+.guest-logistics-pop > summary { list-style:none; }
+.guest-logistics-pop > summary::-webkit-details-marker { display:none; }
+.guest-logistics-trigger { min-height:32px; padding:0 10px; border:1px solid var(--guest-border); border-radius:999px; background:var(--guest-surface); color:var(--guest-text); display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:10.5px; font-weight:760; user-select:none; }
+.guest-logistics-pop[open] .guest-logistics-trigger { border-color:color-mix(in srgb, var(--guest-accent) 40%, var(--guest-border)); color:var(--guest-accent); }
+.guest-logistics-menu { position:absolute; right:0; top:38px; z-index:40; width:190px; padding:6px; border:1px solid var(--guest-border); border-radius:12px; background:var(--guest-surface); box-shadow:0 12px 32px rgba(0,0,0,.14); }
+.guest-logistics-radio { position:absolute; opacity:0; pointer-events:none; }
+.guest-logistics-menu label { min-height:34px; padding:0 10px; border-radius:8px; display:flex; align-items:center; cursor:pointer; color:var(--guest-text); font-size:11px; font-weight:700; }
+.guest-logistics-radio:checked + label { background:color-mix(in srgb, var(--guest-accent) 10%, var(--guest-surface)); color:var(--guest-accent); }
+.guest-shell:has(#guestLogisticsTransit:checked) .guest-card:not([data-guest-logistics-key="in_transit"]) { display:none !important; }
+.guest-shell:has(#guestLogisticsPickup:checked) .guest-card:not([data-guest-logistics-key="pending_pickup"]) { display:none !important; }
 .guest-status-filter-label { margin: 0 2px 6px; color: var(--guest-muted); font-size: 10px; font-weight: 750; letter-spacing: .04em; }
 .guest-status-filter-row { display: flex; gap: 7px; overflow-x: auto; overflow-y: hidden; padding: 0 1px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .guest-sort-row { display:flex; gap:7px; padding:0 1px 2px; }
