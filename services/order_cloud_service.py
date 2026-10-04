@@ -526,6 +526,32 @@ def _status_is_cancelled(value):
     return value in {"CANCELLED", "CANCELED", "CANCELADO", "CANCELADA", "已取消"}
 
 
+def _has_pending_pickup_logistics(order):
+    """True only for merchandise already in Iquique and still waiting pickup."""
+    for item in (order or {}).get("logistics") or []:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "").strip().upper()
+        pickup = str(item.get("pickup_status") or "").strip().lower()
+        if status == "ARRIVED_IQUIQUE" and pickup != "picked_up":
+            return True
+    return False
+
+
+def _prepare_extra_pickup_order(order, workflows):
+    """Collapse an expired normal ORDER into exactly one pickup-only card."""
+    item = dict(order or {})
+    wf_rows = [dict(wf) for wf in (workflows or []) if isinstance(wf, dict)]
+    source = wf_rows[-1] if wf_rows else {}
+    for key in ("product_name", "production_type", "product_code", "quantity", "expected_delivery_date"):
+        if item.get(key) in (None, "") and source.get(key) not in (None, ""):
+            item[key] = source.get(key)
+    item["workflows"] = []
+    item["extra_pickup_only"] = True
+    item["pickup_retained"] = True
+    return item
+
+
 def get_order(order_number):
     conn = get_db_connection()
     cur = get_cursor(conn)
@@ -631,7 +657,14 @@ def get_customer_space(customer_key, history_scope="current", include_cancelled=
         workflows = list(order.get("workflows") or [])
         visible_workflows = [wf for wf in workflows if _workflow_visible_in_scope(wf, history_scope)]
         if workflows and not visible_workflows:
+            # The normal ORDER card has aged out of the selected history window.
+            # Retain it only when goods are already in Iquique and still waiting
+            # pickup. Because this branch runs only when no workflow is visible,
+            # an ORDER still inside the normal 3-month window is never duplicated.
+            if _has_pending_pickup_logistics(order):
+                orders.append(_prepare_extra_pickup_order(order, workflows))
             continue
+        order["extra_pickup_only"] = False
         order["workflows"] = visible_workflows
         apply_shipping_summary(
             order,
