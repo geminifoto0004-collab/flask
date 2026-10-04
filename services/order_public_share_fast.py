@@ -265,8 +265,18 @@ def _filter_space(space, share):
         if workflows:
             visible = [wf for wf in workflows if _wf_visible(wf, scope, include_cancelled)]
             if not visible:
-                continue
-            order['workflows'] = visible
+                # Normal ORDER has aged out. The one deliberate exception is goods
+                # already in Iquique that FOTO SMART still reports as pending pickup.
+                # This branch only runs after all normal workflows are out of scope,
+                # so a <=3 month ORDER card can never be duplicated.
+                from services.order_cloud_service import _has_pending_pickup_logistics, _prepare_extra_pickup_order
+                if _has_pending_pickup_logistics(order):
+                    order = _prepare_extra_pickup_order(order, workflows)
+                else:
+                    continue
+            else:
+                order['extra_pickup_only'] = False
+                order['workflows'] = visible
 
         # Uploading an asset never implies that the customer may see it. Apply both
         # global share switches and per-order overrides before HTML is rendered.
