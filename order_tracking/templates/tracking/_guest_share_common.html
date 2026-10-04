@@ -75,8 +75,8 @@
                 {%- set zh_arrived = arrived -%}{%- set es_arrived = arrived -%}
             {%- endif -%}
             {%- if status == 'ARRIVED_IQUIQUE' -%}
-                {%- set zh_detail = '已到貨 · Iquique' ~ ((' · ' ~ zh_arrived) if zh_arrived else '') -%}
-                {%- set es_detail = 'Llegó a Iquique' ~ ((' · ' ~ es_arrived) if es_arrived else '') -%}
+                {%- set zh_detail = '已到貨' ~ ((' ' ~ zh_arrived) if zh_arrived else '') ~ ' · Iquique' -%}
+                {%- set es_detail = 'Llegó' ~ ((' ' ~ es_arrived) if es_arrived else '') ~ ' · Iquique' -%}
                 {%- set row_bg = '#ecfdf3' -%}
                 {%- set row_border = '#bbf7d0' -%}
                 {%- set row_color = '#15803d' -%}
