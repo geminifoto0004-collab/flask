@@ -92,6 +92,19 @@
                 <span data-i18n="guest.status_all">Todos</span><small>{{ orders|length }}</small>
             </button>
         </div>
+        {% if has_logistics_filter %}
+        <div class="guest-logistics-under-status" aria-label="Filtrar por logística">
+            <div class="guest-status-filter-label" data-guest-zh="物流" data-guest-es="Logística">Logística</div>
+            <div class="guest-logistics-row">
+                <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsAll" value="all" checked>
+                <label class="guest-status-chip" for="guestLogisticsAll"><span data-guest-zh="全部" data-guest-es="Todos">Todos</span></label>
+                <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsTransit" value="in_transit">
+                <label class="guest-status-chip" for="guestLogisticsTransit"><span data-guest-zh="海運中" data-guest-es="En camino">En camino</span></label>
+                <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsPickup" value="pending_pickup">
+                <label class="guest-status-chip" for="guestLogisticsPickup"><span data-guest-zh="待提貨" data-guest-es="Pendiente retiro">Pendiente retiro</span></label>
+            </div>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -108,28 +121,6 @@
         </div>
     </div>
     {% endif %}
-    {% if has_logistics_filter %}
-    <details class="guest-logistics-pop">
-        <summary class="guest-logistics-trigger" aria-label="Filtrar por logística">
-            <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 16.5h18l-2.2 3.2H6.1L3 16.5Z"></path>
-                <path d="M6.5 16.5V9.5h9v7"></path>
-                <path d="M9 9.5V6h4v3.5"></path>
-            </svg>
-            <span data-guest-zh="物流" data-guest-es="Logística">Logística</span>
-            <svg aria-hidden="true" viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 8 4 4 4-4"></path></svg>
-        </summary>
-        <div class="guest-logistics-menu" role="group" aria-label="Logística">
-            <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsAll" value="all" checked>
-            <label for="guestLogisticsAll" onclick="this.closest('details').removeAttribute('open')" data-guest-zh="全部" data-guest-es="Todos">Todos</label>
-            <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsTransit" value="in_transit">
-            <label for="guestLogisticsTransit" onclick="this.closest('details').removeAttribute('open')" data-guest-zh="海運中" data-guest-es="En camino">En camino</label>
-            <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsPickup" value="pending_pickup">
-            <label for="guestLogisticsPickup" onclick="this.closest('details').removeAttribute('open')" data-guest-zh="待提貨" data-guest-es="Pendiente de retiro">Pendiente de retiro</label>
-        </div>
-    </details>
-    {% endif %}
-
     {% if allow_pdf_download and pdf_count > 0 %}
     <a class="guest-pdf-bundle" href="{{ url_for('tracking_bp.local_guest_pdf_bundle', token=token) }}">
         <span class="guest-pdf-bundle-icon" aria-hidden="true">
@@ -173,6 +164,7 @@
                         {% for image in display_images %}
                         <span class="guest-cover-slide">
                             <img {% if loop.first and card_loop.index <= 2 %}src="{{ image.preview_url or image.url }}"{% else %}data-src="{{ image.preview_url or image.url }}"{% endif %}
+                                 data-full="{{ image.url }}"
                                  alt="{{ order.order_number }} · {{ loop.index }}/{{ display_images|length }}"
                                  loading="{% if loop.first and card_loop.index <= 4 %}eager{% else %}lazy{% endif %}"
                                  decoding="async"{% if loop.first and card_loop.index <= 2 %} fetchpriority="high"{% endif %}>
@@ -258,6 +250,17 @@ guestApplyBilingualText();
 // switch an existing share to exact/full statuses without creating a new URL.
 // The order/media list itself is still rebuilt from current database/file rows on each page load;
 // this only hides/shows cards already authorized for this token/customer.
+// A thumbnail may have metadata before its B2 object is actually available. If that
+// happens, retry exactly once through the canonical ORDER image route.
+document.addEventListener('error', function (event) {
+    const img = event.target;
+    if (!(img instanceof HTMLImageElement) || !img.closest('.guest-cover-slide')) return;
+    const full = String(img.dataset.full || '');
+    if (!full || img.dataset.fullFallbackTried === '1') return;
+    img.dataset.fullFallbackTried = '1';
+    img.src = full;
+}, true);
+
 (function () {
     const guestToken = {{ token|tojson }};
     const row = document.getElementById('guestStatusFilterRow');
