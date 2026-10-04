@@ -194,6 +194,82 @@ def _share_admin_state():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+def _drop_share_hash_caches(token_hash):
+    token_hash = str(token_hash or "").strip().lower()
+    if not token_hash:
+        return
+    try:
+        from services import order_public_share_fast as fast
+        with fast._cache_lock:
+            stale = [
+                raw_token for raw_token in list(fast._share_cache.keys())
+                if hashlib.sha256(str(raw_token or "").encode("utf-8")).hexdigest() == token_hash
+            ]
+            for raw_token in stale:
+                fast._share_cache.pop(raw_token, None)
+    except Exception as exc:
+        print(f"[WARN] share hash fast-cache invalidation skipped: {type(exc).__name__}: {exc}")
+    try:
+        from services import order_public_share_multi_b2_page as page
+        from services import order_customer_share_hot_cache as hot
+        with page._cache_lock:
+            hot._HASH_TOKEN_CACHE.pop(token_hash, None)
+            stale = [
+                raw_token for raw_token in list(page._token_cache.keys())
+                if hashlib.sha256(str(raw_token or "").encode("utf-8")).hexdigest() == token_hash
+            ]
+            for raw_token in stale:
+                page._token_cache.pop(raw_token, None)
+    except Exception as exc:
+        print(f"[WARN] share hash hot-cache invalidation skipped: {type(exc).__name__}: {exc}")
+    try:
+        from services import order_share_render_cache as html_cache
+        with html_cache._LOCK:
+            html_cache._TOKEN_HTML.pop(token_hash, None)
+    except Exception as exc:
+        print(f"[WARN] share hash HTML-cache invalidation skipped: {type(exc).__name__}: {exc}")
+
+
+@b2_test_bp.route("/api/order-cloud/share/revoke-by-hash", methods=["POST"])
+def _share_revoke_by_hash():
+    """Admin-only revoke for legacy/remote-only shares whose raw token is not stored locally."""
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    payload = request.get_json(silent=True) or {}
+    token_hash = str(payload.get("token_hash") or payload.get("share_id") or "").strip().lower()
+    if len(token_hash) != 64 or any(ch not in "0123456789abcdef" for ch in token_hash):
+        return jsonify({"ok": False, "error": "valid token_hash is required"}), 400
+    try:
+        _ensure_columns()
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            cur.execute(
+                "SELECT customer_key, status FROM cloud_share_tokens WHERE token_hash=? LIMIT 1",
+                (token_hash,),
+            )
+            row = cur.fetchone()
+            item = get_row_dict(row, cur) if row else {}
+            if not item:
+                return jsonify({"ok": False, "error": "share not found"}), 404
+            if str(item.get("status") or "").strip().lower() != "revoked":
+                cur.execute(
+                    "UPDATE cloud_share_tokens SET status='revoked' WHERE token_hash=?",
+                    (token_hash,),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        _drop_share_hash_caches(token_hash)
+        return jsonify({"ok": True, "revoked": True, "share_id": token_hash})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 def _expiry_from_payload(payload):
     """Return (changed, permanent, expires_at) for update payload."""
     payload = dict(payload or {})
