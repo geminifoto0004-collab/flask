@@ -235,6 +235,90 @@ def _delete_order_exact(cur, order_number):
     return deleted
 
 
+def sync_logistics_batch(items, source_site=None):
+    """Update only the public logistics list for existing cloud ORDER rows.
+
+    Logistics changes must stay lightweight: do not replay workflows/timelines or
+    image-owner synchronization. This keeps free Render/TiDB work small and avoids
+    Gunicorn worker timeouts.
+    """
+    if not isinstance(items, list):
+        raise ValueError("orders must be a list")
+    if not items:
+        return {"count": 0, "updated": 0, "orders": [], "missing": [], "customer_keys": []}
+    if len(items) > 100:
+        raise ValueError("logistics batch limit is 100")
+
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    accepted = []
+    missing = []
+    customers = set()
+    updated = 0
+    try:
+        for raw in items:
+            if not isinstance(raw, dict):
+                raise ValueError("each logistics item must be an object")
+            order_number = str(raw.get("order_number") or "").strip()
+            if not order_number:
+                raise ValueError("order_number is required")
+            logistics = raw.get("logistics")
+            if not isinstance(logistics, list):
+                raise ValueError(f"logistics must be a list for {order_number}")
+            safe_logistics = [dict(item) for item in logistics if isinstance(item, dict)]
+
+            cur.execute(
+                "SELECT order_number, customer_key, render_payload FROM cloud_orders WHERE order_number=? AND active=TRUE",
+                (order_number,),
+            )
+            row = cur.fetchone()
+            data = get_row_dict(row, cur) if row else None
+            if not data:
+                missing.append(order_number)
+                continue
+
+            raw_payload = data.get("render_payload")
+            if isinstance(raw_payload, dict):
+                payload = dict(raw_payload)
+            elif isinstance(raw_payload, str) and raw_payload.strip():
+                try:
+                    parsed = json.loads(raw_payload)
+                    payload = dict(parsed) if isinstance(parsed, dict) else {}
+                except Exception:
+                    payload = {}
+            else:
+                payload = {}
+
+            previous = payload.get("logistics")
+            accepted.append(order_number)
+            customer_key = str(data.get("customer_key") or "").strip()
+            if customer_key:
+                customers.add(customer_key)
+            if previous == safe_logistics:
+                continue
+
+            payload["logistics"] = safe_logistics
+            cur.execute(
+                "UPDATE cloud_orders SET render_payload=?, updated_at=CURRENT_TIMESTAMP WHERE order_number=?",
+                (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str), order_number),
+            )
+            updated += 1
+
+        conn.commit()
+        return {
+            "count": len(accepted),
+            "updated": updated,
+            "orders": accepted,
+            "missing": missing,
+            "customer_keys": sorted(customers),
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def sync_order(payload, source_site=None):
     """Upsert one complete customer-safe ORDER snapshot, or hard-delete it."""
     order_number = str(payload.get("order_number") or "").strip()
