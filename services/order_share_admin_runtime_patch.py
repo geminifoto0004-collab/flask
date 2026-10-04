@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import hashlib
 import time
 
-from flask import jsonify, make_response, request
+from flask import jsonify, make_response, redirect, render_template, request, session, url_for
 
 from blueprints.b2_test_bp import b2_test_bp, _ensure_order_cloud_tables, _order_cloud_auth_source
 from database import check_column_exists, get_cursor, get_db_connection, get_row_dict
@@ -266,6 +266,181 @@ def _share_revoke_by_hash():
             conn.close()
         _drop_share_hash_caches(token_hash)
         return jsonify({"ok": True, "revoked": True, "share_id": token_hash})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+
+def _cloud_admin_allowed():
+    if not session.get("logged_in"):
+        return False
+    try:
+        from config import admin_config
+        return session.get("role") in ("admin", admin_config.SUPER_ADMIN_ROLE)
+    except Exception:
+        return session.get("role") == "admin"
+
+
+@b2_test_bp.route("/admin/order-shares", methods=["GET"])
+def _cloud_share_admin_page():
+    """Render-hosted share control panel. Does not depend on desktop ORDER being online."""
+    if not session.get("logged_in"):
+        return redirect(url_for("login", next=request.path))
+    if not _cloud_admin_allowed():
+        return redirect(url_for("login", next=request.path))
+    return render_template(
+        "admin/order_share_cloud.html",
+        admin_username=session.get("username") or session.get("email") or "admin",
+    )
+
+
+def _cloud_admin_share_rows():
+    _ensure_columns()
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        cur.execute(
+            """SELECT s.token_hash, s.customer_key,
+                      COALESCE(NULLIF(c.customer_name,''), s.customer_key) AS customer_name,
+                      s.mode, s.status, s.source_site, s.history_scope,
+                      s.include_cancelled, s.created_at, s.expires_at,
+                      s.show_pdf_pages, s.allow_report_pdf_download,
+                      s.show_images, s.show_workflow_images,
+                      s.access_count, s.last_accessed_at
+               FROM cloud_share_tokens s
+               LEFT JOIN cloud_customers c ON c.customer_key=s.customer_key
+               ORDER BY s.created_at DESC"""
+        )
+        result = []
+        now = int(time.time())
+        for raw in cur.fetchall():
+            item = get_row_dict(raw, cur) or {}
+            expires_epoch = _dt_epoch(item.get("expires_at"))
+            stored_status = str(item.get("status") or "active").strip().lower()
+            effective_status = (
+                "expired"
+                if stored_status == "active" and expires_epoch and expires_epoch <= now
+                else stored_status
+            )
+            result.append({
+                "id": str(item.get("token_hash") or ""),
+                "customer_key": str(item.get("customer_key") or ""),
+                "customer_name": str(item.get("customer_name") or item.get("customer_key") or ""),
+                "mode": str(item.get("mode") or "LIVE"),
+                "status": effective_status,
+                "stored_status": stored_status,
+                "source_site": str(item.get("source_site") or ""),
+                "history_scope": str(item.get("history_scope") or "current"),
+                "include_cancelled": bool(item.get("include_cancelled")),
+                "created_at": _dt_iso(item.get("created_at")),
+                "created_at_epoch": _dt_epoch(item.get("created_at")),
+                "expires_at": _dt_iso(item.get("expires_at")),
+                "expires_at_epoch": expires_epoch,
+                "is_permanent": not bool(item.get("expires_at")),
+                "show_pdf_pages": bool(item.get("show_pdf_pages")),
+                "allow_report_pdf_download": bool(item.get("allow_report_pdf_download")),
+                "show_images": bool(item.get("show_images")),
+                "show_workflow_images": bool(item.get("show_workflow_images")),
+                "access_count": int(item.get("access_count") or 0),
+                "last_accessed_at": _dt_iso(item.get("last_accessed_at")),
+                "last_accessed_at_epoch": _dt_epoch(item.get("last_accessed_at")),
+            })
+        return result
+    finally:
+        conn.close()
+
+
+@b2_test_bp.route("/admin/order-shares/api/list", methods=["GET"])
+def _cloud_share_admin_list():
+    if not _cloud_admin_allowed():
+        return jsonify({"ok": False, "error": "admin login required"}), 403
+    try:
+        return jsonify({"ok": True, "shares": _cloud_admin_share_rows()})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/admin/order-shares/api/<token_hash>/revoke", methods=["POST"])
+def _cloud_share_admin_revoke(token_hash):
+    if not _cloud_admin_allowed():
+        return jsonify({"ok": False, "error": "admin login required"}), 403
+    token_hash = str(token_hash or "").strip().lower()
+    if len(token_hash) != 64 or any(ch not in "0123456789abcdef" for ch in token_hash):
+        return jsonify({"ok": False, "error": "invalid share id"}), 400
+    try:
+        _ensure_columns()
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            cur.execute(
+                "UPDATE cloud_share_tokens SET status='revoked' WHERE token_hash=?",
+                (token_hash,),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        _drop_share_hash_caches(token_hash)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/admin/order-shares/api/<token_hash>/expiry", methods=["PATCH"])
+def _cloud_share_admin_expiry(token_hash):
+    if not _cloud_admin_allowed():
+        return jsonify({"ok": False, "error": "admin login required"}), 403
+    token_hash = str(token_hash or "").strip().lower()
+    if len(token_hash) != 64 or any(ch not in "0123456789abcdef" for ch in token_hash):
+        return jsonify({"ok": False, "error": "invalid share id"}), 400
+
+    payload = request.get_json(silent=True) or {}
+    permanent = bool(payload.get("permanent"))
+    expires_at = None
+    if not permanent:
+        if payload.get("expires_at_epoch"):
+            try:
+                epoch = int(payload.get("expires_at_epoch"))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "invalid expires_at_epoch"}), 400
+            if epoch <= int(time.time()):
+                return jsonify({"ok": False, "error": "expiry must be in the future"}), 400
+            expires_at = datetime.utcfromtimestamp(epoch)
+        else:
+            try:
+                hours = int(payload.get("hours") or 0)
+            except (TypeError, ValueError):
+                hours = 0
+            if hours < 1 or hours > 24 * 365:
+                return jsonify({"ok": False, "error": "hours must be between 1 and 8760"}), 400
+            expires_at = datetime.utcnow() + timedelta(hours=hours)
+
+    try:
+        _ensure_columns()
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            cur.execute(
+                """UPDATE cloud_share_tokens
+                   SET expires_at=?, status=CASE WHEN status='revoked' THEN status ELSE 'active' END
+                   WHERE token_hash=?""",
+                (expires_at, token_hash),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        _drop_share_hash_caches(token_hash)
+        return jsonify({
+            "ok": True,
+            "is_permanent": permanent,
+            "expires_at": _dt_iso(expires_at),
+            "expires_at_epoch": _dt_epoch(expires_at),
+        })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
