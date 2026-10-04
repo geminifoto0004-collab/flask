@@ -120,12 +120,28 @@ def _pick(workflow, order, key):
     return value if value not in (None, "") else order.get(key)
 
 
+def _logistics_filter_key(rows):
+    has_transit = False
+    for item in rows or []:
+        if not isinstance(item, dict):
+            continue
+        status = _key(item.get("status"))
+        pickup = str(item.get("pickup_status") or "").strip().lower()
+        if status == "ARRIVED_IQUIQUE" and pickup != "picked_up":
+            return "pending_pickup"
+        if status == "IN_TRANSIT":
+            has_transit = True
+    return "in_transit" if has_transit else "none"
+
+
 def _card(order, workflow, token):
     wf_no = str((workflow or {}).get("workflow_number") or (workflow or {}).get("workflow_key") or "").strip()
     order_no = str(order.get("order_number") or "").strip()
-    status = ((workflow or {}).get("status") or order.get("order_status") or "")
+    pickup_only = bool(order.get("extra_pickup_only"))
+    status = "COMPLETED" if pickup_only else ((workflow or {}).get("status") or order.get("order_status") or "")
     detail_key = wf_no or order_no
     shipping = workflow or order
+    logistics_rows = [dict(x) for x in (order.get("logistics") or []) if isinstance(x, dict)]
     card = {
         "workflow_number": wf_no, "order_number": order_no, "current_status": status,
         "status_zh": _label(status, "zh_cn"), "status_es": _label(status, "es"),
@@ -140,7 +156,9 @@ def _card(order, workflow, token):
         "partial_ship_count": shipping.get("partial_ship_count") or 0,
         "shipping_zh": shipping.get("shipping_zh") or "",
         "shipping_es": shipping.get("shipping_es") or "",
-        "logistics": [dict(x) for x in (order.get("logistics") or []) if isinstance(x, dict)],
+        "logistics": logistics_rows,
+        "logistics_filter": _logistics_filter_key(logistics_rows),
+        "extra_pickup_only": pickup_only,
         "images": _images(order, workflow, token),
         "detail_url": f"/share/{token}/order/{quote(detail_key, safe='')}",
     }
@@ -200,9 +218,12 @@ def _customer_context(space, share, token):
     space = filter_assets_in_space(copy.deepcopy(space), share)
     customer = (space or {}).get("customer") or {}
     expires = _expiry(share)
+    cards = _cards(space, token)
     return {
         "customer_name": str(customer.get("customer_name") or customer.get("customer_key") or ""),
-        "token": token, "orders": _cards(space, token), "expires_at_epoch": expires,
+        "token": token, "orders": cards,
+        "has_logistics_filter": any(str(card.get("logistics_filter") or "none") != "none" for card in cards),
+        "expires_at_epoch": expires,
         "is_permanent": not bool(expires), "allow_pdf_download": False, "pdf_count": 0,
         "show_pdf_pages": bool((share or {}).get("show_pdf_pages", True)),
         "allow_report_pdf_download": bool((share or {}).get("allow_report_pdf_download", False)),
