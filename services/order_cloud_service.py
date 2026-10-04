@@ -449,7 +449,7 @@ def get_order(order_number):
         cur.execute(
             """SELECT order_number, customer_key, customer_name, order_status, order_date,
                       expected_delivery_date, production_type, product_name, product_code,
-                      pattern_code, quantity, active, source_site, updated_at, render_payload
+                      pattern_code, quantity, active, source_site, updated_at
                FROM cloud_orders WHERE order_number=? AND active=TRUE""",
             (order_number,),
         )
@@ -458,17 +458,22 @@ def get_order(order_number):
             return None
         order = _safe_order_dict(row, cur)
 
-        raw_render_payload = order.pop("render_payload", None)
-        render_payload = None
-        if isinstance(raw_render_payload, dict):
-            render_payload = raw_render_payload
-        elif isinstance(raw_render_payload, str) and raw_render_payload.strip():
-            try:
+        # Logistics is additive. A missing/old render_payload must never take the
+        # whole public customer page down.
+        order["logistics"] = []
+        try:
+            cur.execute("SELECT render_payload FROM cloud_orders WHERE order_number=? LIMIT 1", (order_number,))
+            payload_row = cur.fetchone()
+            payload_data = _safe_order_dict(payload_row, cur) if payload_row else {}
+            raw_render_payload = (payload_data or {}).get("render_payload")
+            render_payload = raw_render_payload if isinstance(raw_render_payload, dict) else None
+            if render_payload is None and isinstance(raw_render_payload, str) and raw_render_payload.strip():
                 render_payload = json.loads(raw_render_payload)
-            except Exception:
-                render_payload = None
-        logistics = (render_payload or {}).get("logistics") if isinstance(render_payload, dict) else None
-        order["logistics"] = [dict(item) for item in (logistics or []) if isinstance(item, dict)]
+            logistics = (render_payload or {}).get("logistics") if isinstance(render_payload, dict) else None
+            order["logistics"] = [dict(item) for item in (logistics or []) if isinstance(item, dict)]
+        except Exception as exc:
+            print(f"[WARN] optional public logistics read skipped for {order_number}: {type(exc).__name__}: {exc}")
+            order["logistics"] = []
 
         cur.execute(
             """SELECT workflow_key, workflow_number, order_number, workflow_type, status,

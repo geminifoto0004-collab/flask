@@ -114,8 +114,11 @@ def _ensure_share_columns():
                        INDEX idx_share_visibility_order (order_number)
                    )"""
             )
-            if not check_column_exists(cur, "cloud_share_order_visibility", "show_logistics"):
-                cur.execute("ALTER TABLE cloud_share_order_visibility ADD COLUMN show_logistics BOOLEAN NULL")
+            try:
+                if not check_column_exists(cur, "cloud_share_order_visibility", "show_logistics"):
+                    cur.execute("ALTER TABLE cloud_share_order_visibility ADD COLUMN show_logistics BOOLEAN NULL")
+            except Exception as exc:
+                print(f"[WARN] optional show_logistics migration skipped: {type(exc).__name__}: {exc}")
             conn.commit()
             _share_columns_ready = True
         except Exception:
@@ -149,7 +152,7 @@ def _resolve_share(token):
             return None, 'not_found'
         share = get_row_dict(row, cur) or {}
         cur.execute(
-            """SELECT order_number, show_order, show_images, show_workflow_images, show_logistics
+            """SELECT order_number, show_order, show_images, show_workflow_images
                FROM cloud_share_order_visibility WHERE token_hash=?""",
             (token_hash,),
         )
@@ -158,7 +161,6 @@ def _resolve_share(token):
                 'show_order': bool(item.get('show_order')),
                 'show_images': None if item.get('show_images') is None else bool(item.get('show_images')),
                 'show_workflow_images': None if item.get('show_workflow_images') is None else bool(item.get('show_workflow_images')),
-                'show_logistics': None if item.get('show_logistics') is None else bool(item.get('show_logistics')),
             }
             for item in (get_row_dict(r, cur) or {} for r in cur.fetchall())
             if str(item.get('order_number') or '').strip()
@@ -250,8 +252,6 @@ def _filter_space(space, share):
         override = visibility.get(order_number) if isinstance(visibility, dict) else None
         if isinstance(override, dict) and override.get('show_order') is False:
             continue
-        if isinstance(override, dict) and override.get('show_logistics') is False:
-            order['logistics'] = []
 
         # Persisted snapshots can outlive an order cancellation. The workflow may
         # still have a non-cancelled production status, so filtering only workflow
