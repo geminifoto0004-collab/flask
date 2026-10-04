@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ORDER 雲端分享管理</title>
+<style>
+:root{--red:#ff2d4f;--bg:#fff7f8;--line:#f2d9de;--text:#20242a;--muted:#7c8490;--green:#18a874;--amber:#e58b00}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Arial,"Microsoft JhengHei",sans-serif;color:var(--text)}
+.wrap{max-width:1500px;margin:0 auto;padding:22px}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}
+h1{font-size:25px;margin:0 0 6px}.sub{color:var(--muted);font-size:13px}.who{font-size:12px;color:var(--muted);text-align:right}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}.stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.stat small{color:var(--muted)}.stat strong{display:block;font-size:24px;margin-top:7px}
+.tools{display:flex;gap:8px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:12px}
+.tools input,.tools select{height:38px;border:1px solid #dfe3e8;border-radius:9px;padding:0 12px;background:#fff}.tools input{flex:1;min-width:180px}
+button{height:38px;border-radius:9px;border:1px solid #dfe3e8;background:#fff;padding:0 14px;font-weight:700;cursor:pointer}
+button.primary{background:var(--red);border-color:var(--red);color:#fff}button.danger{color:var(--red);border-color:#ff9caf}button:disabled{opacity:.45;cursor:not-allowed}
+.panel{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}.row{display:grid;grid-template-columns:minmax(220px,1.6fr) 100px 140px 150px 140px minmax(280px,1.4fr);gap:12px;align-items:center;padding:14px 16px;border-bottom:1px solid #f0e6e8}
+.row.head{font-size:12px;color:#69717c;background:#fffafb;font-weight:700;padding-top:11px;padding-bottom:11px}.row:last-child{border-bottom:0}
+.name{font-weight:800}.id{font-size:10px;color:#9aa0a8;margin-top:4px;word-break:break-all}.badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800}
+.badge.active{background:#eaf9f3;color:#087e58}.badge.expired{background:#fff4df;color:#9a5a00}.badge.revoked{background:#fff0f2;color:#c11e3b}
+.muted{font-size:11px;color:var(--muted);margin-top:4px}.actions{display:flex;gap:6px;flex-wrap:wrap}.empty,.loading{padding:48px;text-align:center;color:var(--muted)}
+.note{margin-top:12px;font-size:11px;color:var(--muted);line-height:1.6}.toast{position:fixed;right:22px;bottom:22px;background:#20242a;color:#fff;padding:12px 16px;border-radius:10px;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}.toast.show{opacity:1;transform:none}
+@media(max-width:900px){.wrap{padding:12px}.stats{grid-template-columns:repeat(2,1fr)}.tools{flex-wrap:wrap}.tools input{width:100%;flex-basis:100%}.row.head{display:none}.row{grid-template-columns:1fr 1fr;gap:8px}.row>div:first-child,.row>.actions{grid-column:1/-1}.actions{padding-top:6px}.who{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>ORDER 雲端分享管理</h1><div class="sub">直接管理 Render / TiDB 的分享連結，不需要開啟本機 ORDER。</div></div>
+    <div class="who">登入：{{ admin_username }}<br><a href="/admin">返回管理後台</a></div>
+  </div>
+  <div class="stats">
+    <div class="stat"><small>目前有效</small><strong id="sActive">—</strong></div>
+    <div class="stat"><small>永久</small><strong id="sPermanent">—</strong></div>
+    <div class="stat"><small>已到期</small><strong id="sExpired">—</strong></div>
+    <div class="stat"><small>已失效</small><strong id="sRevoked">—</strong></div>
+  </div>
+  <div class="tools">
+    <input id="search" placeholder="搜尋客戶名稱 / customer key / 分享編號">
+    <select id="status"><option value="all">全部狀態</option><option value="active">有效</option><option value="expired">已到期</option><option value="revoked">已失效</option></select>
+    <button id="refresh">刷新</button>
+  </div>
+  <div class="panel">
+    <div class="row head"><div>客戶</div><div>狀態</div><div>有效期</div><div>建立時間</div><div>訪問</div><div>操作</div></div>
+    <div id="rows" class="loading">正在讀取 Render / TiDB…</div>
+  </div>
+  <div class="note">雲端控制台保存的是安全 token hash，因此舊分享若沒有另外保存原始網址，無法從 hash 反推出網址；但仍可在這裡改有效期或立即失效。新的分享建立仍建議由 ORDER 建立。</div>
+</div>
+<div id="toast" class="toast"></div>
+<script>
+const $=id=>document.getElementById(id);let shares=[];
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function fmt(epoch){if(!epoch)return '—';return new Date(Number(epoch)*1000).toLocaleString('zh-TW',{hour12:false})}
+function statusLabel(s){return s==='active'?'有效':s==='expired'?'已到期':'已失效'}
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}
+function stats(){
+  $('sActive').textContent=shares.filter(x=>x.status==='active').length;
+  $('sPermanent').textContent=shares.filter(x=>x.status==='active'&&x.is_permanent).length;
+  $('sExpired').textContent=shares.filter(x=>x.status==='expired').length;
+  $('sRevoked').textContent=shares.filter(x=>x.status==='revoked').length;
+}
+function render(){
+  const q=$('search').value.trim().toLowerCase(),st=$('status').value;
+  const list=shares.filter(x=>(st==='all'||x.status===st)&&(!q||[x.customer_name,x.customer_key,x.id].join(' ').toLowerCase().includes(q)));
+  if(!list.length){$('rows').className='empty';$('rows').innerHTML='沒有符合條件的分享';return}
+  $('rows').className='';
+  $('rows').innerHTML=list.map(x=>{
+    const expiry=x.is_permanent?'永久':(x.expires_at_epoch?fmt(x.expires_at_epoch):'—');
+    const canEdit=x.status!=='revoked';
+    return '<div class="row">'+
+      '<div><div class="name">'+esc(x.customer_name||x.customer_key||'—')+'</div><div class="id">#'+esc(x.id)+'</div><div class="muted">'+esc(x.source_site||'LEGACY')+' · '+esc(x.history_scope||'current')+'</div></div>'+
+      '<div><span class="badge '+esc(x.status)+'">'+statusLabel(x.status)+'</span></div>'+
+      '<div><strong>'+esc(expiry)+'</strong></div>'+
+      '<div>'+fmt(x.created_at_epoch)+'</div>'+
+      '<div><strong>'+Number(x.access_count||0)+' 次</strong><div class="muted">'+(x.last_accessed_at_epoch?fmt(x.last_accessed_at_epoch):'尚未訪問')+'</div></div>'+
+      '<div class="actions">'+
+        '<button data-act="24" data-id="'+esc(x.id)+'" '+(!canEdit?'disabled':'')+'>+24h</button>'+
+        '<button data-act="168" data-id="'+esc(x.id)+'" '+(!canEdit?'disabled':'')+'>+7天</button>'+
+        '<button data-act="perm" data-id="'+esc(x.id)+'" '+(!canEdit||x.is_permanent?'disabled':'')+'>永久</button>'+
+        '<button class="danger" data-act="revoke" data-id="'+esc(x.id)+'" '+(!canEdit?'disabled':'')+'>立即失效</button>'+
+      '</div></div>';
+  }).join('');
+}
+async function load(){
+  $('rows').className='loading';$('rows').textContent='正在讀取 Render / TiDB…';
+  try{
+    const r=await fetch('/admin/order-shares/api/list',{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401||r.status===403){location.href='/login?next=/admin/order-shares';return}
+    const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||'讀取失敗');
+    shares=p.shares||[];stats();render();
+  }catch(e){$('rows').className='empty';$('rows').textContent=e.message||'讀取失敗'}
+}
+async function setExpiry(id,hours){
+  const body=hours==='perm'?{permanent:true}:{hours:Number(hours)};
+  const r=await fetch('/admin/order-shares/api/'+encodeURIComponent(id)+'/expiry',{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||'更新失敗');
+}
+async function revoke(id){
+  const r=await fetch('/admin/order-shares/api/'+encodeURIComponent(id)+'/revoke',{method:'POST',credentials:'same-origin'});
+  const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||'失效失敗');
+}
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-act]');if(!b)return;
+  const act=b.dataset.act,id=b.dataset.id;if(!id)return;
+  if(act==='revoke'&&!confirm('確定讓這條分享立即失效？客戶網址會停止使用。'))return;
+  b.disabled=true;
+  try{
+    if(act==='revoke')await revoke(id);else await setExpiry(id,act);
+    toast(act==='revoke'?'分享已失效':'有效期已更新');await load();
+  }catch(err){alert(err.message||'操作失敗');b.disabled=false}
+});
+$('search').addEventListener('input',render);$('status').addEventListener('change',render);$('refresh').onclick=load;
+load();setInterval(load,30000);
+</script>
+</body>
+</html>
