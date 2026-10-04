@@ -201,7 +201,13 @@ def order_cloud_sync_order():
     try:
         _ensure_order_cloud_tables()
         from services.order_cloud_service import sync_order
-        result = sync_order(request.get_json(silent=True) or {}, source_site=source_site)
+        payload = request.get_json(silent=True) or {}
+        result = sync_order(payload, source_site=source_site)
+        try:
+            from services.order_public_share_fast import invalidate_customer_space_cache
+            invalidate_customer_space_cache(payload.get("customer_key") or payload.get("customer_name"))
+        except Exception:
+            pass
         return jsonify({"ok": True, "result": result})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

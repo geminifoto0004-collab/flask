@@ -201,6 +201,20 @@ def _upsert_customer(cur, key, name, source_site):
         )
 
 
+def _preserve_existing_logistics(payload, existing_render_payload):
+    """Keep the last TiDB logistics when a non-Chile/failed source omits the field."""
+    incoming = dict(payload or {})
+    if "logistics" in incoming:
+        return incoming
+    try:
+        previous = json.loads(existing_render_payload) if isinstance(existing_render_payload, str) else existing_render_payload
+    except Exception:
+        previous = None
+    if isinstance(previous, dict) and isinstance(previous.get("logistics"), list):
+        incoming["logistics"] = previous.get("logistics")
+    return incoming
+
+
 def _delete_order_exact(cur, order_number):
     """Hard-delete one cloud ORDER tree so TiDB presence matches local SQLite."""
     cur.execute("SELECT customer_key FROM cloud_orders WHERE order_number=?", (order_number,))
@@ -265,7 +279,10 @@ def sync_order(payload, source_site=None):
     cur = get_cursor(conn)
     try:
         _upsert_customer(cur, customer_key, customer_name, source_site)
-        cur.execute("SELECT order_number FROM cloud_orders WHERE order_number = ?", (order_number,))
+        cur.execute("SELECT order_number, render_payload FROM cloud_orders WHERE order_number = ?", (order_number,))
+        existing_row = cur.fetchone()
+        existing_data = get_row_dict(existing_row, cur) if existing_row else {}
+        payload = _preserve_existing_logistics(payload, (existing_data or {}).get("render_payload"))
         vals = (
             customer_key,
             customer_name,
@@ -280,7 +297,7 @@ def sync_order(payload, source_site=None):
             source_site,
             order_number,
         )
-        if cur.fetchone():
+        if existing_row:
             cur.execute(
                 """UPDATE cloud_orders
                    SET customer_key=?, customer_name=?, order_status=?, order_date=?,
@@ -432,7 +449,7 @@ def get_order(order_number):
         cur.execute(
             """SELECT order_number, customer_key, customer_name, order_status, order_date,
                       expected_delivery_date, production_type, product_name, product_code,
-                      pattern_code, quantity, active, source_site, updated_at
+                      pattern_code, quantity, active, source_site, updated_at, render_payload
                FROM cloud_orders WHERE order_number=? AND active=TRUE""",
             (order_number,),
         )
@@ -440,6 +457,19 @@ def get_order(order_number):
         if not row:
             return None
         order = _safe_order_dict(row, cur)
+
+        raw_render_payload = order.pop("render_payload", None)
+        render_payload = None
+        if isinstance(raw_render_payload, dict):
+            render_payload = raw_render_payload
+        elif isinstance(raw_render_payload, str) and raw_render_payload.strip():
+            try:
+                render_payload = json.loads(raw_render_payload)
+            except Exception:
+                render_payload = None
+        logistics = (render_payload or {}).get("logistics") if isinstance(render_payload, dict) else None
+        order["logistics"] = [dict(item) for item in (logistics or []) if isinstance(item, dict)]
+
         cur.execute(
             """SELECT workflow_key, workflow_number, order_number, workflow_type, status,
                       production_type, product_name, product_code, quantity,

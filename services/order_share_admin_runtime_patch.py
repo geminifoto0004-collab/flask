@@ -56,6 +56,8 @@ def _ensure_columns():
                    INDEX idx_share_visibility_order (order_number)
                )"""
         )
+        if not check_column_exists(cur, "cloud_share_order_visibility", "show_logistics"):
+            cur.execute("ALTER TABLE cloud_share_order_visibility ADD COLUMN show_logistics BOOLEAN NULL")
         conn.commit()
     except Exception:
         conn.rollback()
@@ -317,7 +319,7 @@ def _share_settings_detail(token_hash):
             raise ValueError("share not found")
         share = get_row_dict(row, cur) or {}
         cur.execute(
-            """SELECT order_number, show_order, show_images, show_workflow_images
+            """SELECT order_number, show_order, show_images, show_workflow_images, show_logistics
                FROM cloud_share_order_visibility WHERE token_hash=?""",
             (token_hash,),
         )
@@ -354,6 +356,7 @@ def _share_settings_detail(token_hash):
                 "show_order": bool(override.get("show_order")) if override else True,
                 "show_images": global_images if override.get("show_images") is None else bool(override.get("show_images")),
                 "show_workflow_images": global_workflow_images if override.get("show_workflow_images") is None else bool(override.get("show_workflow_images")),
+                "show_logistics": True if override.get("show_logistics") is None else bool(override.get("show_logistics")),
             })
         expires_epoch = _dt_epoch(share.get("expires_at"))
         return {
@@ -441,14 +444,15 @@ def _apply_share_settings(token_hash, payload):
                     continue
                 cur.execute(
                     """INSERT INTO cloud_share_order_visibility
-                       (token_hash, order_number, show_order, show_images, show_workflow_images, updated_at)
-                       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+                       (token_hash, order_number, show_order, show_images, show_workflow_images, show_logistics, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
                     (
                         token_hash,
                         order_number,
                         bool(raw.get("show_order", True)),
                         None if raw.get("show_images") is None else bool(raw.get("show_images")),
                         None if raw.get("show_workflow_images") is None else bool(raw.get("show_workflow_images")),
+                        None if raw.get("show_logistics") is None else bool(raw.get("show_logistics")),
                     ),
                 )
         conn.commit()

@@ -223,6 +223,12 @@ def ensure_order_owners_batch(orders, source_site=None):
             _upsert_customer(cur, customer_key, customer_name, source_site)
             customers.add(customer_key)
 
+            cur.execute("SELECT order_number, render_payload FROM cloud_orders WHERE order_number=?", (order_number,))
+            existing_row = cur.fetchone()
+            existing_data = get_row_dict(existing_row, cur) if existing_row else {}
+            from services.order_cloud_service import _preserve_existing_logistics
+            payload = _preserve_existing_logistics(payload, (existing_data or {}).get("render_payload"))
+
             order_values = (
                 customer_key,
                 customer_name,
@@ -237,8 +243,7 @@ def ensure_order_owners_batch(orders, source_site=None):
                 source_site,
                 order_number,
             )
-            cur.execute("SELECT order_number FROM cloud_orders WHERE order_number=?", (order_number,))
-            if cur.fetchone():
+            if existing_row:
                 cur.execute(
                     """UPDATE cloud_orders
                        SET customer_key=?, customer_name=?, order_status=?, order_date=?,
