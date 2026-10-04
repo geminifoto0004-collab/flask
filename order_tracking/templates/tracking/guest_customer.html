@@ -43,6 +43,70 @@
     </script>
 </head>
 <body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}">
+<!--
+Inline filter icons share one sprite and never request a font or an external image.
+Tabler Icons: https://github.com/tabler/tabler-icons
+MIT License
+
+Copyright (c) 2020-2026 Paweł Kuna
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<svg class="guest-filter-sprite" xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" focusable="false">
+    <symbol id="guest-filter-icon-layout-grid" viewBox="0 0 24 24">
+        <path d="M4 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4"/>
+        <path d="M14 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4"/>
+        <path d="M4 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4"/>
+        <path d="M14 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4"/>
+    </symbol>
+    <symbol id="guest-filter-icon-hourglass-empty" viewBox="0 0 24 24">
+        <path d="M6 20v-2a6 6 0 1 1 12 0v2a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1"/>
+        <path d="M6 4v2a6 6 0 1 0 12 0v-2a1 1 0 0 0 -1 -1h-10a1 1 0 0 0 -1 1"/>
+    </symbol>
+    <symbol id="guest-filter-icon-circle-check" viewBox="0 0 24 24">
+        <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/>
+        <path d="M9 12l2 2l4 -4"/>
+    </symbol>
+    <symbol id="guest-filter-icon-checks" viewBox="0 0 24 24">
+        <path d="M7 12l5 5l10 -10"/>
+        <path d="M2 12l5 5m5 -5l5 -5"/>
+    </symbol>
+    <symbol id="guest-filter-icon-ship" viewBox="0 0 24 24">
+        <path d="M2 20a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1"/>
+        <path d="M4 18l-1 -5h18l-2 4"/>
+        <path d="M5 13v-6h8l4 6"/>
+        <path d="M7 7v-4h-1"/>
+    </symbol>
+    <symbol id="guest-filter-icon-package" viewBox="0 0 24 24">
+        <path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5"/>
+        <path d="M12 12l8 -4.5M12 12l0 9M12 12l-8 -4.5M16 5.25l-8 4.5"/>
+    </symbol>
+    <symbol id="guest-filter-icon-file-text" viewBox="0 0 24 24">
+        <path d="M14 3v4a1 1 0 0 0 1 1h4"/>
+        <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/>
+        <path d="M9 9l1 0M9 13l6 0M9 17l6 0"/>
+    </symbol>
+    <symbol id="guest-filter-icon-calendar-event" viewBox="0 0 24 24">
+        <path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2l0 -12"/>
+        <path d="M16 3l0 4M8 3l0 4M4 11l16 0M8 15h2v2h-2l0 -2"/>
+    </symbol>
+</svg>
 <div class="guest-shell">
     <header class="guest-head">
         <div class="guest-brand">
@@ -89,6 +153,7 @@
         <div class="guest-status-filter-label" data-i18n="guest.status_filter_label">Estado</div>
         <div class="guest-status-filter-row" id="guestStatusFilterRow">
             <button type="button" class="guest-status-chip active" data-guest-status-filter="all" aria-pressed="true">
+                <svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-layout-grid"/></svg>
                 <span data-i18n="guest.status_all">Todos</span><small>{{ orders|length }}</small>
             </button>
         </div>
@@ -97,11 +162,11 @@
             <div class="guest-status-filter-label" data-guest-zh="物流" data-guest-es="Logística">Logística</div>
             <div class="guest-logistics-row">
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsAll" value="all" checked>
-                <label class="guest-status-chip" for="guestLogisticsAll"><span data-guest-zh="全部" data-guest-es="Todos">Todos</span></label>
+                <label class="guest-status-chip" for="guestLogisticsAll"><svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-layout-grid"/></svg><span data-guest-zh="全部" data-guest-es="Todos">Todos</span></label>
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsTransit" value="in_transit">
-                <label class="guest-status-chip" for="guestLogisticsTransit"><span data-guest-zh="海運中" data-guest-es="En camino">En camino</span></label>
+                <label class="guest-status-chip" for="guestLogisticsTransit"><svg class="guest-filter-icon guest-filter-icon--go" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-ship"/></svg><span data-guest-zh="運送中" data-guest-es="En camino">En camino</span></label>
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsPickup" value="pending_pickup">
-                <label class="guest-status-chip" for="guestLogisticsPickup"><span data-guest-zh="待提貨" data-guest-es="Pendiente retiro">Pendiente retiro</span></label>
+                <label class="guest-status-chip" for="guestLogisticsPickup"><svg class="guest-filter-icon guest-filter-icon--warn" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-package"/></svg><span data-guest-zh="待取貨" data-guest-es="Pendiente retiro">Pendiente retiro</span></label>
             </div>
         </div>
         {% endif %}
@@ -113,9 +178,11 @@
         <div class="guest-status-filter-label" data-guest-zh="排序" data-guest-es="Ordenar">Ordenar</div>
         <div class="guest-sort-row" id="guestSortRow">
             <button type="button" class="guest-status-chip active" data-guest-sort="order" aria-pressed="true">
+                <svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-file-text"/></svg>
                 <span data-guest-zh="訂單" data-guest-es="Pedido">Pedido</span>
             </button>
             <button type="button" class="guest-status-chip" data-guest-sort="shipping" aria-pressed="false">
+                <svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-calendar-event"/></svg>
                 <span data-guest-zh="出貨日期" data-guest-es="Envío">Envío</span>
             </button>
         </div>
@@ -305,19 +372,33 @@ document.addEventListener('error', function (event) {
     const filterItems = filterMode === 'full' ? Array.from(exactCounts.values()) : simpleGroups.map(function (group) {
         return {...group, count:cards.filter(function (card) { return card.dataset.guestStatusGroup === group.key; }).length};
     });
+    const statusIcons = {
+        unconfirmed: {name:'hourglass-empty', tone:'warn'},
+        confirmed: {name:'circle-check', tone:'go'},
+        done: {name:'checks', tone:'ok'}
+    };
     filterItems.forEach(function (item) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'guest-status-chip';
         btn.dataset.guestStatusFilter = item.key;
         btn.setAttribute('aria-pressed', 'false');
+        const iconInfo = statusIcons[filterMode === 'full' ? simpleKey(item.key) : item.key];
+        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('class', 'guest-filter-icon guest-filter-icon--' + iconInfo.tone);
+        icon.setAttribute('viewBox', '0 0 24 24');
+        icon.setAttribute('aria-hidden', 'true');
+        icon.setAttribute('focusable', 'false');
+        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+        use.setAttribute('href', '#guest-filter-icon-' + iconInfo.name);
+        icon.appendChild(use);
         const label = document.createElement('span');
         label.dataset.guestZh = item.zh;
         label.dataset.guestEs = item.es;
         label.textContent = currentLang() === 'zh_cn' ? item.zh : item.es;
         const count = document.createElement('small');
         count.textContent = String(item.count);
-        btn.append(label, count);
+        btn.append(icon, label, count);
         row.appendChild(btn);
     });
 
