@@ -5,6 +5,7 @@ Metadata remains in TiDB and public reads stay protected by the share-token rout
 """
 
 import hashlib
+import json
 import os
 import re
 
@@ -180,11 +181,18 @@ def _resolve_order_and_workflow(cur, order_number, workflow_key=None):
 
 
 def ensure_order_owners_batch(orders, source_site=None):
-    """Ensure many image-presign owners in one TiDB transaction."""
+    """Batch-upsert complete safe ORDER trees in one TiDB transaction.
+
+    V92.3 originally used this endpoint only to create image-presign owners and
+    intentionally skipped workflow history. Public shipping badges are derived from
+    cloud_workflow_history, so historical orders could have images/status but lose the
+    actual shipped date. V93.0 keeps the fast batch transport while mirroring the same
+    order/workflow/timeline shape as sync_order().
+    """
     if not isinstance(orders, list):
         raise ValueError("orders must be a list")
     if not orders:
-        return {"count": 0, "orders": [], "customer_keys": []}
+        return {"count": 0, "orders": [], "customer_keys": [], "timeline_items": 0}
     if len(orders) > 100:
         raise ValueError("owners batch limit is 100")
 
@@ -195,6 +203,7 @@ def ensure_order_owners_batch(orders, source_site=None):
     cur = get_cursor(conn)
     synced = []
     customers = set()
+    total_history = 0
     try:
         for payload in orders:
             if not isinstance(payload, dict):
@@ -206,6 +215,10 @@ def ensure_order_owners_batch(orders, source_site=None):
                 raise ValueError("order_number is required")
             if not customer_name or not customer_key:
                 raise ValueError(f"customer_name is required for {order_number}")
+
+            workflows = payload.get("workflows") or []
+            if not isinstance(workflows, list):
+                raise ValueError(f"workflows must be a list for {order_number}")
 
             _upsert_customer(cur, customer_key, customer_name, source_site)
             customers.add(customer_key)
@@ -245,7 +258,20 @@ def ensure_order_owners_batch(orders, source_site=None):
                     order_values,
                 )
 
-            for pos, wf in enumerate(payload.get("workflows") or []):
+            # Keep manifest/hash diagnostics equivalent to the single-order sync path.
+            try:
+                cur.execute(
+                    "UPDATE cloud_orders SET render_payload=? WHERE order_number=?",
+                    (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str), order_number),
+                )
+            except Exception:
+                # render_payload is additive on old deployments; order ownership must
+                # still succeed if a rolling schema has not added it yet.
+                pass
+
+            seen_workflows = []
+            seen_history = []
+            for pos, wf in enumerate(workflows):
                 if not isinstance(wf, dict):
                     continue
                 workflow_number = str(wf.get("workflow_number") or "").strip()
@@ -254,6 +280,7 @@ def ensure_order_owners_batch(orders, source_site=None):
                 ).strip()
                 if not workflow_key:
                     continue
+                seen_workflows.append(workflow_key)
                 wf_values = (
                     order_number,
                     workflow_number or workflow_key,
@@ -291,9 +318,84 @@ def ensure_order_owners_batch(orders, source_site=None):
                         wf_values,
                     )
 
+                timeline_present = "timeline" in wf or "history" in wf
+                timeline = wf.get("timeline") if "timeline" in wf else wf.get("history")
+                if timeline is None:
+                    timeline = []
+                if timeline_present and not isinstance(timeline, list):
+                    raise ValueError(f"timeline must be a list for {workflow_key}")
+                if not timeline_present:
+                    continue
+
+                workflow_history_keys = []
+                for hpos, item in enumerate(timeline):
+                    if not isinstance(item, dict):
+                        continue
+                    history_key = str(
+                        item.get("history_key")
+                        or item.get("id")
+                        or f"{workflow_key}:{hpos}:{item.get('status') or item.get('to_status') or ''}:{item.get('action_date') or ''}"
+                    ).strip()
+                    if not history_key:
+                        continue
+                    workflow_history_keys.append(history_key)
+                    seen_history.append(history_key)
+                    history_values = (
+                        workflow_key,
+                        order_number,
+                        item.get("status") or item.get("to_status"),
+                        item.get("action_date"),
+                        int(item.get("sort_order", hpos) or 0),
+                        history_key,
+                    )
+                    cur.execute("SELECT history_key FROM cloud_workflow_history WHERE history_key=?", (history_key,))
+                    if cur.fetchone():
+                        cur.execute(
+                            """UPDATE cloud_workflow_history
+                               SET workflow_key=?, order_number=?, status=?, action_date=?,
+                                   sort_order=?, active=TRUE, updated_at=CURRENT_TIMESTAMP
+                               WHERE history_key=?""",
+                            history_values,
+                        )
+                    else:
+                        cur.execute(
+                            """INSERT INTO cloud_workflow_history
+                               (workflow_key, order_number, status, action_date, sort_order, history_key)
+                               VALUES (?, ?, ?, ?, ?, ?)""",
+                            history_values,
+                        )
+                    total_history += 1
+
+                # Exact mirror only when the caller explicitly supplied timeline/history.
+                cur.execute(
+                    "SELECT history_key FROM cloud_workflow_history WHERE workflow_key=?",
+                    (workflow_key,),
+                )
+                for row in cur.fetchall():
+                    data = get_row_dict(row, cur) or {}
+                    key = str(data.get("history_key") or "")
+                    if key and key not in workflow_history_keys:
+                        cur.execute("DELETE FROM cloud_workflow_history WHERE history_key=?", (key,))
+
+            # Full safe payloads explicitly carry the workflow list, so remove stale
+            # cloud children to match the local order exactly.
+            cur.execute("SELECT workflow_key FROM cloud_workflows WHERE order_number=?", (order_number,))
+            for row in cur.fetchall():
+                data = get_row_dict(row, cur) or {}
+                key = str(data.get("workflow_key") or "")
+                if key and key not in seen_workflows:
+                    cur.execute("DELETE FROM cloud_workflow_history WHERE workflow_key=?", (key,))
+                    cur.execute("DELETE FROM cloud_workflows WHERE workflow_key=?", (key,))
+
             synced.append(order_number)
+
         conn.commit()
-        return {"count": len(synced), "orders": synced, "customer_keys": sorted(customers)}
+        return {
+            "count": len(synced),
+            "orders": synced,
+            "customer_keys": sorted(customers),
+            "timeline_items": total_history,
+        }
     except Exception:
         conn.rollback()
         raise
