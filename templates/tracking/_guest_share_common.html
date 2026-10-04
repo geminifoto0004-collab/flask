@@ -49,3 +49,29 @@
         {%- endif -%}
     {%- endif -%}
 {%- endmacro %}
+
+{% macro logistics_summary(order, compact=true) -%}
+    {%- set rows = order.logistics|default([]) -%}
+    {%- if rows -%}
+    <div class="guest-logistics-summary" style="display:flex;flex-direction:column;gap:4px;margin-top:5px">
+        {%- for item in rows -%}
+            {%- set status = (item.status|default(''))|string|upper -%}
+            {%- set container = item.container_no|default('')|string|upper -%}
+            {%- set eta = item.eta_iquique|default('')|string -%}
+            {%- if status == 'ARRIVED_IQUIQUE' -%}
+                {%- set zh = '已到貨 · Iquique' -%}
+                {%- set es = 'Llegó a Iquique' -%}
+                {%- set bg = '#ecfdf3' -%}{%- set fg = '#15803d' -%}
+            {%- else -%}
+                {%- set zh = ('預計 ' ~ eta ~ ' 到 Iquique') if eta else '海運中 · 前往 Iquique' -%}
+                {%- set es = ('Llega ' ~ eta ~ ' · Iquique') if eta else 'En tránsito a Iquique' -%}
+                {%- set bg = '#eff6ff' -%}{%- set fg = '#1d4ed8' -%}
+            {%- endif -%}
+            <div style="display:flex;align-items:center;gap:6px;max-width:100%;padding:4px 7px;border-radius:9px;background:{{ bg }};color:{{ fg }};font-size:10px;font-weight:750;line-height:1.25">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5h18l-2.2 3.2H6.1L3 16.5Z"/><path d="M6.5 16.5V9.5h9v7"/><path d="M9 9.5V6h4v3.5"/></svg>
+                <span>{% if container %}<strong>{{ container }}</strong> · {% endif %}<span data-guest-zh="{{ zh|e }}" data-guest-es="{{ es|e }}">{{ es }}</span></span>
+            </div>
+        {%- endfor -%}
+    </div>
+    {%- endif -%}
+{%- endmacro %}
