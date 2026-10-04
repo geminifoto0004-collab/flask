@@ -228,10 +228,12 @@ def order_cloud_sync_owners_batch():
         result = ensure_order_owners_batch(orders, source_site=source_site)
         try:
             from services.order_customer_share_snapshot import queue_snapshot_refresh
+            from services.order_public_share_fast import invalidate_customer_space_cache
             for customer_key in result.get("customer_keys") or []:
                 queue_snapshot_refresh(customer_key)
+                invalidate_customer_space_cache(customer_key)
         except Exception as exc:
-            print(f"[WARN] ORDER owner batch snapshot refresh deferred: {type(exc).__name__}: {exc}")
+            print(f"[WARN] ORDER owner batch snapshot/cache refresh deferred: {type(exc).__name__}: {exc}")
         return jsonify({"ok": True, "result": result})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
