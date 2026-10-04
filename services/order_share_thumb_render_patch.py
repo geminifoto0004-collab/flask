@@ -15,7 +15,7 @@ from services import order_share_image_source_patch as _source_visibility  # noq
 from services.order_cloud_multi_b2 import PRIMARY
 from services.order_share_thumb_metadata_patch import signed_thumb_get
 
-_PATCH_VERSION = "thumb-render-v3-full-image-fallback-20261004"
+_PATCH_VERSION = "thumb-render-v4-preview-cache-20261004"
 
 
 class _ThumbSafeHTML(str):
@@ -55,12 +55,11 @@ def _native_images(order, workflow, token):
     rows = _ORIGINAL_NATIVE_IMAGES(order, workflow, token)
     for item in rows or []:
         if isinstance(item, dict) and str(item.get("media_type") or "") == "image":
-            # Customer cards must prefer the canonical ORDER image. The thumbnail
-            # object can be missing/stale even while the original WEB image is valid,
-            # which produced an entire wall of broken images.
             url = str(item.get("url") or "")
-            if url:
-                item["preview_url"] = url
+            if "/image/" in url:
+                # /thumb uses the existing WEB object for legacy assets without
+                # thumbnail metadata. Keep the full-image URL for opened details.
+                item["preview_url"] = url.replace("/image/", "/thumb/", 1)
     return rows
 
 
@@ -89,6 +88,13 @@ def _cached_signed_thumb_get(asset):
     return url, backend, False, sign_ms
 
 
+def _cached_signed_preview_get(asset):
+    """Use prebuilt thumbnails; legacy WEB fallback performs no B2 object I/O."""
+    if str((asset or {}).get("thumb_object_key") or "").strip():
+        return _cached_signed_thumb_get(asset)
+    return _ORIGINAL_DIRECT_CACHED_GET(asset)
+
+
 def _safe_route_markers(token, asset_key, attr):
     # The old optimizer replaced data-full with the cover URL too; never do that.
     if str(attr or "") == "data-full":
@@ -97,10 +103,8 @@ def _safe_route_markers(token, asset_key, attr):
         yield f'{attr}="/share/{token}/{alias}/{asset_key}"'
 
 
-# Keep thumbnail signing available for explicit /thumb consumers, but customer-card
-# direct-cover injection must sign the canonical full ORDER image. This restores the
-# proven path that existed before the broken-thumbnail regression.
-_direct._cached_signed_get = _ORIGINAL_DIRECT_CACHED_GET
+# Cached cover URLs and route-based previews must select the same small object.
+_direct._cached_signed_get = _cached_signed_preview_get
 _direct._cached_signed_thumb_get = _cached_signed_thumb_get
 _direct._route_markers = _safe_route_markers
 

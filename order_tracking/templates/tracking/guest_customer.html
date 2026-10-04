@@ -257,6 +257,8 @@ document.addEventListener('error', function (event) {
     if (!(img instanceof HTMLImageElement) || !img.closest('.guest-cover-slide')) return;
     const full = String(img.dataset.full || '');
     if (!full || img.dataset.fullFallbackTried === '1') return;
+    // Legacy /thumb may already use the full route. Do not repeat the same failure.
+    if (new URL(full, document.baseURI).href === img.src) return;
     img.dataset.fullFallbackTried = '1';
     img.src = full;
 }, true);

@@ -63,8 +63,8 @@ def _b2_customer_namespace(customer_key):
 def _asset_insert_sql():
     """Idempotent insert syntax for the DB engines supported by database.py."""
     try:
-        import config
-        db_type = str(getattr(config, "DATABASE_TYPE", "") or "").strip().lower()
+        from config import config as db_config
+        db_type = str(getattr(db_config, "DATABASE_TYPE", "") or "").strip().lower()
     except Exception:
         db_type = ""
     columns = (

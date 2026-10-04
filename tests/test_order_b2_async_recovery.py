@@ -2,12 +2,15 @@
 import ast
 from pathlib import Path
 import threading
+import sys
+import types
 import unittest
+from unittest.mock import patch
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'services' / 'order_share_thumb_metadata_patch.py'
 tree = ast.parse(SOURCE.read_text(encoding='utf-8'))
-functions = {'_load_build_rows', '_b2_recovery_worker'}
+functions = {'_load_build_rows', '_b2_recovery_worker', '_asset_insert_sql'}
 module = ast.Module(
     body=[ast.ImportFrom(module='__future__', names=[ast.alias(name='annotations')], level=0),
           *(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in functions)],
@@ -48,6 +51,26 @@ class OneItemQueue:
 
 
 class AsyncRecoveryTests(unittest.TestCase):
+    def test_recovery_uses_the_configured_database_dialect(self):
+        scope = {}
+        exec(compile(module, str(SOURCE), 'exec'), scope)
+        # DATABASE_TYPE lives on config.config, as used by database.py; the
+        # module itself deliberately has no DATABASE_TYPE attribute.
+        for dialect, expected in (
+            ('tidb', 'INSERT IGNORE INTO'),
+            ('mysql', 'INSERT IGNORE INTO'),
+            ('sqlite', 'INSERT OR IGNORE INTO'),
+            ('postgresql', 'ON CONFLICT (asset_key) DO NOTHING'),
+        ):
+            with self.subTest(dialect=dialect):
+                config_module = types.ModuleType('config')
+                config_module.config = types.SimpleNamespace(DATABASE_TYPE=dialect)
+                with patch.dict(sys.modules, {'config': config_module}):
+                    sql = scope['_asset_insert_sql']()
+                self.assertIn(expected, sql)
+                if dialect in ('mysql', 'tidb'):
+                    self.assertNotIn('OR IGNORE', sql)
+
     def test_snapshot_reads_tidb_without_waiting_for_b2_listing(self):
         scheduled = []
         scope = {
