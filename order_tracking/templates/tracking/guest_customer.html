@@ -108,16 +108,6 @@
         </div>
     </div>
     {% endif %}
-    {% if has_logistics_filter %}
-    <div class="guest-logistics-filter">
-        <label for="guestLogisticsFilterSelect" data-guest-zh="物流" data-guest-es="Logística">Logística</label>
-        <select id="guestLogisticsFilterSelect" aria-label="Filtrar por logística">
-            <option value="all" data-guest-zh="全部" data-guest-es="Todos">Todos</option>
-            <option value="in_transit" data-guest-zh="海運中" data-guest-es="En camino">En camino</option>
-            <option value="pending_pickup" data-guest-zh="待提貨" data-guest-es="Pendiente de retiro">Pendiente de retiro</option>
-        </select>
-    </div>
-    {% endif %}
 
     {% if allow_pdf_download and pdf_count > 0 %}
     <a class="guest-pdf-bundle" href="{{ url_for('tracking_bp.local_guest_pdf_bundle', token=token) }}">
@@ -149,7 +139,7 @@
     <main class="guest-grid" id="guestGrid">
         {% for order in orders %}
         {% set card_loop = loop %}
-        <a class="guest-card" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}" data-guest-logistics-key="{{ order.logistics_filter or 'none' }}" data-guest-extra-pickup="{{ 1 if order.extra_pickup_only else 0 }}">
+        <a class="guest-card" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}">
             <div class="guest-cover">
                 {% if order.images %}
                     {# UI-only ordering: salesperson/workflow real images first, then supervisor/order images, PDF pages last. #}
@@ -251,7 +241,6 @@ guestApplyBilingualText();
     const guestToken = {{ token|tojson }};
     const row = document.getElementById('guestStatusFilterRow');
     const sortRow = document.getElementById('guestSortRow');
-    const logisticsSelect = document.getElementById('guestLogisticsFilterSelect');
     const grid = document.getElementById('guestGrid');
     const countNode = document.getElementById('guestVisibleCount');
     const cards = Array.from(document.querySelectorAll('[data-guest-card]'));
@@ -308,20 +297,15 @@ guestApplyBilingualText();
 
     const storageKey = 'trackingGuestStatus:' + guestToken;
     const sortStorageKey = 'trackingGuestSort:' + guestToken;
-    const logisticsStorageKey = 'trackingGuestLogistics:' + guestToken;
     let selected = 'all';
     let selectedSort = 'order';
-    let selectedLogistics = 'all';
     try {
         selected = sessionStorage.getItem(storageKey) || 'all';
         selectedSort = sessionStorage.getItem(sortStorageKey) || 'order';
-        selectedLogistics = sessionStorage.getItem(logisticsStorageKey) || 'all';
     } catch (_) {}
     const availableKeys = new Set(filterItems.map(function (item) { return item.key; }));
     if (selected !== 'all' && !availableKeys.has(selected)) selected = 'all';
     if (!['order','shipping'].includes(selectedSort)) selectedSort = 'order';
-    if (!['all','in_transit','pending_pickup'].includes(selectedLogistics)) selectedLogistics = 'all';
-    if (logisticsSelect) logisticsSelect.value = selectedLogistics;
 
     function compareOrder(a, b) {
         const av = String(a.dataset.guestSortOrder || a.dataset.guestOrderKey || '');
@@ -382,15 +366,10 @@ guestApplyBilingualText();
 
     function apply(key, options) {
         key = key || 'all';
-        const logisticsKey = logisticsSelect ? String(logisticsSelect.value || selectedLogistics || 'all') : 'all';
-        selectedLogistics = logisticsKey;
         let visible = 0;
         cards.forEach(function (card) {
             const cardKey = filterMode === 'full' ? String(card.dataset.guestStatusKey || '') : String(card.dataset.guestStatusGroup || 'confirmed');
-            const statusShow = key === 'all' || cardKey === key;
-            const cardLogistics = String(card.dataset.guestLogisticsKey || 'none');
-            const logisticsShow = logisticsKey === 'all' || cardLogistics === logisticsKey;
-            const show = statusShow && logisticsShow;
+            const show = key === 'all' || cardKey === key;
             card.hidden = !show;
             if (show) {
                 visible += 1;
@@ -405,18 +384,8 @@ guestApplyBilingualText();
             btn.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
         if (countNode) countNode.textContent = countLabel(visible);
-        try {
-            sessionStorage.setItem(storageKey, key);
-            sessionStorage.setItem(logisticsStorageKey, logisticsKey);
-        } catch (_) {}
+        try { sessionStorage.setItem(storageKey, key); } catch (_) {}
     }
-
-    if (logisticsSelect) logisticsSelect.addEventListener('change', function () {
-        const activeStatus = row.querySelector('.guest-status-chip.active')?.dataset.guestStatusFilter || selected;
-        const top = window.scrollY;
-        apply(activeStatus);
-        requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
-    });
 
     row.addEventListener('click', function (event) {
         const btn = event.target.closest('[data-guest-status-filter]');
