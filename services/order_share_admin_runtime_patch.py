@@ -358,24 +358,6 @@ def _share_settings_detail(token_hash):
                 "show_workflow_images": global_workflow_images if override.get("show_workflow_images") is None else bool(override.get("show_workflow_images")),
                 "show_logistics": True if override.get("show_logistics") is None else bool(override.get("show_logistics")),
             })
-        normal_card_count = 0
-        extra_pickup_count = 0
-        try:
-            from services.order_cloud_service import get_customer_space
-            public_space = get_customer_space(
-                customer_key,
-                history_scope=str(share.get("history_scope") or "current"),
-                include_cancelled=False,
-            ) or {}
-            for public_order in public_space.get("orders") or []:
-                if bool((public_order or {}).get("extra_pickup_only")):
-                    extra_pickup_count += 1
-                    continue
-                workflows = [wf for wf in ((public_order or {}).get("workflows") or []) if isinstance(wf, dict)]
-                normal_card_count += len(workflows) if workflows else 1
-        except Exception as exc:
-            print(f"[WARN] ORDER share parity count skipped: {type(exc).__name__}: {exc}")
-
         expires_epoch = _dt_epoch(share.get("expires_at"))
         return {
             "id": token_hash,
@@ -397,8 +379,6 @@ def _share_settings_detail(token_hash):
             "access_count": int(share.get("access_count") or 0),
             "last_accessed_at": _dt_iso(share.get("last_accessed_at")),
             "last_accessed_at_epoch": _dt_epoch(share.get("last_accessed_at")),
-            "normal_card_count": normal_card_count,
-            "extra_pickup_count": extra_pickup_count,
             "orders": orders,
         }
     finally:
