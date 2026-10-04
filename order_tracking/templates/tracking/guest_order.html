@@ -1,4 +1,5 @@
 <!doctype html>
+{% import 'tracking/_guest_share_common.html' as guest_shared %}
 <html lang="es">
 <head>
     <meta charset="utf-8">
@@ -77,6 +78,13 @@
             {% if order.quantity %}<div class="guest-info-item"><span data-i18n="guest.field.quantity">Cantidad</span><strong>{{ order.quantity }}</strong></div>{% endif %}
         </div>
     </section>
+
+    {% if order.logistics %}
+    <section class="guest-panel guest-logistics-panel">
+        <h2 data-guest-zh="物流資訊" data-guest-es="Logística">Logística</h2>
+        {{ guest_shared.logistics_summary(order, false) }}
+    </section>
+    {% endif %}
 
     {% if timeline_stages %}
     <section class="guest-panel guest-progress-panel">

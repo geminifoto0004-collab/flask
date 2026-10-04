@@ -176,6 +176,7 @@
             <div class="guest-card-body">
                 <span class="guest-card-status" data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</span>
                 {{ guest_shared.shipping_badge(order) }}
+                {{ guest_shared.logistics_summary(order, true) }}
                 <div class="guest-card-number">{{ order.workflow_number or order.order_number }}</div>
                 {% if order.product_name or order.production_type or order.product_code %}
                 <div class="guest-card-product">{{ order.product_name or order.production_type }}{% if order.product_code %} · {{ order.product_code }}{% endif %}</div>

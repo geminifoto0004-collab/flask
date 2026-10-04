@@ -140,6 +140,7 @@ def _card(order, workflow, token):
         "partial_ship_count": shipping.get("partial_ship_count") or 0,
         "shipping_zh": shipping.get("shipping_zh") or "",
         "shipping_es": shipping.get("shipping_es") or "",
+        "logistics": [dict(x) for x in (order.get("logistics") or []) if isinstance(x, dict)],
         "images": _images(order, workflow, token),
         "detail_url": f"/share/{token}/order/{quote(detail_key, safe='')}",
     }

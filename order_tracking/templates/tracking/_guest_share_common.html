@@ -49,3 +49,63 @@
         {%- endif -%}
     {%- endif -%}
 {%- endmacro %}
+
+
+{% macro logistics_summary(order, compact=true) -%}
+    {%- set rows = order.logistics|default([]) -%}
+    {%- if rows -%}
+    <div class="guest-logistics-summary" style="display:flex;flex-direction:column;gap:{% if compact %}4px{% else %}6px{% endif %};{% if compact %}margin-top:1px;{% else %}margin-top:9px;{% endif %}">
+        {%- for item in rows -%}
+            {%- set status = (item.status|default(''))|string|upper -%}
+            {%- set container = item.container_no|default('')|string|upper -%}
+            {%- set eta = item.eta_iquique|default('')|string -%}
+            {%- set arrived = item.arrived_date|default('')|string -%}
+            {%- if eta and eta|length >= 10 and eta[4:5] == '-' -%}
+                {%- set ep = eta[:10].split('-') -%}
+                {%- set zh_eta = ep[0] ~ '/' ~ (ep[1]|int) ~ '/' ~ (ep[2]|int) -%}
+                {%- set es_eta = '%02d'|format(ep[2]|int) ~ '/' ~ '%02d'|format(ep[1]|int) ~ '/' ~ ep[0] -%}
+            {%- else -%}
+                {%- set zh_eta = eta -%}{%- set es_eta = eta -%}
+            {%- endif -%}
+            {%- if arrived and arrived|length >= 10 and arrived[4:5] == '-' -%}
+                {%- set ap = arrived[:10].split('-') -%}
+                {%- set zh_arrived = ap[0] ~ '/' ~ (ap[1]|int) ~ '/' ~ (ap[2]|int) -%}
+                {%- set es_arrived = '%02d'|format(ap[2]|int) ~ '/' ~ '%02d'|format(ap[1]|int) ~ '/' ~ ap[0] -%}
+            {%- else -%}
+                {%- set zh_arrived = arrived -%}{%- set es_arrived = arrived -%}
+            {%- endif -%}
+            {%- if status == 'ARRIVED_IQUIQUE' -%}
+                {%- set zh_detail = '已到貨 · Iquique' ~ ((' · ' ~ zh_arrived) if zh_arrived else '') -%}
+                {%- set es_detail = 'Llegó a Iquique' ~ ((' · ' ~ es_arrived) if es_arrived else '') -%}
+                {%- set row_bg = '#ecfdf3' -%}
+                {%- set row_border = '#bbf7d0' -%}
+                {%- set row_color = '#15803d' -%}
+            {%- elif eta -%}
+                {%- set zh_detail = '預計 ' ~ zh_eta ~ ' 到 Iquique' -%}
+                {%- set es_detail = 'Llega ' ~ es_eta ~ ' · Iquique' -%}
+                {%- set row_bg = '#eff6ff' -%}
+                {%- set row_border = '#dbeafe' -%}
+                {%- set row_color = '#1d4ed8' -%}
+            {%- else -%}
+                {%- set zh_detail = '海運中 · 前往 Iquique' -%}
+                {%- set es_detail = 'En tránsito a Iquique' -%}
+                {%- set row_bg = '#eff6ff' -%}
+                {%- set row_border = '#dbeafe' -%}
+                {%- set row_color = '#1d4ed8' -%}
+            {%- endif -%}
+            <div class="guest-logistics-line" style="display:flex;align-items:center;gap:{% if compact %}5px{% else %}7px{% endif %};max-width:100%;padding:{% if compact %}4px 7px{% else %}7px 9px{% endif %};border:1px solid {{ row_border }};border-radius:{% if compact %}9px{% else %}11px{% endif %};background:{{ row_bg }};color:{{ row_color }};font-size:{% if compact %}9.5px{% else %}12.5px{% endif %};font-weight:750;line-height:1.25">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="{% if compact %}14{% else %}17{% endif %}" height="{% if compact %}14{% else %}17{% endif %}" style="flex:0 0 auto;display:block" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 16.5h18l-2.2 3.2H6.1L3 16.5Z"/>
+                    <path d="M6.5 16.5V9.5h9v7"/>
+                    <path d="M9 9.5V6h4v3.5"/>
+                    <path d="M2.5 21c1.2.8 2.4.8 3.6 0 1.2.8 2.4.8 3.6 0 1.2.8 2.4.8 3.6 0 1.2.8 2.4.8 3.6 0 1.2.8 2.4.8 3.6 0"/>
+                </svg>
+                <span style="min-width:0;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap">
+                    {%- if container -%}<strong style="font-weight:900;letter-spacing:.01em;white-space:nowrap">{{ container }}</strong>{%- endif -%}
+                    <span style="font-weight:760" data-guest-zh="{{ zh_detail|e }}" data-guest-es="{{ es_detail|e }}">{{ es_detail }}</span>
+                </span>
+            </div>
+        {%- endfor -%}
+    </div>
+    {%- endif -%}
+{%- endmacro %}
