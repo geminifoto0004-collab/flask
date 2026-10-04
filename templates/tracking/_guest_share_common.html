@@ -58,9 +58,17 @@
             {%- set status = (item.status|default(''))|string|upper -%}
             {%- set container = item.container_no|default('')|string|upper -%}
             {%- set eta = item.eta_iquique|default('')|string -%}
+            {%- set arrived = item.arrived_date|default('')|string -%}
+            {%- if arrived and arrived|length >= 10 and arrived[4:5] == '-' -%}
+                {%- set ap = arrived[:10].split('-') -%}
+                {%- set zh_arrived = ap[0] ~ '/' ~ (ap[1]|int) ~ '/' ~ (ap[2]|int) -%}
+                {%- set es_arrived = '%02d'|format(ap[2]|int) ~ '/' ~ '%02d'|format(ap[1]|int) ~ '/' ~ ap[0] -%}
+            {%- else -%}
+                {%- set zh_arrived = arrived -%}{%- set es_arrived = arrived -%}
+            {%- endif -%}
             {%- if status == 'ARRIVED_IQUIQUE' -%}
-                {%- set zh = '已到貨 · Iquique' -%}
-                {%- set es = 'Llegó a Iquique' -%}
+                {%- set zh = '已到貨' ~ ((' ' ~ zh_arrived) if zh_arrived else '') ~ ' · Iquique' -%}
+                {%- set es = 'Llegó' ~ ((' ' ~ es_arrived) if es_arrived else '') ~ ' · Iquique' -%}
                 {%- set bg = '#ecfdf3' -%}{%- set fg = '#15803d' -%}
             {%- else -%}
                 {%- set zh = ('預計 ' ~ eta ~ ' 到 Iquique') if eta else '海運中 · 前往 Iquique' -%}
