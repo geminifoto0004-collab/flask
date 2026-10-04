@@ -9,10 +9,24 @@ def bool_default(value, default=True):
     return bool(value)
 
 
+def _order_override(settings, order_number):
+    settings = settings or {}
+    visibility = settings.get('order_visibility') or {}
+    if not isinstance(visibility, dict):
+        return {}
+    key = str(order_number or '').strip()
+    value = visibility.get(key) or {}
+    return value if isinstance(value, dict) else {}
+
+
 def asset_allowed(asset, settings):
     if not isinstance(asset, dict):
         return True
     settings = settings or {}
+    override = _order_override(settings, asset.get('order_number'))
+    if override and override.get('show_order') is False:
+        return False
+
     is_pdf_page = str(asset.get('asset_kind') or '').strip().upper() == 'PDF_PAGE'
     if is_pdf_page and not bool_default(settings.get('show_pdf_pages')):
         return False
@@ -23,7 +37,10 @@ def asset_allowed(asset, settings):
     )
     if not is_image:
         return True
+
     setting = 'show_workflow_images' if str(asset.get('workflow_key') or '').strip() else 'show_images'
+    if setting in override and override.get(setting) is not None:
+        return bool_default(override.get(setting), default=True)
     return bool_default(settings.get(setting))
 
 
