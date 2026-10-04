@@ -483,6 +483,11 @@ def _drop_customer(customer_key):
                 _HTML_CHECKED_AT.pop(key, None)
 
 
+def invalidate_customer_html_cache(customer_key):
+    """Drop pre-rendered public HTML for one customer after lightweight data changes."""
+    _drop_customer(customer_key)
+
+
 def _cache_space_and_prerender(customer_key, bundle):
     result = _ORIGINAL_CACHE_SPACE(customer_key, bundle)
     customer_key = str(customer_key or "").strip()
