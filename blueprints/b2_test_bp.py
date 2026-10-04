@@ -241,6 +241,40 @@ def order_cloud_sync_owners_batch():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@b2_test_bp.route("/api/order-cloud/sync/logistics-batch", methods=["POST"])
+def order_cloud_sync_logistics_batch():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        body = request.get_json(silent=True) or {}
+        orders = body.get("orders") or []
+        from services.order_cloud_service import sync_logistics_batch
+        result = sync_logistics_batch(orders, source_site=source_site)
+        for customer_key in result.get("customer_keys") or []:
+            try:
+                from services.order_public_share_fast import invalidate_customer_space_cache
+                invalidate_customer_space_cache(customer_key)
+            except Exception:
+                pass
+            try:
+                from services.order_share_render_cache import invalidate_customer_html_cache
+                invalidate_customer_html_cache(customer_key)
+            except Exception:
+                pass
+            try:
+                from services.order_customer_share_snapshot import queue_snapshot_refresh
+                queue_snapshot_refresh(customer_key, delay=0.05)
+            except Exception as exc:
+                print(f"[WARN] ORDER logistics snapshot refresh deferred: {type(exc).__name__}: {exc}")
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @b2_test_bp.route("/api/order-cloud/debug/order/<path:order_number>", methods=["GET"])
 def order_cloud_debug_order(order_number):
     _source_site, auth_error = _order_cloud_auth_source()
