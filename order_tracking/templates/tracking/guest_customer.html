@@ -108,6 +108,27 @@
         </div>
     </div>
     {% endif %}
+    {% if has_logistics_filter %}
+    <details class="guest-logistics-pop">
+        <summary class="guest-logistics-trigger" aria-label="Filtrar por logística">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 16.5h18l-2.2 3.2H6.1L3 16.5Z"></path>
+                <path d="M6.5 16.5V9.5h9v7"></path>
+                <path d="M9 9.5V6h4v3.5"></path>
+            </svg>
+            <span data-guest-zh="物流" data-guest-es="Logística">Logística</span>
+            <svg aria-hidden="true" viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 8 4 4 4-4"></path></svg>
+        </summary>
+        <div class="guest-logistics-menu" role="group" aria-label="Logística">
+            <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsAll" value="all" checked>
+            <label for="guestLogisticsAll" onclick="this.closest('details').removeAttribute('open')" data-guest-zh="全部" data-guest-es="Todos">Todos</label>
+            <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsTransit" value="in_transit">
+            <label for="guestLogisticsTransit" onclick="this.closest('details').removeAttribute('open')" data-guest-zh="海運中" data-guest-es="En camino">En camino</label>
+            <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsPickup" value="pending_pickup">
+            <label for="guestLogisticsPickup" onclick="this.closest('details').removeAttribute('open')" data-guest-zh="待提貨" data-guest-es="Pendiente de retiro">Pendiente de retiro</label>
+        </div>
+    </details>
+    {% endif %}
 
     {% if allow_pdf_download and pdf_count > 0 %}
     <a class="guest-pdf-bundle" href="{{ url_for('tracking_bp.local_guest_pdf_bundle', token=token) }}">
@@ -139,7 +160,7 @@
     <main class="guest-grid" id="guestGrid">
         {% for order in orders %}
         {% set card_loop = loop %}
-        <a class="guest-card" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}">
+        <a class="guest-card" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}" data-guest-logistics-key="{{ order.logistics_filter or 'none' }}">
             <div class="guest-cover">
                 {% if order.images %}
                     {# UI-only ordering: salesperson/workflow real images first, then supervisor/order images, PDF pages last. #}
