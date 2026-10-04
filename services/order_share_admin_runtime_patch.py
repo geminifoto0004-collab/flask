@@ -749,6 +749,11 @@ def _create_scoped_share_guarded():
         data = response.get_json(silent=True) or {}
         result = dict(data.get("result") or {})
         token_hash = str(result.get("share_id") or "").strip().lower()
+        if not token_hash:
+            share_url = str(result.get("share_url") or "").strip()
+            raw_token = share_url.rstrip("/").split("/")[-1] if share_url else ""
+            if raw_token:
+                token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
         if token_hash:
             settings = {
                 key: payload.get(key)
