@@ -44,6 +44,18 @@ def _ensure_columns():
         for name, definition in columns:
             if not check_column_exists(cur, "cloud_share_tokens", name):
                 cur.execute(f"ALTER TABLE cloud_share_tokens ADD COLUMN {name} {definition}")
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS cloud_share_order_visibility (
+                   token_hash VARCHAR(64) NOT NULL,
+                   order_number VARCHAR(191) NOT NULL,
+                   show_order BOOLEAN NOT NULL DEFAULT TRUE,
+                   show_images BOOLEAN NULL,
+                   show_workflow_images BOOLEAN NULL,
+                   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                   PRIMARY KEY (token_hash, order_number),
+                   INDEX idx_share_visibility_order (order_number)
+               )"""
+        )
         conn.commit()
     except Exception:
         conn.rollback()
@@ -158,6 +170,8 @@ def _share_admin_state():
             # token remains active. Return the full share control-plane history here.
             cur.execute(
                 """SELECT token_hash, customer_key, status, source_site, created_at, expires_at,
+                          history_scope, show_pdf_pages, allow_report_pdf_download,
+                          show_images, show_workflow_images,
                           access_count, last_accessed_at
                    FROM cloud_share_tokens
                    ORDER BY created_at DESC"""
@@ -183,6 +197,11 @@ def _share_admin_state():
                     "expires_at": _dt_iso(item.get("expires_at")),
                     "expires_at_epoch": expires_epoch,
                     "is_permanent": not bool(item.get("expires_at")),
+                    "history_scope": str(item.get("history_scope") or "current"),
+                    "show_pdf_pages": bool(item.get("show_pdf_pages")),
+                    "allow_report_pdf_download": bool(item.get("allow_report_pdf_download")),
+                    "show_images": bool(item.get("show_images")),
+                    "show_workflow_images": bool(item.get("show_workflow_images")),
                     "access_count": int(item.get("access_count") or 0),
                     "last_accessed_at": _dt_iso(item.get("last_accessed_at")),
                     "last_accessed_at_epoch": _dt_epoch(item.get("last_accessed_at")),
@@ -271,6 +290,210 @@ def _share_revoke_by_hash():
 
 
 
+def _valid_token_hash(value):
+    value = str(value or "").strip().lower()
+    if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+        raise ValueError("valid token_hash is required")
+    return value
+
+
+def _share_settings_detail(token_hash):
+    token_hash = _valid_token_hash(token_hash)
+    _ensure_columns()
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        cur.execute(
+            """SELECT token_hash, customer_key, status, source_site, history_scope,
+                      include_cancelled, created_at, expires_at,
+                      show_pdf_pages, allow_report_pdf_download,
+                      show_images, show_workflow_images,
+                      access_count, last_accessed_at
+               FROM cloud_share_tokens WHERE token_hash=? LIMIT 1""",
+            (token_hash,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("share not found")
+        share = get_row_dict(row, cur) or {}
+        cur.execute(
+            """SELECT order_number, show_order, show_images, show_workflow_images
+               FROM cloud_share_order_visibility WHERE token_hash=?""",
+            (token_hash,),
+        )
+        overrides = {
+            str(item.get("order_number") or ""): item
+            for item in (get_row_dict(r, cur) or {} for r in cur.fetchall())
+            if str(item.get("order_number") or "").strip()
+        }
+        customer_key = str(share.get("customer_key") or "")
+        cur.execute(
+            """SELECT order_number, order_date, production_type, product_name, product_code,
+                      pattern_code, quantity, order_status
+               FROM cloud_orders
+               WHERE customer_key=? AND active=TRUE
+               ORDER BY order_date DESC, order_number DESC""",
+            (customer_key,),
+        )
+        orders = []
+        global_images = bool(share.get("show_images"))
+        global_workflow_images = bool(share.get("show_workflow_images"))
+        for raw in cur.fetchall():
+            item = get_row_dict(raw, cur) or {}
+            number = str(item.get("order_number") or "")
+            override = overrides.get(number) or {}
+            orders.append({
+                "order_number": number,
+                "order_date": item.get("order_date"),
+                "production_type": item.get("production_type"),
+                "product_name": item.get("product_name"),
+                "product_code": item.get("product_code"),
+                "pattern_code": item.get("pattern_code"),
+                "quantity": item.get("quantity"),
+                "order_status": item.get("order_status"),
+                "show_order": bool(override.get("show_order")) if override else True,
+                "show_images": global_images if override.get("show_images") is None else bool(override.get("show_images")),
+                "show_workflow_images": global_workflow_images if override.get("show_workflow_images") is None else bool(override.get("show_workflow_images")),
+            })
+        expires_epoch = _dt_epoch(share.get("expires_at"))
+        return {
+            "id": token_hash,
+            "share_id": token_hash,
+            "customer_key": customer_key,
+            "status": str(share.get("status") or "active").lower(),
+            "source_site": str(share.get("source_site") or ""),
+            "history_scope": str(share.get("history_scope") or "current"),
+            "include_cancelled": bool(share.get("include_cancelled")),
+            "created_at": _dt_iso(share.get("created_at")),
+            "created_at_epoch": _dt_epoch(share.get("created_at")),
+            "expires_at": _dt_iso(share.get("expires_at")),
+            "expires_at_epoch": expires_epoch,
+            "is_permanent": not bool(share.get("expires_at")),
+            "show_pdf_pages": bool(share.get("show_pdf_pages")),
+            "allow_report_pdf_download": bool(share.get("allow_report_pdf_download")),
+            "show_images": global_images,
+            "show_workflow_images": global_workflow_images,
+            "access_count": int(share.get("access_count") or 0),
+            "last_accessed_at": _dt_iso(share.get("last_accessed_at")),
+            "last_accessed_at_epoch": _dt_epoch(share.get("last_accessed_at")),
+            "orders": orders,
+        }
+    finally:
+        conn.close()
+
+
+def _apply_share_settings(token_hash, payload):
+    token_hash = _valid_token_hash(token_hash)
+    payload = dict(payload or {})
+    try:
+        expiry_changed, permanent, expires_at = _expiry_from_payload(payload)
+    except ValueError:
+        raise
+
+    _ensure_columns()
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT customer_key, status FROM cloud_share_tokens WHERE token_hash=? LIMIT 1",
+            (token_hash,),
+        )
+        row = cur.fetchone()
+        current = get_row_dict(row, cur) if row else {}
+        if not current:
+            raise ValueError("share not found")
+        if str(current.get("status") or "").strip().lower() == "revoked":
+            raise ValueError("revoked share cannot be edited")
+
+        updates = []
+        values = []
+        for key in ("show_pdf_pages", "allow_report_pdf_download", "show_images", "show_workflow_images"):
+            if key in payload:
+                updates.append(f"{key}=?")
+                values.append(bool(payload.get(key)))
+        if "history_scope" in payload:
+            scope = str(payload.get("history_scope") or "current").strip().lower()
+            if scope not in {"current", "3m", "6m", "12m", "all"}:
+                scope = "current"
+            updates.append("history_scope=?")
+            values.append(scope)
+        if expiry_changed:
+            updates.append("expires_at=?")
+            values.append(expires_at)
+            updates.append("status='active'")
+        if updates:
+            values.append(token_hash)
+            cur.execute(
+                "UPDATE cloud_share_tokens SET " + ", ".join(updates) + " WHERE token_hash=?",
+                tuple(values),
+            )
+
+        if "order_visibility" in payload:
+            rows = payload.get("order_visibility")
+            if not isinstance(rows, list):
+                raise ValueError("order_visibility must be a list")
+            cur.execute("DELETE FROM cloud_share_order_visibility WHERE token_hash=?", (token_hash,))
+            for raw in rows:
+                if not isinstance(raw, dict):
+                    continue
+                order_number = str(raw.get("order_number") or "").strip()
+                if not order_number:
+                    continue
+                cur.execute(
+                    """INSERT INTO cloud_share_order_visibility
+                       (token_hash, order_number, show_order, show_images, show_workflow_images, updated_at)
+                       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+                    (
+                        token_hash,
+                        order_number,
+                        bool(raw.get("show_order", True)),
+                        None if raw.get("show_images") is None else bool(raw.get("show_images")),
+                        None if raw.get("show_workflow_images") is None else bool(raw.get("show_workflow_images")),
+                    ),
+                )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    _drop_share_hash_caches(token_hash)
+    return _share_settings_detail(token_hash)
+
+
+@b2_test_bp.route("/api/order-cloud/share/admin-detail/<token_hash>", methods=["GET"])
+def _share_admin_detail_by_hash(token_hash):
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        return jsonify({"ok": True, "result": _share_settings_detail(token_hash)})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/share/update-by-hash", methods=["POST"])
+def _share_update_by_hash():
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    payload = request.get_json(silent=True) or {}
+    try:
+        token_hash = _valid_token_hash(payload.get("token_hash") or payload.get("share_id"))
+        settings = dict(payload)
+        settings.pop("token_hash", None)
+        settings.pop("share_id", None)
+        result = _apply_share_settings(token_hash, settings)
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 def _cloud_admin_allowed():
     if not session.get("logged_in"):
         return False
@@ -356,6 +579,31 @@ def _cloud_share_admin_list():
         return jsonify({"ok": False, "error": "admin login required"}), 403
     try:
         return jsonify({"ok": True, "shares": _cloud_admin_share_rows()})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/admin/order-shares/api/<token_hash>/detail", methods=["GET"])
+def _cloud_share_admin_detail(token_hash):
+    if not _cloud_admin_allowed():
+        return jsonify({"ok": False, "error": "admin login required"}), 403
+    try:
+        return jsonify({"ok": True, "share": _share_settings_detail(token_hash)})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/admin/order-shares/api/<token_hash>/settings", methods=["PATCH"])
+def _cloud_share_admin_settings(token_hash):
+    if not _cloud_admin_allowed():
+        return jsonify({"ok": False, "error": "admin login required"}), 403
+    try:
+        result = _apply_share_settings(token_hash, request.get_json(silent=True) or {})
+        return jsonify({"ok": True, "share": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -487,26 +735,49 @@ def _expiry_from_payload(payload):
 
 
 def _create_scoped_share_guarded():
-    """Make create resilient to older share-table schemas before the final create patch runs."""
+    """Create the share, then persist display/visibility controls on the same token."""
     try:
         _ensure_columns()
     except Exception as exc:
         print(f"[WARN] ORDER share create schema preflight failed: {type(exc).__name__}: {exc}")
-    return _BASE_CREATE()
+    payload = request.get_json(silent=True) or {}
+    base = _BASE_CREATE()
+    response = make_response(base)
+    if response.status_code >= 400:
+        return base
+    try:
+        data = response.get_json(silent=True) or {}
+        result = dict(data.get("result") or {})
+        token_hash = str(result.get("share_id") or "").strip().lower()
+        if token_hash:
+            settings = {
+                key: payload.get(key)
+                for key in (
+                    "show_pdf_pages", "allow_report_pdf_download",
+                    "show_images", "show_workflow_images", "order_visibility",
+                )
+                if key in payload
+            }
+            if settings:
+                detail = _apply_share_settings(token_hash, settings)
+                result.update({
+                    "show_pdf_pages": detail.get("show_pdf_pages"),
+                    "allow_report_pdf_download": detail.get("allow_report_pdf_download"),
+                    "show_images": detail.get("show_images"),
+                    "show_workflow_images": detail.get("show_workflow_images"),
+                })
+                data["result"] = result
+                return jsonify(data)
+    except Exception as exc:
+        print(f"[WARN] ORDER share create settings persistence deferred: {type(exc).__name__}: {exc}")
+    return base
 
 
 def _update_share_settings_with_expiry():
     payload = request.get_json(silent=True) or {}
     base = _BASE_UPDATE()
-    base_response = make_response(base)
-    if base_response.status_code >= 400:
-        return base
-
-    try:
-        changed, permanent, expires_at = _expiry_from_payload(payload)
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    if not changed:
+    response = make_response(base)
+    if response.status_code >= 400:
         return base
 
     token = str(payload.get("token") or "").strip()
@@ -514,36 +785,27 @@ def _update_share_settings_with_expiry():
         return jsonify({"ok": False, "error": "token is required"}), 400
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     try:
-        _ensure_columns()
-        conn = get_db_connection()
-        cur = get_cursor(conn)
-        try:
-            cur.execute("SELECT token_hash FROM cloud_share_tokens WHERE token_hash=? AND status='active' LIMIT 1", (token_hash,))
-            if not cur.fetchone():
-                return jsonify({"ok": False, "error": "active share not found"}), 404
-            cur.execute(
-                "UPDATE cloud_share_tokens SET expires_at=? WHERE token_hash=? AND status='active'",
-                (expires_at, token_hash),
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-        _drop_token_caches(token)
-
-        data = base_response.get_json(silent=True) or {"ok": True}
+        detail = _apply_share_settings(token_hash, payload)
+        data = response.get_json(silent=True) or {"ok": True}
         result = dict(data.get("result") or {})
-        expires_epoch = _dt_epoch(expires_at)
         result.update({
             "share_id": token_hash,
-            "is_permanent": bool(permanent),
-            "expires_at": _dt_iso(expires_at),
-            "expires_at_epoch": expires_epoch,
-            "remaining_seconds": None if permanent else max(0, expires_epoch - int(time.time())),
+            "history_scope": detail.get("history_scope"),
+            "is_permanent": detail.get("is_permanent"),
+            "expires_at": detail.get("expires_at"),
+            "expires_at_epoch": detail.get("expires_at_epoch"),
+            "remaining_seconds": None if detail.get("is_permanent") else max(
+                0, int(detail.get("expires_at_epoch") or 0) - int(time.time())
+            ),
+            "show_pdf_pages": detail.get("show_pdf_pages"),
+            "allow_report_pdf_download": detail.get("allow_report_pdf_download"),
+            "show_images": detail.get("show_images"),
+            "show_workflow_images": detail.get("show_workflow_images"),
+            "orders": detail.get("orders") or [],
         })
         return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
