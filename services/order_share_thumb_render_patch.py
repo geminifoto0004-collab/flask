@@ -15,7 +15,7 @@ from services import order_share_image_source_patch as _source_visibility  # noq
 from services.order_cloud_multi_b2 import PRIMARY
 from services.order_share_thumb_metadata_patch import signed_thumb_get
 
-_PATCH_VERSION = "thumb-render-v2-20260906"
+_PATCH_VERSION = "thumb-render-v3-full-image-fallback-20261004"
 
 
 class _ThumbSafeHTML(str):
@@ -27,6 +27,7 @@ class _ThumbSafeHTML(str):
 
 
 _ORIGINAL_PAGE_RENDER = _page.render_template
+_ORIGINAL_DIRECT_CACHED_GET = _direct._cached_signed_get
 
 
 def _render_template_keep_thumbs(*args, **kwargs):
@@ -54,9 +55,12 @@ def _native_images(order, workflow, token):
     rows = _ORIGINAL_NATIVE_IMAGES(order, workflow, token)
     for item in rows or []:
         if isinstance(item, dict) and str(item.get("media_type") or "") == "image":
+            # Customer cards must prefer the canonical ORDER image. The thumbnail
+            # object can be missing/stale even while the original WEB image is valid,
+            # which produced an entire wall of broken images.
             url = str(item.get("url") or "")
-            if "/image/" in url:
-                item["preview_url"] = url.replace("/image/", "/thumb/", 1)
+            if url:
+                item["preview_url"] = url
     return rows
 
 
@@ -93,7 +97,10 @@ def _safe_route_markers(token, asset_key, attr):
         yield f'{attr}="/share/{token}/{alias}/{asset_key}"'
 
 
-_direct._cached_signed_get = _cached_signed_thumb_get
+# Keep thumbnail signing available for explicit /thumb consumers, but customer-card
+# direct-cover injection must sign the canonical full ORDER image. This restores the
+# proven path that existed before the broken-thumbnail regression.
+_direct._cached_signed_get = _ORIGINAL_DIRECT_CACHED_GET
 _direct._cached_signed_thumb_get = _cached_signed_thumb_get
 _direct._route_markers = _safe_route_markers
 
