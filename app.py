@@ -211,9 +211,10 @@ def initialize_database():
     """在首次請求前初始化資料庫"""
     global _database_initialized
 
-    # /ping is deliberately DB-free so a five-minute keepalive does not wake or
-    # consume TiDB. It must bypass this global request-time bootstrap entirely.
-    if request.path == '/ping':
+    # Health checks and Flask static files need no DB. In particular, the first
+    # guest stylesheet must not wait for unrelated authorization/container tables.
+    endpoint = request.endpoint or ''
+    if request.path == '/ping' or endpoint == 'static' or endpoint.endswith('.static'):
         return None
 
     if not _database_initialized:

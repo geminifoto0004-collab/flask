@@ -31,6 +31,19 @@ def runtime(init_database):
 
 
 class OrderRequestRuntimeTests(unittest.TestCase):
+    def test_guest_stylesheet_does_not_trigger_unrelated_database_bootstrap(self):
+        calls = []
+        app, state = runtime(lambda: calls.append(1))
+        app.add_url_rule('/tracking/static/tracking/css/guest.css', endpoint='tracking.static',
+                         view_func=lambda: 'body {}')
+        with redirect_stdout(io.StringIO()), app.test_client() as client:
+            self.assertEqual(client.get('/tracking/static/tracking/css/guest.css').status_code, 200)
+            self.assertEqual(client.get('/static/missing.css').status_code, 404)
+            self.assertEqual(calls, [])
+            self.assertFalse(state['_database_initialized'])
+            self.assertEqual(client.get('/share/test-customer').status_code, 200)
+        self.assertEqual(calls, [1])
+
     def test_concurrent_first_requests_initialize_once_and_ping_does_not_wait(self):
         started, release = threading.Event(), threading.Event()
         calls = []
