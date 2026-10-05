@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+from urllib.parse import quote
 
 import boto3
 from botocore.config import Config as BotoConfig
@@ -787,7 +788,7 @@ def read_private_asset(asset):
 
 
 def _cdn_asset_url(asset):
-    """Return the Cloudflare CDN URL for primary-B2 assets when configured."""
+    """Return the Cloudflare URL for primary-B2 images and saved thumbnails."""
     if not asset or not asset.get("object_key"):
         return None
     if _asset_backend(asset) != "b2_primary":
@@ -798,9 +799,12 @@ def _cdn_asset_url(asset):
         return None
 
     object_key = str(asset["object_key"]).strip()
-    if not object_key.startswith("order-cloud/images/"):
+    is_image_key = object_key.startswith(("order-cloud/images/", "order-cloud/thumbs/"))
+    # Existing customer WEB images predate the order-cloud/images layout.
+    is_legacy_key = re.match(r"^c_[0-9a-f]{24}/", object_key) is not None
+    if not (is_image_key or is_legacy_key):
         return None
-    return f"{base_url}/{object_key}"
+    return f"{base_url}/{quote(object_key, safe='/')}"
 
 
 def presign_private_asset_read(asset, expires_seconds=300):

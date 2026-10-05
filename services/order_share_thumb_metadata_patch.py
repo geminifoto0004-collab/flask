@@ -493,6 +493,9 @@ def signed_thumb_get(asset, seconds=600):
     backend = str((asset or {}).get("storage_backend") or PRIMARY).strip().lower()
     if backend not in _media._ALLOWED_BACKENDS:
         backend = PRIMARY
+    cdn_url = _media._cdn_asset_url({"object_key": thumb_key, "storage_backend": backend})
+    if cdn_url:
+        return cdn_url, backend
     client, cfg = _media._cached_client(backend)
     url = client.generate_presigned_url(
         "get_object", Params={"Bucket": cfg["bucket_name"], "Key": thumb_key},

@@ -2,7 +2,8 @@
 
 Formal read path:
 Browser -> Render (prewarmed token/snapshot authorization, TiDB fallback) ->
-302 signed B2 URL -> B2.
+302 Cloudflare URL -> private B2. Signed B2 URLs remain the fallback when the
+CDN is not configured for the asset's storage backend.
 
 Render never downloads or returns image bytes.  The same canonical cloud object is
 used for card, detail and full-image reads; this module never copies or moves images.
@@ -22,6 +23,7 @@ from flask import Response, redirect, request
 
 from blueprints.b2_test_bp import b2_test_bp
 from database import get_cursor, get_db_connection, get_row_dict
+from services.order_cloud_asset_service import _cdn_asset_url
 from services.order_cloud_multi_b2 import PRIMARY, SECONDARY, config_for_backend
 from services.order_share_image_policy import asset_allowed
 
@@ -236,6 +238,9 @@ def _signed_get(asset, seconds=600):
     backend = str((asset or {}).get('storage_backend') or PRIMARY).strip().lower()
     if backend not in _ALLOWED_BACKENDS:
         backend = PRIMARY
+    cdn_url = _cdn_asset_url(dict(asset, storage_backend=backend))
+    if cdn_url:
+        return cdn_url, backend
     client, cfg = _cached_client(backend)
     url = client.generate_presigned_url(
         'get_object',
@@ -285,6 +290,8 @@ def _multi_b2_public_media_interceptor():
         resp = redirect(url, code=302)
         resp.headers['Cache-Control'] = 'no-store'
         resp.headers['X-Order-Media-Mode'] = 'direct-b2-redirect-memory-first-sigv4'
+        if _cdn_asset_url(asset):
+            resp.headers['X-Order-Media-Mode'] = 'cloudflare-cdn-redirect-memory-first'
         resp.headers['X-Order-Storage-Backend'] = backend
         if parts[2] != 'image':
             resp.headers['X-Order-Legacy-Media-Alias'] = parts[2]
