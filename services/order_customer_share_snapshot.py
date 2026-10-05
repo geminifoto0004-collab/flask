@@ -376,9 +376,9 @@ def _create_live_share_with_snapshot(customer_key, *args, **kwargs):
     # snapshot hook must never become a second schema that can reject a valid
     # create call; pass every argument through unchanged to the real service.
     result = _ORIGINAL_CREATE_LIVE_SHARE(customer_key, *args, **kwargs)
-    # Move the expensive assembly to link creation instead of the customer's first GET.
+    # The token is already committed. Snapshot assembly must not delay its URL.
     try:
-        rebuild_snapshot(customer_key)
+        queue_snapshot_refresh(customer_key)
     except Exception as exc:
         print(
             f"[WARN] ORDER share snapshot create warmup failed: "

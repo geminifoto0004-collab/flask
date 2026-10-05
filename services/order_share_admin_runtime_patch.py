@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import hashlib
 import time
+import threading
 
 from flask import jsonify, make_response, redirect, render_template, request, session, url_for
 
@@ -23,13 +24,25 @@ _BASE_CREATE = _fast._create_scoped_share
 _BASE_UPDATE = _fast._update_share_settings
 
 
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
+
+
 def _ensure_columns():
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        _ensure_columns_uncached()
+        _SCHEMA_READY = True
+
+
+def _ensure_columns_uncached():
     """Keep public-share schema additive and safe across older TiDB deployments."""
     _ensure_order_cloud_tables()
-    try:
-        _fast._ensure_share_columns()
-    except Exception:
-        pass
+    _fast._ensure_share_columns()
     conn = get_db_connection()
     cur = get_cursor(conn)
     try:
@@ -170,14 +183,17 @@ def _share_admin_state():
             # LEGACY/NULL/previous site names. Filtering by the current literal "ORDER"
             # hides valid old links from the desktop admin mirror even though the public
             # token remains active. Return the full share control-plane history here.
-            cur.execute(
-                """SELECT token_hash, customer_key, status, source_site, created_at, expires_at,
-                          history_scope, show_pdf_pages, allow_report_pdf_download,
-                          show_images, show_workflow_images,
-                          access_count, last_accessed_at
-                   FROM cloud_share_tokens
-                   ORDER BY created_at DESC"""
-            )
+            wanted = str(request.args.get('share_id') or '').strip().lower()
+            if wanted and (len(wanted) != 64 or any(c not in '0123456789abcdef' for c in wanted)):
+                return jsonify({'ok': False, 'error': 'share_id is invalid'}), 400
+            sql = """SELECT token_hash, customer_key, status, source_site, created_at, expires_at,
+                            history_scope, show_pdf_pages, allow_report_pdf_download,
+                            show_images, show_workflow_images, access_count, last_accessed_at
+                     FROM cloud_share_tokens"""
+            if wanted:
+                cur.execute(sql + ' WHERE token_hash=?', (wanted,))
+            else:
+                cur.execute(sql + ' ORDER BY created_at DESC')
             rows = []
             now = int(time.time())
             for raw in cur.fetchall():
@@ -210,7 +226,7 @@ def _share_admin_state():
                 })
         finally:
             conn.close()
-        return jsonify({"ok": True, "result": {"shares": rows}})
+        return jsonify({"ok": True, "result": {"shares": rows, "idempotent_create": True}})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 

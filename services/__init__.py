@@ -18,72 +18,15 @@ from . import order_cloud_service as _order_cloud_service
 
 def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, permanent=False,
                             history_scope='current', include_cancelled=False, status_filter_mode='simple',
-                            show_pdf_pages=True, allow_report_pdf_download=False, show_images=True):
-    customer_key = str(customer_key or '').strip()
-    if not customer_key:
-        raise ValueError('customer_key is required')
-
-    # Token creation only needs an existence check. Do not load the full customer
-    # space here; the public GET will load it when someone actually opens the URL.
-    conn = _order_cloud_service.get_db_connection()
-    cur = _order_cloud_service.get_cursor(conn)
-    try:
-        cur.execute(
-            'SELECT customer_key FROM cloud_customers WHERE customer_key=? AND active=TRUE LIMIT 1',
-            (customer_key,),
-        )
-        if not cur.fetchone():
-            raise ValueError('customer not found')
-    finally:
-        conn.close()
-
-    if permanent:
-        expires_at = None
-    else:
-        try:
-            hours = int(expires_hours or 24)
-        except (TypeError, ValueError):
-            raise ValueError('expires_hours must be an integer')
-        if hours < 1 or hours > 24 * 365:
-            raise ValueError('expires_hours must be between 1 and 8760')
-        expires_at = _order_cloud_service.datetime.utcnow() + _order_cloud_service.timedelta(hours=hours)
-
-    raw_token = _order_cloud_service.secrets.token_urlsafe(32)
-    token_hash = _order_cloud_service.hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
-    conn = _order_cloud_service.get_db_connection()
-    cur = _order_cloud_service.get_cursor(conn)
-    try:
-        cur.execute(
-            """INSERT INTO cloud_share_tokens
-               (token_hash, customer_key, mode, status, source_site, history_scope, status_filter_mode,
-                show_pdf_pages, allow_report_pdf_download, show_images, include_cancelled, expires_at)
-               VALUES (?, ?, 'LIVE', 'active', ?, ?, ?, ?, ?, ?, FALSE, ?)""",
-            (
-                token_hash,
-                customer_key,
-                (str(source_site or '').upper()[:16] or None),
-                str(history_scope or 'current'),
-                'full' if str(status_filter_mode or '').strip().lower() == 'full' else 'simple',
-                bool(show_pdf_pages), bool(allow_report_pdf_download), bool(show_images),
-                expires_at,
-            ),
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-    return {
-        'token': raw_token, 'customer_key': customer_key, 'expires_at': expires_at,
-        'history_scope': str(history_scope or 'current'),
-        'status_filter_mode': 'full' if str(status_filter_mode or '').strip().lower() == 'full' else 'simple',
-        'show_pdf_pages': bool(show_pdf_pages),
-        'allow_report_pdf_download': bool(allow_report_pdf_download),
-        'show_images': bool(show_images),
-        'include_cancelled': False,
-    }
+                            show_pdf_pages=True, allow_report_pdf_download=False, show_images=True,
+                            show_workflow_images=True, requested_token=None):
+    from .order_share_create_control import create_live_share
+    return create_live_share(
+        customer_key, source_site=source_site, expires_hours=expires_hours, permanent=permanent,
+        history_scope=history_scope, include_cancelled=False, status_filter_mode=status_filter_mode,
+        show_pdf_pages=show_pdf_pages, allow_report_pdf_download=allow_report_pdf_download,
+        show_images=show_images, show_workflow_images=show_workflow_images, requested_token=requested_token,
+    )
 
 
 def _fast_get_customer_space(customer_key):

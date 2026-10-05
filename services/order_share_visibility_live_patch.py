@@ -29,7 +29,22 @@ _ORIG_FILTER = _fast._filter_space
 _ORIG_ASSET = _fast._asset_for_share
 
 
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
+
+
 def _ensure_columns():
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        _ensure_columns_uncached()
+        _SCHEMA_READY = True
+
+
+def _ensure_columns_uncached():
     _ensure_order_cloud_tables()
     _ORIG_ENSURE()
     conn = get_db_connection(); cur = get_cursor(conn)
@@ -191,16 +206,20 @@ def _create_scoped_share():
             expires_hours=payload.get('expires_hours', 24), permanent=bool(payload.get('permanent', False)),
             history_scope=scope, include_cancelled=False, status_filter_mode=mode,
             show_pdf_pages=show_pdf, allow_report_pdf_download=allow_report, show_images=show_images,
+            show_workflow_images=bool(payload.get('show_workflow_images', True)),
+            requested_token=payload.get('requested_token'),
         )
         token = result.pop('token'); token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
         expiry = result.get('expires_at'); result['expires_at'] = expiry.isoformat() if expiry else None
-        result.update({'history_scope':scope, 'status_filter_mode':mode, 'show_pdf_pages':show_pdf,
-                       'allow_report_pdf_download':allow_report, 'show_images':show_images,
-                       'include_cancelled':False, 'share_url':request.host_url.rstrip('/') + '/share/' + token})
-        _drop_caches(token, token_hash)
+        result.update({'include_cancelled':False, 'share_url':request.host_url.rstrip('/') + '/share/' + token})
+        try:
+            _drop_caches(token, token_hash)
+        except Exception as cache_exc:
+            print(f'[WARN] ORDER created share cache cleanup deferred: {type(cache_exc).__name__}')
         return jsonify({'ok':True, 'result':result})
     except ValueError as exc:
-        return jsonify({'ok':False, 'error':str(exc)}), 400
+        from services.order_share_create_control import ShareCreateConflict
+        return jsonify({'ok':False, 'error':str(exc)}), 409 if isinstance(exc, ShareCreateConflict) else 400
     except Exception as exc:
         return jsonify({'ok':False, 'error':str(exc)}), 500
 
