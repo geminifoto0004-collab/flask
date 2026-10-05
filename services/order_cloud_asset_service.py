@@ -5,13 +5,9 @@ Metadata remains in TiDB and public reads stay protected by the share-token rout
 """
 
 import hashlib
-import hmac
 import json
 import os
 import re
-import time
-
-from urllib.parse import quote
 
 import boto3
 from botocore.config import Config as BotoConfig
@@ -790,33 +786,21 @@ def read_private_asset(asset):
         raise
 
 
-def _cdn_signed_asset_url(asset, expires_seconds=300):
-    """Return a short-lived Cloudflare CDN URL when the primary B2 CDN is configured.
-
-    The CDN is intentionally used only for the primary B2 backend. Secondary-backend
-    assets continue to use the existing B2 presigned URL fallback until a second CDN
-    origin is configured.
-    """
+def _cdn_asset_url(asset):
+    """Return the Cloudflare CDN URL for primary-B2 assets when configured."""
     if not asset or not asset.get("object_key"):
         return None
     if _asset_backend(asset) != "b2_primary":
         return None
 
     base_url = (os.environ.get("ORDER_CDN_BASE_URL") or "").strip().rstrip("/")
-    secret = (os.environ.get("ORDER_CDN_SIGNING_SECRET") or "").strip()
-    if not base_url or not secret:
+    if not base_url:
         return None
 
     object_key = str(asset["object_key"]).strip()
     if not object_key.startswith("order-cloud/images/"):
         return None
-
-    expires_seconds = max(60, min(int(expires_seconds or 300), 1800))
-    exp = int(time.time()) + expires_seconds
-    path = "/" + quote(object_key, safe="/-._~")
-    payload = f"{path}\n{exp}".encode("utf-8")
-    signature = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
-    return f"{base_url}{path}?exp={exp}&sig={signature}"
+    return f"{base_url}/{object_key}"
 
 
 def presign_private_asset_read(asset, expires_seconds=300):
@@ -826,14 +810,12 @@ def presign_private_asset_read(asset, expires_seconds=300):
     if not object_key.startswith("order-cloud/images/"):
         raise ValueError("invalid asset object key")
 
-    # Prefer Cloudflare when configured. This keeps image bytes off Render and avoids
-    # exposing the private B2 credentials or raw B2 presigned URLs to customers.
-    cdn_url = _cdn_signed_asset_url(asset, expires_seconds=expires_seconds)
+    # Prefer Cloudflare for primary B2 when configured.
+    cdn_url = _cdn_asset_url(asset)
     if cdn_url:
         return cdn_url
 
-    # Safe fallback: retain the existing direct B2 presigned URL behavior until the
-    # CDN secret/base URL are configured, and for secondary-backend assets.
+    # Safe fallback for secondary-backend assets or when CDN is not configured.
     backend = _asset_backend(asset)
     s3, cfg = _backend_client(backend)
     expires_seconds = max(60, min(int(expires_seconds or 300), 1800))
@@ -843,7 +825,6 @@ def presign_private_asset_read(asset, expires_seconds=300):
         ExpiresIn=expires_seconds,
         HttpMethod="GET",
     )
-
 
 def wan_storage_summary(customer_keys):
     keys = []
