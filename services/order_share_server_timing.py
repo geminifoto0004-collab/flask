@@ -101,7 +101,7 @@ def _sweep_state():
 
 @b2_test_bp.after_app_request
 def _add_order_share_server_timing(response):
-    started = getattr(g, "_order_timing_started", None)
+    started = getattr(g, "_order_request_started", None) or getattr(g, "_order_timing_started", None)
     if started is None:
         return response
 

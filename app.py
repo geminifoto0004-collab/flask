@@ -3,9 +3,11 @@ Flask 授權管理系統 - 主應用入口
 功能：管理員登入、授權管理、API 查詢
 """
 
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, g
 import hashlib
 import sqlite3
+import threading
+import time
 from datetime import datetime
 from functools import wraps
 from utils.time_utils import get_chile_time_naive
@@ -32,6 +34,21 @@ from services.email_proxy import email_proxy_bp
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config['PERMANENT_SESSION_LIFETIME'] = config.PERMANENT_SESSION_LIFETIME
+
+# Start before blueprint interceptors. The loader-only timer cannot measure
+# earlier hooks, and neither timer can include time queued outside Flask.
+@app.before_request
+def _begin_order_request_timing():
+    if request.path == '/ping' or request.path.startswith('/share/'):
+        g._order_request_started = time.perf_counter()
+
+
+@app.after_request
+def _finish_order_request_timing(response):
+    started = getattr(g, '_order_request_started', None)
+    if started is not None:
+        response.headers['X-Order-Request-MS'] = f'{(time.perf_counter() - started) * 1000:.1f}'
+    return response
 
 # 註冊 Blueprint
 app.register_blueprint(user_auth_bp)
@@ -187,6 +204,7 @@ if _RENDER_ORDER_ENABLED:
 # 在應用啟動時自動初始化資料庫（適用於 Render 等生產環境）
 # 使用 before_request 但只執行一次
 _database_initialized = False
+_database_initialize_lock = threading.Lock()
 
 @app.before_request
 def initialize_database():
@@ -199,16 +217,19 @@ def initialize_database():
         return None
 
     if not _database_initialized:
-        try:
-            init_database()
-            print("✅ 資料庫自動初始化完成")
-            _database_initialized = True
-        except Exception as e:
-            import traceback
-            print(f"⚠️  資料庫初始化失敗: {e}")
-            print(f"   詳細錯誤: {traceback.format_exc()}")
-            # 不阻止應用啟動，讓用戶可以訪問錯誤頁面
-            _database_initialized = True  # 標記為已嘗試，避免重複嘗試
+        with _database_initialize_lock:
+            if _database_initialized:
+                return None
+            try:
+                init_database()
+                print("✅ 資料庫自動初始化完成")
+            except Exception as e:
+                import traceback
+                print(f"⚠️  資料庫初始化失敗: {e}")
+                print(f"   詳細錯誤: {traceback.format_exc()}")
+                # 不阻止應用啟動，讓用戶可以訪問錯誤頁面
+            finally:
+                _database_initialized = True  # 標記為已嘗試，避免重複嘗試
 
 
 # ========== 登入驗證裝飾器 ==========
