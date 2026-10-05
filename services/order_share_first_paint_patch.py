@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import re
 import time
 
 from flask import g, has_request_context, request
@@ -27,8 +28,42 @@ from services import order_share_render_cache as _render
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_SOURCE = _native._source
 _PREVIOUS_TEMPLATE_HASH = _render._compute_template_hash
-_VERSION = "first-paint-v1-20260906"
+_VERSION = "first-paint-v2-inline-assets-20261005"
 _STYLE_MARKER = "ORDER_FIRST_PAINT_V1"
+
+
+def _inline_guest_assets(text):
+    """Ship the small guest UI with HTML instead of six serial static requests.
+
+    Keep each script at its existing execution position. Language initialization
+    still follows the saved-language seed, and report handlers still see the body.
+    The queue enhancement is included after reports, as the old theme loader did.
+    """
+    static = _native.STATIC
+
+    def raw_file(relative):
+        return "{% raw %}" + (static / relative).read_text("utf-8") + "{% endraw %}"
+
+    text = re.sub(
+        r'<link\s+rel="stylesheet"\s+href="/tracking/static/tracking/css/guest\.css[^\"]*"\s*>',
+        lambda _: '<style data-order-inline-asset="guest.css">' + raw_file("css/guest.css") + '</style>',
+        text,
+        count=1,
+    )
+    for filename in ("ui_i18n.js", "theme.js", "guest_reports.js"):
+        text = re.sub(
+            r'<script\b[^>]*\bsrc="/tracking/static/tracking/js/' + re.escape(filename) + r'[^\"]*"[^>]*>\s*</script>',
+            lambda _, filename=filename: '<script data-order-inline-asset="' + filename + '">' + raw_file("js/" + filename) + '</script>',
+            text,
+            count=1,
+        )
+
+    # theme.js discovers its dynamic queue assets from document.currentScript.src.
+    # Its inline form has no src; provide both assets explicitly instead.
+    queue_css = '<style data-share-queue-ui-patch="css">' + raw_file("css/share_queue_ui_patch.css") + '</style>'
+    queue_js = '<script data-share-queue-ui-patch="js">' + raw_file("js/share_queue_ui_patch.js") + '</script>'
+    text = text.replace('</head>', queue_css + '</head>', 1)
+    return text.replace('</body>', queue_js + '</body>', 1)
 
 
 def _is_customer_wall(token: str) -> bool:
@@ -109,6 +144,8 @@ def _source_first_paint(name):
     if name != "guest_customer.html" or _STYLE_MARKER in text:
         return text
 
+    text = _inline_guest_assets(text)
+
     # Only the first row needs eager images.  The next cards are below/near the fold
     # and should not compete with the first visible thumbnails on a fresh connection.
     text = text.replace("loop.first and card_loop.index <= 4", "loop.first and card_loop.index <= 2")
@@ -181,4 +218,4 @@ def _gzip_order_share_html(response):
     return response
 
 
-print("[ORDER] first-paint patch ready: hot HTML zero-bundle + gzip + 2 eager covers")
+print("[ORDER] first-paint patch ready: hot HTML zero-bundle + gzip + inline guest assets + 2 eager covers")

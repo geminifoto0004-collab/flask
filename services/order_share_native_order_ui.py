@@ -208,6 +208,8 @@ def _fingerprint():
         ORDER / "status_definitions.py", STATIC / "css" / "guest.css",
         STATIC / "js" / "ui_i18n.js", STATIC / "js" / "theme.js",
         STATIC / "js" / "guest_reports.js",
+        STATIC / "css" / "share_queue_ui_patch.css",
+        STATIC / "js" / "share_queue_ui_patch.js",
     ):
         if path.is_file():
             h.update(path.read_bytes())
