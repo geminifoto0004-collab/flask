@@ -47,12 +47,24 @@ _BASE_ASSET = getattr(_visibility, '_ORIG_ASSET', _fast._asset_for_share)
 _BASE_RENDER = _page.render_template
 
 
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
+
+
 def _ensure_columns():
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        _ensure_columns_uncached()
+        _SCHEMA_READY = True
+
+
+def _ensure_columns_uncached():
     _ensure_order_cloud_tables()
-    try:
-        _fast._ensure_share_columns()
-    except Exception:
-        pass
+    _fast._ensure_share_columns()
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         if not check_column_exists(cur, 'cloud_share_tokens', 'show_workflow_images'):
@@ -196,52 +208,31 @@ def _create_scoped_share():
         _ensure_columns()
         payload = request.get_json(silent=True) or {}
         from services.order_cloud_service import create_live_share
-        scope = _scope(payload.get('history_scope'))
-        mode = _mode(payload.get('status_filter_mode'))
-        show_pdf = _bool_default(payload.get('show_pdf_pages'), True)
-        allow_report = _bool_default(payload.get('allow_report_pdf_download'), False)
-        show_supervisor = _bool_default(payload.get('show_images'), True)
-        show_workflow = _bool_default(payload.get('show_workflow_images'), True)
         result = create_live_share(
             payload.get('customer_key'), source_site=source_site,
             expires_hours=payload.get('expires_hours', 24),
             permanent=bool(payload.get('permanent', False)),
-            history_scope=scope, include_cancelled=False, status_filter_mode=mode,
-            show_pdf_pages=show_pdf, allow_report_pdf_download=allow_report,
-            show_images=show_supervisor,
+            history_scope=_scope(payload.get('history_scope')), include_cancelled=False,
+            status_filter_mode=_mode(payload.get('status_filter_mode')),
+            show_pdf_pages=_bool_default(payload.get('show_pdf_pages'), True),
+            allow_report_pdf_download=_bool_default(payload.get('allow_report_pdf_download'), False),
+            show_images=_bool_default(payload.get('show_images'), True),
+            show_workflow_images=_bool_default(payload.get('show_workflow_images'), True),
+            requested_token=payload.get('requested_token'),
         )
         token = result.pop('token')
-        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
-        conn = get_db_connection(); cur = get_cursor(conn)
-        try:
-            cur.execute(
-                """UPDATE cloud_share_tokens
-                   SET history_scope=?, status_filter_mode=?, show_pdf_pages=?,
-                       allow_report_pdf_download=?, show_images=?, show_workflow_images=?,
-                       include_cancelled=FALSE
-                   WHERE token_hash=?""",
-                (scope, mode, show_pdf, allow_report, show_supervisor, show_workflow, token_hash),
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback(); raise
-        finally:
-            conn.close()
         expiry = result.get('expires_at')
         result['expires_at'] = expiry.isoformat() if hasattr(expiry, 'isoformat') else expiry
-        result.update({
-            'history_scope': scope, 'status_filter_mode': mode,
-            'show_pdf_pages': show_pdf,
-            'allow_report_pdf_download': allow_report,
-            'show_images': show_supervisor,
-            'show_workflow_images': show_workflow,
-            'include_cancelled': False,
-            'share_url': request.host_url.rstrip('/') + '/share/' + token,
-        })
-        _drop_caches(token)
+        result.update(include_cancelled=False, share_url=request.host_url.rstrip('/') + '/share/' + token)
+        if not result.get('reused_token'):
+            try:
+                _drop_caches(token)
+            except Exception as cache_exc:
+                print(f'[WARN] ORDER created share cache cleanup deferred: {type(cache_exc).__name__}')
         return jsonify({'ok': True, 'result': result})
     except ValueError as exc:
-        return jsonify({'ok': False, 'error': str(exc)}), 400
+        from services.order_share_create_control import ShareCreateConflict
+        return jsonify({'ok': False, 'error': str(exc)}), 409 if isinstance(exc, ShareCreateConflict) else 400
     except Exception as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 500
 

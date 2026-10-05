@@ -1,3 +1,5 @@
+import ast
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import importlib.util
@@ -77,3 +79,41 @@ class ControlTests(unittest.TestCase):
         conn = self.connect()
         self.assertEqual(conn.execute('SELECT COUNT(*) FROM cloud_share_tokens').fetchone()[0], 0)
         conn.close()
+
+    def test_existing_legacy_source_is_visible_through_global_order_gate(self):
+        self.create(source_site='CL')
+        result = self.create(source_site='ORDER')
+        self.assertTrue(result['reused_token'])
+
+    def test_final_create_route_passes_requested_token_and_reports_conflicts(self):
+        self._check_create_route('order_share_image_source_patch.py')
+
+    def test_visibility_create_route_passes_requested_token_and_reports_conflicts(self):
+        self._check_create_route('order_share_visibility_live_patch.py')
+
+    def _check_create_route(self, filename):
+        from flask import Flask, request, jsonify
+        path=ROOT/'services'/filename
+        node=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef)
+                  and n.name=='_create_scoped_share')
+        cloud=types.ModuleType('services.order_cloud_service');cloud.create_live_share=self.control.create_live_share
+        control=types.ModuleType('services.order_share_create_control');control.ShareCreateConflict=self.control.ShareCreateConflict
+        scope={'request':request,'jsonify':jsonify,'hashlib':hashlib,
+               '_order_cloud_auth_source':lambda:('ORDER',None),'_ensure_columns':lambda:None,
+               '_scope':lambda value:value or 'current','_mode':lambda value:value or 'simple',
+               '_flags':lambda p:(bool(p.get('show_pdf_pages',True)),bool(p.get('allow_report_pdf_download')),bool(p.get('show_images',True))),
+               '_drop_caches':lambda *args:(_ for _ in ()).throw(RuntimeError('busy')),
+               '_bool_default':lambda value,default=True: default if value is None else bool(value)}
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[])),str(path),'exec'),scope)
+        app=Flask(__name__);app.add_url_rule('/create',view_func=scope['_create_scoped_share'],methods=['POST'])
+        with patch.dict(sys.modules,{'services.order_cloud_service':cloud,'services.order_share_create_control':control}):
+            client=app.test_client()
+            payload={'customer_key':'SERGIO','requested_token':'a'*43,'show_images':False}
+            first=client.post('/create',json=payload)
+            self.assertEqual(first.status_code,200)
+            self.assertTrue(first.get_json()['result']['share_url'].endswith('a'*43))
+            second=client.post('/create',json=dict(payload,show_images=True))
+            self.assertFalse(second.get_json()['result']['show_images'])
+            self.assertTrue(second.get_json()['result']['reused_token'])
+            self.assertEqual(client.post('/create',json=dict(payload,customer_key='OTHER')).status_code,409)
+            self.assertEqual(client.post('/create',json=dict(payload,requested_token='bad')).status_code,400)
