@@ -333,6 +333,8 @@ document.addEventListener('error', function (event) {
 (function () {
     const guestToken = {{ token|tojson }};
     const row = document.getElementById('guestStatusFilterRow');
+    const logisticsRow = document.querySelector('.guest-logistics-row');
+    const logisticsAll = document.getElementById('guestLogisticsAll');
     const sortRow = document.getElementById('guestSortRow');
     const grid = document.getElementById('guestGrid');
     const countNode = document.getElementById('guestVisibleCount');
@@ -471,12 +473,16 @@ document.addEventListener('error', function (event) {
         else loadFirstVisibleImage(card);
     }
 
-    function apply(key, options) {
+    function apply(key) {
         key = key || 'all';
+        // A specific status replaces the logistics choice, including restored state.
+        if (key !== 'all' && logisticsAll) logisticsAll.checked = true;
+        const logisticsKey = logisticsRow?.querySelector('.guest-logistics-radio:checked')?.value || 'all';
         let visible = 0;
         cards.forEach(function (card) {
             const cardKey = filterMode === 'full' ? String(card.dataset.guestStatusKey || '') : String(card.dataset.guestStatusGroup || 'confirmed');
-            const show = key === 'all' || cardKey === key;
+            const show = (key === 'all' || cardKey === key)
+                && (logisticsKey === 'all' || card.dataset.guestLogisticsKey === logisticsKey);
             card.hidden = !show;
             if (show) {
                 visible += 1;
@@ -491,6 +497,7 @@ document.addEventListener('error', function (event) {
             btn.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
         if (countNode) countNode.textContent = countLabel(visible);
+        selected = key;
         try { sessionStorage.setItem(storageKey, key); } catch (_) {}
     }
 
@@ -500,6 +507,15 @@ document.addEventListener('error', function (event) {
         const top = window.scrollY;
         apply(btn.dataset.guestStatusFilter || 'all');
         // Hiding a masonry row must not move the customer's viewport.
+        requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
+    });
+
+    logisticsRow?.addEventListener('change', function (event) {
+        if (!event.target.matches('.guest-logistics-radio')) return;
+        const top = window.scrollY;
+        // A specific logistics choice replaces the status choice. Todos only
+        // clears its own row, so selecting it preserves the other row's choice.
+        apply(event.target.value === 'all' ? selected : 'all');
         requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
     });
 
