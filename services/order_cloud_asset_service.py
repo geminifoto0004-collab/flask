@@ -801,7 +801,7 @@ def _cdn_asset_url(asset):
     object_key = str(asset["object_key"]).strip()
     is_image_key = object_key.startswith(("order-cloud/images/", "order-cloud/thumbs/"))
     # Existing customer WEB images predate the order-cloud/images layout.
-    is_legacy_key = re.match(r"^c_[0-9a-f]{24}/", object_key) is not None
+    is_legacy_key = re.match(r"^customers/c_[0-9a-f]{24}/", object_key) is not None
     if not (is_image_key or is_legacy_key):
         return None
     return f"{base_url}/{quote(object_key, safe='/')}"

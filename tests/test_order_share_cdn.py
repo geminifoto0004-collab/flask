@@ -16,7 +16,7 @@ from flask import Flask, Response, has_request_context, redirect, request
 
 ROOT = Path(__file__).resolve().parents[1]
 CDN = 'https://images.example.test'
-FULL_KEY = 'c_' + '1' * 24 + '/1008474/large.jpg'
+FULL_KEY = 'customers/c_' + '1' * 24 + '/orders/1008474/workflows/order/web/' + 'a' * 64 + '.jpg'
 THUMB_KEY = 'order-cloud/thumbs/aa/small.jpg'
 
 
