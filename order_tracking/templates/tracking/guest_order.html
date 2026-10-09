@@ -71,8 +71,8 @@
         <div class="guest-info">
             <div class="guest-info-item"><span data-i18n="guest.field.order">Pedido</span><strong>{{ order.workflow_number or order.order_number }}</strong></div>
             <div class="guest-info-item"><span data-i18n="guest.field.status">Estado</span><strong data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</strong></div>
-            {% if order.order_date %}<div class="guest-info-item"><span data-i18n="guest.field.date">Fecha</span><strong>{{ order.order_date }}</strong></div>{% endif %}
-            {% if order.expected_delivery_date %}<div class="guest-info-item"><span data-i18n="guest.field.delivery">Entrega estimada</span><strong>{{ order.expected_delivery_date }}</strong></div>{% endif %}
+            {% if order.order_date %}<div class="guest-info-item"><span data-i18n="guest.field.date">Fecha</span><strong>{{ guest_shared.date_text(order.order_date) }}</strong></div>{% endif %}
+            {% if order.expected_delivery_date %}<div class="guest-info-item"><span data-i18n="guest.field.delivery">Entrega estimada</span><strong>{{ guest_shared.date_text(order.expected_delivery_date) }}</strong></div>{% endif %}
             {% if order.product_name or order.production_type %}<div class="guest-info-item"><span data-i18n="guest.field.product">Producto</span><strong>{{ order.product_name or order.production_type }}</strong></div>{% endif %}
             {% if order.product_code %}<div class="guest-info-item"><span data-i18n="guest.field.code">Código</span><strong>{{ order.product_code }}</strong></div>{% endif %}
             {% if order.quantity %}<div class="guest-info-item"><span data-i18n="guest.field.quantity">Cantidad</span><strong>{{ order.quantity }}</strong></div>{% endif %}
@@ -95,7 +95,7 @@
                 <div class="guest-stage-dot">{% if stage.state == 'done' %}✓{% else %}{{ loop.index }}{% endif %}</div>
                 <div class="guest-stage-line" aria-hidden="true"></div>
                 <strong data-i18n="guest.stage.{{ stage.key }}">{{ stage.label_es }}</strong>
-                <time>{{ stage.date or '—' }}</time>
+                <time>{{ guest_shared.date_text(stage.date) if stage.date else '—' }}</time>
             </div>
             {% endfor %}
         </div>
@@ -104,7 +104,7 @@
             <summary data-i18n="guest.history_detail">Ver historial detallado</summary>
             <ol class="guest-history-list">
                 {% for item in history %}
-                <li><time>{{ item.date }}</time><strong data-guest-zh="{{ item.status_zh }}" data-guest-es="{{ item.status_es }}">{{ item.status_es }}</strong></li>
+                <li><time>{{ guest_shared.date_text(item.date) }}</time><strong data-guest-zh="{{ item.status_zh }}" data-guest-es="{{ item.status_es }}">{{ item.status_es }}</strong></li>
                 {% endfor %}
             </ol>
         </details>

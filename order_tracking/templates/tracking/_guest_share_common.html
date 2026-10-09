@@ -1,4 +1,18 @@
 {# Shared visitor components. Keep this file inside order_tracking as the source of truth. #}
+{% macro date_es(value) -%}
+    {%- set text = value|string -%}
+    {%- set parts = text[:10].split('-') -%}
+    {%- if parts|length == 3 and parts[0]|length == 4 and parts[1]|length == 2 and parts[2]|length == 2 and 1 <= parts[1]|int <= 12 and 1 <= parts[2]|int <= 31 -%}
+        {{- parts[2] ~ '-' ~ parts[1] ~ '-' ~ parts[0] ~ text[10:] -}}
+    {%- else -%}
+        {{- text -}}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro date_text(value) -%}
+    <span data-guest-zh="{{ value|e }}" data-guest-es="{{ date_es(value)|e }}">{{ date_es(value) }}</span>
+{%- endmacro %}
+
 {% macro shipping_badge(order, class_name='guest-shipping-badge') -%}
     {%- set ns = namespace(date='', status='', partial=0) -%}
     {%- if order.shipping_zh is defined and order.shipping_es is defined and order.shipping_zh and order.shipping_es -%}
@@ -64,14 +78,14 @@
             {%- if eta and eta|length >= 10 and eta[4:5] == '-' -%}
                 {%- set ep = eta[:10].split('-') -%}
                 {%- set zh_eta = ep[0] ~ '/' ~ (ep[1]|int) ~ '/' ~ (ep[2]|int) -%}
-                {%- set es_eta = '%02d'|format(ep[2]|int) ~ '/' ~ '%02d'|format(ep[1]|int) ~ '/' ~ ep[0] -%}
+                {%- set es_eta = date_es(eta) -%}
             {%- else -%}
                 {%- set zh_eta = eta -%}{%- set es_eta = eta -%}
             {%- endif -%}
             {%- if arrived and arrived|length >= 10 and arrived[4:5] == '-' -%}
                 {%- set ap = arrived[:10].split('-') -%}
                 {%- set zh_arrived = ap[0] ~ '/' ~ '%02d'|format(ap[1]|int) ~ '/' ~ '%02d'|format(ap[2]|int) -%}
-                {%- set es_arrived = '%02d'|format(ap[2]|int) ~ '/' ~ '%02d'|format(ap[1]|int) ~ '/' ~ ap[0] -%}
+                {%- set es_arrived = date_es(arrived) -%}
             {%- else -%}
                 {%- set zh_arrived = arrived -%}{%- set es_arrived = arrived -%}
             {%- endif -%}

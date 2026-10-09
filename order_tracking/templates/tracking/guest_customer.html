@@ -268,7 +268,7 @@ SOFTWARE.
                 {% if order.product_name or order.production_type or order.product_code %}
                 <div class="guest-card-product">{{ order.product_name or order.production_type }}{% if order.product_code %} · {{ order.product_code }}{% endif %}</div>
                 {% endif %}
-                {% if order.order_date %}<div class="guest-card-date">{{ order.order_date }}</div>{% endif %}
+                {% if order.order_date %}<div class="guest-card-date">{{ guest_shared.date_text(order.order_date) }}</div>{% endif %}
             </div>
         </a>
         {% endfor %}

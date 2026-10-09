@@ -1,4 +1,18 @@
 {# Render mirror generated from order_tracking/templates/tracking/_guest_share_common.html. #}
+{% macro date_es(value) -%}
+    {%- set text = value|string -%}
+    {%- set parts = text[:10].split('-') -%}
+    {%- if parts|length == 3 and parts[0]|length == 4 and parts[1]|length == 2 and parts[2]|length == 2 and 1 <= parts[1]|int <= 12 and 1 <= parts[2]|int <= 31 -%}
+        {{- parts[2] ~ '-' ~ parts[1] ~ '-' ~ parts[0] ~ text[10:] -}}
+    {%- else -%}
+        {{- text -}}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro date_text(value) -%}
+    <span data-guest-zh="{{ value|e }}" data-guest-es="{{ date_es(value)|e }}">{{ date_es(value) }}</span>
+{%- endmacro %}
+
 {% macro shipping_badge(order, class_name='guest-shipping-badge') -%}
     {%- set ns = namespace(date='', status='', partial=0) -%}
     {%- if order.shipping_zh is defined and order.shipping_es is defined and order.shipping_zh and order.shipping_es -%}
@@ -62,7 +76,7 @@
             {%- if arrived and arrived|length >= 10 and arrived[4:5] == '-' -%}
                 {%- set ap = arrived[:10].split('-') -%}
                 {%- set zh_arrived = ap[0] ~ '/' ~ '%02d'|format(ap[1]|int) ~ '/' ~ '%02d'|format(ap[2]|int) -%}
-                {%- set es_arrived = '%02d'|format(ap[2]|int) ~ '/' ~ '%02d'|format(ap[1]|int) ~ '/' ~ ap[0] -%}
+                {%- set es_arrived = date_es(arrived) -%}
             {%- else -%}
                 {%- set zh_arrived = arrived -%}{%- set es_arrived = arrived -%}
             {%- endif -%}
@@ -72,7 +86,7 @@
                 {%- set bg = '#ecfdf3' -%}{%- set fg = '#15803d' -%}
             {%- else -%}
                 {%- set zh = ('預計 ' ~ eta ~ ' 到 Iquique') if eta else '海運中 · 前往 Iquique' -%}
-                {%- set es = ('Llega ' ~ eta ~ ' · Iquique') if eta else 'En tránsito a Iquique' -%}
+                {%- set es = ('Llega ' ~ date_es(eta) ~ ' · Iquique') if eta else 'En tránsito a Iquique' -%}
                 {%- set bg = '#eff6ff' -%}{%- set fg = '#1d4ed8' -%}
             {%- endif -%}
             <div style="display:flex;align-items:center;gap:6px;max-width:100%;padding:4px 7px;border-radius:9px;background:{{ bg }};color:{{ fg }};font-size:10px;font-weight:750;line-height:1.25">
