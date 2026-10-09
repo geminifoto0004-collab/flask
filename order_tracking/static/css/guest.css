@@ -109,8 +109,7 @@ button, input { font: inherit; }
 .guest-card-body { padding: 9px 10px 10px; }
 .guest-card-status { display: inline-flex; max-width: 100%; padding: 4px 8px; border-radius: 999px; background: color-mix(in srgb, var(--guest-accent) 12%, var(--guest-surface)); color: var(--guest-accent); font-size: 10px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .guest-card-retired { border-color:color-mix(in srgb, var(--guest-muted) 35%, var(--guest-border)); background:color-mix(in srgb, var(--guest-muted) 9%, var(--guest-surface)); }
-.guest-card-retired .guest-cover { filter:grayscale(1); opacity:.7; }
-.guest-card-retired .guest-card-status { background:color-mix(in srgb, var(--guest-muted) 14%, var(--guest-surface)); color:var(--guest-muted); }
+.guest-retired-banner { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; min-height:32px; padding:6px 10px; background:#4b5563; color:#fff; font-size:13px; font-weight:850; line-height:1.3; letter-spacing:.06em; }
 .guest-partial-pickup { margin-left:4px; font-size:10px; font-weight:750; color:var(--guest-icon-warn); }
 .guest-card-number { margin-top: 7px; font-size: 13px; font-weight: 850; letter-spacing: .15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .guest-card-product { margin-top: 4px; color: var(--guest-muted); font-size: 11px; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

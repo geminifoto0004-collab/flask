@@ -251,8 +251,16 @@ SOFTWARE.
                     <div class="guest-cover-empty" data-i18n="guest.no_image">Sin imagen</div>
                 {% endif %}
             </div>
+            {% if order.is_retired|default(false) %}
+            <div class="guest-retired-banner" data-guest-retired-banner>
+                <span aria-hidden="true">✓</span>
+                <span data-guest-zh="已取完" data-guest-es="RETIRADO">RETIRADO</span>
+            </div>
+            {% endif %}
             <div class="guest-card-body">
+                {% if not order.is_retired|default(false) %}
                 <span class="guest-card-status" data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</span>
+                {% endif %}
                 {% if order.partial_pickup|default(false) %}<span class="guest-partial-pickup" data-guest-zh="部分已取貨" data-guest-es="Retiro parcial">Retiro parcial</span>{% endif %}
                 {{ guest_shared.shipping_badge(order) }}
                 {{ guest_shared.logistics_summary(order, true) }}
