@@ -155,7 +155,7 @@ def _fully_retired(order):
     )
 
 
-def _logistics_filter_keys(rows, retired=False):
+def _logistics_filter_keys(rows):
     keys = set()
     for row in rows or []:
         if not isinstance(row, dict):
@@ -166,8 +166,6 @@ def _logistics_filter_keys(rows, retired=False):
             keys.add("in_transit")
         elif status == "ARRIVED_IQUIQUE" and pickup != "picked_up":
             keys.add("pending_pickup")
-    if retired:
-        keys.add("retired")
     return sorted(keys)
 
 
@@ -201,8 +199,8 @@ def _card(order, workflow, token, retired=None):
         "shipping_zh": shipping.get("shipping_zh") or "",
         "shipping_es": shipping.get("shipping_es") or "",
         "logistics": logistics_rows,
-        "logistics_filter": "retired" if retired else _logistics_filter_key(logistics_rows),
-        "logistics_filter_keys": _logistics_filter_keys(logistics_rows, retired),
+        "logistics_filter": _logistics_filter_key(logistics_rows),
+        "logistics_filter_keys": _logistics_filter_keys(logistics_rows),
         "extra_pickup_only": pickup_only,
         "images": _images(order, workflow, token),
         "detail_url": f"/share/{token}/order/{quote(detail_key, safe='')}",
@@ -271,7 +269,7 @@ def _customer_context(space, share, token):
     cards = _cards(space, token)
     logistics_counts = {
         key: sum(key == "all" or key in card["logistics_filter_keys"] for card in cards)
-        for key in ("all", "in_transit", "pending_pickup", "retired")
+        for key in ("all", "in_transit", "pending_pickup")
     }
     return {
         "customer_name": str(customer.get("customer_name") or customer.get("customer_key") or ""),

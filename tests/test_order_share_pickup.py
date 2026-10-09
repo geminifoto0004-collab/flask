@@ -91,7 +91,8 @@ class PickupCardsTests(unittest.TestCase):
             self.assertEqual(card['current_status'], 'COMPLETED')
             self.assertEqual(card['display_status_key'], 'RETIRED')
             self.assertEqual(card['status_es'], 'Retirado')
-            self.assertEqual(card['logistics_filter_keys'], ['retired'])
+            self.assertEqual(card['logistics_filter_keys'], [])
+            self.assertEqual(card['logistics_filter'], 'none')
             self.assertFalse(card['partial_pickup'])
 
     def test_one_collected_batch_and_another_in_transit_is_active(self):
@@ -152,7 +153,8 @@ class PickupCardsTests(unittest.TestCase):
         context = self.scope['_customer_context']({'orders': orders}, {}, 'token')
         self.assertEqual(len(context['orders']), 28)
         self.assertEqual(context['logistics_counts']['all'], 28)
-        self.assertEqual(context['logistics_counts']['retired'], 28)
+        self.assertEqual(set(context['logistics_counts']), {'all', 'in_transit', 'pending_pickup'})
+        self.assertEqual(sum(card['is_retired'] for card in context['orders']), 28)
 
     def test_batch_count_does_not_inflate_workflow_count(self):
         context = self.scope['_customer_context']({'orders': [order(rows=[batch(pickup='pending_pickup')]*3)]}, {}, 'token')
@@ -165,7 +167,9 @@ class PickupCardsTests(unittest.TestCase):
         self.assertIn('guest-card guest-card-retired', html)
         self.assertIn('href="/share/test-token/order/1008000-1"', html)
         self.assertIn('/share/test-token/image/'+'a'*64, html)
-        self.assertIn('data-guest-logistics-count="retired">1', html)
+        self.assertNotIn('guestLogisticsRetired', html)
+        self.assertNotIn('data-guest-logistics-count="retired"', html)
+        self.assertIn("{key:'retired', zh:'已取完', es:'Retirado'", html)
 
     def test_template_displays_each_batches_pickup_state(self):
         html = render_orders([order(rows=[batch(), batch('TGHU7654321', 'pending_pickup')])])

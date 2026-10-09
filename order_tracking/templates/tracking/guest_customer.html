@@ -166,8 +166,6 @@ SOFTWARE.
                 <label class="guest-status-chip" for="guestLogisticsTransit"><svg class="guest-filter-icon guest-filter-icon--go" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-ship"/></svg><span data-guest-zh="運送中" data-guest-es="En camino">En camino</span><small data-guest-logistics-count="in_transit">{{ logistics_counts.get('in_transit', 0) if logistics_counts is defined else 0 }}</small></label>
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsPickup" value="pending_pickup">
                 <label class="guest-status-chip" for="guestLogisticsPickup"><svg class="guest-filter-icon guest-filter-icon--warn" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-package"/></svg><span data-guest-zh="待取貨" data-guest-es="Pendiente retiro">Pendiente retiro</span><small data-guest-logistics-count="pending_pickup">{{ logistics_counts.get('pending_pickup', 0) if logistics_counts is defined else 0 }}</small></label>
-                <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsRetired" value="retired">
-                <label class="guest-status-chip" for="guestLogisticsRetired"><svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-checks"/></svg><span data-guest-zh="已取完" data-guest-es="Retirado">Retirado</span><small data-guest-logistics-count="retired">{{ logistics_counts.get('retired', 0) if logistics_counts is defined else 0 }}</small></label>
             </div>
         </div>
     </div>

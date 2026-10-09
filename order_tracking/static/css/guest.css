@@ -58,7 +58,6 @@ button, input { font: inherit; }
 .guest-logistics-radio:checked + .guest-status-chip { border-color:var(--guest-accent); background:color-mix(in srgb, var(--guest-accent) 9%, var(--guest-surface)); color:var(--guest-accent); }
 .guest-shell:has(#guestLogisticsTransit:checked) .guest-card:not([data-guest-logistics-keys~="in_transit"]) { display:none !important; }
 .guest-shell:has(#guestLogisticsPickup:checked) .guest-card:not([data-guest-logistics-keys~="pending_pickup"]) { display:none !important; }
-.guest-shell:has(#guestLogisticsRetired:checked) .guest-card:not([data-guest-logistics-keys~="retired"]) { display:none !important; }
 .guest-status-filter-row { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 1px 4px; }
 .guest-sort-row { display:flex; flex-wrap:wrap; gap:7px; padding:0 1px 2px; }
 .guest-sort-row .guest-status-chip { min-height:31px; padding:0 12px; }
