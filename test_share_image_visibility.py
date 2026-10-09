@@ -70,6 +70,7 @@ class ShareImageVisibilityTests(unittest.TestCase):
         self.stub('boto3', client=Mock())
         self.stub('botocore', __path__=[])
         self.stub('botocore.config', Config=Mock())
+        self.stub('botocore.exceptions', ClientError=type('ClientError', (Exception,), {}))
         self.policy = self.service('order_share_image_policy')
         self.fast = self.service('order_public_share_fast')
         self.share = {'customer_key': 'customer', 'status': 'active', 'history_scope': 'all',
@@ -120,6 +121,9 @@ class ShareImageVisibilityTests(unittest.TestCase):
                 html = self.native._native_skeleton(self.app, self.share, {'space': self.space})
                 detail = self.app.test_client().get('/share/token/order/100-1')
                 self.assertEqual(detail.status_code, 200)
+                # Media reads use valid prewarmed metadata. A real settings write
+                # invalidates it; simulate the subsequent prewarm for this case.
+                self.warm()
                 for asset, allowed in ((self.supervisor, supervisor), (self.sales, sales)):
                     key = asset['asset_key']
                     self.assertEqual(key in html, allowed)
@@ -182,13 +186,14 @@ class ShareImageVisibilityTests(unittest.TestCase):
         self.assertFalse(self.policy.asset_allowed(dict(pdf, workflow_key='100-1'),
                                                    dict(self.share, show_pdf_pages=False)))
 
-    def test_settings_failure_does_not_render_unfiltered_snapshot(self):
+    def test_settings_failure_does_not_relax_valid_cached_media_policy(self):
         self.sources._settings.side_effect = RuntimeError('database unavailable')
         _, bundle, error = self.sources._load_page('token')
         self.assertIsNone(bundle)
         self.assertEqual(error.status_code, 503)
-        _, _, available = self.media._authorized_asset_from_memory('token', self.sales['asset_key'])
-        self.assertFalse(available)
+        _, error, available = self.media._authorized_asset_from_memory('token', self.supervisor['asset_key'])
+        self.assertTrue(available)
+        self.assertEqual(error.status_code, 404)
 
     def test_save_settings_invalidates_token_and_html_caches(self):
         token_hash = hashlib.sha256(b'token').hexdigest()

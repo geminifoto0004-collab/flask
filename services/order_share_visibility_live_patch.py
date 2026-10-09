@@ -326,6 +326,10 @@ def _inject_live_dom_patch(response):
             ("return 'done';", "return 'ended';"),
             ("return 'confirmed';", "return 'processing';"),
         )
+        # Native pickup-aware cards supply their own grouping, counts and refresh.
+        # Keep old compatibility renames away from this version's SVG/filter keys.
+        if 'data-guest-pickup-policy="all-batches-v1"' in html:
+            replacements = ()
         for before, after in replacements:
             if before in html:
                 html = html.replace(before, after)

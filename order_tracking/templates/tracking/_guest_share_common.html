@@ -57,6 +57,7 @@
     <div class="guest-logistics-summary" style="display:flex;flex-direction:column;gap:{% if compact %}4px{% else %}6px{% endif %};{% if compact %}margin-top:1px;{% else %}margin-top:9px;{% endif %}">
         {%- for item in rows -%}
             {%- set status = (item.status|default(''))|string|upper -%}
+            {%- set pickup = (item.pickup_status|default(''))|string|lower -%}
             {%- set container = item.container_no|default('')|string|upper -%}
             {%- set eta = item.eta_iquique|default('')|string -%}
             {%- set arrived = item.arrived_date|default('')|string -%}
@@ -74,7 +75,13 @@
             {%- else -%}
                 {%- set zh_arrived = arrived -%}{%- set es_arrived = arrived -%}
             {%- endif -%}
-            {%- if status == 'ARRIVED_IQUIQUE' -%}
+            {%- if status == 'ARRIVED_IQUIQUE' and pickup == 'picked_up' -%}
+                {%- set zh_detail = '已取貨 · Iquique' -%}
+                {%- set es_detail = 'Retirado · Iquique' -%}
+                {%- set row_bg = '#f1f5f9' -%}
+                {%- set row_border = '#cbd5e1' -%}
+                {%- set row_color = '#475569' -%}
+            {%- elif status == 'ARRIVED_IQUIQUE' -%}
                 {%- set zh_detail = '已到貨' ~ ((' ' ~ zh_arrived) if zh_arrived else '') ~ ' · Iquique' -%}
                 {%- set es_detail = 'Llegó' ~ ((' ' ~ es_arrived) if es_arrived else '') ~ ' · Iquique' -%}
                 {%- set row_bg = '#ecfdf3' -%}

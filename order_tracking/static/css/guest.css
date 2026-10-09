@@ -56,8 +56,9 @@ button, input { font: inherit; }
 .guest-logistics-radio { position:absolute; opacity:0; pointer-events:none; }
 .guest-logistics-row .guest-status-chip { cursor:pointer; }
 .guest-logistics-radio:checked + .guest-status-chip { border-color:var(--guest-accent); background:color-mix(in srgb, var(--guest-accent) 9%, var(--guest-surface)); color:var(--guest-accent); }
-.guest-shell:has(#guestLogisticsTransit:checked) .guest-card:not([data-guest-logistics-key="in_transit"]) { display:none !important; }
-.guest-shell:has(#guestLogisticsPickup:checked) .guest-card:not([data-guest-logistics-key="pending_pickup"]) { display:none !important; }
+.guest-shell:has(#guestLogisticsTransit:checked) .guest-card:not([data-guest-logistics-keys~="in_transit"]) { display:none !important; }
+.guest-shell:has(#guestLogisticsPickup:checked) .guest-card:not([data-guest-logistics-keys~="pending_pickup"]) { display:none !important; }
+.guest-shell:has(#guestLogisticsRetired:checked) .guest-card:not([data-guest-logistics-keys~="retired"]) { display:none !important; }
 .guest-status-filter-row { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 1px 4px; }
 .guest-sort-row { display:flex; flex-wrap:wrap; gap:7px; padding:0 1px 2px; }
 .guest-sort-row .guest-status-chip { min-height:31px; padding:0 12px; }
@@ -108,6 +109,10 @@ button, input { font: inherit; }
 .guest-cover-dots i.active { width: 6px; height: 6px; flex-basis: 6px; background: var(--guest-accent); box-shadow: 0 0 0 2px rgba(255,255,255,.75); }
 .guest-card-body { padding: 9px 10px 10px; }
 .guest-card-status { display: inline-flex; max-width: 100%; padding: 4px 8px; border-radius: 999px; background: color-mix(in srgb, var(--guest-accent) 12%, var(--guest-surface)); color: var(--guest-accent); font-size: 10px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guest-card-retired { border-color:color-mix(in srgb, var(--guest-muted) 35%, var(--guest-border)); background:color-mix(in srgb, var(--guest-muted) 9%, var(--guest-surface)); }
+.guest-card-retired .guest-cover { filter:grayscale(1); opacity:.7; }
+.guest-card-retired .guest-card-status { background:color-mix(in srgb, var(--guest-muted) 14%, var(--guest-surface)); color:var(--guest-muted); }
+.guest-partial-pickup { margin-left:4px; font-size:10px; font-weight:750; color:var(--guest-icon-warn); }
 .guest-card-number { margin-top: 7px; font-size: 13px; font-weight: 850; letter-spacing: .15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .guest-card-product { margin-top: 4px; color: var(--guest-muted); font-size: 11px; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .guest-card-date { margin-top: 7px; color: var(--guest-muted); font-size: 10px; }

@@ -134,7 +134,44 @@ def _logistics_filter_key(rows):
     return "in_transit" if has_transit else "none"
 
 
-def _card(order, workflow, token):
+def _fully_retired(order):
+    """A pickup in one container never completes the whole ORDER."""
+    workflows = (order or {}).get("workflows") or []
+    rows = (order or {}).get("logistics") or []
+    if not workflows or not rows or (order or {}).get("extra_pickup_only"):
+        return False
+    for workflow in workflows:
+        if not isinstance(workflow, dict) or _key(workflow.get("status") or workflow.get("current_status")) != "COMPLETED":
+            return False
+        shipping = derive_shipping_summary(workflow.get("timeline") or [])
+        if _key(shipping.get("last_shipping_status") or workflow.get("last_shipping_status")) == "PARTIAL_SHIPPED":
+            return False
+    return all(
+        isinstance(row, dict)
+        and str(row.get("container_no") or "").strip()
+        and _key(row.get("status")) == "ARRIVED_IQUIQUE"
+        and str(row.get("pickup_status") or "").strip().lower() == "picked_up"
+        for row in rows
+    )
+
+
+def _logistics_filter_keys(rows, retired=False):
+    keys = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        status = _key(row.get("status"))
+        pickup = str(row.get("pickup_status") or "").strip().lower()
+        if status == "IN_TRANSIT":
+            keys.add("in_transit")
+        elif status == "ARRIVED_IQUIQUE" and pickup != "picked_up":
+            keys.add("pending_pickup")
+    if retired:
+        keys.add("retired")
+    return sorted(keys)
+
+
+def _card(order, workflow, token, retired=None):
     wf_no = str((workflow or {}).get("workflow_number") or (workflow or {}).get("workflow_key") or "").strip()
     order_no = str(order.get("order_number") or "").strip()
     pickup_only = bool(order.get("extra_pickup_only"))
@@ -142,9 +179,16 @@ def _card(order, workflow, token):
     detail_key = wf_no or order_no
     shipping = workflow or order
     logistics_rows = [dict(x) for x in (order.get("logistics") or []) if isinstance(x, dict)]
+    retired = _fully_retired(order) if retired is None else retired
     card = {
         "workflow_number": wf_no, "order_number": order_no, "current_status": status,
         "status_zh": _label(status, "zh_cn"), "status_es": _label(status, "es"),
+        "display_status_key": "RETIRED" if retired else status,
+        "is_retired": retired,
+        "partial_pickup": not retired and any(
+            str(row.get("pickup_status") or "").strip().lower() == "picked_up"
+            for row in logistics_rows
+        ),
         "product_name": _pick(workflow, order, "product_name"),
         "production_type": _pick(workflow, order, "production_type"),
         "product_code": _pick(workflow, order, "product_code"),
@@ -157,13 +201,16 @@ def _card(order, workflow, token):
         "shipping_zh": shipping.get("shipping_zh") or "",
         "shipping_es": shipping.get("shipping_es") or "",
         "logistics": logistics_rows,
-        "logistics_filter": _logistics_filter_key(logistics_rows),
+        "logistics_filter": "retired" if retired else _logistics_filter_key(logistics_rows),
+        "logistics_filter_keys": _logistics_filter_keys(logistics_rows, retired),
         "extra_pickup_only": pickup_only,
         "images": _images(order, workflow, token),
         "detail_url": f"/share/{token}/order/{quote(detail_key, safe='')}",
     }
     if workflow:
         apply_shipping_summary(card, derive_shipping_summary(workflow.get("timeline") or []))
+    if retired:
+        card.update(status_zh="已取完", status_es="Retirado")
     return card
 
 
@@ -176,8 +223,9 @@ def _cards(space, token):
         if order_status and order_status != "ACTIVE":
             continue
         workflows = [w for w in (order.get("workflows") or []) if isinstance(w, dict)]
+        retired = _fully_retired(order)
         if workflows:
-            result.extend(_card(order, w, token) for w in workflows)
+            result.extend(_card(order, w, token, retired) for w in workflows)
         else:
             result.append(_card(order, None, token))
     return result
@@ -221,10 +269,15 @@ def _customer_context(space, share, token):
     customer = (space or {}).get("customer") or {}
     expires = _expiry(share)
     cards = _cards(space, token)
+    logistics_counts = {
+        key: sum(key == "all" or key in card["logistics_filter_keys"] for card in cards)
+        for key in ("all", "in_transit", "pending_pickup", "retired")
+    }
     return {
         "customer_name": str(customer.get("customer_name") or customer.get("customer_key") or ""),
         "token": token, "orders": cards,
         "has_logistics_filter": any(str(card.get("logistics_filter") or "none") != "none" for card in cards),
+        "logistics_counts": logistics_counts,
         "expires_at_epoch": expires,
         "is_permanent": not bool(expires), "allow_pdf_download": False, "pdf_count": 0,
         "show_pdf_pages": bool((share or {}).get("show_pdf_pages", True)),

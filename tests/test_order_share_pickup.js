@@ -1,0 +1,113 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const {JSDOM} = require(process.env.ORDER_TEST_JSDOM || 'jsdom');
+const fixtures = process.argv[2];
+assert.ok(fixtures, 'Pass fixtures rendered by test_order_share_pickup.write_frontend_fixtures');
+
+function page(name, state = {}) {
+    const html = fs.readFileSync(path.join(fixtures, name + '.html'), 'utf8');
+    const dom = new JSDOM(html, {url: 'https://share.example.test/share/test-token', runScripts: 'outside-only'});
+    const w = dom.window;
+    w.scrollTo = () => {};
+    w.requestAnimationFrame = fn => fn();
+    w.getTrackingLanguage = () => 'es';
+    for (const [key, value] of Object.entries(state)) w.sessionStorage.setItem(key, value);
+    const script = Array.from(w.document.querySelectorAll('script')).map(s => s.textContent).find(s => s.includes('const guestToken ='));
+    const start = script.indexOf('(function () {\n    const guestToken =');
+    const end = script.indexOf('\n})();', start);
+    assert.ok(start >= 0 && end > start);
+    w.eval(script.slice(start, end + '\n})();'.length));
+    const all = () => Array.from(w.document.querySelectorAll('[data-guest-card]'));
+    const visible = () => all().filter(c => !c.hidden);
+    const logisticsCount = key => w.document.querySelector(`[data-guest-logistics-count="${key}"]`).textContent;
+    const statusCount = key => w.document.querySelector(`[data-guest-status-filter="${key}"] small`).textContent;
+    const status = key => w.document.querySelector(`[data-guest-status-filter="${key}"]`).click();
+    const logistics = key => {
+        const radio = w.document.querySelector(`.guest-logistics-radio[value="${key}"]`);
+        radio.checked = true;
+        radio.dispatchEvent(new w.Event('change', {bubbles: true}));
+    };
+    return {w, all, visible, logisticsCount, statusCount, status, logistics};
+}
+
+const totals = page('all28');
+assert.equal(totals.all().length, 28);
+assert.equal(totals.statusCount('all'), '28');
+assert.equal(totals.logisticsCount('all'), '28');
+assert.equal(totals.logisticsCount('retired'), '28');
+assert.equal(totals.w.document.getElementById('guestVisibleCount').textContent, '28 pedidos');
+totals.w.close();
+
+const t = page('sample');
+assert.equal(t.statusCount('all'), '7');
+assert.equal(t.statusCount('unconfirmed'), '1');
+assert.equal(t.statusCount('confirmed'), '2');
+assert.equal(t.statusCount('done'), '3');
+assert.equal(t.statusCount('retired'), '1');
+assert.equal(t.logisticsCount('in_transit'), '2');
+assert.equal(t.logisticsCount('pending_pickup'), '1');
+assert.equal(t.logisticsCount('retired'), '1');
+assert.equal(t.all().filter(c => c.classList.contains('guest-card-retired')).length, 1);
+t.logistics('in_transit');
+assert.equal(t.visible().length, 2);
+assert.equal(t.statusCount('all'), '7');
+assert.equal(t.w.document.querySelector('[data-guest-status-filter="all"]').getAttribute('aria-pressed'), 'true');
+assert.equal(t.visible().filter(c => c.dataset.guestOrderKey === '1009001-1').length, 1);
+t.logistics('pending_pickup');
+assert.equal(t.visible().length, 1);
+assert.equal(t.visible()[0].dataset.guestOrderKey, '1009001-1');
+t.status('retired');
+assert.equal(t.visible().length, 1);
+assert.equal(t.visible()[0].dataset.guestOrderKey, '1009002-1');
+assert.equal(t.w.document.getElementById('guestLogisticsAll').checked, true);
+t.status('done');
+assert.equal(t.visible().length, 3);
+t.logistics('retired');
+assert.equal(t.visible().length, 1);
+assert.equal(t.w.document.querySelector('[data-guest-status-filter="all"]').getAttribute('aria-pressed'), 'true');
+t.logistics('all');
+assert.equal(t.visible().length, 7);
+assert.equal(t.all()[0].dataset.guestOrderKey, '1009005-1');
+t.w.document.querySelector('[data-guest-sort="shipping"]').click();
+assert.equal(t.all()[0].dataset.guestOrderKey, '1009004-2');
+t.w.getTrackingLanguage = () => 'zh_cn';
+t.w.document.dispatchEvent(new t.w.CustomEvent('tracking:languagechange'));
+assert.equal(t.w.document.getElementById('guestVisibleCount').textContent, '7 个订单');
+
+// Pickup updates rebuild counts and filter membership without reloading the page.
+const changed = t.all().find(c => c.dataset.guestOrderKey === '1009003-1');
+changed.dataset.guestStatusKey = 'RETIRED';
+changed.dataset.guestStatusZh = '已取完';
+changed.dataset.guestStatusEs = 'Retirado';
+changed.dataset.guestLogisticsKeys = 'retired';
+changed.dataset.guestRetired = '1';
+changed.classList.add('guest-card-retired');
+t.w.document.dispatchEvent(new t.w.CustomEvent('tracking:guestcardsupdated'));
+assert.equal(t.statusCount('all'), '7');
+assert.equal(t.statusCount('done'), '2');
+assert.equal(t.statusCount('retired'), '2');
+assert.equal(t.logisticsCount('retired'), '2');
+assert.equal(t.all()[0].dataset.guestOrderKey, '1009004-2');
+t.status('retired');
+assert.equal(t.visible().length, 2);
+changed.remove();
+t.w.document.dispatchEvent(new t.w.CustomEvent('tracking:guestcardsupdated'));
+assert.equal(t.statusCount('all'), '6');
+assert.equal(t.logisticsCount('all'), '6');
+assert.equal(t.visible().length, 1);
+t.w.close();
+
+const full = page('full');
+assert.equal(full.statusCount('RETIRED'), '1');
+full.status('RETIRED');
+assert.equal(full.visible().length, 1);
+assert.equal(full.visible()[0].dataset.guestRetired, '1');
+full.w.close();
+
+const restored = page('sample', {'trackingGuestStatus:test-token': 'retired', 'trackingGuestSort:test-token': 'shipping'});
+assert.equal(restored.visible().length, 1);
+assert.equal(restored.all()[0].dataset.guestOrderKey, '1009004-2');
+restored.w.close();
+console.log('ORDER pickup UI: counts, split batches, filter reset, sort, language, live refresh and restored state passed');

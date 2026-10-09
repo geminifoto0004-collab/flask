@@ -42,7 +42,7 @@
     }, false);
     </script>
 </head>
-<body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}">
+<body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}" data-guest-pickup-policy="all-batches-v1">
 <!--
 Inline filter icons share one sprite and never request a font or an external image.
 Tabler Icons: https://github.com/tabler/tabler-icons
@@ -157,19 +157,19 @@ SOFTWARE.
                 <span data-i18n="guest.status_all">Todos</span><small>{{ orders|length }}</small>
             </button>
         </div>
-        {% if has_logistics_filter %}
         <div class="guest-logistics-under-status" aria-label="Filtrar por logística">
             <div class="guest-status-filter-label" data-guest-zh="物流" data-guest-es="Logística">Logística</div>
             <div class="guest-logistics-row">
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsAll" value="all" checked>
-                <label class="guest-status-chip" for="guestLogisticsAll"><svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-layout-grid"/></svg><span data-guest-zh="全部" data-guest-es="Todos">Todos</span></label>
+                <label class="guest-status-chip" for="guestLogisticsAll"><svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-layout-grid"/></svg><span data-guest-zh="全部" data-guest-es="Todos">Todos</span><small data-guest-logistics-count="all">{{ orders|length }}</small></label>
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsTransit" value="in_transit">
-                <label class="guest-status-chip" for="guestLogisticsTransit"><svg class="guest-filter-icon guest-filter-icon--go" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-ship"/></svg><span data-guest-zh="運送中" data-guest-es="En camino">En camino</span></label>
+                <label class="guest-status-chip" for="guestLogisticsTransit"><svg class="guest-filter-icon guest-filter-icon--go" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-ship"/></svg><span data-guest-zh="運送中" data-guest-es="En camino">En camino</span><small data-guest-logistics-count="in_transit">{{ logistics_counts.get('in_transit', 0) if logistics_counts is defined else 0 }}</small></label>
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsPickup" value="pending_pickup">
-                <label class="guest-status-chip" for="guestLogisticsPickup"><svg class="guest-filter-icon guest-filter-icon--warn" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-package"/></svg><span data-guest-zh="待取貨" data-guest-es="Pendiente retiro">Pendiente retiro</span></label>
+                <label class="guest-status-chip" for="guestLogisticsPickup"><svg class="guest-filter-icon guest-filter-icon--warn" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-package"/></svg><span data-guest-zh="待取貨" data-guest-es="Pendiente retiro">Pendiente retiro</span><small data-guest-logistics-count="pending_pickup">{{ logistics_counts.get('pending_pickup', 0) if logistics_counts is defined else 0 }}</small></label>
+                <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsRetired" value="retired">
+                <label class="guest-status-chip" for="guestLogisticsRetired"><svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-checks"/></svg><span data-guest-zh="已取完" data-guest-es="Retirado">Retirado</span><small data-guest-logistics-count="retired">{{ logistics_counts.get('retired', 0) if logistics_counts is defined else 0 }}</small></label>
             </div>
         </div>
-        {% endif %}
     </div>
     {% endif %}
 
@@ -218,7 +218,7 @@ SOFTWARE.
     <main class="guest-grid" id="guestGrid">
         {% for order in orders %}
         {% set card_loop = loop %}
-        <a class="guest-card" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}" data-guest-logistics-key="{{ order.logistics_filter or 'none' }}">
+        <a class="guest-card{% if order.is_retired|default(false) %} guest-card-retired{% endif %}" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.display_status_key or order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}" data-guest-logistics-key="{{ order.logistics_filter or 'none' }}" data-guest-logistics-keys="{{ order.logistics_filter_keys|default([order.logistics_filter or 'none'])|join(' ') }}" data-guest-retired="{{ 1 if order.is_retired|default(false) else 0 }}">
             <div class="guest-cover">
                 {% if order.images %}
                     {# UI-only ordering: salesperson/workflow real images first, then supervisor/order images, PDF pages last. #}
@@ -255,6 +255,7 @@ SOFTWARE.
             </div>
             <div class="guest-card-body">
                 <span class="guest-card-status" data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</span>
+                {% if order.partial_pickup|default(false) %}<span class="guest-partial-pickup" data-guest-zh="部分已取貨" data-guest-es="Retiro parcial">Retiro parcial</span>{% endif %}
                 {{ guest_shared.shipping_badge(order) }}
                 {{ guest_shared.logistics_summary(order, true) }}
                 <div class="guest-card-number">{{ order.workflow_number or order.order_number }}</div>
@@ -338,7 +339,7 @@ document.addEventListener('error', function (event) {
     const sortRow = document.getElementById('guestSortRow');
     const grid = document.getElementById('guestGrid');
     const countNode = document.getElementById('guestVisibleCount');
-    const cards = Array.from(document.querySelectorAll('[data-guest-card]'));
+    let cards = Array.from(document.querySelectorAll('[data-guest-card]'));
     const filterMode = String(document.body.dataset.guestStatusFilterMode || 'simple').toLowerCase() === 'full' ? 'full' : 'simple';
     if (!row || !grid || !cards.length) return;
 
@@ -353,56 +354,69 @@ document.addEventListener('error', function (event) {
     const simpleGroups = [
         {key:'unconfirmed', zh:'未确认', es:'Sin confirmar', statuses:new Set(['QUOTE_CONFIRMING','DRAFT_CONFIRMING','SAMPLE_CONFIRMING'])},
         {key:'confirmed', zh:'已确认', es:'Confirmado', statuses:null},
-        {key:'done', zh:'已完成', es:'Completado', statuses:new Set(['COMPLETED','ALL_SHIPPED','SHIPPED'])}
+        {key:'done', zh:'已完成', es:'Completado', statuses:new Set(['COMPLETED','ALL_SHIPPED','SHIPPED'])},
+        {key:'retired', zh:'已取完', es:'Retirado', statuses:new Set(['RETIRED'])}
     ];
     function simpleKey(status) {
         status = String(status || '').trim().toUpperCase();
         if (simpleGroups[0].statuses.has(status)) return 'unconfirmed';
+        if (simpleGroups[3].statuses.has(status)) return 'retired';
         if (simpleGroups[2].statuses.has(status)) return 'done';
         return 'confirmed';
     }
-    cards.forEach(function (card) {
-        const key = String(card.dataset.guestStatusKey || '__order__');
-        card.dataset.guestStatusGroup = simpleKey(key);
-        const zh = String(card.dataset.guestStatusZh || '订单');
-        const es = String(card.dataset.guestStatusEs || 'Pedido');
-        const item = exactCounts.get(key) || {key:key, zh:zh, es:es, count:0};
-        item.count += 1;
-        exactCounts.set(key, item);
-    });
+    function rebuildFilters() {
+        cards = Array.from(document.querySelectorAll('[data-guest-card]'));
+        exactCounts.clear();
+        row.querySelectorAll('[data-guest-status-filter]:not([data-guest-status-filter="all"])').forEach(function (button) { button.remove(); });
+        const allCount = row.querySelector('[data-guest-status-filter="all"] small');
+        if (allCount) allCount.textContent = String(cards.length);
+        cards.forEach(function (card) {
+            const key = String(card.dataset.guestStatusKey || '__order__');
+            card.dataset.guestStatusGroup = simpleKey(key);
+            const zh = String(card.dataset.guestStatusZh || '订单');
+            const es = String(card.dataset.guestStatusEs || 'Pedido');
+            const item = exactCounts.get(key) || {key:key, zh:zh, es:es, count:0};
+            item.count += 1;
+            exactCounts.set(key, item);
+        });
 
-    const filterItems = filterMode === 'full' ? Array.from(exactCounts.values()) : simpleGroups.map(function (group) {
-        return {...group, count:cards.filter(function (card) { return card.dataset.guestStatusGroup === group.key; }).length};
-    });
-    const statusIcons = {
-        unconfirmed: {name:'hourglass-empty', tone:'warn'},
-        confirmed: {name:'circle-check', tone:'go'},
-        done: {name:'checks', tone:'ok'}
-    };
-    filterItems.forEach(function (item) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'guest-status-chip';
-        btn.dataset.guestStatusFilter = item.key;
-        btn.setAttribute('aria-pressed', 'false');
-        const iconInfo = statusIcons[filterMode === 'full' ? simpleKey(item.key) : item.key];
-        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        icon.setAttribute('class', 'guest-filter-icon guest-filter-icon--' + iconInfo.tone);
-        icon.setAttribute('viewBox', '0 0 24 24');
-        icon.setAttribute('aria-hidden', 'true');
-        icon.setAttribute('focusable', 'false');
-        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-        use.setAttribute('href', '#guest-filter-icon-' + iconInfo.name);
-        icon.appendChild(use);
-        const label = document.createElement('span');
-        label.dataset.guestZh = item.zh;
-        label.dataset.guestEs = item.es;
-        label.textContent = currentLang() === 'zh_cn' ? item.zh : item.es;
-        const count = document.createElement('small');
-        count.textContent = String(item.count);
-        btn.append(icon, label, count);
-        row.appendChild(btn);
-    });
+        const filterItems = filterMode === 'full' ? Array.from(exactCounts.values()) : simpleGroups.map(function (group) {
+            return {...group, count:cards.filter(function (card) { return card.dataset.guestStatusGroup === group.key; }).length};
+        });
+        const statusIcons = {
+            unconfirmed: {name:'hourglass-empty', tone:'warn'},
+            confirmed: {name:'circle-check', tone:'go'},
+            done: {name:'checks', tone:'ok'},
+            retired: {name:'checks', tone:'muted'}
+        };
+        filterItems.forEach(function (item) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'guest-status-chip';
+            btn.dataset.guestStatusFilter = item.key;
+            btn.setAttribute('aria-pressed', 'false');
+            const iconInfo = statusIcons[filterMode === 'full' ? simpleKey(item.key) : item.key];
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('class', 'guest-filter-icon guest-filter-icon--' + iconInfo.tone);
+            icon.setAttribute('viewBox', '0 0 24 24');
+            icon.setAttribute('aria-hidden', 'true');
+            icon.setAttribute('focusable', 'false');
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            use.setAttribute('href', '#guest-filter-icon-' + iconInfo.name);
+            icon.appendChild(use);
+            const label = document.createElement('span');
+            label.dataset.guestZh = item.zh;
+            label.dataset.guestEs = item.es;
+            label.textContent = currentLang() === 'zh_cn' ? item.zh : item.es;
+            const count = document.createElement('small');
+            count.textContent = String(item.count);
+            btn.append(icon, label, count);
+            row.appendChild(btn);
+        });
+        availableKeys = new Set(filterItems.map(function (item) { return item.key; }));
+        if (selected !== 'all' && !availableKeys.has(selected)) selected = 'all';
+        updateLogisticsCounts();
+    }
 
     const storageKey = 'trackingGuestStatus:' + guestToken;
     const sortStorageKey = 'trackingGuestSort:' + guestToken;
@@ -412,9 +426,20 @@ document.addEventListener('error', function (event) {
         selected = sessionStorage.getItem(storageKey) || 'all';
         selectedSort = sessionStorage.getItem(sortStorageKey) || 'order';
     } catch (_) {}
-    const availableKeys = new Set(filterItems.map(function (item) { return item.key; }));
-    if (selected !== 'all' && !availableKeys.has(selected)) selected = 'all';
+    let availableKeys = new Set();
     if (!['order','shipping'].includes(selectedSort)) selectedSort = 'order';
+
+    function matchesLogistics(card, key) {
+        const keys = String(card.dataset.guestLogisticsKeys || card.dataset.guestLogisticsKey || 'none').split(/\s+/);
+        return key === 'all' || keys.includes(key);
+    }
+    function updateLogisticsCounts() {
+        document.querySelectorAll('[data-guest-logistics-count]').forEach(function (node) {
+            node.textContent = String(cards.filter(function (card) {
+                return matchesLogistics(card, node.dataset.guestLogisticsCount);
+            }).length);
+        });
+    }
 
     function compareOrder(a, b) {
         const av = String(a.dataset.guestSortOrder || a.dataset.guestOrderKey || '');
@@ -482,7 +507,7 @@ document.addEventListener('error', function (event) {
         cards.forEach(function (card) {
             const cardKey = filterMode === 'full' ? String(card.dataset.guestStatusKey || '') : String(card.dataset.guestStatusGroup || 'confirmed');
             const show = (key === 'all' || cardKey === key)
-                && (logisticsKey === 'all' || card.dataset.guestLogisticsKey === logisticsKey);
+                && matchesLogistics(card, logisticsKey);
             card.hidden = !show;
             if (show) {
                 visible += 1;
@@ -532,6 +557,12 @@ document.addEventListener('error', function (event) {
         apply(row.querySelector('.guest-status-chip.active')?.dataset.guestStatusFilter || selected);
     });
 
+    document.addEventListener('tracking:guestcardsupdated', function () {
+        rebuildFilters();
+        sortCards(selectedSort);
+        apply(selected);
+    });
+    rebuildFilters();
     sortCards(selectedSort);
     apply(selected);
 })();
@@ -555,6 +586,8 @@ document.addEventListener('error', function (event) {
             cardParts.push([
                 card.dataset.guestOrderKey || '',
                 card.dataset.guestStatusKey || '',
+                card.dataset.guestLogisticsKeys || card.dataset.guestLogisticsKey || '',
+                card.dataset.guestRetired || '0',
                 carousel ? carousel.dataset.imageCount || '0' : '0',
                 String(card.textContent || '').replace(/\s+/g, ' ').trim()
             ].join(':'));
