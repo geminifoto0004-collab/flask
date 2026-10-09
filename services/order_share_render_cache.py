@@ -38,6 +38,7 @@ _DIRECT_COVER_LIMIT = 12
 _DIRECT_SIGN_SECONDS = 600
 
 _HTML = {}
+_HTML_CUSTOMERS = {}
 _HTML_CHECKED_AT = {}
 _TOKEN_HTML = {}
 _PERSISTED_RECHECK_SECONDS = 3.0
@@ -152,6 +153,7 @@ def _memory_put(share, html):
         return ""
     with _LOCK:
         _HTML[key] = html
+        _HTML_CUSTOMERS[key] = str((share or {}).get("customer_key") or "").strip()
         _HTML_CHECKED_AT[key] = time.monotonic()
     return key
 
@@ -206,7 +208,7 @@ def _load_all_persisted():
     cur = get_cursor(conn)
     try:
         cur.execute(
-            f"SELECT cache_key, html FROM {_TABLE} WHERE template_hash=?",
+            f"SELECT cache_key, customer_key, html FROM {_TABLE} WHERE template_hash=?",
             (_TEMPLATE_HASH,),
         )
         rows = [get_row_dict(row, cur) for row in cur.fetchall()]
@@ -219,6 +221,7 @@ def _load_all_persisted():
             html = (row or {}).get("html")
             if key and isinstance(html, str) and html:
                 _HTML[key] = html
+                _HTML_CUSTOMERS[key] = str((row or {}).get("customer_key") or "").strip()
                 _HTML_CHECKED_AT[key] = time.monotonic()
                 loaded += 1
     return loaded
@@ -246,6 +249,7 @@ def _load_one_persisted(share):
         if isinstance(html, str) and html:
             with _LOCK:
                 _HTML[key] = html
+                _HTML_CUSTOMERS[key] = str((share or {}).get("customer_key") or "").strip()
                 _HTML_CHECKED_AT[key] = time.monotonic()
             return html
     except Exception as exc:
@@ -467,20 +471,26 @@ def _drop_customer(customer_key):
     if not customer_key:
         return
     with _LOCK:
+        variants = {
+            key for key, customer in _HTML_CUSTOMERS.items()
+            if customer == customer_key
+        }
         stale = [
             key
             for key, item in list(_TOKEN_HTML.items())
             if str((item or {}).get("customer_key") or "").strip() == customer_key
         ]
         for key in stale:
-            _TOKEN_HTML.pop(key, None)
-        # Variant keys are hashes, so remove the customer's current variants by
-        # recomputing keys from active share metadata.
-        for share in _active_shares():
-            if str(share.get("customer_key") or "").strip() == customer_key:
-                key = _variant_key(share)
-                _HTML.pop(key, None)
-                _HTML_CHECKED_AT.pop(key, None)
+            item = _TOKEN_HTML.pop(key, None) or {}
+            if item.get("variant_key"):
+                variants.add(item["variant_key"])
+        # The customer index covers every HTML variant, including persisted variants
+        # that have not been visited. Never perform a TiDB scan while visitors need
+        # this same lock to read their already-hot HTML.
+        for key in variants:
+            _HTML.pop(key, None)
+            _HTML_CUSTOMERS.pop(key, None)
+            _HTML_CHECKED_AT.pop(key, None)
 
 
 def invalidate_customer_html_cache(customer_key):

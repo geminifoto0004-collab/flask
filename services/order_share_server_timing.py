@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
+import hashlib
 
 from flask import g, has_request_context, request
 
@@ -142,6 +143,20 @@ def _add_order_share_server_timing(response):
     response.headers["X-Order-Sweep-Active"] = "1" if active else "0"
     response.headers["X-Order-Sweep-Last-MS"] = f"{sweep_ms:.1f}"
     response.headers["X-Order-Sweep-Age-MS"] = f"{sweep_age_ms:.1f}"
+    parts = (request.path or "").strip("/").split("/")
+    if request.method == "GET" and len(parts) == 2 and parts[0] == "share":
+        # Logs remain useful when the diagnostic client cannot reach Render. Never
+        # log raw share tokens, customer names, storage URLs or image credentials.
+        share_id = hashlib.sha256(parts[1].encode("utf-8")).hexdigest()[:12]
+        print(
+            f"[ORDER-PERF] share_id={share_id} status={response.status_code} "
+            f"app_ms={app_ms:.1f} load_ms={load_ms:.1f} "
+            f"filter_ms={filter_ms:.1f} render_ms={render_ms:.1f} "
+            f"cover_ms={cover_inject_ms:.1f} "
+            f"cache={response.headers.get('X-Order-Cache', 'unknown')} "
+            f"load_path={load_path}",
+            flush=True,
+        )
     return response
 
 
