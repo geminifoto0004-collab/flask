@@ -6,6 +6,8 @@ Existing links default salesperson images to visible.
 """
 from __future__ import annotations
 
+from services.order_share_links import share_token_hash
+
 import copy
 import hashlib
 import threading
@@ -86,7 +88,7 @@ def _mode(value):
 
 def _settings(token):
     token = str(token or '').strip()
-    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    token_hash = share_token_hash(token)
     now = time.monotonic()
     with _LOCK:
         item = _CACHE.get(token_hash)
@@ -121,7 +123,7 @@ def _settings(token):
 
 def _drop_caches(token):
     token = str(token or '').strip()
-    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    token_hash = share_token_hash(token)
     with _LOCK:
         _CACHE.pop(token_hash, None)
     try:
@@ -247,7 +249,7 @@ def _update_share_settings():
         token = str(payload.get('token') or '').strip()
         if not token:
             return jsonify({'ok': False, 'error': 'token is required'}), 400
-        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+        token_hash = share_token_hash(token)
         scope = _scope(payload.get('history_scope'))
         mode = _mode(payload.get('status_filter_mode'))
         show_pdf = _bool_default(payload.get('show_pdf_pages'), True)

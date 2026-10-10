@@ -6,6 +6,8 @@ and never performs B2 HEAD/GET/resize/PUT work while a customer is swiping.
 """
 from __future__ import annotations
 
+from services.order_share_links import share_token_hash
+
 import hashlib
 import queue
 import re
@@ -440,7 +442,7 @@ def _asset_from_bundle(bundle, asset_key):
 
 
 def _authorized_asset_from_tidb(token, asset_key):
-    token_hash = hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+    token_hash = share_token_hash(token)
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute(

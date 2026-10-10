@@ -7,6 +7,8 @@ Adds three control-plane behaviours without putting B2/image work on the custome
 """
 from __future__ import annotations
 
+from services.order_share_links import share_token_hash, share_link_token
+
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import hashlib
@@ -120,7 +122,7 @@ def _record_access(token):
     token = str(token or "").strip()
     if not token:
         return
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    token_hash = share_token_hash(token)
     try:
         _ensure_columns()
         conn = get_db_connection()
@@ -240,7 +242,7 @@ def _drop_share_hash_caches(token_hash):
         with fast._cache_lock:
             stale = [
                 raw_token for raw_token in list(fast._share_cache.keys())
-                if hashlib.sha256(str(raw_token or "").encode("utf-8")).hexdigest() == token_hash
+                if share_token_hash(raw_token) == token_hash
             ]
             for raw_token in stale:
                 fast._share_cache.pop(raw_token, None)
@@ -253,7 +255,7 @@ def _drop_share_hash_caches(token_hash):
             hot._HASH_TOKEN_CACHE.pop(token_hash, None)
             stale = [
                 raw_token for raw_token in list(page._token_cache.keys())
-                if hashlib.sha256(str(raw_token or "").encode("utf-8")).hexdigest() == token_hash
+                if share_token_hash(raw_token) == token_hash
             ]
             for raw_token in stale:
                 page._token_cache.pop(raw_token, None)
@@ -537,7 +539,7 @@ def _cloud_share_admin_page():
     )
 
 
-def _cloud_admin_share_rows():
+def _cloud_admin_share_rows(active_only=False):
     _ensure_columns()
     conn = get_db_connection()
     cur = get_cursor(conn)
@@ -552,7 +554,9 @@ def _cloud_admin_share_rows():
                       s.access_count, s.last_accessed_at
                FROM cloud_share_tokens s
                LEFT JOIN cloud_customers c ON c.customer_key=s.customer_key
-               ORDER BY s.created_at DESC"""
+               WHERE (?=FALSE OR (s.status='active' AND (s.expires_at IS NULL OR s.expires_at>UTC_TIMESTAMP())))
+               ORDER BY s.created_at DESC""",
+            (bool(active_only),),
         )
         result = []
         now = int(time.time())
@@ -567,6 +571,7 @@ def _cloud_admin_share_rows():
             )
             result.append({
                 "id": str(item.get("token_hash") or ""),
+                "share_url": request.host_url.rstrip("/") + "/share/" + share_link_token(str(item.get("token_hash") or "")) if active_only else None,
                 "customer_key": str(item.get("customer_key") or ""),
                 "customer_name": str(item.get("customer_name") or item.get("customer_key") or ""),
                 "mode": str(item.get("mode") or "LIVE"),
@@ -598,7 +603,7 @@ def _cloud_share_admin_list():
     if not _cloud_admin_allowed():
         return jsonify({"ok": False, "error": "admin login required"}), 403
     try:
-        return jsonify({"ok": True, "shares": _cloud_admin_share_rows()})
+        return jsonify({"ok": True, "shares": _cloud_admin_share_rows(active_only=request.args.get("status") == "active")})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -773,7 +778,7 @@ def _create_scoped_share_guarded():
             share_url = str(result.get("share_url") or "").strip()
             raw_token = share_url.rstrip("/").split("/")[-1] if share_url else ""
             if raw_token:
-                token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+                token_hash = share_token_hash(raw_token)
         if token_hash:
             settings = {
                 key: payload.get(key)
@@ -808,7 +813,7 @@ def _update_share_settings_with_expiry():
     token = str(payload.get("token") or "").strip()
     if not token:
         return jsonify({"ok": False, "error": "token is required"}), 400
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    token_hash = share_token_hash(token)
     try:
         detail = _apply_share_settings(token_hash, payload)
         data = response.get_json(silent=True) or {"ok": True}

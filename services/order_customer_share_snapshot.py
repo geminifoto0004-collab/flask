@@ -10,6 +10,8 @@ data, or the raw share token.
 """
 from __future__ import annotations
 
+from services.order_share_links import share_token_hash
+
 import copy
 import hashlib
 import json
@@ -281,7 +283,7 @@ def _snapshot_load_page_data(token):
             bundle["cache_state"] = "HIT"
             return share, bundle, None
 
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    token_hash = share_token_hash(token)
     try:
         conn = get_db_connection()
         cur = get_cursor(conn)

@@ -9,6 +9,8 @@ Cold-path goals:
 """
 from __future__ import annotations
 
+from services.order_share_links import share_token_hash
+
 from datetime import datetime
 import copy
 import hashlib
@@ -216,7 +218,7 @@ def _legacy_bundle(customer_key, assets):
 
 def _single_roundtrip_rows(token):
     """Return share header, ORDER payloads and asset metadata in ONE TiDB execute()."""
-    token_hash = hashlib.sha256(str(token or '').encode('utf-8')).hexdigest()
+    token_hash = share_token_hash(token)
     sql = """
         SELECT
             'H' AS row_kind,

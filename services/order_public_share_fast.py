@@ -7,6 +7,7 @@ and repeated TiDB token/asset lookups.
 from datetime import datetime
 from io import BytesIO
 import hashlib
+from services.order_share_links import share_token_hash
 import threading
 import time
 
@@ -138,7 +139,7 @@ def _resolve_share(token):
         return dict(share) if share else None, state
 
     _ensure_share_columns()
-    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    token_hash = share_token_hash(token)
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute("""SELECT token_hash, customer_key, mode, status, source_site, created_at,
@@ -394,7 +395,7 @@ def _update_share_settings():
     token = str(payload.get('token') or '').strip()
     if not token:
         return jsonify({'ok': False, 'error': 'token is required'}), 400
-    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    token_hash = share_token_hash(token)
     scope = _scope(payload.get('history_scope'))
     status_filter_mode = _status_filter_mode(payload.get('status_filter_mode'))
     conn = get_db_connection(); cur = get_cursor(conn)

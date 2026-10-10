@@ -7,6 +7,8 @@ shim for older guest_customer.html revisions that still call location.reload().
 """
 from __future__ import annotations
 
+from services.order_share_links import share_token_hash
+
 import copy
 import hashlib
 import threading
@@ -101,7 +103,7 @@ def _drop_caches(token, token_hash):
 
 def _settings(token):
     token = str(token or '').strip()
-    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    token_hash = share_token_hash(token)
     now = time.monotonic()
     with _LOCK:
         cached = _SETTINGS.get(token_hash)
@@ -232,7 +234,7 @@ def _update_share_settings():
         payload = request.get_json(silent=True) or {}
         token = str(payload.get('token') or '').strip()
         if not token: return jsonify({'ok':False, 'error':'token is required'}), 400
-        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+        token_hash = share_token_hash(token)
         scope = _scope(payload.get('history_scope')); mode = _mode(payload.get('status_filter_mode'))
         show_pdf, allow_report, show_images = _flags(payload)
         conn = get_db_connection(); cur = get_cursor(conn)

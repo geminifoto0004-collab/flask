@@ -14,6 +14,8 @@ Important invariants:
 """
 from __future__ import annotations
 
+from services.order_share_links import share_token_hash
+
 import copy
 import hashlib
 import threading
@@ -55,7 +57,7 @@ _ORIGINAL_REVOKE = getattr(_cloud_service, "revoke_live_share", None)
 
 
 def _token_hash(raw_token):
-    return hashlib.sha256(str(raw_token or "").encode("utf-8")).hexdigest()
+    return share_token_hash(raw_token)
 
 
 def _share_variant(share):

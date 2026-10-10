@@ -26,7 +26,9 @@ def load_functions(path, names, scope):
 
 
 def cache_scope():
-    scope = dict(hashlib=hashlib, time=time, _LOCK=threading.RLock(),
+    from test_order_share_links import links
+    share_token_hash = links.share_token_hash
+    scope = dict(hashlib=hashlib, share_token_hash=share_token_hash, time=time, _LOCK=threading.RLock(),
                  _HTML={}, _HTML_CUSTOMERS={}, _HTML_CHECKED_AT={}, _TOKEN_HTML={},
                  _TEMPLATE_HASH='test-template', _TABLE='existing_html_cache',
                  _ensure_table=lambda: None, _ORIGINAL_CACHE_SPACE=lambda *args: None,

@@ -10,6 +10,7 @@ Design rules:
 from datetime import datetime, timedelta
 import json
 import hashlib
+from services.order_share_links import share_token_hash
 import secrets
 
 from database import (
@@ -732,7 +733,7 @@ def resolve_live_share(raw_token):
     raw_token = str(raw_token or "").strip()
     if not raw_token:
         return None, "not_found"
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    token_hash = share_token_hash(raw_token)
     conn = get_db_connection()
     cur = get_cursor(conn)
     try:
@@ -768,7 +769,7 @@ def revoke_live_share(raw_token):
     raw_token = str(raw_token or "").strip()
     if not raw_token:
         return False
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    token_hash = share_token_hash(raw_token)
     conn = get_db_connection()
     cur = get_cursor(conn)
     try:

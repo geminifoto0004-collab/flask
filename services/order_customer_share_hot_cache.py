@@ -11,6 +11,8 @@ other private fields are cached here.
 """
 from __future__ import annotations
 
+from services.order_share_links import share_token_hash
+
 import copy
 import hashlib
 import time
@@ -40,7 +42,7 @@ _FIRST_REQUEST_INIT_BYPASS_DONE = False
 
 
 def _token_hash(raw_token):
-    return hashlib.sha256(str(raw_token or "").encode("utf-8")).hexdigest()
+    return share_token_hash(raw_token)
 
 
 def _share_from_row(row):
