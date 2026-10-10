@@ -118,11 +118,11 @@ def _drop_token_caches(token):
         pass
 
 
-def _record_access(token):
+def _record_access(token, resolved_hash=None):
     token = str(token or "").strip()
     if not token:
         return
-    token_hash = share_token_hash(token)
+    token_hash = resolved_hash or share_token_hash(token)
     try:
         _ensure_columns()
         conn = get_db_connection()
@@ -163,7 +163,7 @@ def _count_successful_public_share_open(response):
             and response.status_code == 200
             and "text/html" in content_type
         ):
-            _ACCESS_EXECUTOR.submit(_record_access, parts[1])
+            _ACCESS_EXECUTOR.submit(_record_access, parts[1], share_token_hash(parts[1]))
     except Exception as exc:
         print(f"[WARN] ORDER share access scheduling skipped: {type(exc).__name__}: {exc}")
     return response

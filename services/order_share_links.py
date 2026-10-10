@@ -9,20 +9,46 @@ import base64
 import hashlib
 import hmac
 import re
+import secrets
+import threading
 
-from flask import current_app, has_app_context
 
+_KEY = None
+_KEY_LOCK = threading.Lock()
 _PREFIX = 'm1_'
 _FORMAT = re.compile(r'm1_([0-9a-f]{64})_([A-Za-z0-9_-]{43})\Z')
 
 
+def _signing_key():
+    global _KEY
+    if _KEY is not None:
+        return _KEY
+    with _KEY_LOCK:
+        if _KEY is not None:
+            return _KEY
+        from database import get_db_connection, get_cursor, get_row_dict
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            cur.execute("CREATE TABLE IF NOT EXISTS cloud_share_link_keys (key_id INTEGER PRIMARY KEY, signing_key VARCHAR(64) NOT NULL)")
+            cur.execute("INSERT IGNORE INTO cloud_share_link_keys (key_id, signing_key) VALUES (1, ?)", (secrets.token_hex(32),))
+            conn.commit()
+            cur.execute("SELECT signing_key FROM cloud_share_link_keys WHERE key_id=1")
+            row = get_row_dict(cur.fetchone(), cur) or {}
+            value = str(row.get('signing_key') or '')
+            if not re.fullmatch(r'[0-9a-f]{64}', value):
+                raise RuntimeError('Share link signing key is unavailable')
+            _KEY = bytes.fromhex(value)
+            return _KEY
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
 def _signature(token_hash):
-    secret = current_app.secret_key
-    if not secret or secret == 'dev-secret-key-change-in-production':
-        raise RuntimeError('Configured SECRET_KEY is required for share links')
-    if isinstance(secret, str):
-        secret = secret.encode('utf-8')
-    digest = hmac.new(secret, ('order-share-directory:v1:' + token_hash).encode('ascii'), hashlib.sha256).digest()
+    digest = hmac.new(_signing_key(), ('order-share-directory:v1:' + token_hash).encode('ascii'), hashlib.sha256).digest()
     return base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
 
 
@@ -35,7 +61,7 @@ def share_link_token(token_hash):
 
 def share_token_hash(token):
     token = str(token or '')
-    if token.startswith(_PREFIX) and has_app_context():
+    if token.startswith(_PREFIX):
         match = _FORMAT.fullmatch(token)
         if match:
             try:

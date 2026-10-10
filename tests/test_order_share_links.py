@@ -15,7 +15,7 @@ spec.loader.exec_module(links)
 
 class DirectoryLinkTests(unittest.TestCase):
     def setUp(self):
-        self.app=Flask(__name__);self.app.secret_key='test-only-random-stable-key'
+        self.app=Flask(__name__);links._KEY=b'test-only-stable-signing-key'
         self.raw='existing-public-token';self.hash=hashlib.sha256(self.raw.encode()).hexdigest()
 
     def test_same_share_legacy_and_signed_tampering_and_key_change(self):
@@ -26,14 +26,15 @@ class DirectoryLinkTests(unittest.TestCase):
             self.assertEqual(links.share_link_token(self.hash),token)
             self.assertNotEqual(links.share_token_hash(token[:-1]+('A' if token[-1]!='A' else 'B')),self.hash)
             self.assertNotEqual(links.share_token_hash(token.replace(self.hash,'b'*64)), 'b'*64)
-            self.app.secret_key='different-key'
+            links._KEY=b'different-key'
             self.assertNotEqual(links.share_token_hash(token),self.hash)
 
-    def test_no_insecure_default_signing(self):
+    def test_signing_independent_of_default_flask_key_and_request_context(self):
+        self.app.secret_key='dev-secret-key-change-in-production'
+        token=links.share_link_token(self.hash)
+        self.assertEqual(links.share_token_hash(token),self.hash)
         with self.app.app_context():
-            for key in [None,'dev-secret-key-change-in-production']:
-                self.app.secret_key=key
-                with self.assertRaises(RuntimeError):links.share_link_token(self.hash)
+            self.assertEqual(links.share_token_hash(token),self.hash)
 
     def test_signed_token_resolver_uses_existing_visibility_expiry_and_revocation(self):
         conn=sqlite3.connect(':memory:');conn.row_factory=sqlite3.Row
