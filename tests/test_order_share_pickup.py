@@ -152,13 +152,40 @@ class PickupCardsTests(unittest.TestCase):
         orders = [order(number=str(1008000+i), workflows=2 if i < 4 else 1) for i in range(24)]
         context = self.scope['_customer_context']({'orders': orders}, {}, 'token')
         self.assertEqual(len(context['orders']), 28)
-        self.assertEqual(context['logistics_counts']['all'], 28)
+        self.assertEqual(context['normal_card_count'], 28)
+        self.assertEqual(context['logistics_counts']['all'], 0)
         self.assertEqual(set(context['logistics_counts']), {'all', 'in_transit', 'pending_pickup'})
         self.assertEqual(sum(card['is_retired'] for card in context['orders']), 28)
 
     def test_batch_count_does_not_inflate_workflow_count(self):
         context = self.scope['_customer_context']({'orders': [order(rows=[batch(pickup='pending_pickup')]*3)]}, {}, 'token')
         self.assertEqual(context['logistics_counts']['pending_pickup'], 1)
+
+    def test_51_normal_workflows_and_extra_pickup_have_independent_totals(self):
+        orders = [order(number=str(1008100+i), rows=[batch('', '', 'IN_TRANSIT')] if i < 13 else []) for i in range(51)]
+        extra = order(number='1007000', rows=[batch(pickup='pending_pickup')], workflows=0)
+        extra['extra_pickup_only'] = True
+        orders.append(extra)
+        context = self.scope['_customer_context']({'orders': orders}, {}, 'token')
+        self.assertEqual(len(context['orders']), 52)
+        self.assertEqual(context['normal_card_count'], 51)
+        self.assertEqual(context['extra_pickup_count'], 1)
+        self.assertEqual(context['logistics_counts'], {'all': 14, 'in_transit': 13, 'pending_pickup': 1})
+
+    def test_logistics_union_deduplicates_mixed_batches_and_repeated_workflows(self):
+        value = order(rows=[batch(pickup='pending_pickup'), batch('TGHU7654321', '', 'IN_TRANSIT')], workflows=2)
+        context = self.scope['_customer_context']({'orders': [value, copy.deepcopy(value)]}, {}, 'token')
+        self.assertEqual(context['normal_card_count'], 2)
+        self.assertEqual(context['logistics_counts'], {'all': 2, 'in_transit': 2, 'pending_pickup': 2})
+
+    def test_visible_order_replaces_stale_pickup_only_copy(self):
+        value = order(rows=[batch(pickup='pending_pickup')])
+        extra = copy.deepcopy(value)
+        extra.update(workflows=[], extra_pickup_only=True)
+        for orders in ([value, extra], [extra, value]):
+            context = self.scope['_customer_context']({'orders': orders}, {}, 'token')
+            self.assertEqual(len(context['orders']), 1)
+            self.assertEqual(context['extra_pickup_count'], 0)
 
     def test_template_keeps_retired_card_clickable_and_images_available(self):
         value = order()
@@ -213,6 +240,10 @@ def write_frontend_fixtures(destination):
         ('all28', [order(number=str(1008000+i), workflows=2 if i < 4 else 1) for i in range(24)], 'simple'),
     ]:
         (destination / f'{name}.html').write_text(render_orders(orders, mode), 'utf-8')
+    normals = [order(number=str(1008100+i), rows=[batch('', '', 'IN_TRANSIT')] if i < 13 else []) for i in range(51)]
+    extra = order(number='1007000', rows=[batch(pickup='pending_pickup')], workflows=0)
+    extra['extra_pickup_only'] = True
+    (destination / '51-plus-pickup.html').write_text(render_orders(normals + [extra]), 'utf-8')
 
 
 class RetentionTests(unittest.TestCase):

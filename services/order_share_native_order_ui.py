@@ -213,7 +213,7 @@ def _card(order, workflow, token, retired=None):
 
 
 def _cards(space, token):
-    result = []
+    result = {}
     for order in (space or {}).get("orders") or []:
         if not isinstance(order, dict):
             continue
@@ -222,11 +222,17 @@ def _cards(space, token):
             continue
         workflows = [w for w in (order.get("workflows") or []) if isinstance(w, dict)]
         retired = _fully_retired(order)
-        if workflows:
-            result.extend(_card(order, w, token, retired) for w in workflows)
-        else:
-            result.append(_card(order, None, token))
-    return result
+        for workflow in workflows or [None]:
+            card = _card(order, workflow, token, retired)
+            number = card["workflow_number"] or card["order_number"]
+            if not number:
+                continue
+            key = ("workflow" if card["workflow_number"] else "order", number)
+            previous = result.get(key)
+            if previous is None or (previous["extra_pickup_only"] and not card["extra_pickup_only"]):
+                result[key] = card
+    normal_orders = {card["order_number"] for card in result.values() if not card["extra_pickup_only"]}
+    return [card for card in result.values() if not card["extra_pickup_only"] or card["order_number"] not in normal_orders]
 
 
 def _expiry(share):
@@ -269,12 +275,14 @@ def _customer_context(space, share, token):
     expires = _expiry(share)
     cards = _cards(space, token)
     logistics_counts = {
-        key: sum(key == "all" or key in card["logistics_filter_keys"] for card in cards)
+        key: sum(bool(card["logistics_filter_keys"]) if key == "all" else key in card["logistics_filter_keys"] for card in cards)
         for key in ("all", "in_transit", "pending_pickup")
     }
     return {
         "customer_name": str(customer.get("customer_name") or customer.get("customer_key") or ""),
         "token": token, "orders": cards,
+        "normal_card_count": sum(not card["extra_pickup_only"] for card in cards),
+        "extra_pickup_count": sum(card["extra_pickup_only"] for card in cards),
         "has_logistics_filter": any(str(card.get("logistics_filter") or "none") != "none" for card in cards),
         "logistics_counts": logistics_counts,
         "expires_at_epoch": expires,

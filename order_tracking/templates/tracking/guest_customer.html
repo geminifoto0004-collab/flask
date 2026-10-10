@@ -145,23 +145,29 @@ SOFTWARE.
 
     <div class="guest-count">
         <h2 data-i18n="guest.orders_heading">Pedidos</h2>
-        <span id="guestVisibleCount" data-guest-zh="{{ orders|length }} 个订单" data-guest-es="{{ orders|length }} pedido{% if orders|length != 1 %}s{% endif %}">{{ orders|length }} pedido{% if orders|length != 1 %}s{% endif %}</span>
+        {% set normal_count = normal_card_count|default(orders|length) %}
+        <span id="guestVisibleCount" data-guest-zh="{{ normal_count }} 个订单" data-guest-es="{{ normal_count }} pedido{% if normal_count != 1 %}s{% endif %}">{{ normal_count }} pedido{% if normal_count != 1 %}s{% endif %}</span>
     </div>
 
     {% if orders %}
+    <div class="guest-order-search">
+        <svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4 4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <input id="guestOrderSearch" type="search" placeholder="Buscar pedido…" aria-label="Buscar número de pedido" autocomplete="off" maxlength="80">
+        <button id="guestOrderSearchClear" type="button" aria-label="Borrar búsqueda" hidden>×</button>
+    </div>
     <div class="guest-status-filter" id="guestStatusFilter" aria-label="Filtrar pedidos por estado">
         <div class="guest-status-filter-label" data-i18n="guest.status_filter_label">Estado</div>
         <div class="guest-status-filter-row" id="guestStatusFilterRow">
             <button type="button" class="guest-status-chip active" data-guest-status-filter="all" aria-pressed="true">
                 <svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-layout-grid"/></svg>
-                <span data-i18n="guest.status_all">Todos</span><small>{{ orders|length }}</small>
+                <span data-i18n="guest.status_all">Todos</span><small>{{ normal_count }}</small>
             </button>
         </div>
         <div class="guest-logistics-under-status" aria-label="Filtrar por logística">
             <div class="guest-status-filter-label" data-guest-zh="物流" data-guest-es="Logística">Logística</div>
             <div class="guest-logistics-row">
-                <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsAll" value="all" checked>
-                <label class="guest-status-chip" for="guestLogisticsAll"><svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-layout-grid"/></svg><span data-guest-zh="全部" data-guest-es="Todos">Todos</span><small data-guest-logistics-count="all">{{ orders|length }}</small></label>
+                <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsAll" value="all">
+                <label class="guest-status-chip" for="guestLogisticsAll"><svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-layout-grid"/></svg><span data-guest-zh="全部" data-guest-es="Todos">Todos</span><small data-guest-logistics-count="all">{{ logistics_counts.get('all', 0) if logistics_counts is defined else 0 }}</small></label>
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsTransit" value="in_transit">
                 <label class="guest-status-chip" for="guestLogisticsTransit"><svg class="guest-filter-icon guest-filter-icon--go" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#guest-filter-icon-ship"/></svg><span data-guest-zh="運送中" data-guest-es="En camino">En camino</span><small data-guest-logistics-count="in_transit">{{ logistics_counts.get('in_transit', 0) if logistics_counts is defined else 0 }}</small></label>
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogisticsPickup" value="pending_pickup">
@@ -216,7 +222,7 @@ SOFTWARE.
     <main class="guest-grid" id="guestGrid">
         {% for order in orders %}
         {% set card_loop = loop %}
-        <a class="guest-card{% if order.is_retired|default(false) %} guest-card-retired{% endif %}" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.display_status_key or order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}" data-guest-logistics-key="{{ order.logistics_filter or 'none' }}" data-guest-logistics-keys="{{ order.logistics_filter_keys|default([order.logistics_filter or 'none'])|join(' ') }}" data-guest-retired="{{ 1 if order.is_retired|default(false) else 0 }}">
+        <a class="guest-card{% if order.is_retired|default(false) %} guest-card-retired{% endif %}" href="{{ order.detail_url }}" data-guest-card data-guest-order-key="{{ order.workflow_number or order.order_number }}" data-guest-parent-order="{{ order.order_number }}" data-guest-extra-pickup="{{ 1 if order.extra_pickup_only|default(false) else 0 }}"{% if order.extra_pickup_only|default(false) %} hidden{% endif %} data-guest-sort-order="{{ order.workflow_number or order.order_number }}" data-guest-order-date="{{ order.order_date or '' }}" data-guest-shipping-date="{{ order.last_shipping_date or '' }}" data-guest-status-key="{{ order.display_status_key or order.current_status or '__order__' }}" data-guest-status-zh="{{ order.status_zh }}" data-guest-status-es="{{ order.status_es }}" data-guest-logistics-key="{{ order.logistics_filter or 'none' }}" data-guest-logistics-keys="{{ order.logistics_filter_keys|default([order.logistics_filter or 'none'])|join(' ') }}" data-guest-retired="{{ 1 if order.is_retired|default(false) else 0 }}">
             <div class="guest-cover">
                 {% if order.images %}
                     {# UI-only ordering: salesperson/workflow real images first, then supervisor/order images, PDF pages last. #}
@@ -273,6 +279,7 @@ SOFTWARE.
         </a>
         {% endfor %}
     </main>
+    <div class="guest-empty" id="guestFilterEmpty" role="status" hidden data-guest-zh="没有符合筛选条件的订单。" data-guest-es="No hay pedidos que coincidan con estos filtros.">No hay pedidos que coincidan con estos filtros.</div>
     {% else %}
         <div class="guest-empty" data-i18n="guest.empty">No hay pedidos disponibles.</div>
     {% endif %}
@@ -341,10 +348,12 @@ document.addEventListener('error', function (event) {
     const guestToken = {{ token|tojson }};
     const row = document.getElementById('guestStatusFilterRow');
     const logisticsRow = document.querySelector('.guest-logistics-row');
-    const logisticsAll = document.getElementById('guestLogisticsAll');
     const sortRow = document.getElementById('guestSortRow');
     const grid = document.getElementById('guestGrid');
     const countNode = document.getElementById('guestVisibleCount');
+    const searchInput = document.getElementById('guestOrderSearch');
+    const searchClear = document.getElementById('guestOrderSearchClear');
+    const emptyNode = document.getElementById('guestFilterEmpty');
     let cards = Array.from(document.querySelectorAll('[data-guest-card]'));
     const filterMode = String(document.body.dataset.guestStatusFilterMode || 'simple').toLowerCase() === 'full' ? 'full' : 'simple';
     if (!row || !grid || !cards.length) return;
@@ -372,11 +381,19 @@ document.addEventListener('error', function (event) {
     }
     function rebuildFilters() {
         cards = Array.from(document.querySelectorAll('[data-guest-card]'));
+        const seen = new Set();
+        cards = cards.filter(function (card) {
+            const key = String(card.dataset.guestOrderKey || '');
+            if (key && seen.has(key)) { card.hidden = true; return false; }
+            if (key) seen.add(key);
+            return true;
+        });
+        const normalCards = cards.filter(function (card) { return card.dataset.guestExtraPickup !== '1'; });
         exactCounts.clear();
         row.querySelectorAll('[data-guest-status-filter]:not([data-guest-status-filter="all"])').forEach(function (button) { button.remove(); });
         const allCount = row.querySelector('[data-guest-status-filter="all"] small');
-        if (allCount) allCount.textContent = String(cards.length);
-        cards.forEach(function (card) {
+        if (allCount) allCount.textContent = String(normalCards.length);
+        normalCards.forEach(function (card) {
             const key = String(card.dataset.guestStatusKey || '__order__');
             card.dataset.guestStatusGroup = simpleKey(key);
             const zh = String(card.dataset.guestStatusZh || '订单');
@@ -387,7 +404,7 @@ document.addEventListener('error', function (event) {
         });
 
         const filterItems = filterMode === 'full' ? Array.from(exactCounts.values()) : simpleGroups.map(function (group) {
-            return {...group, count:cards.filter(function (card) { return card.dataset.guestStatusGroup === group.key; }).length};
+            return {...group, count:normalCards.filter(function (card) { return card.dataset.guestStatusGroup === group.key; }).length};
         });
         const statusIcons = {
             unconfirmed: {name:'hourglass-empty', tone:'warn'},
@@ -426,18 +443,34 @@ document.addEventListener('error', function (event) {
 
     const storageKey = 'trackingGuestStatus:' + guestToken;
     const sortStorageKey = 'trackingGuestSort:' + guestToken;
+    const scopeStorageKey = 'trackingGuestFilterScope:' + guestToken;
+    const logisticsStorageKey = 'trackingGuestLogistics:' + guestToken;
+    const searchStorageKey = 'trackingGuestSearch:' + guestToken;
     let selected = 'all';
     let selectedSort = 'order';
+    let selectedScope = 'status';
+    let selectedLogistics = 'all';
     try {
         selected = sessionStorage.getItem(storageKey) || 'all';
         selectedSort = sessionStorage.getItem(sortStorageKey) || 'order';
+        selectedScope = sessionStorage.getItem(scopeStorageKey) === 'logistics' ? 'logistics' : 'status';
+        selectedLogistics = sessionStorage.getItem(logisticsStorageKey) || 'all';
+        if (searchInput) searchInput.value = (sessionStorage.getItem(searchStorageKey) || '').slice(0, 80);
     } catch (_) {}
     let availableKeys = new Set();
     if (!['order','shipping'].includes(selectedSort)) selectedSort = 'order';
+    if (!['all','in_transit','pending_pickup'].includes(selectedLogistics)) selectedLogistics = 'all';
 
     function matchesLogistics(card, key) {
         const keys = String(card.dataset.guestLogisticsKeys || card.dataset.guestLogisticsKey || 'none').split(/\s+/);
-        return key === 'all' || keys.includes(key);
+        return key === 'all' ? keys.includes('in_transit') || keys.includes('pending_pickup') : keys.includes(key);
+    }
+    function matchesOrderSearch(card) {
+        const query = String(searchInput?.value || '').trim().toLocaleLowerCase();
+        if (!query) return true;
+        return [card.dataset.guestParentOrder, card.dataset.guestOrderKey].some(function (value) {
+            return String(value || '').toLocaleLowerCase().includes(query);
+        });
     }
     function updateLogisticsCounts() {
         document.querySelectorAll('[data-guest-logistics-count]').forEach(function (node) {
@@ -504,16 +537,20 @@ document.addEventListener('error', function (event) {
         else loadFirstVisibleImage(card);
     }
 
-    function apply(key) {
+    function apply(key, scope) {
+        selectedScope = scope || selectedScope;
         key = key || 'all';
-        // A specific status replaces the logistics choice, including restored state.
-        if (key !== 'all' && logisticsAll) logisticsAll.checked = true;
-        const logisticsKey = logisticsRow?.querySelector('.guest-logistics-radio:checked')?.value || 'all';
+        if (selectedScope === 'logistics') key = 'all';
+        logisticsRow?.querySelectorAll('.guest-logistics-radio').forEach(function (radio) {
+            radio.checked = selectedScope === 'logistics' && radio.value === selectedLogistics;
+        });
         let visible = 0;
         cards.forEach(function (card) {
             const cardKey = filterMode === 'full' ? String(card.dataset.guestStatusKey || '') : String(card.dataset.guestStatusGroup || 'confirmed');
-            const show = (key === 'all' || cardKey === key)
-                && matchesLogistics(card, logisticsKey);
+            const inScope = selectedScope === 'logistics'
+                ? matchesLogistics(card, selectedLogistics)
+                : card.dataset.guestExtraPickup !== '1' && (key === 'all' || cardKey === key);
+            const show = inScope && matchesOrderSearch(card);
             card.hidden = !show;
             if (show) {
                 visible += 1;
@@ -523,20 +560,38 @@ document.addEventListener('error', function (event) {
             }
         });
         row.querySelectorAll('[data-guest-status-filter]').forEach(function (btn) {
-            const active = String(btn.dataset.guestStatusFilter || '') === key;
+            const active = selectedScope === 'status' && String(btn.dataset.guestStatusFilter || '') === key;
             btn.classList.toggle('active', active);
             btn.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
-        if (countNode) countNode.textContent = countLabel(visible);
+        if (countNode) {
+            countNode.dataset.guestZh = visible + ' 个订单';
+            countNode.dataset.guestEs = visible + (visible === 1 ? ' pedido' : ' pedidos');
+            countNode.textContent = countLabel(visible);
+        }
+        if (emptyNode) emptyNode.hidden = visible !== 0;
+        if (searchInput) {
+            searchInput.placeholder = currentLang() === 'zh_cn' ? '搜索订单号…' : 'Buscar pedido…';
+            searchInput.setAttribute('aria-label', currentLang() === 'zh_cn' ? '搜索订单号' : 'Buscar número de pedido');
+        }
+        if (searchClear) {
+            searchClear.hidden = !String(searchInput?.value || '');
+            searchClear.setAttribute('aria-label', currentLang() === 'zh_cn' ? '清除搜索' : 'Borrar búsqueda');
+        }
         selected = key;
-        try { sessionStorage.setItem(storageKey, key); } catch (_) {}
+        try {
+            sessionStorage.setItem(storageKey, key);
+            sessionStorage.setItem(scopeStorageKey, selectedScope);
+            sessionStorage.setItem(logisticsStorageKey, selectedLogistics);
+            sessionStorage.setItem(searchStorageKey, String(searchInput?.value || ''));
+        } catch (_) {}
     }
 
     row.addEventListener('click', function (event) {
         const btn = event.target.closest('[data-guest-status-filter]');
         if (!btn) return;
         const top = window.scrollY;
-        apply(btn.dataset.guestStatusFilter || 'all');
+        apply(btn.dataset.guestStatusFilter || 'all', 'status');
         // Hiding a masonry row must not move the customer's viewport.
         requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
     });
@@ -544,10 +599,23 @@ document.addEventListener('error', function (event) {
     logisticsRow?.addEventListener('change', function (event) {
         if (!event.target.matches('.guest-logistics-radio')) return;
         const top = window.scrollY;
-        // A specific logistics choice replaces the status choice. Todos only
-        // clears its own row, so selecting it preserves the other row's choice.
-        apply(event.target.value === 'all' ? selected : 'all');
+        selectedLogistics = event.target.value;
+        apply('all', 'logistics');
         requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
+    });
+
+    searchInput?.addEventListener('input', function () { apply(selected); });
+    searchInput?.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') event.preventDefault();
+        if (event.key === 'Escape') {
+            searchInput.value = '';
+            apply(selected);
+        }
+    });
+    searchClear?.addEventListener('click', function () {
+        searchInput.value = '';
+        apply(selected);
+        searchInput.focus();
     });
 
     sortRow?.addEventListener('click', function (event) {
