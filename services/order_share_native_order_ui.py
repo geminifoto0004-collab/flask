@@ -278,6 +278,16 @@ def _customer_context(space, share, token):
         key: sum(bool(card["logistics_filter_keys"]) if key == "all" else key in card["logistics_filter_keys"] for card in cards)
         for key in ("all", "in_transit", "pending_pickup")
     }
+    status_counts = dict.fromkeys(("all", "unconfirmed", "confirmed", "done", "retired"), 0)
+    for card in cards:
+        if card["extra_pickup_only"]:
+            continue
+        status = str(card.get("display_status_key") or card.get("current_status") or "").upper()
+        group = ("retired" if status == "RETIRED" else "unconfirmed" if status in
+                 {"QUOTE_CONFIRMING", "DRAFT_CONFIRMING", "SAMPLE_CONFIRMING"} else
+                 "done" if status in {"COMPLETED", "ALL_SHIPPED", "SHIPPED"} else "confirmed")
+        status_counts[group] += 1
+        status_counts["all"] += 1
     return {
         "customer_name": str(customer.get("customer_name") or customer.get("customer_key") or ""),
         "token": token, "orders": cards,
@@ -285,6 +295,7 @@ def _customer_context(space, share, token):
         "extra_pickup_count": sum(card["extra_pickup_only"] for card in cards),
         "has_logistics_filter": any(str(card.get("logistics_filter") or "none") != "none" for card in cards),
         "logistics_counts": logistics_counts,
+        "status_counts": status_counts,
         "expires_at_epoch": expires,
         "is_permanent": not bool(expires), "allow_pdf_download": False, "pdf_count": 0,
         "show_pdf_pages": bool((share or {}).get("show_pdf_pages", True)),

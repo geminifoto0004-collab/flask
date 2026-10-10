@@ -537,3 +537,61 @@ html[data-theme="dark"] {
     .guest-customer-page .guest-shell { width:min(calc(100% - 92px),1480px); max-width:1480px; }
     .guest-customer-page .guest-grid { grid-template-columns:repeat(5,minmax(0,1fr)); gap:16px; }
 }
+
+/* Customer mobile wall: compact, visible controls; no additional asset requests. */
+.guest-customer-page {
+    --bg: var(--guest-bg); --card: var(--guest-surface); --ink: var(--guest-text);
+    --mute: var(--guest-muted); --line: var(--guest-border);
+    --red: #ee3b4f; --redbg: color-mix(in srgb, var(--red) 10%, var(--card));
+    --guest-accent: var(--red);
+}
+.guest-customer-page input, .guest-customer-page select, .guest-customer-page textarea { font-size:16px; }
+.guest-section-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.guest-section-heading .guest-status-filter-label { margin:0; }
+#guestVisibleCount { font-size:12px; color:var(--mute); }
+.guest-search-sort { display:flex; align-items:center; gap:8px; margin:10px 0 12px; }
+.guest-search-sort .guest-order-search { flex:1; min-width:0; width:auto; margin:0; }
+.guest-search-sort .guest-sort-filter { flex:none; margin:0; }
+.guest-search-sort .guest-sort-row { flex-wrap:nowrap; gap:2px; padding:3px; border:1px solid var(--line); border-radius:12px; background:var(--card); }
+.guest-search-sort .guest-sort-row .guest-status-chip { min-width:0; min-height:32px; padding:5px 7px; gap:4px; border:0; border-radius:8px; font-size:11px; box-shadow:none; }
+.guest-customer-page .guest-status-chip.active { color:var(--red); background:var(--redbg); }
+.guest-customer-page .guest-card[data-guest-status-group="unconfirmed"] .guest-card-status { background:#fff1cb; color:#825600; }
+.guest-customer-page .guest-card[data-guest-status-group="confirmed"] .guest-card-status { background:#e6f0ff; color:#2157a5; }
+.guest-customer-page .guest-card[data-guest-status-group="done"] .guest-card-status { background:#dcf5e6; color:#17683c; }
+.guest-customer-page .guest-card[data-guest-status-group="retired"] .guest-card-status { background:#e8e9ed; color:#555b68; }
+.guest-card-logistics { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--mute); flex-wrap:wrap; }
+.guest-card-logistics svg { width:14px; height:14px; flex:none; }
+@media (max-width:767px) {
+    .guest-customer-page .guest-shell { padding:0 max(10px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); }
+    .guest-customer-page .guest-head { position:relative; display:flex; align-items:center; gap:6px; margin:0 0 10px; padding:calc(env(safe-area-inset-top,0px) + 10px) 0 10px; backdrop-filter:none; }
+    .guest-customer-page .guest-brand { flex:1; padding:0; min-width:0; gap:7px; }
+    .guest-customer-page .guest-logo { width:32px; height:32px; flex:0 0 32px; border-radius:10px; font-size:12px; box-shadow:none; }
+    .guest-customer-page .guest-title h1 { font-size:15px; }
+    .guest-customer-page .guest-title p { margin-top:3px; font-size:9px; line-height:1.2; }
+    .guest-customer-page .guest-lang-toggle, .guest-customer-page .guest-theme-toggle, .guest-customer-page .guest-top-queue-btn { position:static; flex:0 0 auto; width:32px; min-width:32px; height:32px; padding:0 5px; font-size:11px; border-radius:10px; box-shadow:none; }
+    .guest-customer-page .guest-top-queue-btn[hidden] { display:none!important; }
+    .guest-customer-page .guest-status-filter { margin:0; }
+    .guest-customer-page .guest-status-filter-label { font-size:11px; margin:0 0 6px; color:var(--mute); }
+    .guest-customer-page .guest-status-filter-row, .guest-customer-page .guest-logistics-row { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:2px; padding:3px; border:1px solid var(--line); border-radius:12px; background:var(--card); overflow:visible; }
+    .guest-customer-page .guest-logistics-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .guest-customer-page .guest-logistics-under-status { margin-top:9px; }
+    .guest-customer-page .guest-status-filter-row .guest-status-chip,
+    .guest-customer-page .guest-logistics-row .guest-status-chip { display:grid; grid-template-columns:auto auto; grid-template-rows:20px auto; align-items:center; justify-content:center; column-gap:4px; row-gap:2px; width:auto; min-width:0; min-height:49px; margin:0; padding:5px 1px; border:0; border-radius:8px; font-size:10px; line-height:1.2; color:var(--mute); background:transparent; box-shadow:none; }
+    .guest-customer-page .guest-status-filter-row .guest-status-chip span,
+    .guest-customer-page .guest-logistics-row .guest-status-chip span { grid-column:1 / -1; grid-row:2; text-align:center; white-space:nowrap; }
+    .guest-customer-page .guest-status-filter-row .guest-status-chip small,
+    .guest-customer-page .guest-logistics-row .guest-status-chip small { grid-column:2; grid-row:1; padding:0; background:none; font-size:15px; font-weight:800; color:inherit; }
+    .guest-customer-page .guest-status-filter-row .guest-filter-icon,
+    .guest-customer-page .guest-logistics-row .guest-filter-icon { grid-column:1; grid-row:1; width:16px; height:16px; color:inherit; }
+    .guest-customer-page .guest-status-filter-row .guest-status-chip.active,
+    .guest-customer-page .guest-logistics-radio:checked + .guest-status-chip { color:var(--red); background:var(--redbg); }
+    .guest-customer-page .guest-logistics-radio:focus-visible + label,
+    .guest-customer-page button:focus-visible { outline:2px solid var(--red); outline-offset:2px; }
+    .guest-customer-page .guest-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .guest-customer-page .guest-card { border-radius:16px; min-width:0; }
+    .guest-customer-page .guest-card-body { padding:8px; }
+    .guest-customer-page .guest-card-number { font-size:13px; overflow-wrap:anywhere; }
+    .guest-customer-page .guest-shipping-badge { white-space:normal!important; }
+    .guest-customer-page .guest-logistics-line strong { white-space:normal!important; overflow-wrap:anywhere; }
+    .guest-customer-page .guest-sort-row .guest-filter-icon { width:13px; height:13px; }
+}

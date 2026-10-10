@@ -169,6 +169,7 @@ class PickupCardsTests(unittest.TestCase):
         context = self.scope['_customer_context']({'orders': orders}, {}, 'token')
         self.assertEqual(len(context['orders']), 52)
         self.assertEqual(context['normal_card_count'], 51)
+        self.assertEqual(context['status_counts'], {'all': 51, 'unconfirmed': 0, 'confirmed': 0, 'done': 51, 'retired': 0})
         self.assertEqual(context['extra_pickup_count'], 1)
         self.assertEqual(context['logistics_counts'], {'all': 14, 'in_transit': 13, 'pending_pickup': 1})
 
@@ -236,7 +237,7 @@ def write_frontend_fixtures(destination):
     destination.mkdir(parents=True, exist_ok=True)
     samples = frontend_samples()
     for name, orders, mode in [
-        ('sample', samples, 'simple'), ('full', samples, 'full'),
+        ('empty', [], 'simple'), ('sample', samples, 'simple'), ('full', samples, 'full'),
         ('all28', [order(number=str(1008000+i), workflows=2 if i < 4 else 1) for i in range(24)], 'simple'),
     ]:
         (destination / f'{name}.html').write_text(render_orders(orders, mode), 'utf-8')
