@@ -54,6 +54,7 @@ button, input { font: inherit; }
 .guest-logistics-under-status { margin-top:9px; }
 .guest-order-search { display:flex; align-items:center; gap:9px; width:min(100%,320px); min-height:38px; margin:0 0 12px; padding:0 11px; border:1px solid var(--guest-border); border-radius:12px; background:var(--guest-surface); color:var(--guest-muted); }
 .guest-order-search input { flex:1; min-width:0; padding:8px 0; border:0; outline:0; background:transparent; color:var(--guest-text); font:inherit; font-size:12px; }
+.guest-order-search input::-webkit-search-cancel-button { -webkit-appearance:none; appearance:none; display:none; }
 .guest-order-search:focus-within { border-color:var(--guest-accent); }
 .guest-order-search button { width:28px; height:28px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--guest-muted); font-size:22px; cursor:pointer; }
 .guest-order-search button[hidden], #guestFilterEmpty[hidden] { display:none; }
