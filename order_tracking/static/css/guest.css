@@ -595,3 +595,30 @@ html[data-theme="dark"] {
     .guest-customer-page .guest-logistics-line strong { white-space:normal!important; overflow-wrap:anywhere; }
     .guest-customer-page .guest-sort-row .guest-filter-icon { width:13px; height:13px; }
 }
+
+/* Desktop keeps every control visible without spending a row per section. */
+@media (min-width:1024px) and (hover:hover) and (pointer:fine) {
+    .guest-customer-page .guest-head { display:flex; align-items:center; gap:8px; margin-bottom:9px; padding:9px 2px; }
+    .guest-customer-page .guest-brand { flex:1; gap:9px; padding-right:0; }
+    .guest-customer-page .guest-logo { flex:0 0 34px; width:34px; height:34px; border-radius:10px; font-size:13px; box-shadow:none; }
+    .guest-customer-page .guest-title h1 { font-size:16px; }
+    .guest-customer-page .guest-title p { margin-top:3px; font-size:11px; }
+    .guest-customer-page .guest-lang-toggle,
+    .guest-customer-page .guest-theme-toggle,
+    .guest-customer-page .guest-top-queue-btn { position:static; flex:0 0 auto; width:32px; min-width:32px; height:32px; border-radius:10px; box-shadow:none; }
+    .guest-customer-page .guest-top-queue-btn[hidden] { display:none!important; }
+    .guest-customer-page .guest-status-filter { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:20px; row-gap:4px; margin:0; }
+    .guest-customer-page .guest-section-heading { grid-column:1; grid-row:1; justify-content:flex-start; gap:12px; margin:0; }
+    .guest-customer-page .guest-status-filter-row { grid-column:1; grid-row:2; gap:5px; padding:0; }
+    .guest-customer-page .guest-logistics-under-status { grid-column:2; grid-row:1 / span 2; display:grid; grid-template-rows:auto 1fr; gap:4px; margin:0; }
+    .guest-customer-page .guest-status-filter-label { margin:0; font-size:10px; line-height:14px; }
+    .guest-customer-page .guest-logistics-row { align-items:start; flex-wrap:nowrap; gap:5px; }
+    .guest-customer-page .guest-status-filter .guest-status-chip { min-height:29px; padding:4px 9px; gap:5px; font-size:11px; }
+    .guest-customer-page .guest-status-filter .guest-filter-icon { width:15px; height:15px; }
+    .guest-customer-page #guestVisibleCount { font-size:11px; line-height:14px; }
+    .guest-customer-page .guest-search-sort { gap:8px; margin:8px 0 10px; }
+    .guest-customer-page .guest-search-sort .guest-order-search { flex:0 1 360px; min-height:34px; }
+    .guest-customer-page .guest-order-search input { padding:6px 0; }
+    .guest-customer-page .guest-search-sort .guest-sort-row { padding:2px; }
+    .guest-customer-page .guest-search-sort .guest-sort-row .guest-status-chip { min-height:28px; }
+}
