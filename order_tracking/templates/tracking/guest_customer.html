@@ -576,6 +576,8 @@ document.addEventListener('error', function (event) {
     function apply(key, scope) {
         selectedScope = scope || selectedScope;
         key = key || 'all';
+        // Logistics is its own view; restore Todos even for saved intersection state.
+        if (selectedScope === 'logistics') key = 'all';
 
         logisticsRow?.querySelectorAll('.guest-logistics-radio').forEach(function (radio) {
             radio.checked = selectedScope === 'logistics' && radio.value === selectedLogistics;
@@ -583,10 +585,9 @@ document.addEventListener('error', function (event) {
         let visible = 0;
         cards.forEach(function (card) {
             const cardKey = filterMode === 'full' ? String(card.dataset.guestStatusKey || '') : String(card.dataset.guestStatusGroup || 'confirmed');
-            const statusMatch = key === 'all' || cardKey === key;
-            const inScope = statusMatch && (selectedScope === 'logistics'
-                ? matchesLogistics(card, selectedLogistics) && (card.dataset.guestExtraPickup !== '1' || key === 'all')
-                : card.dataset.guestExtraPickup !== '1');
+            const inScope = selectedScope === 'logistics'
+                ? matchesLogistics(card, selectedLogistics)
+                : card.dataset.guestExtraPickup !== '1' && (key === 'all' || cardKey === key);
             const show = inScope && matchesOrderSearch(card);
             card.hidden = !show;
             if (show) {
@@ -629,7 +630,7 @@ document.addEventListener('error', function (event) {
         const btn = event.target.closest('[data-guest-status-filter]');
         if (!btn) return;
         const top = window.scrollY;
-        apply(btn.dataset.guestStatusFilter || 'all');
+        apply(btn.dataset.guestStatusFilter || 'all', 'status');
         // Hiding a masonry row must not move the customer's viewport.
         requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
     });
@@ -649,7 +650,7 @@ document.addEventListener('error', function (event) {
         if (!event.target.matches('.guest-logistics-radio')) return;
         const top = window.scrollY;
         selectedLogistics = event.target.value;
-        apply(selected, 'logistics');
+        apply('all', 'logistics');
         requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
     });
 
