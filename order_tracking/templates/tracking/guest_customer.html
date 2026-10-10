@@ -136,6 +136,7 @@ SOFTWARE.
     </header>
 
     {% set normal_count = normal_card_count|default(orders|length) %}
+    <div class="guest-controls">
     <div class="guest-status-filter" id="guestStatusFilter" aria-label="Estado">
         <div class="guest-section-heading">
             <span class="guest-status-filter-label" data-mobile-text="estado">Estado</span>
@@ -175,6 +176,7 @@ SOFTWARE.
                 {% endfor %}
             </div>
         </div>
+    </div>
     </div>
     {% if allow_pdf_download and pdf_count > 0 %}
     <a class="guest-pdf-bundle" href="{{ url_for('tracking_bp.local_guest_pdf_bundle', token=token) }}">
