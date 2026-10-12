@@ -700,17 +700,45 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
         ).fetchone()
         self.assertTrue(current["password_hash"].startswith("pbkdf2:sha256:"))
 
-    def test_csrf_rejects_cross_site_origin_even_with_valid_token(self):
+    def test_admin_csrf_uses_independent_signed_double_submit_cookie(self):
         self.admin_mode()
-        csrf = self.csrf_from(self.client.get(
-            "/admin/automation/china-links", base_url="https://example.test"))
-        for hostile in ("https://evil.example", "http://example.test",
-                        "https://example.test.evil.example"):
-            result = self.client.post("/admin/automation/china-links", data={
-                "csrf": csrf, "password": "8", "confirm": "8"
-            }, headers={"Origin": hostile},
-                base_url="https://example.test")
-            self.assertEqual(result.status_code, 403)
+        page = self.client.get("/admin/automation/china-links",
+                               base_url="https://example.test")
+        csrf = self.csrf_from(page)
+        cookie_header = page.headers.get("Set-Cookie") or ""
+        self.assertIn("xingwang_cn_admin_csrf=", cookie_header)
+        self.assertIn("Secure", cookie_header)
+        self.assertIn("HttpOnly", cookie_header)
+        self.assertIn("SameSite=Strict", cookie_header)
+        with self.client.session_transaction() as state:
+            self.assertNotIn("share_cn_csrf_admin", state)
+
+        # A signed token is not useful without the matching private cookie.
+        forged = self.client.post("/admin/automation/china-links", data={
+            "csrf": csrf + "tampered", "password": "9", "confirm": "9"
+        }, base_url="https://example.test")
+        self.assertEqual(forged.status_code, 403)
+
+        # Real browsers can suppress both Origin and Referer on password forms.
+        good = self.client.post("/admin/automation/china-links", data={
+            "csrf": csrf, "password": "8", "confirm": "8"
+        }, base_url="https://example.test")
+        self.assertEqual(good.status_code, 303, good.get_data(as_text=True))
+        self.assertIn("xingwang_cn_admin_csrf=", good.headers.get("Set-Cookie") or "")
+        self.assertEqual(self.client.post("/admin/automation/china-links", data={
+            "csrf": csrf, "password": "7", "confirm": "7"
+        }, base_url="https://example.test").status_code, 403)
+
+    def test_admin_csrf_token_cannot_be_reused_by_other_admin_identity(self):
+        self.admin_mode()
+        csrf = self.csrf_from(self.client.get("/admin/automation/china-links",
+                                              base_url="https://example.test"))
+        with self.client.session_transaction() as state:
+            state["username"] = "another-admin"
+        denied = self.client.post("/admin/automation/china-links", data={
+            "csrf": csrf, "password": "1", "confirm": "1"
+        }, base_url="https://example.test")
+        self.assertEqual(denied.status_code, 403)
         self.assertIsNone(self.db.execute(
             "SELECT password_hash FROM order_share_cn_settings WHERE id=1"
         ).fetchone())
