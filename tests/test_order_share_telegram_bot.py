@@ -757,6 +757,54 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
                   "confirm": "Good-password-2026"}).status_code, 403)
         self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
 
+    def test_cn_login_csrf_is_independent_of_flask_session(self):
+        self.set_password("7")
+        page = self.client.get("/cn/order-links")
+        token = self.csrf_from(page)
+        cookie_header = page.headers.get("Set-Cookie") or ""
+        self.assertIn("xingwang_cn_form_csrf=", cookie_header)
+        self.assertIn("Secure", cookie_header)
+        self.assertIn("HttpOnly", cookie_header)
+        self.assertIn("SameSite=Strict", cookie_header)
+        self.assertIn("Path=/cn/order-links", cookie_header)
+        with self.client.session_transaction() as state:
+            self.assertNotIn("share_cn_csrf_login", state)
+        good = self.client.post("/cn/order-links/login",
+            data={"csrf": token, "password": "7"})
+        self.assertEqual(good.status_code, 303, good.get_data(as_text=True))
+        self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
+        # The authenticated page issues a different token for logout.
+        self.assertIn('action="/cn/order-links/logout"',
+                      self.client.get("/cn/order-links").get_data(as_text=True))
+
+    def test_cn_csrf_rejects_forgery_wrong_scope_and_missing_cookie(self):
+        self.set_password("7")
+        token = self.csrf_from(self.client.get("/cn/order-links"))
+        self.assertEqual(self.client.post("/cn/order-links/login",
+            data={"csrf": token + "bad", "password": "7"}).status_code, 403)
+        # An unauthenticated login token cannot be reused to logout.
+        self.assertEqual(self.client.post("/cn/order-links/logout",
+            data={"csrf": token}).status_code, 403)
+        self.client.delete_cookie("xingwang_cn_form_csrf",
+                                  domain="example.test", path="/cn/order-links")
+        self.assertEqual(self.client.post("/cn/order-links/login",
+            data={"csrf": token, "password": "7"}).status_code, 403)
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+
+    def test_cn_logout_scope_is_verified_independently(self):
+        self.set_password("7")
+        csrf = self.csrf_from(self.client.get("/cn/order-links"))
+        self.assertEqual(self.client.post("/cn/order-links/login",
+            data={"csrf": csrf, "password": "7"}).status_code, 303)
+        page = self.client.get("/cn/order-links")
+        logout_csrf = self.csrf_from(page)
+        self.assertNotEqual(logout_csrf, csrf)
+        self.assertEqual(self.client.post("/cn/order-links/logout",
+            data={"csrf": csrf}).status_code, 403)
+        self.assertEqual(self.client.post("/cn/order-links/logout",
+            data={"csrf": logout_csrf}).status_code, 303)
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+
     def test_password_is_hash_only_and_requires_login_to_access_same_ui(self):
         self.set_password()
         record = self.db.execute(
@@ -774,6 +822,7 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
             "csrf": csrf, "password": "incorrect"},
             headers={"Origin": "https://example.test"})
         self.assertEqual(denied.status_code, 401)
+        csrf = self.csrf_from(denied)  # failed login intentionally rotates CSRF token
         login = self.client.post("/cn/order-links/login", data={
             "csrf": csrf, "password": "Company-Shared-Password-2026"},
             headers={"Origin": "https://example.test"})
@@ -840,6 +889,7 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
             "csrf": csrf, "password": "7"
         }, headers={"Origin": "https://example.test"})
         self.assertEqual(old_code.status_code, 401)
+        csrf = self.csrf_from(old_code)
         new_code = self.client.post("/cn/order-links/login", data={
             "csrf": csrf, "password": "8"
         }, headers={"Origin": "https://example.test"})
@@ -870,6 +920,7 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
                 "csrf": csrf, "password": "wrong123456789"},
                 headers={"Origin": "https://example.test"})
             self.assertEqual(response.status_code, 401)
+            csrf = self.csrf_from(response)
         response = self.client.post("/cn/order-links/login", data={
             "csrf": csrf, "password": "Company-Shared-Password-2026"},
             headers={"Origin": "https://example.test"})
