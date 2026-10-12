@@ -192,15 +192,16 @@ def _authorized(settings=None):
 
 
 def _same_origin():
-    """Login/admin writes require origin or referer matching the actual HTTPS origin."""
-    from blueprints.automation_hub.settings import PUBLIC_BASE_URL
-    base = urlsplit(str(PUBLIC_BASE_URL or ""))
-    expected = (base.scheme, base.netloc)
-    if expected[0] != "https" or not expected[1]:
-        return False
+    """Use the actual browser-facing Host, not an unrelated Render URL config.
+
+    PUBLIC_BASE_URL is used for links and Bot webhooks and may be configured to
+    a different host. The CSRF origin must instead match the host that received
+    this form POST. Keep the HTTPS and signed-session token checks.
+    """
     source = request.headers.get("Origin") or request.headers.get("Referer") or ""
     parsed = urlsplit(source)
-    return (parsed.scheme, parsed.netloc) == expected
+    target_host = request.host.strip().lower()
+    return bool(parsed.scheme == "https" and parsed.netloc.lower() == target_host)
 
 
 def _csrf(scope):
@@ -260,7 +261,10 @@ def admin_password():
     if request.content_length is not None and request.content_length > 4096:
         return make_response("Request too large", 413)
     if not _csrf_valid("admin"):
-        return make_response("CSRF validation failed", 403)
+        return make_response(
+            "表單驗證已失效。請重新整理密碼管理頁後再輸入一次。"
+            "如果仍然失敗，請確認瀏覽器允許此網站 Cookie。", 403
+        )
     password = request.form.get("password", "")
     confirm = request.form.get("confirm", "")
     if password != confirm or not 1 <= len(password) <= 128:
