@@ -287,6 +287,11 @@ def _cn_csrf_valid(scope):
     if (not form_token or not cookie_token or len(form_token) > 700
             or not hmac.compare_digest(form_token, cookie_token)):
         return False
+    # Extra defence if a browser supplies Origin. Missing Origin/Referer is
+    # allowed because embedded mobile browsers may omit both entirely.
+    origin = request.headers.get("Origin")
+    if origin and not _same_origin():
+        return False
     try:
         payload = _cn_csrf_serializer().loads(form_token, max_age=_CN_CSRF_AGE)
         return bool(isinstance(payload, dict) and payload.get("nonce")
