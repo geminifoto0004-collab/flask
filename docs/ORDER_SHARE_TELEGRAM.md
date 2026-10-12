@@ -60,3 +60,38 @@ Bot 不修改分享、订单或本机 V140，也不下载 B2 图片。
 - 现有的 Automation Hub 负责 Token 加密、Webhook 验证；
   请不要重新生成 `AUTOMATION_MASTER_KEY`。
 - 重用旧 Bot 时需确保它没有被其他 webhook 或轮询程序占用。
+
+## Telegram Mini App（手机一页内完整查询）
+
+在原本 `todo`、`/all`、`SERGIO` 查询之外，新增一页式手机目录：
+**完整客户名称（点击打开） + 同一行「📋 複製」**。
+可往下滚动，无需翻页；搜索框按客户名称实时筛选，支持无重音大小写、
+关键词任意顺序、以及比较接近的单词（小范围拼写错误）。
+
+Render 网址：`https://flask-393d.onrender.com/telegram/order-shares`。
+**不能当作普通公开网页登入**：页面本身无客户资料；只有 Telegram
+Mini App 提供新鲜且通过服务器 HMAC 验证的 `initData`，并确认用户
+仍在公司私人群组时，才会加载现有的有效分享。脱离 Telegram、伪造
+Telegram ID、被移出群组的用户都会被拒绝。
+
+### 管理员必须完成一次 BotFather 设置
+
+Telegram 的 **Main Mini App 不能由普通 Bot API 自动创建**，
+需由 Bot 所有者在 `@BotFather` 里配置：
+
+1. `/mybots` → 选择 `@XingwangOrderLinkBot`。
+2. `Bot Settings` → `Configure Mini App` → `Enable Main Mini App`
+   （菜单名称可能随 BotFather 版本略有不同）。
+3. 设置 URL：
+   `https://flask-393d.onrender.com/telegram/order-shares`
+4. 完成后，Bot 在群组可以发送 `/app`，或首次 `/menu`：
+   - **📋 全部客戶**：仍然在 Telegram 聊天里显示所有有效分享，
+     保留已成功测试的 `todo`。
+   - **🔎 客戶清單**：Bot 发送「🔎 開啟客戶清單」Mini App 入口；
+     点开就会出现搜索框 + 每行一个复制按钮。
+5. 可以把 Bot 发出的「開啟客戶清單」那条消息**置顶在私人群组**，
+   员工以后点一下即可进入 Mini App。页面内所有资料即开即查。
+
+Bot Token 与公司私人群组 ID 保持原样，不需要重新输入。
+若没有启用 BotFather Main Mini App，`t.me/...?...startapp`
+可能只会打开 Bot 聊天，不会打开 Mini App。
