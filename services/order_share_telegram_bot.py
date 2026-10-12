@@ -47,6 +47,22 @@ def _actor(update):
     return user_id, chat_id, text.strip()[:256]
 
 
+def _group_actor(update):
+    """Only /groupid works in groups; all customer replies remain in private DMs."""
+    message = update.get("message") if isinstance(update, dict) else None
+    if not isinstance(message, dict):
+        return None
+    sender, chat = message.get("from") or {}, message.get("chat") or {}
+    user_id, chat_id = sender.get("id"), chat.get("id")
+    txt = str(message.get("text") or "").strip()
+    if (type(user_id) is not int or user_id <= 0 or type(chat_id) is not int
+            or chat_id >= 0 or chat.get("type") not in {"private", "group", "supergroup"}
+            or sender.get("is_bot")
+            or not re.fullmatch(r"/groupid(?:@[A-Za-z0-9_]{5,32})?", txt, flags=re.I)):
+        return None
+    return user_id, chat_id, "/groupid"
+
+
 def _callback_actor(update):
     callback = update.get("callback_query") if isinstance(update, dict) else None
     if not isinstance(callback, dict):
@@ -240,51 +256,41 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
         _answer_callback(bot["token"], callback_id)
     command, _, argument = text.partition(" ")
     command = command.split("@", 1)[0].lower()
+
+    if command == "/groupid" and chat_id < 0:
+        return _send_reply(bot["token"], chat_id,
+                           "此群组 ID：<code>" + str(chat_id) +
+                           "</code>\n管理员将此数字填入 Render 的 ORDER_SHARE_TELEGRAM_GROUP_ID。")
+    if chat_id != user_id:
+        return
     if command == "/id":
         return _send_reply(bot["token"], chat_id, "你的 Telegram ID：<code>" + str(user_id) + "</code>")
 
-    if command == "/logout":
-        try:
-            access.revoke_self(bot_key, user_id)
-            reply = "已退出员工查询权限。下次请重新输入公司通行码。"
-        except Exception:
-            reply = "暂时无法退出，请稍后再试。"
+    # If private group configured, group membership is the only authority.
+    # Legacy numeric-ID permissions are supported only until group configuration.
+    # getChatMember is checked on every request, including pagination callbacks.
+    try:
+        authorized = (
+            access.is_authorized(bot_key, user_id, bot["token"])
+            if access.configured() else user_id in _allowed_ids()
+        )
+    except Exception:
+        authorized = False
+    if not authorized:
+        reply = (
+            "此账号不在公司私人群组，或群组成员资料暂时无法验证。"
+            "请管理员邀请你加入公司私人 Telegram 群组；加入后重新发送 /start。"
+            if access.configured()
+            else "管理员尚未设置公司私人群组，请联系管理员。"
+        )
         return _send_reply(bot["token"], chat_id, reply)
-
-    if user_id not in _allowed_ids():
-        try:
-            authorized = access.is_authorized(bot_key, user_id)
-        except Exception:
-            return _send_reply(bot["token"], chat_id, "权限资料暂时无法读取，请稍后重试。")
-        if not authorized:
-            if not access.configured():
-                reply = "管理员尚未设置公司通行码，请联系管理员。"
-            elif command in {"/start", "/help", "/login", "/auth"} and not argument.strip():
-                reply = ("<b>XINGWANG ORDER LINK</b>\n首次使用请输入公司通行码，"
-                         "或发送 <code>/login 通行码</code>。验证一次后可用 /all 查看全部有效分享。"
-                         "\n建议验证后删除包含通行码的聊天消息。")
-            elif text.startswith("/") and command not in {"/login", "/auth"}:
-                reply = "请先输入公司通行码验证身份。发送 /start 查看说明。"
-            else:
-                supplied = argument.strip() if command in {"/login", "/auth"} else text
-                try:
-                    status = access.authenticate(bot_key, user_id, supplied)
-                    reply = {
-                        "ok": "验证成功！输入 /all 查看全部有效分享，或直接输入客户名称。",
-                        "incorrect": "通行码不正确，请重新输入。",
-                        "locked": "验证次数过多，请 15 分钟后再试。",
-                        "not_configured": "管理员尚未设置公司通行码，请联系管理员。",
-                    }[status]
-                except Exception:
-                    reply = "身份验证暂时不可用，请稍后再试。"
-            return _send_reply(bot["token"], chat_id, reply)
 
     if command in {"/start", "/help", "/links"} and (command != "/links" or not argument.strip()):
         return _send_reply(
             bot["token"], chat_id,
             "<b>XINGWANG ORDER LINK</b>\n输入 /all 查看全部有效分享，"
             "点击「下一页」翻页。也可直接输入 OSCAR、SERGIO 或 /links OSCAR 查客户。"
-            "\n输入 /logout 可注销本机 Telegram 查询授权。",
+            "\n只有公司私人群组成员能够查询。",
         )
     if command == "/all":
         raw_page = argument.strip() or "1"
@@ -313,7 +319,7 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
 
 
 def handle_update(update):
-    actor, bot_key = (_actor(update) or _callback_actor(update)), _current_bot_key()
+    actor, bot_key = (_actor(update) or _group_actor(update) or _callback_actor(update)), _current_bot_key()
     if actor is None or not bot_key:
         return False
     update_id = update.get("update_id")
