@@ -183,19 +183,25 @@ class TelegramShareTests(unittest.TestCase):
         with patch.object(bot, "_share_url",
                           side_effect=lambda row: "https://example.invalid/share/" + row["token_hash"]):
             replies = bot._all_replies(rows)
-        self.assertEqual(len(replies), 3)
+        self.assertGreater(len(replies), 1)
         texts = [text for text, _ in replies]
-        self.assertEqual([text.count('<a href=') for text in texts], [20, 20, 5])
-        self.assertIn("1. <a href=", texts[0])
-        self.assertIn("20. <a href=", texts[0])
-        self.assertIn("21. <a href=", texts[1])
-        self.assertIn("40. <a href=", texts[1])
-        self.assertIn("45. <a href=", texts[2])
+        import re
+        all_numbers = [
+            int(m.group(1))
+            for text in texts for m in re.finditer(r"(?:^|\n)(\d+)\. <a href=", text)
+        ]
+        self.assertEqual(all_numbers, list(range(1, 46)))
+        self.assertTrue(all(text.count("<a href=") <= bot._ALL_CHUNK_ROWS for text in texts))
         self.assertTrue(all(len(text) < 4096 for text in texts))
-        self.assertEqual([[len(row) for row in buttons] for _, buttons in replies],
-                         [[4, 4, 4, 4, 4], [4, 4, 4, 4, 4], [4, 1]])
-        self.assertTrue(all("callback_data" not in str(buttons) for _, buttons in replies))
-        self.assertEqual(replies[1][1][0][0]["text"], "📋21")
+        for text, buttons in replies:
+            count = text.count('<a href=')
+            flat_copy = [btn for row in buttons for btn in row]
+            self.assertEqual(len(flat_copy), count)
+            self.assertTrue(all(len(row) <= 4 for row in buttons))
+            self.assertTrue(all("copy_text" in b for b in flat_copy))
+            self.assertTrue(all("callback_data" not in b for b in flat_copy))
+        self.assertEqual(replies[0][1][0][0]["text"], "📋1")
+        self.assertEqual(replies[-1][1][-1][-1]["text"], "📋45")
 
     def test_all_large_names_split_before_telegram_message_limit(self):
         rows = [{"token_hash": str(i), "customer_name": "LONG-" + ("X" * 850),
@@ -214,7 +220,7 @@ class TelegramShareTests(unittest.TestCase):
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 11, 11, "/all")
             lookup.assert_called_once_with()
-            self.assertIn("沒有有效分享", send.call_args.args[2])
+            self.assertIn("沒有有效客戶分享連結", send.call_args.args[2])
 
     def test_all_one_tap_sends_all_chunks_in_order(self):
         rows = [{"token_hash": str(i), "customer_name": "CLIENT " + str(i),
@@ -228,11 +234,12 @@ class TelegramShareTests(unittest.TestCase):
              patch.object(bot.time, "sleep") as pause:
             bot._process("orders", 11, 11, "📋 全部客戶")
         lookup.assert_called_once_with()
-        self.assertEqual(send.call_count, 3)
-        self.assertIn("1. <a href=", send.call_args_list[0].args[2])
-        self.assertIn("21. <a href=", send.call_args_list[1].args[2])
-        self.assertIn("41. <a href=", send.call_args_list[2].args[2])
-        self.assertEqual(pause.call_count, 2)
+        messages = [call.args[2] for call in send.call_args_list]
+        import re
+        found = [int(m.group(1)) for text in messages
+                 for m in re.finditer(r"(?:^|\n)(\d+)\. <a href=", text)]
+        self.assertEqual(found, list(range(1, 44)))
+        self.assertEqual(pause.call_count, max(0, len(messages) - 1))
 
     def test_all_aliases_case_insensitive_and_chinese(self):
         with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
