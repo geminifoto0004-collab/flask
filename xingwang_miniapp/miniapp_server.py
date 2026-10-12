@@ -55,7 +55,7 @@ async def query(request:Request):
     alias,action,q,init_data = (payload.get(k) for k in ("bot","action","q","init_data"))
     if alias not in ("STOCK","ADMIN") or action not in ("stock","camino","orders","nota"):
         raise HTTPException(400,"Unsupported action")
-    if not isinstance(q,str) or not (q=="@" and action=="nota" or 2<=len(q)<=40) or not isinstance(init_data,str) or not (1<=len(init_data)<=4096):
+    if not isinstance(q,str) or not ((q=="@" and action=="nota") or (action=="nota" and len(q)==1 and q.isdecimal()) or 2<=len(q)<=40) or not isinstance(init_data,str) or not (1<=len(init_data)<=4096):
         raise HTTPException(400,"Invalid input")
     async with bridge_lock:
         ws=active_bridge
