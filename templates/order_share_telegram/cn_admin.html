@@ -19,12 +19,12 @@ a{color:#176ac6;text-decoration:none}small{display:block;color:#64748b;line-heig
 <div class="notice">{{ "目前已設定專用密碼" if ready else "尚未設定密碼，中國同事入口目前停用" }}</div>
 <form action="/admin/automation/china-links" method="post" autocomplete="off">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<label for="password">設定新密碼（12～128 字元）</label>
-<input id="password" type="password" name="password" minlength="12" maxlength="128" required autocomplete="new-password">
+<label for="password">設定新密碼（1～128 字元，可用純數字）</label>
+<input id="password" type="password" name="password" minlength="1" maxlength="128" required autocomplete="new-password">
 <label for="confirm">再次確認新密碼</label>
-<input id="confirm" type="password" name="confirm" minlength="12" maxlength="128" required autocomplete="new-password">
+<input id="confirm" type="password" name="confirm" minlength="1" maxlength="128" required autocomplete="new-password">
 <button type="submit">{{ "更換密碼並讓舊登入失效" if ready else "啟用中國同事入口" }}</button>
 </form>
-<small>密碼只會以帶鹽 PBKDF2 雜湊值儲存在 TiDB，無法從管理頁讀出原始密碼。建議使用至少 12 字元且不要與其他系統共用。7 天內免重登，換密碼會立即登出所有舊裝置。</small>
+<small>密碼只會以帶鹽 PBKDF2 雜湊值儲存在 TiDB，無法從管理頁讀出原始密碼。允許最短 1 字元，但 1 位數字容易被猜中，建議使用較長密碼。你可隨時以 ADMIN 更換，7 天內免重登；更換後舊登入立即失效。</small>
 <p>中國同事網址：<a href="/cn/order-links" target="_blank" rel="noopener">/cn/order-links</a></p>
 </main></body></html>
