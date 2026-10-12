@@ -312,8 +312,21 @@ class TelegramShareTests(unittest.TestCase):
                              "https://t.me/XingwangOrderLinkBot?startapp=orderlinks")
             bot._process("orders", 11, -100123456789, "todo")
             lookup.assert_called_once_with()
-            bot._process("orders", 11, -100123456789, "🔎 客戶清單")
-            self.assertIn("startapp", send.call_args.args[3][0][0]["url"])
+            for query in ("app", "App", "APP", " app ", "🔎 客戶清單"):
+                bot._process("orders", 11, -100123456789, query)
+                self.assertEqual(send.call_args.args[3][0][0]["url"],
+                                 "https://t.me/XingwangOrderLinkBot?startapp=orderlinks")
+            lookup.assert_called_once_with()  # app is never misread as a customer search
+
+    def test_plain_app_still_checks_staff_group_membership(self):
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
+             patch.object(bot, "_load_bot", return_value={
+                 **self.fake_bot, "bot_username": "XingwangOrderLinkBot"}), \
+             patch("services.order_share_telegram_access.is_authorized", return_value=False), \
+             patch.object(bot, "_send_reply") as send:
+            bot._process("orders", 99, -100123456789, "app")
+            self.assertNotIn("startapp", str(send.call_args))
+            self.assertIn("私人群组", send.call_args.args[2])
 
     def test_customer_search_has_one_click_all_button(self):
         row = {"token_hash": "a" * 64, "customer_name": "SERGIO CONDO COLQUE",
