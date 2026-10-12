@@ -95,7 +95,7 @@ function details(){
   ['歷史',p.history?.length||0],['預留',p.reservar?.length||0]];
   $('note').textContent='歷史的 Caja 保留原始欄位名稱；在途 Unt 也保留原始單位，不把箱數當成匹數。價格以本機權限為準。'+((p.warnings||[]).length?'\n提醒：'+p.warnings.join('；'):'');
  }else if(p.kind==='reservar'){
-  items=[['Reservar 筆數',stock.length]];$('note').textContent='輸入 @ 查預留紀錄；顯示的是原系統的 Reservar，不是 R1/S1/RVA。';
+  items=[['Reservar 筆數',stock.length]];$('note').textContent='輸入 @ 查預留紀錄；顯示原本 ORDER Flask 的 Reservar 資料。';
  }else{
   items=[['Nota',p.nota||queries.nota],['客戶',p.customer||'—'],
   ['出貨',p.shipment_status||'未查到'],['出貨日期',p.shipped_at||'—'],['商品',stock.length]];
