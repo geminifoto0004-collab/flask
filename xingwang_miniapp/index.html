@@ -54,10 +54,21 @@ function draw(){
  const body=elem('tbody');for(const row of visible){const tr=elem('tr');for(const field of fields[action])tr.append(elem('td',fmt(row[field]),['pieces','meters','quantity'].includes(field)?'qty':''));body.append(tr);}
  t.append(body);wrap.append(t);
 }
-function stats(payload){const holder=el('stats');holder.replaceChildren();holder.hidden=false;
- const s=action==='stock'?[['商品編號',(payload.rows||[]).length],['總米數',fmt((payload.rows||[]).reduce((sum,r)=>sum+Number(r.meters||0),0))],['在途筆數',(payload.camino||[]).length]]:[['查詢筆數',(payload.rows||[]).length]];
- for(const [label,val] of s){const card=elem('div',undefined,'stat');card.append(elem('span',label),elem('strong',val));holder.append(card);}
- el('note').textContent=action==='stock'?'匹數欄暫顯示「—」：目前 Flask /search 回傳 Codigo、Caja、Un，不能把 Caja 箱數當成匹數。米數取自 Un。':'';
+function stats(payload){
+ const holder=el('stats');holder.replaceChildren();holder.hidden=false;
+ const all=payload.rows||[]; const hasPieces=all.some(r=>r.pieces!==null&&r.pieces!==undefined);
+ const hasMeters=all.some(r=>r.meters!==null&&r.meters!==undefined);
+ const items=action==='stock'?[
+   ['商品編號',all.length],
+   ['庫存匹數',hasPieces?fmt(all.reduce((n,r)=>n+Number(r.pieces||0),0)):'—'],
+   ['庫存米數',hasMeters?fmt(all.reduce((n,r)=>n+Number(r.meters||0),0)):'—'],
+   ['在途筆數',(payload.camino||[]).length]
+ ]:[['查詢筆數',all.length]];
+ for(const [label,val]of items){
+   const card=elem('div',undefined,'stat');card.append(elem('span',label),elem('strong',val));holder.append(card);
+ }
+ el('note').textContent=action==='stock'?
+   '匹數：沿用本機「Mostrar / Datos de Inventario」的 Cantidad；米數：本機庫存 API 的 Un。兩者按商品編號合併，每次查詢即時取得。':'';
 }
 async function search(){
  const q=el('q').value.trim(),init=tg?.initData||'',requestId=++seq;
@@ -75,5 +86,8 @@ async function search(){
 }
 el('go').addEventListener('click',search);el('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});el('filter').addEventListener('input',draw);
 el('tabs').addEventListener('click',e=>{const target=e.target.closest('[data-action]');if(!target)return;action=target.dataset.action;for(const b of el('tabs').querySelectorAll('.tab'))b.classList.toggle('active',b===target);search();});
-if(!tg?.initData)el('status').textContent='僅允許從 Telegram Mini App 開啟；無法在一般瀏覽器查詢。';
+const startCode=String(tg?.initDataUnsafe?.start_param||'').trim();
+if(/^[A-Za-z0-9][A-Za-z0-9_.()/\\-]{1,39}$/.test(startCode)){el('q').value=startCode;}
+if(!tg?.initData){el('status').textContent='請從 @XINGWANG_STOCK_BOT 的 Main Mini App 入口開啟；一般瀏覽器無法登入。';}
+else if(startCode){search();}
 </script></body></html>
