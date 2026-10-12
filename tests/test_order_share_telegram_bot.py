@@ -647,6 +647,9 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
         self.cn._SCHEMA_READY = False
         self.app = Flask("cn_test", template_folder=str(ROOT / "templates"))
         self.app.secret_key = "only-test-a-long-secret-key-0123456789"
+        # Flask test client's incoming Host must equal the simulated HTTPS
+        # browser origin; PUBLIC_BASE_URL is purposely unrelated.
+        self.app.config["SERVER_NAME"] = "example.test"
         self.app.add_url_rule("/login", endpoint="login", view_func=lambda: "Login")
         self.app.register_blueprint(self.cn.cn_bp)
         self.client = self.app.test_client()
@@ -676,6 +679,41 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
             data={"csrf": token, "password": value, "confirm": value},
             headers={"Origin": "https://example.test"})
         self.assertEqual(result.status_code, 303, result.get_data(as_text=True))
+
+    def test_csrf_origin_uses_current_website_not_telegram_public_base(self):
+        # Bot link config can intentionally point elsewhere; password saving
+        # must keep working on the HTTPS origin that served the admin form.
+        from blueprints.automation_hub import settings as active_settings
+        self.admin_mode()
+        page = self.client.get("/admin/automation/china-links",
+                               base_url="https://example.test")
+        csrf = self.csrf_from(page)
+        with patch.object(active_settings, "PUBLIC_BASE_URL",
+                          "https://not-the-current-browser-host.example"):
+            saved = self.client.post("/admin/automation/china-links", data={
+                "csrf": csrf, "password": "7", "confirm": "7"
+            }, headers={"Origin": "https://example.test"},
+                base_url="https://example.test")
+        self.assertEqual(saved.status_code, 303, saved.get_data(as_text=True))
+        current = self.db.execute(
+            "SELECT password_hash FROM order_share_cn_settings WHERE id=1"
+        ).fetchone()
+        self.assertTrue(current["password_hash"].startswith("pbkdf2:sha256:"))
+
+    def test_csrf_rejects_cross_site_origin_even_with_valid_token(self):
+        self.admin_mode()
+        csrf = self.csrf_from(self.client.get(
+            "/admin/automation/china-links", base_url="https://example.test"))
+        for hostile in ("https://evil.example", "http://example.test",
+                        "https://example.test.evil.example"):
+            result = self.client.post("/admin/automation/china-links", data={
+                "csrf": csrf, "password": "8", "confirm": "8"
+            }, headers={"Origin": hostile},
+                base_url="https://example.test")
+            self.assertEqual(result.status_code, 403)
+        self.assertIsNone(self.db.execute(
+            "SELECT password_hash FROM order_share_cn_settings WHERE id=1"
+        ).fetchone())
 
     def test_no_password_is_closed_and_admin_only_can_configure(self):
         self.assertEqual(self.client.get("/cn/order-links").status_code, 503)
