@@ -11,6 +11,17 @@ import unittest
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
+# The Telegram bot is a standalone module. Avoid importing services/__init__.py,
+# which eagerly loads unrelated image/ERP modules not required for these tests.
+SERVICES = types.ModuleType("services")
+SERVICES.__path__ = [str(ROOT / "services")]
+sys.modules["services"] = SERVICES
+ACCESS_SPEC = importlib.util.spec_from_file_location(
+    "services.order_share_telegram_access", ROOT / "services/order_share_telegram_access.py")
+ACCESS = importlib.util.module_from_spec(ACCESS_SPEC)
+ACCESS_SPEC.loader.exec_module(ACCESS)
+SERVICES.order_share_telegram_access = ACCESS
+sys.modules["services.order_share_telegram_access"] = ACCESS
 SPEC = importlib.util.spec_from_file_location("share_bot_under_test", ROOT / "services/order_share_telegram_bot.py")
 bot = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bot)
