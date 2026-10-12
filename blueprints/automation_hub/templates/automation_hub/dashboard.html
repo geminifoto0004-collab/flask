@@ -35,6 +35,15 @@
 </div>
 
 <div class="automation-card">
+  <h3 style="margin-top:0">🔐 中國同事 · 客戶分享查詢</h3>
+  <p class="muted">中國同事無需 Telegram，也不用公司主系統帳號密碼。專用密碼雜湊保存於 TiDB，登入後與 Telegram 共用同一套搜尋、開啟及複製功能。</p>
+  <div class="hub-actions">
+    <a class="hub-btn" href="/admin/automation/china-links">設定或更換專用密碼</a>
+    <a class="hub-btn hub-secondary" href="/cn/order-links" target="_blank" rel="noopener noreferrer">查看中國同事入口</a>
+  </div>
+</div>
+
+<div class="automation-card">
   <h3 style="margin-top:0">＋ 新增 Telegram Bot</h3>
   <form class="hub-form hub-formgrid" method="post" action="{{ url_for('.admin_create_bot') }}">
     <div><label>Bot Key</label><input name="bot_key" placeholder="aduana-main" required></div>
