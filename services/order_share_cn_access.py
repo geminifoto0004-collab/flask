@@ -31,6 +31,8 @@ _MAX_FAILURES = 8
 _ADMIN_CSRF_COOKIE = "xingwang_cn_admin_csrf"
 _ADMIN_CSRF_AGE = 60 * 60
 _ADMIN_CSRF_PATH = "/admin/automation/china-links"
+_CN_CSRF_COOKIE = "xingwang_cn_form_csrf"
+_CN_CSRF_AGE = 60 * 60
 
 
 def _secret_ready():
@@ -260,6 +262,67 @@ def _admin_csrf_valid():
         return False
 
 
+def _cn_csrf_serializer():
+    """Independent signed token for China login/logout forms."""
+    if not _secret_ready():
+        raise RuntimeError("Flask SECRET_KEY is not configured securely")
+    return URLSafeTimedSerializer(str(current_app.secret_key),
+                                  salt="order-share-cn-form-csrf-v2")
+
+
+def _new_cn_csrf(scope):
+    return _cn_csrf_serializer().dumps({
+        "scope": scope, "nonce": secrets.token_urlsafe(24)
+    })
+
+
+def _cn_csrf_valid(scope):
+    """Protect form actions without relying on the parent admin session.
+
+    Form and private HttpOnly cookie must contain the same, fresh server-signed
+    token for the expected action. SameSite=Strict stops cross-site POSTs.
+    """
+    form_token = str(request.form.get("csrf") or "")
+    cookie_token = str(request.cookies.get(_CN_CSRF_COOKIE) or "")
+    if (not form_token or not cookie_token or len(form_token) > 700
+            or not hmac.compare_digest(form_token, cookie_token)):
+        return False
+    try:
+        payload = _cn_csrf_serializer().loads(form_token, max_age=_CN_CSRF_AGE)
+        return bool(isinstance(payload, dict) and payload.get("nonce")
+                    and payload.get("scope") == scope)
+    except (BadSignature, SignatureExpired, ValueError, RuntimeError):
+        return False
+
+
+def _with_cn_csrf(response, token):
+    response.set_cookie(_CN_CSRF_COOKIE, token, max_age=_CN_CSRF_AGE,
+                        secure=True, httponly=True, samesite="Strict",
+                        path=_COOKIE_PATH)
+    return response
+
+
+def _clear_cn_csrf(response):
+    response.delete_cookie(_CN_CSRF_COOKIE, path=_COOKIE_PATH,
+                           secure=True, httponly=True, samesite="Strict")
+    return response
+
+
+def _login_page(error=None, status=200):
+    token = _new_cn_csrf("login")
+    response = make_response(render_template(
+        "order_share_telegram/cn_login.html", csrf=token, error=error
+    ), status)
+    return _with_cn_csrf(response, token)
+
+
+def _directory_page():
+    token = _new_cn_csrf("logout")
+    response = make_response(render_template(
+        "order_share_telegram/index.html", china=True, logout_csrf=token))
+    return _with_cn_csrf(response, token)
+
+
 def _response_headers(response):
     response.headers["Cache-Control"] = "no-store, private, max-age=0"
     response.headers["Pragma"] = "no-cache"
@@ -334,18 +397,17 @@ def page():
     if not settings.get("password_hash"):
         return make_response("中國客戶查詢入口尚未啟用，請聯絡管理員設定密碼。", 503)
     if _authorized(settings):
-        return render_template("order_share_telegram/index.html", china=True,
-                               logout_csrf=_csrf("logout"))
-    return render_template("order_share_telegram/cn_login.html",
-                           csrf=_csrf("login"), error=None)
+        return _directory_page()
+    return _login_page()
 
 
 @cn_bp.route("/cn/order-links/login", methods=["POST"])
 def login():
     if request.content_length is not None and request.content_length > 4096:
         return make_response("Request too large", 413)
-    if not _csrf_valid("login"):
-        return make_response("Invalid request", 403)
+    if not _cn_csrf_valid("login"):
+        return make_response(
+            "登入表單已過期，請重新開啟中國同事入口並再試一次。", 403)
     password = request.form.get("password", "")
     if not isinstance(password, str) or len(password) > 128:
         return make_response("密碼不正確。", 403)
@@ -357,21 +419,21 @@ def login():
             return make_response("嘗試次數過多，請 15 分鐘後再試。", 429)
         if not check_password_hash(settings["password_hash"], password):
             _record_failure()
-            return render_template("order_share_telegram/cn_login.html",
-                                   csrf=_csrf("login"), error="密碼錯誤，請重新輸入。"), 401
+            return _login_page(error="密碼錯誤，請重新輸入。", status=401)
     except Exception:
         return make_response("驗證暫時無法使用，請稍後再試。", 503)
-    session.pop("share_cn_csrf_login", None)
     response = redirect(url_for(".page"), code=303)
-    return _set_cookie(response, settings["revision"])
+    _set_cookie(response, settings["revision"])
+    return _clear_cn_csrf(response)
 
 
 @cn_bp.route("/cn/order-links/logout", methods=["POST"])
 def logout():
-    if not _csrf_valid("logout"):
-        return make_response("Invalid request", 403)
-    session.pop("share_cn_csrf_logout", None)
-    return _clear_cookie(redirect(url_for(".page"), code=303))
+    if not _cn_csrf_valid("logout"):
+        return make_response(
+            "退出表單已失效，請重新整理客戶清單後再試。", 403)
+    response = _clear_cookie(redirect(url_for(".page"), code=303))
+    return _clear_cn_csrf(response)
 
 
 @cn_bp.get("/cn/order-links/app.js")
