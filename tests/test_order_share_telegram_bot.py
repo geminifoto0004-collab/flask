@@ -232,7 +232,7 @@ class TelegramShareTests(unittest.TestCase):
     def test_group_can_search_all_and_customer_without_leaking_to_other_groups(self):
         group = -100123456789
         with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": str(group)}), \\
-             patch.object(bot, "_load_bot", return_value=self.fake_bot), \\
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \
              patch("services.order_share_telegram_access.is_authorized", return_value=True) as member, \\
              patch.object(bot, "_lookup_all", return_value=[]) as lookup_all, \\
              patch.object(bot, "_lookup_shares", return_value=[]) as lookup_shares, \\
@@ -251,7 +251,7 @@ class TelegramShareTests(unittest.TestCase):
     def test_group_unauthorized_sender_and_command_to_other_bot_are_silent(self):
         group = -100123456789
         with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": str(group)}), \\
-             patch.object(bot, "_load_bot", return_value=self.fake_bot), \\
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \
              patch("services.order_share_telegram_access.is_authorized", return_value=False), \\
              patch.object(bot, "_lookup_all", side_effect=AssertionError("private data leaked")), \\
              patch.object(bot, "_send_reply") as send:
