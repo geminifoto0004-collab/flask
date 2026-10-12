@@ -479,6 +479,106 @@ class PrivateGroupAccessTests(unittest.TestCase):
         self.assertFalse(self.access.is_authorized("orders", 0, "test-token"))
 
 
+class MiniAppDirectoryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from flask import Flask
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "miniapp_under_test", ROOT / "services/order_share_telegram_miniapp.py"
+        )
+        cls.mini = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mini)
+        app = Flask("test_order_share_miniapp")
+        app.register_blueprint(cls.mini.miniapp_bp)
+        cls.client = app.test_client()
+
+    @staticmethod
+    def make_signed_init_data(user_id=11, token="test-only-credential", when=None):
+        import json
+        import hashlib
+        import hmac
+        from urllib.parse import urlencode
+        if when is None:
+            when = int(time.time())
+        data = {
+            "auth_date": str(when),
+            "user": json.dumps({"id": user_id, "first_name": "Staff"}, separators=(",", ":")),
+            "query_id": "AA-test-query",
+        }
+        check = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
+        key = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+        data["hash"] = hmac.new(key, check.encode(), hashlib.sha256).hexdigest()
+        return urlencode(data)
+
+    def test_template_only_exposes_empty_app_shell_without_customer_data(self):
+        response = self.client.get("/telegram/order-shares")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"app.js", response.data)
+        self.assertNotIn(b"token_hash", response.data)
+        self.assertIn("no-store", response.headers["Cache-Control"])
+        self.assertIn("default-src", response.headers["Content-Security-Policy"])
+        js = self.client.get("/telegram/order-shares/app.js")
+        self.assertEqual(js.status_code, 200)
+        self.assertIn(b"initData", js.data)
+        self.assertIn(b"copyLink", js.data)
+
+    def test_signed_init_data_verification_rejects_forgery_and_old_sessions(self):
+        raw = self.make_signed_init_data()
+        now = int(time.time())
+        self.assertEqual(self.mini.validate_init_data(raw, "test-only-credential", now), 11)
+        self.assertIsNone(self.mini.validate_init_data(raw, "wrong-token", now))
+        self.assertIsNone(self.mini.validate_init_data(raw.replace("Staff", "Hacker"),
+                                                    "test-only-credential", now))
+        self.assertIsNone(self.mini.validate_init_data(raw + "&hash=00", "test-only-credential", now))
+        self.assertIsNone(self.mini.validate_init_data(
+            self.make_signed_init_data(when=now - 7200), "test-only-credential", now))
+        self.assertIsNone(self.mini.validate_init_data(
+            self.make_signed_init_data(when=now + 360), "test-only-credential", now))
+        self.assertIsNone(self.mini.validate_init_data(
+            self.make_signed_init_data(user_id=True), "test-only-credential", now))
+        self.assertIsNone(self.mini.validate_init_data("", "test-only-credential", now))
+
+    def test_api_denies_missing_or_invalid_signature_without_reading_shares(self):
+        with patch.object(self.mini, "_bot", return_value={"token": "test-only-credential",
+                                                           "bot_key": "orders", "enabled": True}), \
+             patch("services.order_share_telegram_access.configured", return_value=True), \
+             patch.object(bot, "_lookup_all_full",
+                          side_effect=AssertionError("unauthorized read")):
+            for init in ("", "user=123&hash=not-a-real-sig"):
+                response = self.client.post("/api/telegram/order-shares/directory",
+                                            json={"initData": init})
+                self.assertEqual(response.status_code, 403)
+                self.assertIn("no-store", response.headers["Cache-Control"])
+
+    def test_api_denies_non_staff_and_returns_only_live_shares_to_staff(self):
+        raw = self.make_signed_init_data()
+        one = {"customer_name": "SERGIO CONDO COLQUE", "token_hash": "a" * 64,
+               "created_at": "2026-10-01", "expires_at": None}
+        with patch.object(self.mini, "_bot", return_value={"token": "test-only-credential",
+                                                           "bot_key": "orders", "enabled": True}), \
+             patch("services.order_share_telegram_access.configured", return_value=True), \
+             patch("services.order_share_telegram_access.is_authorized",
+                   side_effect=[False, True]) as authorized, \
+             patch.object(bot, "_lookup_all_full", return_value=[one]) as lookup, \
+             patch.object(bot, "_share_url",
+                          return_value="https://example.invalid/share/existing") as url:
+            denied = self.client.post("/api/telegram/order-shares/directory", json={"initData": raw})
+            self.assertEqual(denied.status_code, 403)
+            lookup.assert_not_called()
+            allowed = self.client.post("/api/telegram/order-shares/directory", json={"initData": raw})
+            self.assertEqual(allowed.status_code, 200)
+            self.assertEqual(allowed.json["count"], 1)
+            self.assertEqual(allowed.json["items"][0]["name"], "SERGIO CONDO COLQUE")
+            self.assertEqual(allowed.json["items"][0]["url"],
+                             "https://example.invalid/share/existing")
+            lookup.assert_called_once_with()
+            url.assert_called_once_with(one)
+            self.assertEqual(authorized.call_count, 2)
+            self.assertTrue(all(c.args == ("orders", 11, "test-only-credential")
+                                for c in authorized.call_args_list))
+
+
 class ReadOnlyLookupTests(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
