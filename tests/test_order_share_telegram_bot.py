@@ -757,38 +757,51 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
                   "confirm": "Good-password-2026"}).status_code, 403)
         self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
 
-    def test_cn_login_csrf_is_independent_of_flask_session(self):
+    def test_cn_login_csrf_is_independent_of_flask_session_and_cookies(self):
         self.set_password("7")
         page = self.client.get("/cn/order-links")
         token = self.csrf_from(page)
-        cookie_header = page.headers.get("Set-Cookie") or ""
-        self.assertIn("xingwang_cn_form_csrf=", cookie_header)
-        self.assertIn("Secure", cookie_header)
-        self.assertIn("HttpOnly", cookie_header)
-        self.assertIn("SameSite=Strict", cookie_header)
-        self.assertIn("Path=/cn/order-links", cookie_header)
+        self.assertNotIn("xingwang_cn_form_csrf=", page.headers.get("Set-Cookie", ""))
         with self.client.session_transaction() as state:
             self.assertNotIn("share_cn_csrf_login", state)
         good = self.client.post("/cn/order-links/login",
-            data={"csrf": token, "password": "7"})
+            data={"csrf": token, "password": "7"},
+            headers={"Origin": "https://example.test"})
         self.assertEqual(good.status_code, 303, good.get_data(as_text=True))
+        self.assertIn("xingwang_cn_links=", good.headers.get("Set-Cookie") or "")
         self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
-        # The authenticated page issues a different token for logout.
         self.assertIn('action="/cn/order-links/logout"',
                       self.client.get("/cn/order-links").get_data(as_text=True))
 
-    def test_cn_csrf_rejects_forgery_wrong_scope_and_missing_cookie(self):
+    def test_cn_login_form_token_works_when_browser_rejects_prelogin_cookies(self):
+        self.set_password("7")
+        no_cookies = self.app.test_client(use_cookies=False)
+        page = no_cookies.get("/cn/order-links", base_url="https://example.test")
+        token = self.csrf_from(page)
+        self.assertNotIn("Set-Cookie", page.headers)
+        response = no_cookies.post("/cn/order-links/login",
+            data={"csrf": token, "password": "7"},
+            headers={"Origin": "https://example.test"},
+            base_url="https://example.test")
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("xingwang_cn_links=", response.headers.get("Set-Cookie") or "")
+        # If authenticated cookie cannot be stored, query still fails closed.
+        self.assertEqual(no_cookies.get("/cn/order-links/data").status_code, 403)
+
+    def test_cn_csrf_rejects_forgery_wrong_scope_and_cross_site(self):
         self.set_password("7")
         token = self.csrf_from(self.client.get("/cn/order-links"))
-        self.assertEqual(self.client.post("/cn/order-links/login",
-            data={"csrf": token + "bad", "password": "7"}).status_code, 403)
-        # An unauthenticated login token cannot be reused to logout.
+        for payload in ("", token + "tampered"):
+            self.assertEqual(self.client.post("/cn/order-links/login",
+                data={"csrf": payload, "password": "7"}).status_code, 403)
         self.assertEqual(self.client.post("/cn/order-links/logout",
             data={"csrf": token}).status_code, 403)
-        self.client.delete_cookie("xingwang_cn_form_csrf",
-                                  domain="example.test", path="/cn/order-links")
         self.assertEqual(self.client.post("/cn/order-links/login",
-            data={"csrf": token, "password": "7"}).status_code, 403)
+            data={"csrf": token, "password": "7"},
+            headers={"Origin": "https://attacker.example"}).status_code, 403)
+        self.assertEqual(self.client.post("/cn/order-links/login",
+            data={"csrf": token, "password": "7"},
+            headers={"Sec-Fetch-Site": "cross-site"}).status_code, 403)
         self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
 
     def test_cn_logout_scope_is_verified_independently(self):
