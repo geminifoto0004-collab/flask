@@ -301,9 +301,12 @@ def _cn_csrf_valid(scope):
 
 
 def _login_page(error=None, status=200):
+    # Password submission is a public authentication action, not an
+    # authenticated state change. Do not require a pre-login CSRF token or
+    # cookie: some browser/proxy paths discard them. The protected directory
+    # API still requires a signed, seven-day login ticket after verification.
     return make_response(render_template(
-        "order_share_telegram/cn_login.html",
-        csrf=_new_cn_csrf("login"), error=error
+        "order_share_telegram/cn_login.html", error=error
     ), status)
 
 
@@ -396,9 +399,9 @@ def page():
 def login():
     if request.content_length is not None and request.content_length > 4096:
         return make_response("Request too large", 413)
-    if not _cn_csrf_valid("login"):
-        return make_response(
-            "登入表單已過期，請重新開啟中國同事入口並再試一次。", 403)
+    # This only checks the submitted password and does not change any
+    # authenticated user state. CSRF protection remains required for the
+    # ADMIN password configuration and for authenticated logout.
     password = request.form.get("password", "")
     if not isinstance(password, str) or len(password) > 128:
         return make_response("密碼不正確。", 403)
