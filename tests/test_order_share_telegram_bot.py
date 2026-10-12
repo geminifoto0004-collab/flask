@@ -757,63 +757,53 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
                   "confirm": "Good-password-2026"}).status_code, 403)
         self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
 
-    def test_cn_login_csrf_is_independent_of_flask_session_and_cookies(self):
+    def test_cn_login_without_any_prelogin_cookies(self):
         self.set_password("7")
-        page = self.client.get("/cn/order-links")
-        token = self.csrf_from(page)
-        self.assertNotIn("xingwang_cn_form_csrf=", page.headers.get("Set-Cookie", ""))
-        with self.client.session_transaction() as state:
-            self.assertNotIn("share_cn_csrf_login", state)
-        good = self.client.post("/cn/order-links/login",
-            data={"csrf": token, "password": "7"},
-            headers={"Origin": "https://example.test"})
-        self.assertEqual(good.status_code, 303, good.get_data(as_text=True))
-        self.assertIn("xingwang_cn_links=", good.headers.get("Set-Cookie") or "")
+        anonymous = self.app.test_client(use_cookies=False)
+        page = anonymous.get("/cn/order-links", base_url="https://example.test")
+        self.assertEqual(page.status_code, 200)
+        self.assertNotIn('name="csrf"', page.get_data(as_text=True))
+        self.assertNotIn("Set-Cookie", page.headers)
+        # No pre-login token, cookies, Origin or Fetch-Metadata is required.
+        granted = anonymous.post("/cn/order-links/login", data={"password": "7"},
+                                 base_url="https://example.test")
+        self.assertEqual(granted.status_code, 303)
+        self.assertIn("xingwang_cn_links=", granted.headers.get("Set-Cookie") or "")
+        # Browser not retaining the authenticated cookie must never see data.
+        self.assertEqual(anonymous.get("/cn/order-links/data").status_code, 403)
+
+    def test_cn_login_with_real_browser_origin_and_unauthenticated_rejections(self):
+        self.set_password("7")
+        denied = self.client.post("/cn/order-links/login",
+                                  data={"password": "wrong"},
+                                  headers={"Origin": "https://example.test"})
+        self.assertEqual(denied.status_code, 401)
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+        granted = self.client.post("/cn/order-links/login",
+                                  data={"password": "7"},
+                                  headers={"Origin": "https://example.test",
+                                           "Sec-Fetch-Site": "same-origin"})
+        self.assertEqual(granted.status_code, 303)
         self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
         self.assertIn('action="/cn/order-links/logout"',
                       self.client.get("/cn/order-links").get_data(as_text=True))
 
-    def test_cn_login_form_token_works_when_browser_rejects_prelogin_cookies(self):
+    def test_cn_logout_signed_csrf_rejects_missing_tampered_cross_origin(self):
         self.set_password("7")
-        no_cookies = self.app.test_client(use_cookies=False)
-        page = no_cookies.get("/cn/order-links", base_url="https://example.test")
-        token = self.csrf_from(page)
-        self.assertNotIn("Set-Cookie", page.headers)
-        response = no_cookies.post("/cn/order-links/login",
-            data={"csrf": token, "password": "7"},
-            headers={"Origin": "https://example.test"},
-            base_url="https://example.test")
-        self.assertEqual(response.status_code, 303)
-        self.assertIn("xingwang_cn_links=", response.headers.get("Set-Cookie") or "")
-        # If authenticated cookie cannot be stored, query still fails closed.
-        self.assertEqual(no_cookies.get("/cn/order-links/data").status_code, 403)
-
-    def test_cn_csrf_rejects_forgery_wrong_scope_and_cross_site(self):
-        self.set_password("7")
-        token = self.csrf_from(self.client.get("/cn/order-links"))
-        for payload in ("", token + "tampered"):
-            self.assertEqual(self.client.post("/cn/order-links/login",
-                data={"csrf": payload, "password": "7"}).status_code, 403)
-        self.assertEqual(self.client.post("/cn/order-links/logout",
-            data={"csrf": token}).status_code, 403)
         self.assertEqual(self.client.post("/cn/order-links/login",
-            data={"csrf": token, "password": "7"},
-            headers={"Origin": "https://attacker.example"}).status_code, 403)
-        self.assertEqual(self.client.post("/cn/order-links/login",
-            data={"csrf": token, "password": "7"},
-            headers={"Sec-Fetch-Site": "cross-site"}).status_code, 403)
-        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
-
-    def test_cn_logout_scope_is_verified_independently(self):
-        self.set_password("7")
-        csrf = self.csrf_from(self.client.get("/cn/order-links"))
-        self.assertEqual(self.client.post("/cn/order-links/login",
-            data={"csrf": csrf, "password": "7"}).status_code, 303)
+            data={"password": "7"}).status_code, 303)
         page = self.client.get("/cn/order-links")
         logout_csrf = self.csrf_from(page)
-        self.assertNotEqual(logout_csrf, csrf)
+        for csrf in ("", logout_csrf + "wrong"):
+            self.assertEqual(self.client.post("/cn/order-links/logout",
+                data={"csrf": csrf}).status_code, 403)
         self.assertEqual(self.client.post("/cn/order-links/logout",
-            data={"csrf": csrf}).status_code, 403)
+            data={"csrf": logout_csrf},
+            headers={"Origin": "https://attacker.example"}).status_code, 403)
+        self.assertEqual(self.client.post("/cn/order-links/logout",
+            data={"csrf": logout_csrf,
+                  "password": "invalid-field-ignored"},
+            headers={"Sec-Fetch-Site": "cross-site"}).status_code, 403)
         self.assertEqual(self.client.post("/cn/order-links/logout",
             data={"csrf": logout_csrf}).status_code, 303)
         self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
@@ -830,14 +820,12 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
         self.assertIn("密码", unauthenticated.get_data(as_text=True))
         self.assertNotIn("app.js", unauthenticated.get_data(as_text=True))
         self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
-        csrf = self.csrf_from(unauthenticated)
         denied = self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "incorrect"},
+            "password": "incorrect"},
             headers={"Origin": "https://example.test"})
         self.assertEqual(denied.status_code, 401)
-        csrf = self.csrf_from(denied)  # failed login intentionally rotates CSRF token
         login = self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "Company-Shared-Password-2026"},
+            "password": "Company-Shared-Password-2026"},
             headers={"Origin": "https://example.test"})
         self.assertEqual(login.status_code, 303)
         cookie = login.headers["Set-Cookie"]
@@ -866,9 +854,8 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
 
     def test_password_change_revokes_existing_cookies(self):
         self.set_password()
-        csrf = self.csrf_from(self.client.get("/cn/order-links"))
         login = self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "Company-Shared-Password-2026"},
+            "password": "Company-Shared-Password-2026"},
             headers={"Origin": "https://example.test"})
         self.assertEqual(login.status_code, 303)
         self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
@@ -886,25 +873,20 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
         self.assertNotEqual(settings["password_hash"], "7")
         admin_page = self.client.get("/admin/automation/china-links")
         self.assertIn('minlength="1"', admin_page.get_data(as_text=True))
-        login_page = self.client.get("/cn/order-links")
-        csrf = self.csrf_from(login_page)
         login = self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "7"
+            "password": "7"
         }, headers={"Origin": "https://example.test"})
         self.assertEqual(login.status_code, 303)
         self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
         # The admin can rotate a single-digit code without knowing the old one.
         self.set_password("8")
         self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
-        login_page = self.client.get("/cn/order-links")
-        csrf = self.csrf_from(login_page)
         old_code = self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "7"
+            "password": "7"
         }, headers={"Origin": "https://example.test"})
         self.assertEqual(old_code.status_code, 401)
-        csrf = self.csrf_from(old_code)
         new_code = self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "8"
+            "password": "8"
         }, headers={"Origin": "https://example.test"})
         self.assertEqual(new_code.status_code, 303)
         self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
@@ -919,31 +901,20 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
         self.assertEqual(invalid.status_code, 400)
         self.assertEqual(self.client.get("/cn/order-links").status_code, 503)
 
-    def test_brute_force_limit_and_csrf(self):
+    def test_brute_force_limit_preserved_without_prelogin_csrf(self):
         self.set_password()
-        csrf = self.csrf_from(self.client.get("/cn/order-links"))
-        self.assertEqual(self.client.post("/cn/order-links/login", data={
-            "csrf": "fake", "password": "Company-Shared-Password-2026"},
-            headers={"Origin": "https://example.test"}).status_code, 403)
-        self.assertEqual(self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "Company-Shared-Password-2026"},
-            headers={"Origin": "https://attacker.example"}).status_code, 403)
         for _ in range(self.cn._MAX_FAILURES):
             response = self.client.post("/cn/order-links/login", data={
-                "csrf": csrf, "password": "wrong123456789"},
-                headers={"Origin": "https://example.test"})
+                "password": "wrong123456789"})
             self.assertEqual(response.status_code, 401)
-            csrf = self.csrf_from(response)
         response = self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "Company-Shared-Password-2026"},
-            headers={"Origin": "https://example.test"})
+            "password": "Company-Shared-Password-2026"})
         self.assertEqual(response.status_code, 429)
 
     def test_logout_requires_csrf_and_removes_access_cookie(self):
         self.set_password()
-        csrf = self.csrf_from(self.client.get("/cn/order-links"))
         self.client.post("/cn/order-links/login", data={
-            "csrf": csrf, "password": "Company-Shared-Password-2026"},
+            "password": "Company-Shared-Password-2026"},
             headers={"Origin": "https://example.test"})
         self.assertEqual(self.client.post("/cn/order-links/logout",
             data={"csrf": "wrong"}, headers={"Origin": "https://example.test"}
