@@ -103,8 +103,10 @@ if _RENDER_ORDER_ENABLED:
     # Keep the local ORDER_HOME application unchanged.
     from blueprints.automation_hub import automation_hub_bp
     from services.order_share_telegram_miniapp import miniapp_bp as order_share_miniapp_bp
+    from services.order_share_cn_access import cn_bp as order_share_cn_bp
     app.register_blueprint(automation_hub_bp)
     app.register_blueprint(order_share_miniapp_bp)
+    app.register_blueprint(order_share_cn_bp)
 
     from blueprints.order_tracking_cloud_auth_bp import order_tracking_cloud_auth_bp
     from order_tracking import init_app as init_order_tracking_app, register_cloud_db_connection_factory
