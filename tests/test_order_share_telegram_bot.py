@@ -265,6 +265,19 @@ class TelegramShareTests(unittest.TestCase):
             bot._process("orders", 99, -100123456789, "/menu")
         self.assertFalse(send.call_args.kwargs.get("show_menu", False))
 
+    def test_customer_search_has_one_click_all_button(self):
+        row = {"token_hash": "a" * 64, "customer_name": "SERGIO CONDO COLQUE",
+               "created_at": "2026-10-01", "expires_at": None}
+        with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch.object(bot, "_lookup_shares", return_value=[row]), \
+             patch.object(bot, "_share_url", return_value="https://example.invalid/share/sergio"), \
+             patch.object(bot, "_send_reply") as send:
+            bot._process("orders", 11, 11, "SERGIO")
+        buttons = send.call_args.args[3]
+        self.assertEqual(buttons[0][0]["text"], "📋 複製連結")
+        self.assertEqual(buttons[0][0]["copy_text"]["text"], "https://example.invalid/share/sergio")
+        self.assertEqual(buttons[-1][0]["callback_data"], "order_shares:all:1")
+
     def test_callback_pagination_private_and_authorized_group_only(self):
         def callback(user=11, chat=11, kind="private", data="order_shares:all:2"):
             return {"callback_query": {"id": "abc", "data": data,
