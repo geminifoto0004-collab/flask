@@ -189,7 +189,7 @@ class TelegramShareTests(unittest.TestCase):
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 11, 11, "/all")
             lookup.assert_called_once_with(1)
-            self.assertIn("没有找到", send.call_args.args[2])
+            self.assertIn("没有有效分享", send.call_args.args[2])
 
     def test_callback_pagination_private_and_authorized_group_only(self):
         def callback(user=11, chat=11, kind="private", data="order_shares:all:2"):
