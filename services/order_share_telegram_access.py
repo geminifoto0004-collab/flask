@@ -1,145 +1,49 @@
-"""Company passcode enrolment for the Render ORDER share Telegram bot.
+"""Invitation-only staff access to the ORDER share Telegram bot.
 
-Stored Telegram user IDs survive restarts. The record includes a keyed fingerprint
-of the current passcode, so rotating it revokes every previous enrolment.
-Do not expose the passcode or fingerprints in logs or replies.
+Employees join a private Telegram group, where the bot is an administrator.
+Telegram's getChatMember verifies group membership on every private lookup,
+so leaving or being removed removes access without requiring an ID list.
+No passcodes, no private customer data in the group.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
-import threading
-import time
+import re
 
-from database import get_db_connection, get_cursor
+import requests
 
-_SCHEMA_LOCK = threading.Lock()
-_SCHEMA_READY = False
-_FAILURE_LOCK = threading.Lock()
-_FAILURES = {}
-_WINDOW = 15 * 60
-_MAX_FAILURES = 5
+_GROUP_ID_RE = re.compile(r"-[1-9][0-9]{3,20}")
 
 
-def _company_code():
-    code = (os.environ.get("ORDER_SHARE_TELEGRAM_ACCESS_CODE") or "").strip()
-    return code if len(code) >= 8 else ""
+def group_id():
+    value = (os.environ.get("ORDER_SHARE_TELEGRAM_GROUP_ID") or "").strip()
+    return int(value) if _GROUP_ID_RE.fullmatch(value) else None
 
 
 def configured():
-    return bool(_company_code())
+    return group_id() is not None
 
 
-def _fingerprint(bot_key):
-    secret = (os.environ.get("AUTOMATION_MASTER_KEY") or "").strip()
-    code = _company_code()
-    if not secret or not code:
-        raise RuntimeError("ORDER share company code or master key not configured")
-    msg = ("order-share-staff-v1\x00" + str(bot_key) + "\x00" + code).encode("utf-8")
-    return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
-
-
-def _ensure_schema(conn):
-    global _SCHEMA_READY
-    if _SCHEMA_READY:
-        return
-    with _SCHEMA_LOCK:
-        if _SCHEMA_READY:
-            return
-        cursor = get_cursor(conn)
-        cursor.execute(
-            """CREATE TABLE IF NOT EXISTS automation_order_share_staff (
-                 bot_key VARCHAR(64) NOT NULL,
-                 telegram_user_id BIGINT NOT NULL,
-                 code_fingerprint CHAR(64) NOT NULL,
-                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                 PRIMARY KEY (bot_key, telegram_user_id)
-               )"""
-        )
-        conn.commit()
-        _SCHEMA_READY = True
-
-
-def is_authorized(bot_key, user_id):
-    if not configured():
+def is_authorized(bot_key, user_id, bot_token):
+    """Check a real Telegram member. Errors fail closed, never reveal bot token."""
+    if group_id() is None or type(user_id) is not int or user_id <= 0 or not bot_token:
         return False
-    fingerprint = _fingerprint(bot_key)
-    conn = get_db_connection()
     try:
-        _ensure_schema(conn)
-        cursor = get_cursor(conn)
-        cursor.execute(
-            """SELECT code_fingerprint FROM automation_order_share_staff
-               WHERE bot_key = ? AND telegram_user_id = ?""",
-            (bot_key, int(user_id)),
+        response = requests.post(
+            "https://api.telegram.org/bot" + bot_token + "/getChatMember",
+            json={"chat_id": group_id(), "user_id": user_id},
+            timeout=8,
         )
-        row = cursor.fetchone()
-        if row is None:
+        if response.status_code != 200:
             return False
-        digest = row.get("code_fingerprint") if isinstance(row, dict) else row[0]
-        return hmac.compare_digest(str(digest or ""), fingerprint)
-    finally:
-        conn.close()
-
-
-def _blocked(bot_key, user_id, now):
-    key = (bot_key, user_id)
-    with _FAILURE_LOCK:
-        attempts = [t for t in _FAILURES.get(key, []) if now - t < _WINDOW]
-        if attempts:
-            _FAILURES[key] = attempts
-        else:
-            _FAILURES.pop(key, None)
-        return len(attempts) >= _MAX_FAILURES
-
-
-def _record_failure(bot_key, user_id, now):
-    key = (bot_key, user_id)
-    with _FAILURE_LOCK:
-        _FAILURES.setdefault(key, []).append(now)
-        return len(_FAILURES[key]) >= _MAX_FAILURES
-
-
-def authenticate(bot_key, user_id, supplied):
-    """Returns ok, incorrect, locked or not_configured; no secret in replies."""
-    if not configured():
-        return "not_configured"
-    now = time.monotonic()
-    if _blocked(bot_key, user_id, now):
-        return "locked"
-    if not hmac.compare_digest(str(supplied), _company_code()):
-        return "locked" if _record_failure(bot_key, user_id, now) else "incorrect"
-    fingerprint = _fingerprint(bot_key)
-    conn = get_db_connection()
-    try:
-        _ensure_schema(conn)
-        cursor = get_cursor(conn)
-        # Both SQLite (tests/local) and TiDB (Render) support REPLACE INTO.
-        cursor.execute(
-            """REPLACE INTO automation_order_share_staff
-               (bot_key, telegram_user_id, code_fingerprint)
-               VALUES (?, ?, ?)""",
-            (bot_key, int(user_id), fingerprint),
+        payload = response.json()
+        if not payload.get("ok"):
+            return False
+        member = payload.get("result") or {}
+        status = member.get("status")
+        return status in {"creator", "administrator", "member"} or (
+            status == "restricted" and member.get("is_member") is True
         )
-        conn.commit()
-    finally:
-        conn.close()
-    with _FAILURE_LOCK:
-        _FAILURES.pop((bot_key, user_id), None)
-    return "ok"
-
-
-def revoke_self(bot_key, user_id):
-    conn = get_db_connection()
-    try:
-        _ensure_schema(conn)
-        cursor = get_cursor(conn)
-        cursor.execute(
-            """DELETE FROM automation_order_share_staff
-               WHERE bot_key = ? AND telegram_user_id = ?""",
-            (bot_key, int(user_id)),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    except Exception:
+        # Any requests exception may contain the token-bearing URL; fail closed.
+        return False
