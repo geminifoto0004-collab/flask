@@ -351,7 +351,7 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
 
     if command in {"/start", "/help", "/menu", "/links"} and (
             command != "/links" or not argument.strip()) or text.strip() in {
-                "選單", "菜单", "功能表", "menu", "MENU"}:
+                "選單", "菜單", "菜单", "功能表", "menu", "MENU"}:
         return _send_reply(
             bot["token"], chat_id,
             "<b>XINGWANG ORDER LINK</b>\n已開啟下方「📋 全部客戶」快捷鍵盤，"
