@@ -37,7 +37,7 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 </style></head><body>
 <header>
 <h1>XINGWANG STOCK</h1><p class="sub">Telegram 授权 · 本机实时查询 · 一次获取，点击切换</p>
-<div class="modes" id="modes"><button class="on" data-mode="product">商品编号</button><button data-mode="nota">Nota / @ 预留</button></div>
+<div class="modes" id="modes"><button class="on" data-mode="product">商品编号</button><button data-mode="nota">Nota / @ 预定</button></div>
 <div class="search"><div class="entry"><input id="q" value="" placeholder="输入商品编号" autocomplete="off" enterkeyhint="search"/><button type="button" id="clear" class="clear" aria-label="清除搜索内容">×</button></div><button type="button" id="go">查询</button></div>
 <div class="tabs" id="tabs">
 <button class="on" data-tab="stock">库存</button><button data-tab="camino">待到货</button><button data-tab="history">历史购买</button><button data-tab="reservar">预定</button>
@@ -110,7 +110,7 @@ function drawProduct(){
  $('note').textContent='切换分类不会重新向本机查询。'+(issues.length?' 提示：'+issues.join('；'):'');
 }
 function showNota(){
- const snap=cache.nota;if(!snap){clearOutput('请输入五位数 Nota，或 @ 查询预留记录');return;}
+ const snap=cache.nota;if(!snap){clearOutput('请输入 Nota 前缀、客户名称，或 @ 查询预定记录');return;}
  const d=snap.data||{};$('filterline').hidden=true;$('results').replaceChildren();
  if(d.found===false){statsBox([['查询条件',snap.q],['状态','未找到']]);$('results').append(node('div','没有找到匹配的 Nota；不能据此判断是否出货。','empty'));return;}
  let docs=d.documents;
@@ -128,7 +128,7 @@ function showNota(){
  for(const doc of docs){
   const detail=node('details',undefined,'doc'),summ=node('summary'),top=node('div',undefined,'doc-head');
   top.append(node('div',reserved?(doc.customer||'未知客户'):'Nota '+(doc.nota||snap.q),'doc-title'));
-  top.append(node('span',reserved?'预留记录':doc.shipped_at?'查到出货日期':'未查到出货记录','tag'));
+  top.append(node('span',reserved?'预定记录':doc.shipped_at?'查到出货日期':'未查到出货记录','tag'));
   summ.append(top);
   const cells=node('div',undefined,'doc-info');
   if(reserved){addField(cells,'日期',doc.date);addField(cells,'客户',doc.customer);addField(cells,'明细数量',(doc.rows||[]).length);}
@@ -136,21 +136,21 @@ function showNota(){
   summ.append(cells,node('div','点击展开商品明细  ▾','doc-tip'));detail.append(summ);
   const body=node('div',undefined,'doc-details');
   if(!reserved){const extra=node('div',undefined,'doc-info');addField(extra,'Nota',doc.nota);addField(extra,'BULTOS（原系统）',doc.bultos);body.append(extra);}
-  body.append(node('h3',reserved?'预留商品明细':'Nota 商品明细'));
+  body.append(node('h3',reserved?'预定商品明细':'Nota 商品明细'));
   const itemCols=reserved?[['code','商品编号']]:[['code','商品编号'],['caja','CAJA'],['quantity','UNT']];
   if(d.price_allowed){itemCols.push(...(reserved? [['amount','金额']]:[['price','单价'],['total','金额']]));}
   const detailRows=doc.rows||[];
   body.append(doc.details_loaded===false?node('div','商品明细尚未预取，请缩小查询范围','empty'):(detailRows.length?makeTable(detailRows,itemCols,false):node('div','此条记录暂无商品明细','empty')));
   detail.append(body);$('results').append(detail);
  }
- $('note').textContent=reserved?'@ 查询原系统 RESERVAR。点击客户可展开所属商品；金额仅管理员可查看。':
+ $('note').textContent=reserved?'@ 查询原系统 RESERVAR 预定记录。点击客户展开商品；金额仅管理员可查看。':
  '出货日期来自 CARGA_FECHA；PILOTERO 是原系统的承运人/司机字段，并不代表已经取得车牌号码。找不到日期只表示未查到出货记录。';
 }
 function render(){if(mode==='product')drawProduct();else showNota();}
 function changeMode(next){
  if(next===mode)return;typed[mode]=$('q').value.trim();mode=next;++seq;
  $('go').disabled=false;$('filter').value='';sort='';desc=false;
- $('q').value=typed[mode]||'';$('q').placeholder=mode==='nota'?'输入五位数 Nota，或 @ 查询预留':'输入商品编号';updateClear();
+ $('q').value=typed[mode]||'';$('q').placeholder=mode==='nota'?'Nota 前缀 / 客户名称 / @ 预定':'输入商品编号';updateClear();
  $('tabs').hidden=mode==='nota';
  for(const b of $('modes').querySelectorAll('[data-mode]'))b.classList.toggle('on',b.dataset.mode===mode);
  $('q').blur();$('filter').blur();
@@ -166,10 +166,18 @@ function changeTab(next){
 async function search(){
  const q=$('q').value.trim(),init=tg?.initData||'',id=++seq,using=mode;
  if(!init){showStatus('请通过 Telegram Mini App 打开页面，普通浏览器不能查询。');return;}
- if(using==='nota'&&!(/^\d{5}$/.test(q)||q==='@')){showStatus('请输入五位数字的 Nota，或 @ 查询预留');return;}
+ if(using==='nota'){
+   const validNumeric=/^\d{1,5}$/.test(q);
+   const validName=q.length>=2&&q.length<=40&&[...q].some(c=>/\p{L}/u.test(c))&&
+       [...q].every(c=>/[\p{L}\p{N} .,'&/\-]/u.test(c));
+   if(!(validNumeric||validName||q==='@')){
+     showStatus('请输入 1～5 位 Nota 开头数字、客户名称（如 M Y M），或 @ 查询预定');
+     return;
+   }
+ }
  if(using==='product'&&!/^[A-Za-z0-9][A-Za-z0-9_.()\/\-]{1,39}$/.test(q)){showStatus('请输入正确的商品编号');return;}
  typed[using]=q;cache[using]=null;sort='';desc=false;clearOutput('正在从本机获取完整数据……');
- $('go').disabled=true;showStatus(using==='nota'?'正在查询 Nota / 预留记录……':'正在一次获取库存、在途、购买历史、价格和预留记录……');
+ $('go').disabled=true;showStatus(using==='nota'?'正在查询匹配 Nota / 预定记录……':'正在一次获取库存、待到货、历史购买和预定记录……');
  try{
   const res=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action:using==='nota'?'nota':'stock',q,init_data:init})});
   const value=await res.json();if(!res.ok||!value.ok)throw new Error(value.error||value.detail||'查询失败');
