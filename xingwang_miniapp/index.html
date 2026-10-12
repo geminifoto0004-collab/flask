@@ -81,7 +81,7 @@ async function search(){
  if(requestId!==seq)return;
  rows=body.data?.rows||[];sort='';desc=false;el('filter').value='';stats(body.data||{});draw();
  el('status').textContent='已取得本機即時資料 · '+new Date().toLocaleTimeString();
- }catch(err){if(requestId!==seq)return;rows=[];el('stats').hidden=true;el('note').textContent='';draw();el('status').textContent=String(err.message||err);}
+ }catch(err){if(requestId!==seq)return;rows=[];el('stats').hidden=true;el('note').textContent='';el('count').textContent='';el('wrap').replaceChildren(elem('div','查詢未完成（不是庫存零筆）','empty'));el('status').textContent=String(err.message||err);}
  finally{if(requestId===seq)el('go').disabled=false;}
 }
 el('go').addEventListener('click',search);el('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});el('filter').addEventListener('input',draw);
