@@ -88,7 +88,7 @@ class TelegramShareTests(unittest.TestCase):
                          ["SERGIO CONDO COLQUE", "SERGIO CONDO COLQUE"])
         self.assertIn("没有找到", send.call_args.args[2])
 
-    def test_full_name_is_clickable_without_copy_buttons(self):
+    def test_full_name_is_clickable_with_single_compact_copy_button(self):
         original_name = "OSCAR <X>& " + "LONG NAME " * 8
         rows = [{"token_hash": "a" * 64, "customer_name": original_name,
                  "created_at": "2026-10-01", "expires_at": None}]
@@ -99,26 +99,32 @@ class TelegramShareTests(unittest.TestCase):
         self.assertIn('href="https://example.invalid/share/existing?a=1&amp;b=2"', text)
         self.assertIn("&lt;query&gt;", text)
         self.assertIn("永久", text)
-        self.assertEqual(buttons, [])
-        self.assertNotIn("复制链接", text)
+        self.assertEqual(buttons, [[{"text": "📋 複製連結", "copy_text": {
+            "text": "https://example.invalid/share/existing?a=1&b=2"}}]])
+        self.assertNotIn("複製連結", text)
         self.assertNotIn("打开 · ", text)
         self.assertNotIn("建立 01-10-2026", text)
 
-    def test_result_text_bounded_and_no_customer_keyboard_buttons(self):
+    def test_result_text_bounded_and_numbered_copy_buttons(self):
         rows = [{"token_hash": "a" * 64, "customer_name": "<&" * 200, "created_at": "2026-10-01",
                  "expires_at": "2026-11-01"}] * 6
         with patch.object(bot, "_share_url", return_value="https://example.invalid/share/existing"):
             text, controls = bot._search_reply("query", rows)
-        self.assertEqual(controls, [])
+        self.assertGreaterEqual(len(controls), 1)
+        self.assertLessEqual(len(controls), 2)
+        self.assertTrue(all(len(row) <= 4 for row in controls))
+        self.assertEqual(controls[0][0]["text"], "📋1")
+        self.assertEqual(controls[0][0]["copy_text"]["text"],
+                         "https://example.invalid/share/existing")
         self.assertLess(len(text), 4096)
-        self.assertIn("还有更多", text)
+        self.assertIn("還有更多", text)
 
     def test_database_error_is_not_reported_as_no_matching_customers(self):
         with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
              patch.object(bot, "_lookup_shares", side_effect=RuntimeError("private detail")), \
              patch.object(bot, "_send_reply") as send, patch.object(bot._LOG, "warning"):
             bot._process("orders", 11, 11, "OSCAR")
-        self.assertIn("暂时无法读取", send.call_args.args[2])
+        self.assertIn("暫時無法讀取", send.call_args.args[2])
         self.assertNotIn("private detail", send.call_args.args[2])
 
     def test_failed_delivery_never_exposes_token_in_exception(self):
@@ -178,9 +184,14 @@ class TelegramShareTests(unittest.TestCase):
         ]
         with patch.object(bot, "_share_url", side_effect=lambda row: "https://example.invalid/share/" + row["token_hash"]):
             text, buttons = bot._all_reply(1, rows)
-        self.assertIn("第 1 页", text)
-        self.assertEqual(len(buttons), 1)  # Only the navigation row
-        self.assertEqual(buttons[0][0]["callback_data"], "order_shares:all:2")
+        self.assertIn("第 1 頁", text)
+        self.assertEqual(len(buttons), 3)  # Two short copy rows + navigation
+        self.assertEqual([len(row) for row in buttons], [4, 4, 2])
+        self.assertEqual(buttons[0][0]["text"], "📋1")
+        self.assertEqual(buttons[0][0]["copy_text"]["text"], "https://example.invalid/share/0")
+        self.assertEqual(buttons[1][3]["text"], "📋8")
+        self.assertEqual(buttons[-1][0]["callback_data"], "order_shares:all:1")
+        self.assertEqual(buttons[-1][1]["callback_data"], "order_shares:all:2")
         self.assertIn("1. <a href=", text)
         self.assertIn("8. <a href=", text)
         self.assertNotIn("9. <a href=", text)
@@ -188,6 +199,8 @@ class TelegramShareTests(unittest.TestCase):
         with patch.object(bot, "_share_url", side_effect=lambda row: "https://example.invalid/share/" + row["token_hash"]):
             _, buttons2 = bot._all_reply(2, rows[:3])
         self.assertEqual(buttons2[-1][0]["callback_data"], "order_shares:all:1")
+        self.assertEqual(buttons2[-1][1]["callback_data"], "order_shares:all:1")
+        self.assertEqual(buttons2[0][0]["text"], "📋9")
         self.assertIn("9. <a href=", _)
 
     def test_all_queries_only_after_authorization(self):
@@ -202,12 +215,13 @@ class TelegramShareTests(unittest.TestCase):
         with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
              patch.object(bot, "_lookup_all", return_value=[]) as lookup, \
              patch.object(bot, "_send_reply") as send:
-            for text in ("/all", "全部", "todo", "TODO", "ToDo", "todos", "ALL", "/todo"):
+            for text in ("/all", "全部", "todo", "TODO", "ToDo", "todos", "ALL", "/todo",
+                         "📋 全部客戶", "📋 全部客户", "全部客戶"):
                 bot._process("orders", 11, 11, text)
             bot._process("orders", 11, 11, "/all 3")
-        self.assertEqual(lookup.call_count, 9)
-        self.assertEqual([c.args[0] for c in lookup.call_args_list], [1] * 8 + [3])
-        self.assertEqual(send.call_count, 9)
+        self.assertEqual(lookup.call_count, 12)
+        self.assertEqual([c.args[0] for c in lookup.call_args_list], [1] * 11 + [3])
+        self.assertEqual(send.call_count, 12)
 
     def test_company_group_does_not_reply_to_unrelated_chatter(self):
         with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
@@ -221,6 +235,35 @@ class TelegramShareTests(unittest.TestCase):
             self.assertEqual(send.call_count, 1)
             self.assertIn("没有找到", send.call_args.args[2])
             self.assertEqual(lookup.call_count, 2)
+
+    def test_persistent_one_tap_keyboard_uses_existing_authorization(self):
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch("services.order_share_telegram_access.is_authorized", return_value=True), \
+             patch.object(bot, "_send_reply") as send:
+            for command in ("/start", "/menu", "菜單"):
+                bot._process("orders", 11, -100123456789, command)
+                self.assertTrue(send.call_args.kwargs.get("show_menu"))
+                self.assertIn("快捷鍵盤", send.call_args.args[2])
+
+        response = Mock(status_code=200)
+        response.json.return_value = {"ok": True}
+        with patch.object(bot.requests, "post", return_value=response) as post:
+            bot._send_reply("test-token", -100123456789, "選單", show_menu=True)
+        payload = post.call_args.kwargs["json"]
+        markup = payload["reply_markup"]
+        self.assertTrue(markup["is_persistent"])
+        self.assertFalse(markup["one_time_keyboard"])
+        self.assertEqual(markup["keyboard"][0][0]["text"], "📋 全部客戶")
+        self.assertNotIn("inline_keyboard", markup)
+
+    def test_menu_access_denied_to_outsiders(self):
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch("services.order_share_telegram_access.is_authorized", return_value=False), \
+             patch.object(bot, "_send_reply") as send:
+            bot._process("orders", 99, -100123456789, "/menu")
+        self.assertFalse(send.call_args.kwargs.get("show_menu", False))
 
     def test_callback_pagination_private_and_authorized_group_only(self):
         def callback(user=11, chat=11, kind="private", data="order_shares:all:2"):
