@@ -48,20 +48,31 @@ def _actor(update):
 
 
 def _group_actor(update):
-    """Only /groupid works in groups; all customer replies remain in private DMs."""
+    """Queries work in the configured staff group; /groupid also works before configuration."""
     message = update.get("message") if isinstance(update, dict) else None
     if not isinstance(message, dict):
         return None
     sender, chat = message.get("from") or {}, message.get("chat") or {}
     user_id, chat_id = sender.get("id"), chat.get("id")
-    txt = str(message.get("text") or "").strip()
-    if (type(user_id) is not int or user_id <= 0 or type(chat_id) is not int
-            or chat_id >= 0 or chat.get("type") not in {"private", "group", "supergroup"}
-            or sender.get("is_bot")
-            or not re.fullmatch(r"/groupid(?:@[A-Za-z0-9_]{5,32})?", txt, flags=re.I)):
-        return None
-    return user_id, chat_id, "/groupid"
+    from services import order_share_telegram_access as access
 
+    text = message.get("text")
+    if (type(user_id) is not int or user_id <= 0 or type(chat_id) is not int
+            or chat_id >= 0 or chat.get("type") not in {"group", "supergroup"}
+            or sender.get("is_bot") or not isinstance(text, str)):
+        return None
+    text = text.strip()[:256]
+    if not text:
+        return None
+    configured_group = access.group_id()
+    if chat_id == configured_group:
+        return user_id, chat_id, text
+    # Let administrators find the group ID during first-time setup; all data
+    # lookups are forbidden outside the configured group.
+    if configured_group is None and re.fullmatch(
+            r"/groupid(?:@[A-Za-z0-9_]{5,32})?", text, flags=re.I):
+        return user_id, chat_id, "/groupid"
+    return None
 
 def _callback_actor(update):
     callback = update.get("callback_query") if isinstance(update, dict) else None
@@ -73,10 +84,14 @@ def _callback_actor(update):
     data = str(callback.get("data") or "")
     match = re.fullmatch(r"order_shares:all:([1-9][0-9]{0,3})", data)
     callback_id = callback.get("id")
+    from services import order_share_telegram_access as access
+
+    private_chat = user_id == chat_id and chat.get("type") == "private"
+    staff_group = (access.group_id() == chat_id
+                   and chat.get("type") in {"group", "supergroup"})
     if (not match or not isinstance(callback_id, str) or not callback_id
             or type(user_id) is not int or user_id <= 0 or type(chat_id) is not int
-            or user_id != chat_id or chat.get("type") != "private"
-            or sender.get("is_bot")):
+            or not (private_chat or staff_group) or sender.get("is_bot")):
         return None
     return user_id, chat_id, "/all " + match.group(1), callback_id
 
@@ -255,24 +270,30 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
     if callback_id:
         _answer_callback(bot["token"], callback_id)
     command, _, argument = text.partition(" ")
-    command = command.split("@", 1)[0].lower()
+    command_name, mention_sep, mention = command.partition("@")
+    command = command_name.lower()
+    if mention_sep and mention.lower() != str(bot.get("bot_username") or "").lower():
+        return  # Command addressed to another bot
 
+    configured_group = access.group_id()
+    staff_group = configured_group is not None and chat_id == configured_group
+    private_chat = chat_id == user_id
     if command == "/groupid" and chat_id < 0:
-        return _send_reply(bot["token"], chat_id,
-                           "此群组 ID：<code>" + str(chat_id) +
-                           "</code>\n管理员将此数字填入 Render 的 ORDER_SHARE_TELEGRAM_GROUP_ID。")
-    if chat_id != user_id:
+        if configured_group is None or staff_group:
+            return _send_reply(bot["token"], chat_id,
+                               "此群组 ID：<code>" + str(chat_id) + "</code>")
+        return
+    if not (private_chat or staff_group):
         return
     if command == "/id":
         return _send_reply(bot["token"], chat_id, "你的 Telegram ID：<code>" + str(user_id) + "</code>")
 
-    # If private group configured, group membership is the only authority.
-    # Legacy numeric-ID permissions are supported only until group configuration.
-    # getChatMember is checked on every request, including pagination callbacks.
+    # Check staff membership for both group and private queries on every request.
+    # Legacy numeric-ID allowances apply only to private chats before group setup.
     try:
         authorized = (
             access.is_authorized(bot_key, user_id, bot["token"])
-            if access.configured() else user_id in _allowed_ids()
+            if access.configured() else (private_chat and user_id in _allowed_ids())
         )
     except Exception:
         authorized = False
@@ -290,7 +311,7 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
             bot["token"], chat_id,
             "<b>XINGWANG ORDER LINK</b>\n输入 /all 查看全部有效分享，"
             "点击「下一页」翻页。也可直接输入 OSCAR、SERGIO 或 /links OSCAR 查客户。"
-            "\n只有公司私人群组成员能够查询。",
+            "\n可直接在公司私人群组查询，也可以私聊 Bot 查询。",
         )
     if command == "/all":
         raw_page = argument.strip() or "1"
