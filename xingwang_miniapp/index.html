@@ -35,8 +35,8 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);curs
 'use strict';
 const tg=window.Telegram?.WebApp; if(tg){tg.ready();tg.expand();}
 const el=id=>document.getElementById(id);
-const fields={stock:['code','pieces','meters'],camino:['code','container','eta'],orders:['order','customer','product','quantity','status','source'],nota:['code','quantity']};
-const captions={code:'商品編號',pieces:'匹數',meters:'米數',container:'櫃號',eta:'到港資訊',order:'訂單號',customer:'客戶',product:'商品名稱',quantity:'數量',status:'狀態',source:'來源'};
+const fields={stock:['code','pieces','meters'],camino:['code','container','units','unit_type','eta'],orders:['order','customer','product','quantity','status','source'],nota:['code','quantity']};
+const captions={code:'商品編號',pieces:'匹數',meters:'米數',container:'櫃號',units:'在途數量(Unt)',unit_type:'單位(Tipo)',eta:'到港資訊',order:'訂單號',customer:'客戶',product:'商品名稱',quantity:'數量',status:'狀態',source:'來源'};
 const alias=location.pathname==='/admin'?'ADMIN':'STOCK';
 let action='stock',rows=[],sort='',desc=false,seq=0;
 const fmt=v=>v===null||v===undefined||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
@@ -49,7 +49,7 @@ function draw(){
  const wrap=el('wrap');wrap.replaceChildren();
  if(!visible.length){wrap.append(elem('div','沒有符合資料','empty'));return;}
  const t=elem('table'),head=elem('thead'),hrow=elem('tr');
- for(const field of fields[action]){const th=elem('th',captions[field]+(sort===field?(desc?' ▼':' ▲'):''));if(['pieces','meters','quantity'].includes(field))th.className='qty';th.addEventListener('click',()=>{if(sort===field)desc=!desc;else{sort=field;desc=false;}draw();});hrow.append(th);}
+ for(const field of fields[action]){const th=elem('th',captions[field]+(sort===field?(desc?' ▼':' ▲'):''));if(['pieces','meters','quantity','units'].includes(field))th.className='qty';th.addEventListener('click',()=>{if(sort===field)desc=!desc;else{sort=field;desc=false;}draw();});hrow.append(th);}
  head.append(hrow);t.append(head);
  const body=elem('tbody');for(const row of visible){const tr=elem('tr');for(const field of fields[action])tr.append(elem('td',fmt(row[field]),['pieces','meters','quantity'].includes(field)?'qty':''));body.append(tr);}
  t.append(body);wrap.append(t);
