@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer"><title>XINGWANG · 客户分享登录</title>
+<style>
+:root{color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft Yahei",sans-serif}
+*{box-sizing:border-box}body{background:#f5f7fa;color:#202938;margin:0;min-height:100dvh;display:grid;place-items:center;padding:22px}
+.panel{width:min(100%,420px);background:white;border:1px solid #e5eaf0;border-radius:20px;padding:32px 27px;box-shadow:0 12px 35px #28344b0a}
+.logo{width:55px;height:55px;border-radius:16px;background:#e7f1ff;display:grid;place-items:center;font-size:27px;margin-bottom:18px}
+h1{font-size:22px;margin:0 0 8px;font-weight:700}p{font-size:14px;color:#667387;line-height:1.7;margin:0 0 25px}
+label{font-size:13px;display:block;margin-bottom:9px;color:#465267;font-weight:600}
+input{width:100%;border:1px solid #cad4e0;border-radius:12px;padding:14px 15px;font-size:17px;outline:0;background:#fff;color:#202938}
+input:focus{border-color:#287bd1;box-shadow:0 0 0 3px #287bd11c}
+button{margin-top:19px;display:block;background:#176ac6;color:white;border:0;border-radius:12px;padding:14px;width:100%;font-size:16px;font-weight:600;cursor:pointer}
+small{display:block;margin-top:22px;color:#8190a0;text-align:center;font-size:12px}
+.error{color:#b91c1c;background:#fef2f2;border-radius:9px;padding:10px 12px;margin:0 0 14px;font-size:13px}
+</style>
+</head><body><main class="panel"><div class="logo">🔐</div>
+<h1>XINGWANG 客户分享</h1>
+<p>公司内部查询入口。无需 Telegram 或订单系统账号，请输入公司提供的专用密码。</p>
+{% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+<form action="/cn/order-links/login" method="post" autocomplete="off">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="password">访问密码</label>
+<input id="password" name="password" type="password" required maxlength="128" autocomplete="current-password" autofocus placeholder="请输入专用密码">
+<button type="submit">进入客户清单</button>
+</form><small>只供授权同事使用 · 登录有效期 7 天</small></main></body></html>
