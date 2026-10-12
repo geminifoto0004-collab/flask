@@ -49,7 +49,7 @@ class TelegramShareTests(unittest.TestCase):
              patch.object(bot, "_lookup_shares", side_effect=AssertionError("customer data queried")), \
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 999, 999, "OSCAR")
-        self.assertIn("没有查询权限", send.call_args.args[2])
+        self.assertIn("管理员尚未设置", send.call_args.args[2])
 
     def test_id_returns_only_the_senders_id_even_before_authorization(self):
         with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
@@ -155,6 +155,53 @@ class TelegramShareTests(unittest.TestCase):
                 hub.storage.get_bot_by_key.return_value = value
                 self.assertIsNone(bot._load_bot("orders"))
 
+    def test_all_is_paginated_and_buttons_use_callback_without_leaking_secrets(self):
+        rows = [
+            {"token_hash": str(i), "customer_name": "CLIENT " + str(i),
+             "created_at": "2026-10-01", "expires_at": None}
+            for i in range(9)
+        ]
+        with patch.object(bot, "_share_url", side_effect=lambda row: "https://example.invalid/share/" + row["token_hash"]):
+            text, buttons = bot._all_reply(1, rows)
+        self.assertIn("第 1 页", text)
+        self.assertEqual(len(buttons), 9)
+        self.assertEqual(buttons[-1][0]["callback_data"], "order_shares:all:2")
+        self.assertNotIn("https://", text)
+
+        with patch.object(bot, "_share_url", side_effect=lambda row: "https://example.invalid/share/" + row["token_hash"]):
+            _, buttons2 = bot._all_reply(2, rows[:3])
+        self.assertEqual(buttons2[-1][0]["callback_data"], "order_shares:all:1")
+
+    def test_all_queries_only_after_authorization(self):
+        with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch.object(bot, "_lookup_all", return_value=[]) as lookup, \
+             patch.object(bot, "_send_reply") as send:
+            bot._process("orders", 11, 11, "/all")
+            lookup.assert_called_once_with(1)
+            self.assertIn("没有找到", send.call_args.args[2])
+
+    def test_callback_pagination_accepts_only_private_sender(self):
+        def callback(user=11, chat=11, kind="private", data="order_shares:all:2"):
+            return {"callback_query": {"id": "abc", "data": data,
+                "from": {"id": user, "is_bot": False},
+                "message": {"chat": {"id": chat, "type": kind}}}}
+        self.assertEqual(bot._callback_actor(callback()), (11, 11, "/all 2", "abc"))
+        for v in [callback(kind="group"), callback(chat=99),
+                  callback(data="order_shares:all:0"), callback(data="order_shares:all:10000"),
+                  callback(data="other:all:2")]:
+            self.assertIsNone(bot._callback_actor(v))
+
+    def test_company_code_flow_requires_successful_enrolment(self):
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_ACCESS_CODE": "very-long-company-code"}), \
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch("services.order_share_telegram_access.is_authorized", return_value=False), \
+             patch("services.order_share_telegram_access.authenticate", return_value="ok") as authenticate, \
+             patch.object(bot, "_lookup_shares", side_effect=AssertionError("not allowed before auth")), \
+             patch.object(bot, "_send_reply") as send:
+            bot._process("orders", 999, 999, "very-long-company-code")
+        authenticate.assert_called_once_with("orders", 999, "very-long-company-code")
+        self.assertIn("验证成功", send.call_args.args[2])
+
     def test_existing_share_signer_resolves_to_original_share_without_db_writes(self):
         spec = importlib.util.spec_from_file_location("signer_under_test", ROOT / "services/order_share_links.py")
         signer = importlib.util.module_from_spec(spec)
@@ -222,6 +269,13 @@ class ReadOnlyLookupTests(unittest.TestCase):
             self.assertEqual([row["token_hash"] for row in bot._lookup_shares("100%_")], ["literal"])
             self.assertEqual(bot._lookup_shares("%' OR 1=1 --"), [])
 
+
+    def test_all_pages_are_readonly_and_exclude_expired_revoked_inactive(self):
+        with patch.dict(sys.modules, {"database": self.database}):
+            first = bot._lookup_all(1)
+        self.assertEqual({r["token_hash"] for r in first}, {"active", "temporary", "literal"})
+        self.assertEqual(len(self.statements), 1)
+        self.assertTrue(self.statements[0].lstrip().upper().startswith("SELECT"))
 
 if __name__ == "__main__":
     unittest.main()
