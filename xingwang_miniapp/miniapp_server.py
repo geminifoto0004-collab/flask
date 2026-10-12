@@ -53,7 +53,7 @@ async def query(request:Request):
     except (ValueError,UnicodeError):raise HTTPException(400,"Invalid JSON")
     if not isinstance(payload,dict):raise HTTPException(400,"Invalid query")
     alias,action,q,init_data = (payload.get(k) for k in ("bot","action","q","init_data"))
-    if alias not in ("STOCK","ADMIN") or action not in ("stock","camino","orders","nota","history_more"):
+    if alias not in ("STOCK","ADMIN") or action not in ("stock","camino","orders","nota","history_more","nota_media"):
         raise HTTPException(400,"Unsupported action")
     if not isinstance(q,str) or not ((q=="@" and action=="nota") or (action=="nota" and len(q)==1 and q.isdecimal()) or 2<=len(q)<=40) or not isinstance(init_data,str) or not (1<=len(init_data)<=4096):
         raise HTTPException(400,"Invalid input")
@@ -64,6 +64,11 @@ async def query(request:Request):
         if type(cursor) is not int or not (0<=cursor<=5000) or type(include_older) is not bool:
             raise HTTPException(400,"Invalid history pagination")
         extra = {"cursor":cursor,"include_older":include_older}
+    if action == "nota_media":
+        customer=payload.get("customer","")
+        if not q.isdecimal() or not 2<=len(q)<=12 or not isinstance(customer,str) or len(customer)>130:
+            raise HTTPException(400,"Invalid Nota image request")
+        extra = {"customer":customer}
     async with bridge_lock:
         ws=active_bridge
         if ws is None:raise HTTPException(503,"本機未連線")
