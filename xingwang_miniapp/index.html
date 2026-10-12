@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><title>XINGWANG STOCK</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light dark}
+*{box-sizing:border-box}body{margin:0;background:var(--tg-theme-bg-color,#f6f7fb);color:var(--tg-theme-text-color,#14243a)}
+header{padding:16px 14px 10px;background:var(--tg-theme-bg-color,#f6f7fb);border-bottom:1px solid #b4c0cd77;position:sticky;top:0;z-index:10}
+h1{font-size:18px;margin:0}.sub{font-size:12px;opacity:.7;margin-top:4px}.search{display:flex;gap:8px;margin:13px 0}
+input{min-width:0;flex:1;padding:12px;border:1px solid #a1adba;border-radius:12px;font-size:16px;color:inherit;background:var(--tg-theme-secondary-bg-color,#fff)}
+button{border:0;border-radius:11px;padding:11px 12px;background:var(--tg-theme-button-color,#277fc1);color:var(--tg-theme-button-text-color,#fff);font-weight:700;cursor:pointer}
+button:disabled{opacity:.5}.tabs{display:flex;gap:7px;overflow:auto}.tab{flex:1;white-space:nowrap;font-size:13px;background:var(--tg-theme-secondary-bg-color,#e9eff4);color:inherit}
+.tab.active{background:var(--tg-theme-button-color,#277fc1);color:var(--tg-theme-button-text-color,#fff)}
+main{padding:12px 12px 32px}.status{font-size:13px;margin-bottom:8px;min-height:20px}.stats{display:flex;gap:8px;margin:10px 0}
+.stat{min-width:0;flex:1;padding:12px 9px;border-radius:13px;background:var(--tg-theme-secondary-bg-color,#fff)}.stat span{display:block;font-size:11px;opacity:.7}.stat strong{font-size:19px}
+.filters{display:flex;gap:9px;align-items:center;margin:10px 0}.filters input{padding:10px;font-size:14px}.count{font-size:12px;white-space:nowrap}
+.wrap{overflow:auto;max-height:65vh;background:var(--tg-theme-secondary-bg-color,#fff);border-radius:13px}
+table{border-collapse:collapse;min-width:100%;font-size:13px}th,td{border-bottom:1px solid #b4c0cd45;white-space:nowrap;text-align:left;padding:12px 10px}
+th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);cursor:pointer;font-size:12px}
+.qty{text-align:right;font-variant-numeric:tabular-nums}.empty{padding:28px;text-align:center;opacity:.7}.note{font-size:12px;opacity:.7;margin-top:12px;line-height:1.6}
+@media(min-width:700px){body{max-width:980px;margin:auto}.wrap{max-height:75vh}}
+</style></head><body>
+<header><h1>XINGWANG STOCK</h1><div class="sub">Telegram 授權 · 本機即時查詢 · 不儲存業務資料</div>
+<div class="search"><input id="q" value="1314" placeholder="商品 / 訂單 / Nota" autocomplete="off">
+<button id="go">查詢</button></div>
+<div class="tabs" id="tabs"><button class="tab active" data-action="stock">庫存</button><button class="tab" data-action="camino">在途</button><button class="tab" data-action="orders">訂單</button><button class="tab" data-action="nota">Nota</button></div></header>
+<main>
+<div class="status" id="status">請在 Telegram 開啟 Mini App 後查詢</div>
+<div class="stats" id="stats" hidden></div>
+<div class="filters"><input id="filter" placeholder="在全部結果中篩選"/><span class="count" id="count"></span></div>
+<div class="wrap" id="wrap"><div class="empty">等待查詢</div></div>
+<div class="note" id="note"></div>
+</main><script>
+'use strict';
+const tg=window.Telegram?.WebApp; if(tg){tg.ready();tg.expand();}
+const el=id=>document.getElementById(id);
+const fields={stock:['code','pieces','meters'],camino:['code','container','eta'],orders:['order','customer','product','quantity','status','source'],nota:['code','quantity']};
+const captions={code:'商品編號',pieces:'匹數',meters:'米數',container:'櫃號',eta:'到港資訊',order:'訂單號',customer:'客戶',product:'商品名稱',quantity:'數量',status:'狀態',source:'來源'};
+const alias=location.pathname==='/admin'?'ADMIN':'STOCK';
+let action='stock',rows=[],sort='',desc=false,seq=0;
+const fmt=v=>v===null||v===undefined||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
+function elem(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=String(text);if(cls)n.className=cls;return n;}
+function draw(){
+ const f=el('filter').value.toLowerCase().trim();
+ let visible=rows.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes(f)));
+ if(sort)visible=visible.slice().sort((a,b)=>{const av=a[sort],bv=b[sort];let diff=(typeof av==='number'&&typeof bv==='number')?av-bv:String(av??'').localeCompare(String(bv??''),undefined,{numeric:true});return desc?-diff:diff;});
+ el('count').textContent=visible.length+' / '+rows.length+' 筆';
+ const wrap=el('wrap');wrap.replaceChildren();
+ if(!visible.length){wrap.append(elem('div','沒有符合資料','empty'));return;}
+ const t=elem('table'),head=elem('thead'),hrow=elem('tr');
+ for(const field of fields[action]){const th=elem('th',captions[field]+(sort===field?(desc?' ▼':' ▲'):''));if(['pieces','meters','quantity'].includes(field))th.className='qty';th.addEventListener('click',()=>{if(sort===field)desc=!desc;else{sort=field;desc=false;}draw();});hrow.append(th);}
+ head.append(hrow);t.append(head);
+ const body=elem('tbody');for(const row of visible){const tr=elem('tr');for(const field of fields[action])tr.append(elem('td',fmt(row[field]),['pieces','meters','quantity'].includes(field)?'qty':''));body.append(tr);}
+ t.append(body);wrap.append(t);
+}
+function stats(payload){const holder=el('stats');holder.replaceChildren();holder.hidden=false;
+ const s=action==='stock'?[['商品編號',(payload.rows||[]).length],['總米數',fmt((payload.rows||[]).reduce((sum,r)=>sum+Number(r.meters||0),0))],['在途筆數',(payload.camino||[]).length]]:[['查詢筆數',(payload.rows||[]).length]];
+ for(const [label,val] of s){const card=elem('div',undefined,'stat');card.append(elem('span',label),elem('strong',val));holder.append(card);}
+ el('note').textContent=action==='stock'?'匹數欄暫顯示「—」：目前 Flask /search 回傳 Codigo、Caja、Un，不能把 Caja 箱數當成匹數。米數取自 Un。':'';
+}
+async function search(){
+ const q=el('q').value.trim(),init=tg?.initData||'',requestId=++seq;
+ if(!init){el('status').textContent='請從 Telegram 官方 Mini App 入口開啟；一般瀏覽器不能查資料。';return;}
+ if(!q){el('status').textContent='請輸入查詢內容';return;}
+ el('go').disabled=true;el('status').textContent='正在向本機取得最新資料…';
+ try{
+ const response=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action,q,init_data:init})});
+ const body=await response.json();if(!response.ok||!body.ok)throw Error(body.error||'查詢失敗');
+ if(requestId!==seq)return;
+ rows=body.data?.rows||[];sort='';desc=false;el('filter').value='';stats(body.data||{});draw();
+ el('status').textContent='已取得本機即時資料 · '+new Date().toLocaleTimeString();
+ }catch(err){if(requestId!==seq)return;rows=[];el('stats').hidden=true;el('note').textContent='';draw();el('status').textContent=String(err.message||err);}
+ finally{if(requestId===seq)el('go').disabled=false;}
+}
+el('go').addEventListener('click',search);el('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});el('filter').addEventListener('input',draw);
+el('tabs').addEventListener('click',e=>{const target=e.target.closest('[data-action]');if(!target)return;action=target.dataset.action;for(const b of el('tabs').querySelectorAll('.tab'))b.classList.toggle('active',b===target);search();});
+if(!tg?.initData)el('status').textContent='僅允許從 Telegram Mini App 開啟；無法在一般瀏覽器查詢。';
+</script></body></html>
