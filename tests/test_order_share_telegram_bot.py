@@ -286,9 +286,11 @@ class TelegramShareTests(unittest.TestCase):
             lookup_shares.assert_called_once_with("SERGIO")
             self.assertEqual(send.call_args.args[1], group)
             self.assertEqual(member.call_count, 2)
+            # Unmatched ordinary group messages stay silent to avoid chat spam.
+            self.assertEqual(send.call_count, 1)
             bot._process("orders", 11, -100999999999, "/all")
             self.assertEqual(member.call_count, 2)
-            self.assertEqual(send.call_count, 2)
+            self.assertEqual(send.call_count, 1)
 
     def test_group_unauthorized_sender_and_command_to_other_bot_are_silent(self):
         group = -100123456789
