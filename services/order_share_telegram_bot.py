@@ -131,10 +131,27 @@ def _base_url():
 
 
 def _lookup_shares(query):
-    """One bounded SELECT. Use the same active/expiry rule as the directory."""
+    """Bounded partial-name lookup; search words can appear in any order.
+
+    Parameters are always bound, and SQL LIKE metacharacters are escaped.
+    This is substring/keyword matching, not typo-tolerant fuzzy spelling.
+    """
     from database import get_db_connection, get_cursor, get_row_dict
-    literal = query.lower().replace("!", "!!").replace("%", "!%").replace("_", "!_")
-    pattern = "%" + literal + "%"
+
+    terms = query.lower().split()[:16]
+    if not terms:
+        return []
+    predicates = []
+    values = []
+    for term in terms:
+        literal = term.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        pattern = "%" + literal + "%"
+        predicates.append(
+            "(LOWER(c.customer_name) LIKE ? ESCAPE '!' "
+            "OR LOWER(s.customer_key) LIKE ? ESCAPE '!')"
+        )
+        values.extend((pattern, pattern))
+    where = " AND ".join(predicates)
     conn = get_db_connection()
     try:
         cur = get_cursor(conn)
@@ -146,12 +163,11 @@ def _lookup_shares(query):
                JOIN cloud_customers c ON c.customer_key=s.customer_key
                WHERE s.status='active' AND c.active=TRUE
                  AND (s.expires_at IS NULL OR s.expires_at>UTC_TIMESTAMP())
-                 AND (LOWER(c.customer_name) LIKE ? ESCAPE '!'
-                      OR LOWER(s.customer_key) LIKE ? ESCAPE '!')
+                 AND """ + where + """
                ORDER BY CASE WHEN LOWER(TRIM(c.customer_name))=? THEN 0 ELSE 1 END,
                         c.customer_name, s.created_at DESC, s.token_hash
                LIMIT ?""",
-            (pattern, pattern, query.lower(), _LIMIT + 1),
+            (*values, query.lower(), _LIMIT + 1),
         )
         return [get_row_dict(row, cur) or {} for row in cur.fetchall()]
     finally:
@@ -201,30 +217,31 @@ def _share_url(row):
     return _base_url() + "/share/" + share_link_token(row.get("token_hash"))
 
 
-def _search_reply(query, rows, limit=_LIMIT, more_message=None):
+def _search_reply(query, rows, limit=_LIMIT, more_message=None, start_at=1):
+    """Compact HTML links: the *full customer name* itself opens the share.
+
+    No per-customer keyboard rows, truncated button labels, or copy buttons.
+    Only pagination controls, if needed, consume Telegram keyboard space.
+    """
     if not rows:
         return "没有找到符合名称的有效分享。请换一个客户名称。", []
-    lines = ["<b>客户分享链接</b>", "查询：" + html.escape(_name(query, 80))]
-    buttons = []
+    lines = ["<b>📋 客户分享 · " + html.escape(_name(query, 80)) + "</b>",
+             "点击蓝色客户名称即可打开链接："]
     shown = 0
     for row in rows[:limit]:
-        name = _name(row.get("customer_name") or row.get("customer_key"))
-        url = _share_url(row)
+        name = " ".join(str(row.get("customer_name") or row.get("customer_key") or "").split())
+        name = html.escape(name)  # Do not truncate long customer names.
+        url = html.escape(_share_url(row), quote=True)
         expiry = "永久" if not row.get("expires_at") else "至 " + _date(row["expires_at"])
-        line = "\n<b>" + html.escape(name) + "</b>\n" + expiry + " · 建立 " + _date(row.get("created_at"))
-        controls = [{"text": "打开 · " + _name(name, 30), "url": url}]
-        if len(url) <= 256:
-            controls.append({"text": "复制链接", "copy_text": {"text": url}})
-        else:
-            line += "\n<code>" + html.escape(url) + "</code>"
-        if len("\n".join(lines) + line) > 3600:
+        line = (str(start_at + shown) + ". <a href=\"" + url + "\">" + name +
+                "</a>  ·  " + html.escape(expiry))
+        if len("\n".join(lines + [line])) > 3500:
             break
         lines.append(line)
-        buttons.append(controls)
         shown += 1
     if len(rows) > shown:
-        lines.append("\n" + (more_message or "还有更多有效分享，请输入更完整的客户名称。"))
-    return "\n".join(lines), buttons
+        lines.append(more_message or "还有更多结果，请输入更完整的客户名称。")
+    return "\n".join(lines), []
 
 
 def _all_reply(page, rows):
@@ -233,6 +250,7 @@ def _all_reply(page, rows):
         rows,
         limit=_PAGE_SIZE,
         more_message="还有更多有效分享，点击「下一页」。",
+        start_at=(page - 1) * _PAGE_SIZE + 1,
     )
     if not rows:
         text = "这一页没有有效分享。"
@@ -309,12 +327,15 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
     if command in {"/start", "/help", "/links"} and (command != "/links" or not argument.strip()):
         return _send_reply(
             bot["token"], chat_id,
-            "<b>XINGWANG ORDER LINK</b>\n输入 /all 查看全部有效分享，"
-            "点击「下一页」翻页。也可直接输入 OSCAR、SERGIO 或 /links OSCAR 查客户。"
-            "\n可直接在公司私人群组查询，也可以私聊 Bot 查询。",
+            "<b>XINGWANG ORDER LINK</b>\n输入 /all、全部或 todo 查看所有有效分享，"
+            "点击「下一页」翻页。输入 SERGIO、CONDO SERGIO 或 /links OSCAR 搜索客户。"
+            "\n直接点击完整客户名称打开网址；可在公司私人群组或 Bot 私聊使用。",
         )
-    if command == "/all":
-        raw_page = argument.strip() or "1"
+    all_aliases = {"all", "todo", "todos", "全部"}
+    is_all = command in {"/all", "/todo", "/todos"} or text.strip().casefold() in all_aliases
+    if is_all:
+        raw_page = argument.strip() if command in {"/all", "/todo", "/todos"} else "1"
+        raw_page = raw_page or "1"
         if not raw_page.isdecimal() or not 1 <= int(raw_page) <= 9999:
             return _send_reply(bot["token"], chat_id, "请输入 /all 或 /all 2 查看指定页。")
         try:
@@ -326,12 +347,15 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
             _LOG.warning("ORDER share directory unavailable")
         return _send_reply(bot["token"], chat_id, reply, buttons)
     if text.startswith("/") and command != "/links":
-        return _send_reply(bot["token"], chat_id, "输入 /all 查看全部，或输入客户名称查询。")
+        return _send_reply(bot["token"], chat_id, "输入 /all、全部或 todo 查看全部，或输入客户名称查询。")
     query = " ".join((argument if command == "/links" else text).split())[:160]
     if not query:
         return
     try:
         rows = _lookup_shares(query)
+        # Avoid noisy replies to unrelated group conversation.
+        if not rows and staff_group and command != "/links":
+            return
         reply, buttons = _search_reply(query, rows)
     except Exception:
         reply, buttons = "分享资料暂时无法读取，请稍后重试。", []
