@@ -84,8 +84,23 @@ def _reconcile_customer_orders():
                         for order in ((snap.get("space") or {}).get("orders") or [])
                         if isinstance(order, dict) and str(order.get("order_number") or "").strip()
                     })
+                    snapshot_cards = set()
+                    for order in ((snap.get("space") or {}).get("orders") or []):
+                        if not isinstance(order, dict):
+                            continue
+                        workflows = [w for w in (order.get("workflows") or []) if isinstance(w, dict)]
+                        if workflows:
+                            for wf in workflows:
+                                key = str(wf.get("workflow_number") or wf.get("workflow_key") or "").strip()
+                                if key:
+                                    snapshot_cards.add(key)
+                        else:
+                            key = str(order.get("order_number") or "").strip()
+                            if key:
+                                snapshot_cards.add(key)
                 except (TypeError, ValueError):
                     snapshot_numbers = []
+                    snapshot_cards = set()
             finally:
                 conn.close()
             return jsonify({"ok": True, "result": {
@@ -93,6 +108,7 @@ def _reconcile_customer_orders():
                 "orders": items,
                 "order_count": len(items),
                 "snapshot_order_numbers": snapshot_numbers,
+                "snapshot_card_keys": sorted(snapshot_cards),
             }})
 
         if request.path.endswith("/snapshot"):
