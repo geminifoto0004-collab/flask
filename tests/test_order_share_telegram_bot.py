@@ -749,6 +749,47 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
         html = self.client.get("/cn/order-links").get_data(as_text=True)
         self.assertIn('action="/cn/order-links/login"', html)
 
+    def test_single_digit_password_is_allowed_and_admin_can_change_it(self):
+        # Policy is intentionally 1-128 characters for the company's shared code.
+        self.set_password("7")
+        settings = self.db.execute(
+            "SELECT password_hash,revision FROM order_share_cn_settings WHERE id=1"
+        ).fetchone()
+        self.assertNotEqual(settings["password_hash"], "7")
+        admin_page = self.client.get("/admin/automation/china-links")
+        self.assertIn('minlength="1"', admin_page.get_data(as_text=True))
+        login_page = self.client.get("/cn/order-links")
+        csrf = self.csrf_from(login_page)
+        login = self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "7"
+        }, headers={"Origin": "https://example.test"})
+        self.assertEqual(login.status_code, 303)
+        self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
+        # The admin can rotate a single-digit code without knowing the old one.
+        self.set_password("8")
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+        login_page = self.client.get("/cn/order-links")
+        csrf = self.csrf_from(login_page)
+        old_code = self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "7"
+        }, headers={"Origin": "https://example.test"})
+        self.assertEqual(old_code.status_code, 401)
+        new_code = self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "8"
+        }, headers={"Origin": "https://example.test"})
+        self.assertEqual(new_code.status_code, 303)
+        self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
+
+    def test_empty_password_is_rejected_even_with_admin_access(self):
+        self.admin_mode()
+        admin_page = self.client.get("/admin/automation/china-links")
+        csrf = self.csrf_from(admin_page)
+        invalid = self.client.post("/admin/automation/china-links",
+            data={"csrf": csrf, "password": "", "confirm": ""},
+            headers={"Origin": "https://example.test"})
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(self.client.get("/cn/order-links").status_code, 503)
+
     def test_brute_force_limit_and_csrf(self):
         self.set_password()
         csrf = self.csrf_from(self.client.get("/cn/order-links"))
