@@ -71,12 +71,28 @@ def _reconcile_customer_orders():
                             "order_status": str(data.get("order_status") or "ACTIVE").strip().upper(),
                             "customer_key": str(data.get("customer_key") or "").strip(),
                         })
+                # Read-only verification: a successful logical ORDER upsert does
+                # not imply the customer-facing persisted snapshot is refreshed.
+                cur.execute("SELECT payload FROM cloud_customer_share_snapshot "
+                            "WHERE customer_key=? LIMIT 1", (customer_key,))
+                snapshot_row = cur.fetchone()
+                snapshot_obj = get_row_dict(snapshot_row, cur) if snapshot_row else {}
+                try:
+                    snap = json.loads((snapshot_obj or {}).get("payload") or "{}")
+                    snapshot_numbers = sorted({
+                        str(order.get("order_number") or "").strip()
+                        for order in ((snap.get("space") or {}).get("orders") or [])
+                        if isinstance(order, dict) and str(order.get("order_number") or "").strip()
+                    })
+                except (TypeError, ValueError):
+                    snapshot_numbers = []
             finally:
                 conn.close()
             return jsonify({"ok": True, "result": {
                 "customer_key": customer_key,
                 "orders": items,
                 "order_count": len(items),
+                "snapshot_order_numbers": snapshot_numbers,
             }})
 
         if request.path.endswith("/snapshot"):
