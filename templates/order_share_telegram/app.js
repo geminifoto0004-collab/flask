@@ -1,6 +1,7 @@
 "use strict";
 (() => {
-  const app = window.Telegram && window.Telegram.WebApp;
+  const isChina = location.pathname.startsWith("/cn/order-links");
+  const app = !isChina && window.Telegram && window.Telegram.WebApp;
   const dom = {
     list: document.getElementById("list"),
     search: document.getElementById("search"),
@@ -133,7 +134,7 @@
     dom.status.hidden = true;
   }
   async function load() {
-    if (!app || !app.initData) {
+    if (!isChina && (!app || !app.initData)) {
       showStatus("請從 Telegram Bot 的「開啟客戶清單」按鈕進入。一般瀏覽器不會顯示公司連結。");
       dom.count.textContent = "未登入";
       return;
@@ -141,19 +142,21 @@
     dom.refresh.disabled = true;
     showStatus("正在載入有效客戶分享…");
     try {
-      const response = await fetch("/api/telegram/order-shares/directory", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        credentials: "omit",
-        cache: "no-store",
-        body: JSON.stringify({initData: app.initData}),
-      });
+      const response = await fetch(
+        isChina ? "/cn/order-links/data" : "/api/telegram/order-shares/directory", {
+          method: isChina ? "GET" : "POST",
+          headers: isChina ? {} : {"Content-Type": "application/json"},
+          credentials: isChina ? "same-origin" : "omit",
+          cache: "no-store",
+          ...(isChina ? {} : {body: JSON.stringify({initData: app.initData})}),
+        });
       const data = await response.json();
       if (!response.ok || !data.ok || !Array.isArray(data.items)) {
         items = [];
         dom.count.textContent = "無法取得資料";
         showStatus(response.status === 403
-          ? "沒有權限：請確認 Telegram 帳號已加入公司私人群組，然後重新開啟。"
+          ? (isChina ? "登入已失效，請重新整理頁面後輸入密碼。" :
+             "沒有權限：請確認 Telegram 帳號已加入公司私人群組，然後重新開啟。")
           : "資料暫時無法載入，請稍後按更新。");
         return;
       }
