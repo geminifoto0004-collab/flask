@@ -176,51 +176,74 @@ class TelegramShareTests(unittest.TestCase):
                 hub.storage.get_bot_by_key.return_value = value
                 self.assertIsNone(bot._load_bot("orders"))
 
-    def test_all_is_paginated_and_buttons_use_callback_without_leaking_secrets(self):
-        rows = [
-            {"token_hash": str(i), "customer_name": "CLIENT " + str(i),
-             "created_at": "2026-10-01", "expires_at": None}
-            for i in range(9)
-        ]
-        with patch.object(bot, "_share_url", side_effect=lambda row: "https://example.invalid/share/" + row["token_hash"]):
-            text, buttons = bot._all_reply(1, rows)
-        self.assertIn("第 1 頁", text)
-        self.assertEqual(len(buttons), 3)  # Two short copy rows + navigation
-        self.assertEqual([len(row) for row in buttons], [4, 4, 2])
-        self.assertEqual(buttons[0][0]["text"], "📋1")
-        self.assertEqual(buttons[0][0]["copy_text"]["text"], "https://example.invalid/share/0")
-        self.assertEqual(buttons[1][3]["text"], "📋8")
-        self.assertEqual(buttons[-1][0]["callback_data"], "order_shares:all:1")
-        self.assertEqual(buttons[-1][1]["callback_data"], "order_shares:all:2")
-        self.assertIn("1. <a href=", text)
-        self.assertIn("8. <a href=", text)
-        self.assertNotIn("9. <a href=", text)
+    def test_all_directory_returns_every_link_without_manual_pagination(self):
+        rows = [{"token_hash": str(i), "customer_name": "CLIENT " + str(i),
+                 "created_at": "2026-10-01", "expires_at": None}
+                for i in range(45)]
+        with patch.object(bot, "_share_url",
+                          side_effect=lambda row: "https://example.invalid/share/" + row["token_hash"]):
+            replies = bot._all_replies(rows)
+        self.assertEqual(len(replies), 3)
+        texts = [text for text, _ in replies]
+        self.assertEqual([text.count('<a href=') for text in texts], [20, 20, 5])
+        self.assertIn("1. <a href=", texts[0])
+        self.assertIn("20. <a href=", texts[0])
+        self.assertIn("21. <a href=", texts[1])
+        self.assertIn("40. <a href=", texts[1])
+        self.assertIn("45. <a href=", texts[2])
+        self.assertTrue(all(len(text) < 4096 for text in texts))
+        self.assertEqual([[len(row) for row in buttons] for _, buttons in replies],
+                         [[4, 4, 4, 4, 4], [4, 4, 4, 4, 4], [4, 1]])
+        self.assertTrue(all("callback_data" not in str(buttons) for _, buttons in replies))
+        self.assertEqual(replies[1][1][0][0]["text"], "📋21")
 
-        with patch.object(bot, "_share_url", side_effect=lambda row: "https://example.invalid/share/" + row["token_hash"]):
-            _, buttons2 = bot._all_reply(2, rows[:3])
-        self.assertEqual(buttons2[-1][0]["callback_data"], "order_shares:all:1")
-        self.assertEqual(buttons2[-1][1]["callback_data"], "order_shares:all:1")
-        self.assertEqual(buttons2[0][0]["text"], "📋9")
-        self.assertIn("9. <a href=", _)
+    def test_all_large_names_split_before_telegram_message_limit(self):
+        rows = [{"token_hash": str(i), "customer_name": "LONG-" + ("X" * 850),
+                 "created_at": "2026-10-01", "expires_at": None}
+                for i in range(7)]
+        with patch.object(bot, "_share_url",
+                          return_value="https://example.invalid/share/existing"):
+            replies = bot._all_replies(rows)
+        self.assertGreater(len(replies), 1)
+        self.assertEqual(sum(text.count("<a href=") for text, _ in replies), 7)
+        self.assertTrue(all(len(text) < 4096 for text, _ in replies))
 
     def test_all_queries_only_after_authorization(self):
         with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
-             patch.object(bot, "_lookup_all", return_value=[]) as lookup, \
+             patch.object(bot, "_lookup_all_full", return_value=[]) as lookup, \
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 11, 11, "/all")
-            lookup.assert_called_once_with(1)
+            lookup.assert_called_once_with()
             self.assertIn("沒有有效分享", send.call_args.args[2])
+
+    def test_all_one_tap_sends_all_chunks_in_order(self):
+        rows = [{"token_hash": str(i), "customer_name": "CLIENT " + str(i),
+                 "created_at": "2026-10-01", "expires_at": None}
+                for i in range(43)]
+        with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch.object(bot, "_lookup_all_full", return_value=rows) as lookup, \
+             patch.object(bot, "_share_url",
+                          side_effect=lambda r: "https://example.invalid/share/" + r["token_hash"]), \
+             patch.object(bot, "_send_reply") as send, \
+             patch.object(bot.time, "sleep") as pause:
+            bot._process("orders", 11, 11, "📋 全部客戶")
+        lookup.assert_called_once_with()
+        self.assertEqual(send.call_count, 3)
+        self.assertIn("1. <a href=", send.call_args_list[0].args[2])
+        self.assertIn("21. <a href=", send.call_args_list[1].args[2])
+        self.assertIn("41. <a href=", send.call_args_list[2].args[2])
+        self.assertEqual(pause.call_count, 2)
 
     def test_all_aliases_case_insensitive_and_chinese(self):
         with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
-             patch.object(bot, "_lookup_all", return_value=[]) as lookup, \
+             patch.object(bot, "_lookup_all_full", return_value=[]) as lookup, \
              patch.object(bot, "_send_reply") as send:
             for text in ("/all", "全部", "todo", "TODO", "ToDo", "todos", "ALL", "/todo",
                          "📋 全部客戶", "📋 全部客户", "全部客戶"):
                 bot._process("orders", 11, 11, text)
             bot._process("orders", 11, 11, "/all 3")
         self.assertEqual(lookup.call_count, 12)
-        self.assertEqual([c.args[0] for c in lookup.call_args_list], [1] * 11 + [3])
+        self.assertEqual([c.args for c in lookup.call_args_list], [()] * 12)
         self.assertEqual(send.call_count, 12)
 
     def test_company_group_does_not_reply_to_unrelated_chatter(self):
@@ -332,11 +355,11 @@ class TelegramShareTests(unittest.TestCase):
         with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": str(group)}), \
              patch.object(bot, "_load_bot", return_value=self.fake_bot), \
              patch("services.order_share_telegram_access.is_authorized", return_value=True) as member, \
-             patch.object(bot, "_lookup_all", return_value=[]) as lookup_all, \
+             patch.object(bot, "_lookup_all_full", return_value=[]) as lookup_all, \
              patch.object(bot, "_lookup_shares", return_value=[]) as lookup_shares, \
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 11, group, "/all")
-            lookup_all.assert_called_once_with(1)
+            lookup_all.assert_called_once_with()
             self.assertEqual(send.call_args.args[1], group)
             bot._process("orders", 11, group, "SERGIO")
             lookup_shares.assert_called_once_with("SERGIO")
@@ -353,7 +376,7 @@ class TelegramShareTests(unittest.TestCase):
         with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": str(group)}), \
              patch.object(bot, "_load_bot", return_value=self.fake_bot), \
              patch("services.order_share_telegram_access.is_authorized", return_value=False), \
-             patch.object(bot, "_lookup_all", side_effect=AssertionError("private data leaked")), \
+             patch.object(bot, "_lookup_all_full", side_effect=AssertionError("private data leaked")), \
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 99, group, "/all")
             self.assertIn("私人群组", send.call_args.args[2])
@@ -364,7 +387,7 @@ class TelegramShareTests(unittest.TestCase):
         with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
              patch.object(bot, "_load_bot", return_value=self.fake_bot), \
              patch("services.order_share_telegram_access.is_authorized", return_value=False) as member, \
-             patch.object(bot, "_lookup_all", side_effect=AssertionError("not authorized")), \
+             patch.object(bot, "_lookup_all_full", side_effect=AssertionError("not authorized")), \
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 999, 999, "/all")
         member.assert_called_once_with("orders", 999, "test-only-credential")
@@ -374,12 +397,12 @@ class TelegramShareTests(unittest.TestCase):
         with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
              patch.object(bot, "_load_bot", return_value=self.fake_bot), \
              patch("services.order_share_telegram_access.is_authorized", side_effect=[True, False]) as member, \
-             patch.object(bot, "_lookup_all", return_value=[]) as lookup, \
+             patch.object(bot, "_lookup_all_full", return_value=[]) as lookup, \
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 999, 999, "/all")
             bot._process("orders", 999, 999, "/all")
         self.assertEqual(member.call_count, 2)
-        lookup.assert_called_once_with(1)
+        lookup.assert_called_once_with()
         self.assertIn("私人群组", send.call_args.args[2])
 
     def test_existing_share_signer_resolves_to_original_share_without_db_writes(self):
