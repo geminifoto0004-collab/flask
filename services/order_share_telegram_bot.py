@@ -28,7 +28,8 @@ _PAGE_SIZE = 8  # compatibility with old /all pagination messages
 _ALL_CHUNK_ROWS = 20
 _ALL_CHUNK_CHARS = 2850
 _MENU_LABEL = "📋 全部客戶"
-_MENU_KEYBOARD = {"keyboard": [[{"text": _MENU_LABEL}]],
+_APP_LABEL = "🔎 客戶清單"
+_MENU_KEYBOARD = {"keyboard": [[{"text": _MENU_LABEL}, {"text": _APP_LABEL}]],
                   "resize_keyboard": True, "is_persistent": True,
                   "one_time_keyboard": False,
                   "input_field_placeholder": "輸入客戶名稱，如 SERGIO"}
@@ -330,6 +331,14 @@ def _all_replies(rows):
     return replies
 
 
+def _miniapp_button(bot):
+    """Main Mini App deep link; works in group URL buttons after BotFather setup."""
+    username = str(bot.get("bot_username") or "").lstrip("@")
+    if not re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+        return None
+    return {"text": "🔎 開啟客戶清單", "url": "https://t.me/" + username + "?startapp=orderlinks"}
+
+
 def _send_reply(token, chat_id, text, buttons=(), *, show_menu=False):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
                "link_preview_options": {"is_disabled": True}}
@@ -392,13 +401,25 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
         )
         return _send_reply(bot["token"], chat_id, reply)
 
+    if command == "/app" or text.strip() in {_APP_LABEL, "客戶清單", "客户清单"}:
+        button = _miniapp_button(bot)
+        if not button:
+            return _send_reply(bot["token"], chat_id, "尚未設定客戶清單入口，請聯絡管理員。")
+        return _send_reply(
+            bot["token"], chat_id,
+            "<b>🔎 XINGWANG 客戶清單</b>\n"
+            "點下方「開啟客戶清單」進入搜尋頁。"
+            "\nTelegram Mini App 須先在 @BotFather 設定 Main Mini App。",
+            [[button]],
+        )
     if command in {"/start", "/help", "/menu", "/links"} and (
             command != "/links" or not argument.strip()) or text.strip() in {
                 "選單", "菜單", "菜单", "功能表", "menu", "MENU"}:
         return _send_reply(
             bot["token"], chat_id,
             "<b>XINGWANG ORDER LINK</b>\n已開啟下方「📋 全部客戶」快捷鍵盤，"
-            "點一下即可列出所有有效分享，不用翻頁。\n也可以輸入 SERGIO、CONDO SERGIO 搜尋客戶。"
+            "點「📋 全部客戶」查看全部連結，或點「🔎 客戶清單」開啟搜尋頁。"
+            "\n也可以直接輸入 SERGIO、CONDO SERGIO 搜尋客戶。"
             "\n藍色客戶名稱可以開啟連結，📋 編號可以複製連結。",
             show_menu=True,
         )
