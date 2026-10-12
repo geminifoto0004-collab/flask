@@ -43,6 +43,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <button class="refresh" id="refresh" type="button">↻ 更新</button>
         {% if china %}<form action="/cn/order-links/logout" method="post" style="margin:0">
+          <input type="hidden" name="csrf" value="{{ logout_csrf }}">
           <button class="refresh" type="submit">退出</button></form>{% endif %}
       </div>
     </header>
