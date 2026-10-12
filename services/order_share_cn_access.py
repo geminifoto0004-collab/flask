@@ -28,6 +28,9 @@ _COOKIE_AGE = 7 * 24 * 3600
 _COOKIE_PATH = "/cn/order-links"
 _LOGIN_WINDOW = 15 * 60
 _MAX_FAILURES = 8
+_ADMIN_CSRF_COOKIE = "xingwang_cn_admin_csrf"
+_ADMIN_CSRF_AGE = 60 * 60
+_ADMIN_CSRF_PATH = "/admin/automation/china-links"
 
 
 def _secret_ready():
@@ -221,6 +224,42 @@ def _csrf_valid(scope):
                 and (not origin_present or _same_origin()))
 
 
+def _admin_csrf_serializer():
+    """Signed admin form token, independent from the parent Flask session."""
+    if not _secret_ready():
+        raise RuntimeError("Flask SECRET_KEY is not configured securely")
+    return URLSafeTimedSerializer(str(current_app.secret_key),
+                                  salt="order-share-cn-admin-csrf-v2")
+
+
+def _admin_identity():
+    return "|".join((str(session.get("user_id") or ""),
+                     str(session.get("username") or ""),
+                     str(session.get("role") or "")))
+
+
+def _new_admin_csrf():
+    return _admin_csrf_serializer().dumps({
+        "user": _admin_identity(), "nonce": secrets.token_urlsafe(24)
+    })
+
+
+def _admin_csrf_valid():
+    """Signed double-submit token bound to the admin and a separate cookie."""
+    form_token = str(request.form.get("csrf") or "")
+    cookie_token = str(request.cookies.get(_ADMIN_CSRF_COOKIE) or "")
+    if (not form_token or not cookie_token or len(form_token) > 700
+            or not hmac.compare_digest(form_token, cookie_token)):
+        return False
+    try:
+        payload = _admin_csrf_serializer().loads(form_token, max_age=_ADMIN_CSRF_AGE)
+        return bool(isinstance(payload, dict) and payload.get("nonce")
+                    and hmac.compare_digest(
+                        str(payload.get("user") or ""), _admin_identity()))
+    except (BadSignature, SignatureExpired, ValueError, RuntimeError):
+        return False
+
+
 def _response_headers(response):
     response.headers["Cache-Control"] = "no-store, private, max-age=0"
     response.headers["Pragma"] = "no-cache"
@@ -255,16 +294,23 @@ def admin_password():
             ready = bool(_settings().get("password_hash"))
         except Exception:
             return make_response("TiDB 暫時無法讀取，請稍後再試。", 503)
-        return render_template("order_share_telegram/cn_admin.html",
-                               ready=ready, csrf=_csrf("admin"), notice=None)
+        try:
+            token = _new_admin_csrf()
+        except RuntimeError:
+            return make_response("SECRET_KEY 設定異常，無法安全設定密碼。", 503)
+        response = make_response(render_template(
+            "order_share_telegram/cn_admin.html",
+            ready=ready, csrf=token, notice=None))
+        response.set_cookie(_ADMIN_CSRF_COOKIE, token, max_age=_ADMIN_CSRF_AGE,
+                            secure=True, httponly=True, samesite="Strict",
+                            path=_ADMIN_CSRF_PATH)
+        return response
 
     if request.content_length is not None and request.content_length > 4096:
         return make_response("Request too large", 413)
-    if not _csrf_valid("admin"):
+    if not _admin_csrf_valid():
         return make_response(
-            "表單驗證已失效。請重新整理密碼管理頁後再輸入一次。"
-            "如果仍然失敗，請確認瀏覽器允許此網站 Cookie。", 403
-        )
+            "密碼設定請求未通過安全驗證，請重新開啟管理頁後再試。", 403)
     password = request.form.get("password", "")
     confirm = request.form.get("confirm", "")
     if password != confirm or not 1 <= len(password) <= 128:
@@ -273,8 +319,10 @@ def admin_password():
         _update_password(password)
     except Exception:
         return make_response("無法儲存密碼，請檢查 TiDB 和 SECRET_KEY 設定。", 503)
-    session.pop("share_cn_csrf_admin", None)
-    return redirect(url_for(".admin_password", updated="1"), code=303)
+    response = redirect(url_for(".admin_password", updated="1"), code=303)
+    response.delete_cookie(_ADMIN_CSRF_COOKIE, path=_ADMIN_CSRF_PATH,
+                           secure=True, httponly=True, samesite="Strict")
+    return response
 
 
 @cn_bp.route("/cn/order-links", methods=["GET"])
