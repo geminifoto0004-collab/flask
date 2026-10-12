@@ -28,7 +28,7 @@ _SCOPE_RANK = {'current': 0, '6m': 1, '12m': 2, 'all': 3}
 # customer page can request hundreds of images in a short burst.  Keep token and
 # customer-space lookups in-process briefly so those requests do not each cross the
 # Render <-> TiDB network.
-_SHARE_CACHE_TTL = 60.0
+_SHARE_CACHE_TTL = 10.0  # V140: cross-worker visibility edits converge within 10s
 _SPACE_CACHE_TTL = 30.0
 _ASSET_CACHE_TTL = 120.0
 _cache_lock = threading.RLock()
