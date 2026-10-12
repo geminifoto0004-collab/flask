@@ -76,14 +76,14 @@ async function search(){
  const q=el('q').value.trim(),init=tg?.initData||'',requestId=++seq;
  if(!init){el('status').textContent='請從 Telegram 官方 Mini App 入口開啟；一般瀏覽器不能查資料。';return;}
  if(!q){el('status').textContent='請輸入查詢內容';return;}
- queries[action]=q;el('go').disabled=true;el('status').textContent='正在查詢'+actionLabels[action]+'，向本機取得最新資料…';
+ queries[action]=q;el('go').disabled=true;rows=[];notaState=null;el('stats').hidden=true;el('stats').replaceChildren();el('filter').value='';el('count').textContent='';el('note').textContent='';el('wrap').replaceChildren(elem('div','正在查詢'+actionLabels[action]+'…','empty'));el('status').textContent='正在查詢'+actionLabels[action]+'，向本機取得最新資料…';
  try{
  const response=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action,q,init_data:init})});
  const body=await response.json();if(!response.ok||!body.ok)throw Error(body.error||body.detail||(response.status===503?'本機尚未連線，請確認 Windows Bot 正在運行。':'查詢失敗'));
  if(requestId!==seq)return;
  rows=body.data?.rows||[];notaState=action==='nota'?(body.data||{}):null;sort='';desc=false;el('filter').value='';stats(body.data||{});draw();
  el('status').textContent='已取得本機即時資料 · '+new Date().toLocaleTimeString();
- }catch(err){if(requestId!==seq)return;rows=[];el('stats').hidden=true;el('note').textContent='';el('count').textContent='';el('wrap').replaceChildren(elem('div','查詢未完成（不是庫存零筆）','empty'));el('status').textContent=String(err.message||err);}
+ }catch(err){if(requestId!==seq)return;rows=[];notaState=null;el('stats').hidden=true;el('stats').replaceChildren();el('note').textContent='';el('count').textContent='';el('wrap').replaceChildren(elem('div',actionLabels[action]+'查詢失敗（不是零筆結果）','empty'));el('status').textContent=actionLabels[action]+'：'+String(err.message||err);}
  finally{if(requestId===seq)el('go').disabled=false;}
 }
 el('go').addEventListener('click',search);el('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});el('filter').addEventListener('input',draw);
