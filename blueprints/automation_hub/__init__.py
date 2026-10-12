@@ -25,6 +25,14 @@ register_lazy(
     admin_path="/admin/automation/aduana",
 )
 
+register_lazy(
+    "ORDER_SHARES",
+    "客户分享链接",
+    "services.order_share_telegram_bot",
+    "handle_update",
+    admin_path="/admin/order-shares",
+)
+
 from . import routes as _routes  # noqa: E402,F401
 
 __all__ = ["automation_hub_bp"]
