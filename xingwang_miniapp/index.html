@@ -93,7 +93,7 @@ function details(){
   items=[['編號',stock.length],['匹數',format(stock.reduce((n,r)=>n+Number(r.pieces||0),0))],
   ['米數',format(stock.reduce((n,r)=>n+Number(r.meters||0),0))],['在途',p.camino?.length||0],
   ['歷史',p.history?.length||0],['預留',p.reservar?.length||0]];
-  $('note').textContent='歷史的 Caja 保留原始欄位名稱；在途 Unt 也保留原始單位，不把箱數當成匹數。價格以本機權限為準。';
+  $('note').textContent='歷史的 Caja 保留原始欄位名稱；在途 Unt 也保留原始單位，不把箱數當成匹數。價格以本機權限為準。'+((p.warnings||[]).length?'\n提醒：'+p.warnings.join('；'):'');
  }else if(p.kind==='reservar'){
   items=[['Reservar 筆數',stock.length]];$('note').textContent='輸入 @ 查預留紀錄；顯示的是原系統的 Reservar，不是 R1/S1/RVA。';
  }else{
