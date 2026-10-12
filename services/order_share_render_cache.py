@@ -288,7 +288,18 @@ def _queue_persisted_recheck(share):
 
     def worker():
         try:
-            _load_one_persisted(payload)
+            refreshed = _load_one_persisted(payload)
+            # A visibility update deletes old persistent variants. Evict rather
+            # than repeatedly serving the orphaned in-memory HTML forever.
+            with _LOCK:
+                stale_tokens = [th for th, item in _TOKEN_HTML.items()
+                                if item.get("variant_key") == key]
+                for th in stale_tokens:
+                    _TOKEN_HTML.pop(th, None)
+                if not refreshed:
+                    _HTML.pop(key, None)
+                    _HTML_CUSTOMERS.pop(key, None)
+                    _HTML_CHECKED_AT.pop(key, None)
         finally:
             with _LOCK:
                 _REFRESHING.discard(key)
