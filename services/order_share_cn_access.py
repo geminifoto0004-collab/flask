@@ -213,8 +213,11 @@ def _csrf(scope):
 def _csrf_valid(scope):
     supplied = str(request.form.get("csrf") or "")
     actual = str(session.get("share_cn_csrf_" + scope) or "")
+    # The CSRF token lives in Flask's signed session. Some mainland
+    # embedded browsers omit Origin/Referer; reject mismatches if supplied.
+    origin_present = bool(request.headers.get("Origin") or request.headers.get("Referer"))
     return bool(supplied and actual and hmac.compare_digest(supplied, actual)
-                and _same_origin())
+                and (not origin_present or _same_origin()))
 
 
 def _response_headers(response):
@@ -279,7 +282,8 @@ def page():
     if not settings.get("password_hash"):
         return make_response("中國客戶查詢入口尚未啟用，請聯絡管理員設定密碼。", 503)
     if _authorized(settings):
-        return render_template("order_share_telegram/index.html", china=True)
+        return render_template("order_share_telegram/index.html", china=True,
+                               logout_csrf=_csrf("logout"))
     return render_template("order_share_telegram/cn_login.html",
                            csrf=_csrf("login"), error=None)
 
@@ -312,8 +316,9 @@ def login():
 
 @cn_bp.route("/cn/order-links/logout", methods=["POST"])
 def logout():
-    if not _same_origin():
+    if not _csrf_valid("logout"):
         return make_response("Invalid request", 403)
+    session.pop("share_cn_csrf_logout", None)
     return _clear_cookie(redirect(url_for(".page"), code=303))
 
 
