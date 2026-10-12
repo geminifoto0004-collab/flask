@@ -25,6 +25,9 @@ sys.modules["services.order_share_telegram_access"] = ACCESS
 SPEC = importlib.util.spec_from_file_location("share_bot_under_test", ROOT / "services/order_share_telegram_bot.py")
 bot = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bot)
+# Mini App imports this module by its production name at request time.
+SERVICES.order_share_telegram_bot = bot
+sys.modules["services.order_share_telegram_bot"] = bot
 
 
 def update(user=11, chat=11, kind="private", text="OSCAR", update_id=10):
@@ -294,6 +297,23 @@ class TelegramShareTests(unittest.TestCase):
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 99, -100123456789, "/menu")
         self.assertFalse(send.call_args.kwargs.get("show_menu", False))
+
+    def test_miniapp_button_is_group_safe_and_preserves_old_todo_search(self):
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
+             patch.object(bot, "_load_bot",
+                          return_value={**self.fake_bot,
+                                        "bot_username": "XingwangOrderLinkBot"}), \
+             patch("services.order_share_telegram_access.is_authorized",
+                   return_value=True), \
+             patch.object(bot, "_send_reply") as send, \
+             patch.object(bot, "_lookup_all_full", return_value=[]) as lookup:
+            bot._process("orders", 11, -100123456789, "/app")
+            self.assertEqual(send.call_args.args[3][0][0]["url"],
+                             "https://t.me/XingwangOrderLinkBot?startapp=orderlinks")
+            bot._process("orders", 11, -100123456789, "todo")
+            lookup.assert_called_once_with()
+            bot._process("orders", 11, -100123456789, "🔎 客戶清單")
+            self.assertIn("startapp", send.call_args.args[3][0][0]["url"])
 
     def test_customer_search_has_one_click_all_button(self):
         row = {"token_hash": "a" * 64, "customer_name": "SERGIO CONDO COLQUE",
