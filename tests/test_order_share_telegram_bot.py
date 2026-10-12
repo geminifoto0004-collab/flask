@@ -233,7 +233,7 @@ class TelegramShareTests(unittest.TestCase):
             send.assert_not_called()
             bot._process("orders", 11, -100123456789, "/links nonexistent")
             self.assertEqual(send.call_count, 1)
-            self.assertIn("没有找到", send.call_args.args[2])
+            self.assertIn("沒有找到", send.call_args.args[2])
             self.assertEqual(lookup.call_count, 2)
 
     def test_persistent_one_tap_keyboard_uses_existing_authorization(self):
