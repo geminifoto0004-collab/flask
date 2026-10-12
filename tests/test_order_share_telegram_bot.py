@@ -647,6 +647,7 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
         self.cn._SCHEMA_READY = False
         self.app = Flask("cn_test", template_folder=str(ROOT / "templates"))
         self.app.secret_key = "only-test-a-long-secret-key-0123456789"
+        self.app.add_url_rule("/login", endpoint="login", view_func=lambda: "Login")
         self.app.register_blueprint(self.cn.cn_bp)
         self.client = self.app.test_client()
 
@@ -699,7 +700,7 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
         self.assertNotIn("Company-Shared-Password", record["password_hash"])
         self.assertTrue(record["revision"])
         unauthenticated = self.client.get("/cn/order-links")
-        self.assertIn("密碼", unauthenticated.get_data(as_text=True))
+        self.assertIn("密码", unauthenticated.get_data(as_text=True))
         self.assertNotIn("app.js", unauthenticated.get_data(as_text=True))
         self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
         csrf = self.csrf_from(unauthenticated)
