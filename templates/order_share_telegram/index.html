@@ -33,19 +33,23 @@
   .toast{position:fixed;bottom:calc(22px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);padding:11px 18px;border-radius:16px;background:var(--fg);color:var(--bg);font-size:13px;box-shadow:0 5px 20px #0002;white-space:nowrap;max-width:90%;z-index:5}
   .toast[hidden]{display:none}
   </style>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="/telegram/order-shares/app.js" defer></script>
+  {% if not china %}<script src="https://telegram.org/js/telegram-web-app.js"></script>{% endif %}
+  <script src="{{ '/cn/order-links/app.js' if china else '/telegram/order-shares/app.js' }}" defer></script>
 </head>
 <body>
   <main class="shell">
     <header>
       <div><h1>📋 XINGWANG 客戶分享</h1><p>只顯示目前有效的客戶連結</p></div>
-      <button class="refresh" id="refresh" type="button">↻ 更新</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="refresh" id="refresh" type="button">↻ 更新</button>
+        {% if china %}<form action="/cn/order-links/logout" method="post" style="margin:0">
+          <button class="refresh" type="submit">退出</button></form>{% endif %}
+      </div>
     </header>
     <div class="search"><input id="search" type="search" autocomplete="off" placeholder="輸入客戶名稱，例如 SERGIO" aria-label="搜尋客戶名稱"></div>
     <div class="meta"><span id="count">讀取中…</span><span>點姓名開啟 · 點複製取網址</span></div>
     <section id="list" class="list" hidden aria-label="有效客戶連結"></section>
-    <div id="status" class="status" role="status">正在確認 Telegram 身分…</div>
+    <div id="status" class="status" role="status">{{ '正在載入客戶資料…' if china else '正在確認 Telegram 身分…' }}</div>
   </main>
   <div id="toast" class="toast" hidden role="status"></div>
 </body>
