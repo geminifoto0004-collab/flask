@@ -40,7 +40,7 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 <div class="modes" id="modes"><button class="on" data-mode="product">商品编号</button><button data-mode="nota">Nota / @ 预留</button></div>
 <div class="search"><div class="entry"><input id="q" value="" placeholder="输入商品编号" autocomplete="off" enterkeyhint="search"/><button type="button" id="clear" class="clear" aria-label="清除搜索内容">×</button></div><button type="button" id="go">查询</button></div>
 <div class="tabs" id="tabs">
-<button class="on" data-tab="stock">库存</button><button data-tab="camino">在途</button><button data-tab="history">历史购买</button><button data-tab="prices">价格</button><button data-tab="reservar">预留</button>
+<button class="on" data-tab="stock">库存</button><button data-tab="camino">待到货</button><button data-tab="history">历史购买</button><button data-tab="reservar">预定</button>
 </div>
 </header>
 <main>
@@ -56,13 +56,12 @@ const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
 const $=id=>document.getElementById(id);
 const alias=location.pathname==='/admin'?'ADMIN':'STOCK';
 const fields={
- stock:[['code','商品编号'],['pieces','匹数'],['meters','米数']],
- camino:[['code','商品编号'],['container','货柜'],['units','数量(Unt)'],['unit_type','单位'],['eta','日期']],
+ stock:[['code','商品编号'],['pieces','匹数'],['meters','米数'],['reserved','预定状态']],
+ camino:[['code','商品编号'],['container','货柜'],['caja','CAJA'],['units','UNT'],['unit_type','单位'],['eta','到货日期']],
  history:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','Nota'],['quantity','CAJA']],
- prices:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','Nota'],['price','价格']],
- reservar:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','预留单号']]
+ reservar:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','预定单号']]
 };
-const titles={stock:'库存',camino:'在途',history:'历史购买',prices:'价格',reservar:'预留'};
+const titles={stock:'库存',camino:'待到货',history:'历史购买',reservar:'预定'};
 let mode='product',tab='stock',sort='',desc=false,seq=0;
 const cache={product:null,nota:null};const typed={product:'',nota:''};
 const txt=(v)=>v===undefined||v===null||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
@@ -88,7 +87,7 @@ function makeTable(rows,cols,attach){
   tr.append(th);}
  head.append(tr);table.append(head);
  const tbody=node('tbody');
- for(const row of rows){const tr=node('tr');for(const [key]of cols)tr.append(node('td',txt(row[key]),['pieces','meters','quantity','price','units','caja','total'].includes(key)?'num':''));tbody.append(tr);}
+ for(const row of rows){const tr=node('tr');for(const [key]of cols)tr.append(node('td',key==='reserved'?(row.reserved?'有预定':''):txt(row[key]),['pieces','meters','quantity','price','units','caja','total'].includes(key)?'num':''));tbody.append(tr);}
  table.append(tbody);return wrap;
 }
 function drawProduct(){
@@ -97,18 +96,23 @@ function drawProduct(){
  const hasP=stock.some(x=>x.pieces!==null&&x.pieces!==undefined),hasM=stock.some(x=>x.meters!==null&&x.meters!==undefined);
  const pSum=hasP?stock.reduce((s,x)=>s+Number(x.pieces||0),0):'—';
  const mSum=hasM?stock.reduce((s,x)=>s+Number(x.meters||0),0):'—';
- statsBox([['商品种类',stock.length],['库存匹数',pSum],['库存米数',mSum],['在途笔数',(d.camino||[]).length]]);
- if(tab==='prices'&&!d.price_allowed){$('results').replaceChildren(node('div','价格需要管理员授权，当前账号没有查看权限。','empty'));$('filterline').hidden=true;return;}
+ const incoming=(d.camino_caja_total===null||d.camino_caja_total===undefined)?'—':d.camino_caja_total;
+ statsBox([['商品种类',stock.length],['库存匹数',pSum],['库存米数',mSum],['待到货 CAJA',incoming]]);
  let list=all.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes($('filter').value.trim().toLowerCase())));
  if(sort){list=list.slice().sort((a,b)=>{let x=a[sort],y=b[sort];let n=typeof x==='number'&&typeof y==='number'?x-y:String(x??'').localeCompare(String(y??''),undefined,{numeric:true});return desc?-n:n;});}
  $('filterline').hidden=false;$('count').textContent=list.length+' / '+all.length+' 条';
- $('results').replaceChildren(list.length?makeTable(list,fields[tab],true):node('div','暂无符合条件的数据','empty'));
- $('note').textContent='切换下方分类不会重新向本机查询。'+(d.warnings?.length?' 部分来源提示：'+d.warnings.join('；'):'');
+ const cols=tab==='history'&&d.price_allowed?[...fields.history,['price','成交单价']]:fields[tab];
+ $('results').replaceChildren(list.length?makeTable(list,cols,true):node('div','暂无符合条件的数据','empty'));
+ const issues=[];
+ if(d.camino_caja_missing)issues.push('有 '+d.camino_caja_missing+' 条待到货未提供 CAJA，汇总仅包含已知数量');
+ if(tab==='history'&&!d.price_allowed)issues.push('成交价格需管理员授权，当前未显示');
+ if(d.warnings?.length)issues.push(...d.warnings);
+ $('note').textContent='切换分类不会重新向本机查询。'+(issues.length?' 提示：'+issues.join('；'):'');
 }
 function showNota(){
  const snap=cache.nota;if(!snap){clearOutput('请输入五位数 Nota，或 @ 查询预留记录');return;}
  const d=snap.data||{};$('filterline').hidden=true;$('results').replaceChildren();
- if(d.found===false){statsBox([['Nota',d.nota||snap.q],['状态','未找到']]);$('results').append(node('div','没有找到这张 Nota；不能据此判断是否出货。','empty'));return;}
+ if(d.found===false){statsBox([['查询条件',snap.q],['状态','未找到']]);$('results').append(node('div','没有找到匹配的 Nota；不能据此判断是否出货。','empty'));return;}
  let docs=d.documents;
  if(!Array.isArray(docs)||!docs.length){
   if(d.kind==='nota'){docs=[{nota:d.nota,date:d.date,customer:d.customer,shipped_at:d.shipped_at,pilotero:d.pilotero,rows:d.rows||[]}];}
@@ -119,7 +123,7 @@ function showNota(){
   }
  }
  const reserved=d.kind==='reservar';
- statsBox(reserved?[['预留客户/日期组',docs.length],['预留明细',d.rows?.length||0]]:[['Nota',d.nota||snap.q],['记录数',docs.length],['商品种类',d.rows?.length||0]]);
+ statsBox(reserved?[['预定分组',docs.length],['预定明细',d.rows?.length||0]]:[['查询条件',snap.q],['匹配单据',docs.length],['已加载商品',d.rows?.length||0]]);
  if(!docs.length){$('results').append(node('div','没有找到符合条件的记录','empty'));return;}
  for(const doc of docs){
   const detail=node('details',undefined,'doc'),summ=node('summary'),top=node('div',undefined,'doc-head');
@@ -136,7 +140,7 @@ function showNota(){
   const itemCols=reserved?[['code','商品编号']]:[['code','商品编号'],['caja','CAJA'],['quantity','UNT']];
   if(d.price_allowed){itemCols.push(...(reserved? [['amount','金额']]:[['price','单价'],['total','金额']]));}
   const detailRows=doc.rows||[];
-  body.append(detailRows.length?makeTable(detailRows,itemCols,false):node('div','此条记录暂无商品明细','empty'));
+  body.append(doc.details_loaded===false?node('div','商品明细尚未预取，请缩小查询范围','empty'):(detailRows.length?makeTable(detailRows,itemCols,false):node('div','此条记录暂无商品明细','empty')));
   detail.append(body);$('results').append(detail);
  }
  $('note').textContent=reserved?'@ 查询原系统 RESERVAR。点击客户可展开所属商品；金额仅管理员可查看。':
