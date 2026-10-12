@@ -99,6 +99,13 @@ if _RENDER_ORDER_ENABLED:
     app.config['TRACKING_TIDB_PROVIDER_ENABLED'] = True
     app.config['TRACKING_PUBLIC_SHARE_BACKGROUND_SYNC_ENABLED'] = False
 
+    # Render-only Telegram Automation Hub and authenticated ORDER Mini App.
+    # Keep the local ORDER_HOME application unchanged.
+    from blueprints.automation_hub import automation_hub_bp
+    from services.order_share_telegram_miniapp import miniapp_bp as order_share_miniapp_bp
+    app.register_blueprint(automation_hub_bp)
+    app.register_blueprint(order_share_miniapp_bp)
+
     from blueprints.order_tracking_cloud_auth_bp import order_tracking_cloud_auth_bp
     from order_tracking import init_app as init_order_tracking_app, register_cloud_db_connection_factory
     from services.order_tracking_render_provider import RenderOrderDataProvider
