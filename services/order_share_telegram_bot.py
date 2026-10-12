@@ -401,7 +401,8 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
         )
         return _send_reply(bot["token"], chat_id, reply)
 
-    if command == "/app" or text.strip() in {_APP_LABEL, "客戶清單", "客户清单"}:
+    if command == "/app" or text.strip().casefold() in {
+            "app", _APP_LABEL.casefold(), "客戶清單", "客户清单"}:
         button = _miniapp_button(bot)
         if not button:
             return _send_reply(bot["token"], chat_id, "尚未設定客戶清單入口，請聯絡管理員。")
@@ -409,7 +410,7 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
             bot["token"], chat_id,
             "<b>🔎 XINGWANG 客戶清單</b>\n"
             "點下方「開啟客戶清單」進入搜尋頁。"
-            "\nTelegram Mini App 須先在 @BotFather 設定 Main Mini App。",
+            "\n下次也可以直接輸入 app，不用輸入 /app。",
             [[button]],
         )
     if command in {"/start", "/help", "/menu", "/links"} and (
