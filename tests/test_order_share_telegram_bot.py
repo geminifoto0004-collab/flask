@@ -27,7 +27,7 @@ class TelegramShareTests(unittest.TestCase):
         self.environ = patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_ALLOWED_IDS": "11, 22"})
         self.environ.start()
         self.fake_bot = {"token": "test-only-credential", "enabled": True,
-                         "plugin_key": "ORDER_SHARES", "webhook_secret": "test-secret"}
+                         "plugin_key": "ORDER_SHARES", "webhook_secret": "test-secret", "bot_username": "OrderBot"}
 
     def tearDown(self):
         self.environ.stop()
@@ -180,28 +180,85 @@ class TelegramShareTests(unittest.TestCase):
             lookup.assert_called_once_with(1)
             self.assertIn("没有找到", send.call_args.args[2])
 
-    def test_callback_pagination_accepts_only_private_sender(self):
+    def test_callback_pagination_private_and_authorized_group_only(self):
         def callback(user=11, chat=11, kind="private", data="order_shares:all:2"):
             return {"callback_query": {"id": "abc", "data": data,
                 "from": {"id": user, "is_bot": False},
                 "message": {"chat": {"id": chat, "type": kind}}}}
         self.assertEqual(bot._callback_actor(callback()), (11, 11, "/all 2", "abc"))
-        for v in [callback(kind="group"), callback(chat=99),
-                  callback(data="order_shares:all:0"), callback(data="order_shares:all:10000"),
-                  callback(data="other:all:2")]:
-            self.assertIsNone(bot._callback_actor(v))
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}):
+            self.assertEqual(
+                bot._callback_actor(callback(chat=-100123456789, kind="supergroup")),
+                (11, -100123456789, "/all 2", "abc"),
+            )
+            self.assertIsNone(bot._callback_actor(callback(chat=-100999999999, kind="supergroup")))
+            self.assertIsNone(bot._callback_actor(callback(chat=-100123456789, kind="channel")))
+            self.assertIsNone(bot._callback_actor(callback(data="order_shares:all:0")))
+            self.assertIsNone(bot._callback_actor(callback(data="order_shares:all:10000")))
+            self.assertIsNone(bot._callback_actor(callback(data="other:all:2")))
 
-    def test_group_id_command_only_accepts_group_chat(self):
-        group_update = update(user=11, chat=-100123456789, kind="supergroup",
-                              text="/groupid", update_id=903)
-        self.assertEqual(bot._group_actor(group_update), (11, -100123456789, "/groupid"))
-        self.assertIsNone(bot._group_actor(update(user=11, chat=-100123456789,
-                                                  kind="supergroup", text="/all")))
-        with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
-             patch.object(bot, "_lookup_shares", side_effect=AssertionError("no group data")), \
+    def test_staff_group_messages_only_in_configured_group(self):
+        staff_group = -100123456789
+        allowed = update(user=11, chat=staff_group, kind="supergroup",
+                         text="/all", update_id=904)
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": str(staff_group)}):
+            self.assertEqual(bot._group_actor(allowed), (11, staff_group, "/all"))
+            self.assertEqual(
+                bot._group_actor(update(user=11, chat=staff_group,
+                                        kind="supergroup", text="SERGIO")),
+                (11, staff_group, "SERGIO"),
+            )
+            self.assertEqual(
+                bot._group_actor(update(user=11, chat=staff_group, kind="supergroup",
+                                        text="/all@XingwangOrderLinkBot")),
+                (11, staff_group, "/all@XingwangOrderLinkBot"),
+            )
+            for wrong in [-100999999999, -100123456788]:
+                self.assertIsNone(bot._group_actor(update(user=11, chat=wrong,
+                                                        kind="supergroup", text="/all")))
+            self.assertIsNone(bot._group_actor(update(user=11, chat=staff_group,
+                                            kind="channel", text="/all")))
+            from_bot = update(user=11, chat=staff_group, kind="supergroup", text="/all")
+            from_bot["message"]["from"]["is_bot"] = True
+            self.assertIsNone(bot._group_actor(from_bot))
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": ""}):
+            self.assertIsNone(bot._group_actor(allowed))
+            self.assertEqual(
+                bot._group_actor(update(user=11, chat=staff_group,
+                                        kind="supergroup", text="/groupid")),
+                (11, staff_group, "/groupid"),
+            )
+
+    def test_group_can_search_all_and_customer_without_leaking_to_other_groups(self):
+        group = -100123456789
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": str(group)}), \\
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \\
+             patch("services.order_share_telegram_access.is_authorized", return_value=True) as member, \\
+             patch.object(bot, "_lookup_all", return_value=[]) as lookup_all, \\
+             patch.object(bot, "_lookup_shares", return_value=[]) as lookup_shares, \\
              patch.object(bot, "_send_reply") as send:
-            bot._process("orders", 11, -100123456789, "/groupid")
-        self.assertIn("-100123456789", send.call_args.args[2])
+            bot._process("orders", 11, group, "/all")
+            lookup_all.assert_called_once_with(1)
+            self.assertEqual(send.call_args.args[1], group)
+            bot._process("orders", 11, group, "SERGIO")
+            lookup_shares.assert_called_once_with("SERGIO")
+            self.assertEqual(send.call_args.args[1], group)
+            self.assertEqual(member.call_count, 2)
+            bot._process("orders", 11, -100999999999, "/all")
+            self.assertEqual(member.call_count, 2)
+            self.assertEqual(send.call_count, 2)
+
+    def test_group_unauthorized_sender_and_command_to_other_bot_are_silent(self):
+        group = -100123456789
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": str(group)}), \\
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \\
+             patch("services.order_share_telegram_access.is_authorized", return_value=False), \\
+             patch.object(bot, "_lookup_all", side_effect=AssertionError("private data leaked")), \\
+             patch.object(bot, "_send_reply") as send:
+            bot._process("orders", 99, group, "/all")
+            self.assertIn("私人群组", send.call_args.args[2])
+            bot._process("orders", 99, group, "/all@OtherBot")
+            self.assertEqual(send.call_count, 1)
 
     def test_private_group_members_only_and_no_company_passcodes(self):
         with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
