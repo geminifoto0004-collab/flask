@@ -95,3 +95,40 @@ Telegram 的 **Main Mini App 不能由普通 Bot API 自动创建**，
 Bot Token 与公司私人群组 ID 保持原样，不需要重新输入。
 若没有启用 BotFather Main Mini App，`t.me/...?...startapp`
 可能只会打开 Bot 聊天，不会打开 Mini App。
+
+## 中國同事專用入口（TiDB 密碼）
+
+中國同事不用 Telegram，也不用 XINGWANG 主系統帳號密碼。
+網址：`https://flask-393d.onrender.com/cn/order-links`。
+
+**第一次使用前，必須由現有 XINGWANG 管理員設定密碼**：
+
+1. 以原本管理員帳號登入 Render（`/login`），進入
+   `https://flask-393d.onrender.com/admin/automation`。
+2. 點「**設定或更換專用密碼**」（也可直接前往
+   `/admin/automation/china-links`）。
+3. 設定 12–128 字元、與主系統不同的公司專用密碼，按儲存。
+4. 把 `/cn/order-links` 網址與專用密碼另外傳給中國同事。
+   他們可用手機或電腦瀏覽器登入。
+5. 登入後同樣有全部有效客戶清單、模糊查找、點名稱開啟、
+   一鍵複製連結，不用翻頁。
+
+**儲存位置和權限**：
+- 只在 TiDB 的 `order_share_cn_settings` 存帶鹽 PBKDF2 雜湊
+  與登入版本號，不記錄明文密碼；不使用 AWS Lambda，也不把密碼放在 HTML 或 JS。
+- 中國同事專用 Cookie 有效期 7 天，設定為 Secure / HttpOnly / SameSite；
+  管理員更換密碼時，舊 Cookie 即刻失效。
+- 未設定密碼前中國入口會停用；所有查詢 API 都再次驗證 Cookie，
+  直接打開 API 無法繞過登入。
+- 錯誤密碼按來源 15 分鐘內 8 次限制（失敗記錄存 TiDB）；
+  管理員改密碼須持有原 Flask 管理員登入與 CSRF 驗證。
+- 原本 Telegram Bot（`todo`、`app`、`SERGIO`）完全沿用
+  Telegram 身分與公司群組檢查，**不會因為中國入口新增而取消權限驗證**。
+- 這是分享清單的存取控制，不會自動禁止已轉傳出去的單條
+  `/share/...` 分享網址。
+
+**注意**：如果 Render 沒有使用安全的 `SECRET_KEY` 環境變數，
+中國入口會拒絕發出登入票證（fail closed）。首次上線請先確認
+原本 Render Flask 有設定安全且長期固定的 `SECRET_KEY`；
+**切勿更動已在使用的 SECRET_KEY**，否則會影響原有 Flask 登入。
+中國大陸的連線速度與可達性需要當地同事實際測試。
