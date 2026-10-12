@@ -42,7 +42,7 @@ def _reconcile_customer_orders():
             cur = get_cursor(conn)
             try:
                 cur.execute(
-                    "SELECT order_number, render_payload FROM cloud_orders "
+                    "SELECT order_number, render_payload, active, order_status, customer_key FROM cloud_orders "
                     "WHERE customer_key=? ORDER BY order_number",
                     (customer_key,),
                 )
@@ -67,6 +67,9 @@ def _reconcile_customer_orders():
                         items.append({
                             "order_number": order_number,
                             "payload_sha256": payload_hash,
+                            "active": bool(data.get("active")),
+                            "order_status": str(data.get("order_status") or "ACTIVE").strip().upper(),
+                            "customer_key": str(data.get("customer_key") or "").strip(),
                         })
             finally:
                 conn.close()
