@@ -86,7 +86,7 @@ class TelegramShareTests(unittest.TestCase):
             bot._process("orders", 11, 11, "/links@OrderBot   SERGIO  CONDO COLQUE")
         self.assertEqual([call.args[0] for call in lookup.call_args_list],
                          ["SERGIO CONDO COLQUE", "SERGIO CONDO COLQUE"])
-        self.assertIn("没有找到", send.call_args.args[2])
+        self.assertIn("沒有找到", send.call_args.args[2])
 
     def test_full_name_is_clickable_with_single_compact_copy_button(self):
         original_name = "OSCAR <X>& " + "LONG NAME " * 8
@@ -113,7 +113,7 @@ class TelegramShareTests(unittest.TestCase):
         self.assertGreaterEqual(len(controls), 1)
         self.assertLessEqual(len(controls), 2)
         self.assertTrue(all(len(row) <= 4 for row in controls))
-        self.assertEqual(controls[0][0]["text"], "📋1")
+        self.assertEqual(controls[0][0]["text"], "📋 複製連結")
         self.assertEqual(controls[0][0]["copy_text"]["text"],
                          "https://example.invalid/share/existing")
         self.assertLess(len(text), 4096)
@@ -124,7 +124,7 @@ class TelegramShareTests(unittest.TestCase):
              patch.object(bot, "_lookup_shares", side_effect=RuntimeError("private detail")), \
              patch.object(bot, "_send_reply") as send, patch.object(bot._LOG, "warning"):
             bot._process("orders", 11, 11, "OSCAR")
-        self.assertIn("暫時無法讀取", send.call_args.args[2])
+        self.assertIn("暂时无法读取", send.call_args.args[2])
         self.assertNotIn("private detail", send.call_args.args[2])
 
     def test_failed_delivery_never_exposes_token_in_exception(self):
@@ -209,7 +209,7 @@ class TelegramShareTests(unittest.TestCase):
              patch.object(bot, "_send_reply") as send:
             bot._process("orders", 11, 11, "/all")
             lookup.assert_called_once_with(1)
-            self.assertIn("没有有效分享", send.call_args.args[2])
+            self.assertIn("沒有有效分享", send.call_args.args[2])
 
     def test_all_aliases_case_insensitive_and_chinese(self):
         with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
