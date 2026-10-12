@@ -612,6 +612,180 @@ class MiniAppDirectoryTests(unittest.TestCase):
                                 for c in authorized.call_args_list))
 
 
+
+class ChinaPasswordDirectoryTests(unittest.TestCase):
+    """Real Flask request + SQLite stand-in for TiDB, no remote side effects."""
+
+    def setUp(self):
+        import importlib.util
+        from flask import Flask
+        self.db = sqlite3.connect(":memory:", check_same_thread=False)
+        self.db.row_factory = sqlite3.Row
+        self.wrapper = Mock()
+        self.wrapper.close = Mock()
+        self.wrapper.commit = self.db.commit
+        self.wrapper.rollback = self.db.rollback
+        self.sql = types.ModuleType("database")
+        self.sql.get_db_connection = Mock(return_value=self.wrapper)
+        self.sql.get_cursor = lambda _: self.db.cursor()
+        self.sql.get_row_dict = lambda row, _: dict(row) if row else None
+        self.sql.get_id_type = lambda: "INTEGER PRIMARY KEY AUTOINCREMENT"
+        self.db_context = patch.dict(sys.modules, {"database": self.sql})
+        self.db_context.start()
+
+        setting = types.ModuleType("blueprints.automation_hub.settings")
+        setting.PUBLIC_BASE_URL = "https://example.test"
+        self.settings_context = patch.dict(sys.modules, {
+            "blueprints.automation_hub.settings": setting,
+        })
+        self.settings_context.start()
+        spec = importlib.util.spec_from_file_location(
+            "services.order_share_cn_access", ROOT / "services/order_share_cn_access.py"
+        )
+        self.cn = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.cn)
+        self.cn._SCHEMA_READY = False
+        self.app = Flask("cn_test", template_folder=str(ROOT / "templates"))
+        self.app.secret_key = "only-test-a-long-secret-key-0123456789"
+        self.app.register_blueprint(self.cn.cn_bp)
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        self.settings_context.stop()
+        self.db_context.stop()
+        self.db.close()
+
+    def csrf_from(self, response):
+        import re
+        match = re.search(r'name="csrf" value="([^"]+)"',
+                          response.get_data(as_text=True))
+        self.assertIsNotNone(match)
+        return match.group(1)
+
+    def admin_mode(self):
+        with self.client.session_transaction() as session:
+            session["logged_in"] = True
+            session["role"] = "admin"
+
+    def set_password(self, value="Company-Shared-Password-2026"):
+        self.admin_mode()
+        response = self.client.get("/admin/automation/china-links")
+        token = self.csrf_from(response)
+        result = self.client.post("/admin/automation/china-links",
+            data={"csrf": token, "password": value, "confirm": value},
+            headers={"Origin": "https://example.test"})
+        self.assertEqual(result.status_code, 303, result.get_data(as_text=True))
+
+    def test_no_password_is_closed_and_admin_only_can_configure(self):
+        self.assertEqual(self.client.get("/cn/order-links").status_code, 503)
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+        self.assertEqual(self.client.get("/admin/automation/china-links").status_code, 302)
+        self.assertEqual(self.client.post("/admin/automation/china-links",
+            data={"password": "guess", "confirm": "guess"}).status_code, 302)
+        self.admin_mode()
+        page = self.client.get("/admin/automation/china-links")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(self.client.post("/admin/automation/china-links",
+            data={"csrf": "invalid", "password": "Good-password-2026",
+                  "confirm": "Good-password-2026"}).status_code, 403)
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+
+    def test_password_is_hash_only_and_requires_login_to_access_same_ui(self):
+        self.set_password()
+        record = self.db.execute(
+            "SELECT password_hash,revision FROM order_share_cn_settings WHERE id=1"
+        ).fetchone()
+        self.assertTrue(record["password_hash"].startswith("pbkdf2:sha256:"))
+        self.assertNotIn("Company-Shared-Password", record["password_hash"])
+        self.assertTrue(record["revision"])
+        unauthenticated = self.client.get("/cn/order-links")
+        self.assertIn("密碼", unauthenticated.get_data(as_text=True))
+        self.assertNotIn("app.js", unauthenticated.get_data(as_text=True))
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+        csrf = self.csrf_from(unauthenticated)
+        denied = self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "incorrect"},
+            headers={"Origin": "https://example.test"})
+        self.assertEqual(denied.status_code, 401)
+        login = self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "Company-Shared-Password-2026"},
+            headers={"Origin": "https://example.test"})
+        self.assertEqual(login.status_code, 303)
+        cookie = login.headers["Set-Cookie"]
+        self.assertIn("Secure", cookie)
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=Lax", cookie)
+        self.assertIn("Path=/cn/order-links", cookie)
+        response = self.client.get("/cn/order-links")
+        self.assertEqual(response.status_code, 200)
+        text = response.get_data(as_text=True)
+        self.assertIn("/cn/order-links/app.js", text)
+        self.assertNotIn("telegram-web-app.js", text)
+        self.assertIn("退出", text)
+        self.assertEqual(self.client.get("/cn/order-links/app.js").status_code, 200)
+        with patch.object(bot, "_lookup_all_full", return_value=[{
+            "customer_name": "SERGIO", "token_hash": "aa", "expires_at": None
+        }]) as rows, patch.object(bot, "_share_url",
+            return_value="https://example.test/share/existing") as url:
+            response = self.client.get("/cn/order-links/data")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["items"][0]["name"], "SERGIO")
+        self.assertEqual(response.json["items"][0]["url"],
+                         "https://example.test/share/existing")
+        rows.assert_called_once_with()
+        url.assert_called_once()
+
+    def test_password_change_revokes_existing_cookies(self):
+        self.set_password()
+        csrf = self.csrf_from(self.client.get("/cn/order-links"))
+        login = self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "Company-Shared-Password-2026"},
+            headers={"Origin": "https://example.test"})
+        self.assertEqual(login.status_code, 303)
+        self.assertEqual(self.client.get("/cn/order-links").status_code, 200)
+        self.set_password("New-Company-Secret-2026")
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+        html = self.client.get("/cn/order-links").get_data(as_text=True)
+        self.assertIn('action="/cn/order-links/login"', html)
+
+    def test_brute_force_limit_and_csrf(self):
+        self.set_password()
+        csrf = self.csrf_from(self.client.get("/cn/order-links"))
+        self.assertEqual(self.client.post("/cn/order-links/login", data={
+            "csrf": "fake", "password": "Company-Shared-Password-2026"},
+            headers={"Origin": "https://example.test"}).status_code, 403)
+        self.assertEqual(self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "Company-Shared-Password-2026"},
+            headers={"Origin": "https://attacker.example"}).status_code, 403)
+        for _ in range(self.cn._MAX_FAILURES):
+            response = self.client.post("/cn/order-links/login", data={
+                "csrf": csrf, "password": "wrong123456789"},
+                headers={"Origin": "https://example.test"})
+            self.assertEqual(response.status_code, 401)
+        response = self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "Company-Shared-Password-2026"},
+            headers={"Origin": "https://example.test"})
+        self.assertEqual(response.status_code, 429)
+
+    def test_logout_requires_csrf_and_removes_access_cookie(self):
+        self.set_password()
+        csrf = self.csrf_from(self.client.get("/cn/order-links"))
+        self.client.post("/cn/order-links/login", data={
+            "csrf": csrf, "password": "Company-Shared-Password-2026"},
+            headers={"Origin": "https://example.test"})
+        self.assertEqual(self.client.post("/cn/order-links/logout",
+            data={"csrf": "wrong"}, headers={"Origin": "https://example.test"}
+            ).status_code, 403)
+        page = self.client.get("/cn/order-links")
+        self.assertIn("/cn/order-links/app.js", page.get_data(as_text=True))
+        logout_csrf = self.csrf_from(page)
+        logout = self.client.post("/cn/order-links/logout",
+            data={"csrf": logout_csrf},
+            headers={"Origin": "https://example.test"})
+        self.assertEqual(logout.status_code, 303)
+        self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+
+
 class ReadOnlyLookupTests(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
