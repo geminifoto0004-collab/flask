@@ -1,148 +1,191 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<meta name="robots" content="noindex,nofollow"/><title>XINGWANG · 業務查詢</title>
+<html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="robots" content="noindex,nofollow"/><title>XINGWANG · 业务查询</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color-scheme:light dark}
-*{box-sizing:border-box}body{margin:0;width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;background:var(--tg-theme-bg-color,#f6f7fb);color:var(--tg-theme-text-color,#13223a)}
-header{position:sticky;top:0;z-index:5;background:var(--tg-theme-bg-color,#f6f7fb);border-bottom:1px solid #a0b3c355;padding:15px 12px 10px}
-h1{font-size:18px;margin:0;font-weight:800;letter-spacing:.02em}.sub{font-size:11px;opacity:.7;margin:5px 0 11px}
-.mainmodes,.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}.mainmodes button,.tabs button{background:var(--tg-theme-secondary-bg-color,#e8eef4);color:inherit;white-space:nowrap;font-size:13px}
-.mainmodes button{flex:1}.tabs button{padding:10px 12px;flex-shrink:0}.mainmodes button.active,.tabs button.active{background:var(--tg-theme-button-color,#2381cb);color:var(--tg-theme-button-text-color,#fff)}
-.search{display:flex;gap:8px;margin:12px 0}.search input{flex:1;min-width:0;width:100%;border:1px solid #a7b6c4;border-radius:12px;padding:12px;font-size:16px;background:var(--tg-theme-secondary-bg-color,#fff);color:inherit}
-button{border:0;border-radius:10px;padding:11px 14px;cursor:pointer;font-weight:700;background:var(--tg-theme-button-color,#2381cb);color:var(--tg-theme-button-text-color,#fff)}button:disabled{opacity:.5}
-main{padding:12px 12px calc(35px + env(safe-area-inset-bottom,0px))}
-#status{font-size:13px;line-height:1.6;margin:2px 0 10px;white-space:pre-wrap}
-.stats{display:flex;gap:8px;overflow-x:auto;margin-bottom:10px}.stat{padding:12px;border-radius:12px;background:var(--tg-theme-secondary-bg-color,#fff);min-width:105px;flex:1}.stat span{font-size:11px;display:block;opacity:.65}.stat strong{font-size:18px;display:block;margin-top:3px}
-.toolbar{display:flex;gap:8px;align-items:center;margin:10px 0}.toolbar input{flex:1;min-width:0;border:1px solid #9dabbd;border-radius:11px;padding:10px;font-size:16px;color:inherit;background:var(--tg-theme-secondary-bg-color,#fff)}.count{font-size:12px;white-space:nowrap;opacity:.65}
-.tablewrap{overflow:auto;max-height:62vh;min-height:125px;border-radius:13px;background:var(--tg-theme-secondary-bg-color,#fff)}
+*{box-sizing:border-box}
+body{width:100%;max-width:100%;margin:0;overflow-x:hidden;-webkit-text-size-adjust:100%;color:var(--tg-theme-text-color,#1a293b);background:var(--tg-theme-bg-color,#f6f7fa)}
+button,input{font-family:inherit}button{border:0;border-radius:10px;padding:11px 14px;font-weight:700;cursor:pointer;background:var(--tg-theme-button-color,#1686e9);color:var(--tg-theme-button-text-color,#fff)}button:disabled{opacity:.55}
+header{padding:15px 13px 12px;background:var(--tg-theme-bg-color,#f6f7fa);border-bottom:1px solid #9cabbc55}
+h1{font-size:18px;margin:0}.sub{font-size:11px;opacity:.7;line-height:1.5;margin:5px 0 12px}
+.modes{display:flex;gap:7px}.modes button{flex:1;font-size:14px;color:inherit;background:var(--tg-theme-secondary-bg-color,#e9edf3)}.modes button.on{color:var(--tg-theme-button-text-color,#fff);background:var(--tg-theme-button-color,#1686e9)}
+.search{margin-top:12px;display:flex;align-items:center;gap:7px;width:100%;min-width:0}.entry{flex:1;display:flex;align-items:center;min-width:0;max-width:100%;border:1px solid #9faebe;border-radius:11px;background:var(--tg-theme-secondary-bg-color,#fff)}
+.entry input{width:100%;flex:1;min-width:0;border:0;outline:none;background:transparent;color:inherit;padding:12px;font-size:16px}
+.clear{display:none;flex:0 0 auto;min-width:38px;background:transparent;color:var(--tg-theme-hint-color,#607185);font-size:21px;padding:5px 10px;border-radius:10px}.clear.visible{display:block}
+.tabs{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;margin-top:12px;padding-bottom:2px}.tabs button{white-space:nowrap;flex-shrink:0;color:inherit;background:var(--tg-theme-secondary-bg-color,#e9edf3);font-size:13px;padding:10px 12px}.tabs button.on{background:var(--tg-theme-button-color,#1686e9);color:var(--tg-theme-button-text-color,#fff)}
+main{padding:13px 13px calc(32px + env(safe-area-inset-bottom,0px))}
+#status{font-size:13px;line-height:1.6;margin:2px 0 11px;white-space:pre-wrap}
+.stats{display:flex;gap:8px;overflow-x:auto;margin:10px 0}
+.stat{flex:1;min-width:92px;padding:11px;border-radius:12px;background:var(--tg-theme-secondary-bg-color,#fff)}.stat small{display:block;font-size:11px;opacity:.7}.stat strong{font-size:19px;line-height:1.4;display:block}
+.filterline{display:flex;gap:9px;align-items:center;margin:11px 0}.filterline input{flex:1;min-width:0;width:100%;border:1px solid #9faebe;border-radius:10px;background:var(--tg-theme-secondary-bg-color,#fff);padding:10px;font-size:16px;color:inherit}.count{font-size:12px;white-space:nowrap;opacity:.65}
+.tablewrap{overflow:auto;min-height:100px;max-height:65vh;border-radius:12px;background:var(--tg-theme-secondary-bg-color,#fff)}
 table{border-collapse:collapse;min-width:100%;font-size:13px}
-th,td{padding:11px 10px;border-bottom:1px solid #9cabbb36;white-space:nowrap;text-align:left}
+th,td{padding:11px 10px;text-align:left;white-space:nowrap;border-bottom:1px solid #9caab833}
 th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font-size:12px;cursor:pointer}
-.num{text-align:right;font-variant-numeric:tabular-nums}.empty{padding:28px;text-align:center;opacity:.7}.note{font-size:12px;line-height:1.65;opacity:.73;margin-top:13px}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.empty{text-align:center;padding:30px 12px;opacity:.7}.hint{margin-top:11px;font-size:12px;line-height:1.6;opacity:.72}
+.doc{border-radius:13px;background:var(--tg-theme-secondary-bg-color,#fff);margin:10px 0;overflow:hidden}
+.doc summary{list-style:none;cursor:pointer;padding:14px;display:block}.doc summary::-webkit-details-marker{display:none}
+.doc-head{display:flex;align-items:center;justify-content:space-between;gap:7px}.doc-title{font-weight:800;font-size:15px}.tag{font-size:11px;white-space:nowrap;border:1px solid #8d9daf99;border-radius:50px;padding:3px 8px}
+.doc-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:11px}.field{min-width:0}.field small{display:block;font-size:11px;opacity:.65;margin-bottom:3px}.field span{font-size:13px;overflow-wrap:anywhere}
+.doc-tip{font-size:12px;opacity:.65;margin-top:10px}.doc[open] .doc-tip{display:none}
+.doc-details{padding:13px;border-top:1px solid #9caab855}.doc-details h3{font-size:14px;margin:3px 0 12px}.doc-details .tablewrap{max-height:45vh}
 [hidden]{display:none!important}
-@media(min-width:700px){body{max-width:1050px;margin:auto}.tablewrap{max-height:75vh}}
+@media(min-width:700px){body{max-width:1000px;margin:auto}.doc-info{grid-template-columns:repeat(4,minmax(0,1fr))}.tablewrap{max-height:74vh}}
 </style></head><body>
-<header><h1>XINGWANG STOCK</h1><div class="sub">同一個 Bot · 一次查詢 · 各頁籤共用本機即時結果</div>
-<div class="mainmodes" id="modes"><button data-mode="product" class="active">商品編號查詢</button><button data-mode="nota">Nota / @ Reservar</button></div>
-<div class="search"><input id="q" autocomplete="off" value="1314" placeholder="輸入商品編號，例如 1314"/><button id="go">查詢</button></div>
+<header>
+<h1>XINGWANG STOCK</h1><p class="sub">Telegram 授权 · 本机实时查询 · 一次获取，点击切换</p>
+<div class="modes" id="modes"><button class="on" data-mode="product">商品编号</button><button data-mode="nota">Nota / @ 预留</button></div>
+<div class="search"><div class="entry"><input id="q" value="" placeholder="输入商品编号" autocomplete="off" enterkeyhint="search"/><button type="button" id="clear" class="clear" aria-label="清除搜索内容">×</button></div><button type="button" id="go">查询</button></div>
 <div class="tabs" id="tabs">
-<button class="active" data-tab="stock">庫存</button>
-<button data-tab="camino">在途</button>
-<button data-tab="history">歷史購買</button>
-<button data-tab="prices">價格</button>
-<button data-tab="reservar">Reservar</button>
-</div></header>
+<button class="on" data-tab="stock">库存</button><button data-tab="camino">在途</button><button data-tab="history">历史购买</button><button data-tab="prices">价格</button><button data-tab="reservar">预留</button>
+</div>
+</header>
 <main>
-<div id="status">請在 Telegram Mini App 輸入商品編號。</div>
+<div id="status">请输入编号后点击“查询”。</div>
 <div id="stats" class="stats" hidden></div>
-<div class="toolbar"><input id="filter" placeholder="篩選目前頁籤全部結果" autocomplete="off"/><span class="count" id="count"></span></div>
-<div id="results" class="tablewrap"><div class="empty">等待查詢</div></div>
-<div class="note" id="note"></div>
+<div id="filterline" class="filterline" hidden><input id="filter" placeholder="筛选当前全部结果" autocomplete="off"/><span class="count" id="count"></span></div>
+<div id="results"><div class="empty">等待查询</div></div>
+<div id="note" class="hint"></div>
 </main>
 <script>
 'use strict';
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
 const $=id=>document.getElementById(id);
 const alias=location.pathname==='/admin'?'ADMIN':'STOCK';
-const columns={
- stock:[['code','編號'],['pieces','匹數'],['meters','米數']],
- camino:[['code','編號'],['container','貨櫃'],['units','Unt'],['unit_type','單位'],['eta','日期']],
- history:[['date','日期'],['code','編號'],['customer','客戶'],['nota','Nota'],['quantity','Caja']],
- prices:[['date','日期'],['code','編號'],['customer','客戶'],['nota','Nota'],['price','價格']],
- reservar:[['date','日期'],['code','編號'],['customer','客戶'],['nota','Nota']],
- nota:[['code','商品編號'],['customer','客戶'],['quantity','Unt']],
- allres:[['date','日期'],['code','編號'],['customer','客戶'],['nota','預留']]
+const fields={
+ stock:[['code','商品编号'],['pieces','匹数'],['meters','米数']],
+ camino:[['code','商品编号'],['container','货柜'],['units','数量(Unt)'],['unit_type','单位'],['eta','日期']],
+ history:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','Nota'],['quantity','CAJA']],
+ prices:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','Nota'],['price','价格']],
+ reservar:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','预留单号']]
 };
-const labels={stock:'庫存',camino:'在途',history:'歷史購買',prices:'價格',reservar:'Reservar'};
-let mode='product',tab='stock',sort='',desc=false,requestId=0;
-const snapshots={product:null,nota:null},queries={product:'1314',nota:''};
-const format=v=>v===null||v===undefined||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
-const make=(tag,value,cls)=>{const x=document.createElement(tag);if(value!==undefined)x.textContent=String(value);if(cls)x.className=cls;return x;};
-function rowsForTab(){
- const payload=snapshots[mode]?.data||{};
- if(mode==='nota')return payload.rows||[];
- return tab==='stock'?(payload.rows||[]):(payload[tab]||[]);
+const titles={stock:'库存',camino:'在途',history:'历史购买',prices:'价格',reservar:'预留'};
+let mode='product',tab='stock',sort='',desc=false,seq=0;
+const cache={product:null,nota:null};const typed={product:'',nota:''};
+const txt=(v)=>v===undefined||v===null||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
+const node=(tag,val,klass)=>{const el=document.createElement(tag);if(val!==undefined)el.textContent=String(val);if(klass)el.className=klass;return el};
+function addField(parent,label,value){
+ const f=node('div',undefined,'field');f.append(node('small',label),node('span',txt(value)));parent.append(f);
 }
-function viewColumns(){if(mode==='nota')return columns[snapshots.nota?.data?.kind==='reservar'?'allres':'nota'];return columns[tab];}
-function draw(){
- const body=$('results');body.replaceChildren();
- const snap=snapshots[mode];if(!snap){body.append(make('div','請輸入編號，再按「查詢」','empty'));$('count').textContent='';return;}
- const payload=snap.data||{};
- if(mode==='product'&&tab==='prices'&&!payload.price_allowed){
-  body.append(make('div','價格查詢需要管理員授權。本機 Python 未開放此 Bot 的 prices 權限。','empty'));$('count').textContent='未授權';return;
+function updateClear(){$('clear').classList.toggle('visible',Boolean($('q').value));}
+function showStatus(v){$('status').textContent=String(v);}
+function clearOutput(message){
+ $('stats').hidden=true;$('stats').replaceChildren();$('filterline').hidden=true;$('filter').value='';$('count').textContent='';$('note').textContent='';
+ $('results').replaceChildren(node('div',message,'empty'));
+}
+function statsBox(rows){
+ const out=$('stats');out.replaceChildren();out.hidden=false;
+ for(const [label,value]of rows){const box=node('div',undefined,'stat');box.append(node('small',label),node('strong',txt(value)));out.append(box);}
+}
+function makeTable(rows,cols,attach){
+ const wrap=node('div',undefined,'tablewrap');const table=node('table');wrap.append(table);
+ const head=node('thead'),tr=node('tr');
+ for(const [key,title]of cols){const th=node('th',title+(sort===key?(desc?' ▼':' ▲'):''),['pieces','meters','quantity','price','units','caja','total'].includes(key)?'num':'');
+  if(attach){th.onclick=()=>{if(sort===key)desc=!desc;else{sort=key;desc=false;}render();};}
+  tr.append(th);}
+ head.append(tr);table.append(head);
+ const tbody=node('tbody');
+ for(const row of rows){const tr=node('tr');for(const [key]of cols)tr.append(node('td',txt(row[key]),['pieces','meters','quantity','price','units','caja','total'].includes(key)?'num':''));tbody.append(tr);}
+ table.append(tbody);return wrap;
+}
+function drawProduct(){
+ const snap=cache.product;if(!snap){clearOutput('请输入商品编号后查询');return;}
+ const d=snap.data||{};const stock=d.rows||[],all=tab==='stock'?stock:(d[tab]||[]);
+ const hasP=stock.some(x=>x.pieces!==null&&x.pieces!==undefined),hasM=stock.some(x=>x.meters!==null&&x.meters!==undefined);
+ const pSum=hasP?stock.reduce((s,x)=>s+Number(x.pieces||0),0):'—';
+ const mSum=hasM?stock.reduce((s,x)=>s+Number(x.meters||0),0):'—';
+ statsBox([['商品种类',stock.length],['库存匹数',pSum],['库存米数',mSum],['在途笔数',(d.camino||[]).length]]);
+ if(tab==='prices'&&!d.price_allowed){$('results').replaceChildren(node('div','价格需要管理员授权，当前账号没有查看权限。','empty'));$('filterline').hidden=true;return;}
+ let list=all.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes($('filter').value.trim().toLowerCase())));
+ if(sort){list=list.slice().sort((a,b)=>{let x=a[sort],y=b[sort];let n=typeof x==='number'&&typeof y==='number'?x-y:String(x??'').localeCompare(String(y??''),undefined,{numeric:true});return desc?-n:n;});}
+ $('filterline').hidden=false;$('count').textContent=list.length+' / '+all.length+' 条';
+ $('results').replaceChildren(list.length?makeTable(list,fields[tab],true):node('div','暂无符合条件的数据','empty'));
+ $('note').textContent='切换下方分类不会重新向本机查询。'+(d.warnings?.length?' 部分来源提示：'+d.warnings.join('；'):'');
+}
+function showNota(){
+ const snap=cache.nota;if(!snap){clearOutput('请输入五位数 Nota，或 @ 查询预留记录');return;}
+ const d=snap.data||{};$('filterline').hidden=true;$('results').replaceChildren();
+ if(d.found===false){statsBox([['Nota',d.nota||snap.q],['状态','未找到']]);$('results').append(node('div','没有找到这张 Nota；不能据此判断是否出货。','empty'));return;}
+ let docs=d.documents;
+ if(!Array.isArray(docs)||!docs.length){
+  if(d.kind==='nota'){docs=[{nota:d.nota,date:d.date,customer:d.customer,shipped_at:d.shipped_at,pilotero:d.pilotero,rows:d.rows||[]}];}
+  else{
+   const m=new Map();
+   for(const r of d.rows||[]){const key=[r.customer||'',r.date||'',r.nota||''].join('|');if(!m.has(key))m.set(key,{customer:r.customer,date:r.date,nota:r.nota,rows:[]});m.get(key).rows.push(r);}
+   docs=[...m.values()];
+  }
  }
- let rows=rowsForTab(),filter=$('filter').value.trim().toLowerCase();
- let shown=filter?rows.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes(filter))):rows.slice();
- const cols=viewColumns();
- if(sort)shown.sort((a,b)=>{let x=a[sort],y=b[sort];const cmp=(typeof x==='number'&&typeof y==='number')?x-y:String(x??'').localeCompare(String(y??''),undefined,{numeric:true});return desc?-cmp:cmp;});
- $('count').textContent=shown.length+' / '+rows.length+' 筆';
- if(shown.length===0){body.append(make('div',mode==='nota'&&payload.found===false?'未找到 Nota '+queries.nota:'沒有符合資料','empty'));return;}
- const table=make('table'),thead=make('thead'),tr=make('tr');
- for(const [k,title] of cols){const th=make('th',title+(sort===k?(desc?' ▼':' ▲'):''),['pieces','meters','units','quantity','price'].includes(k)?'num':'');th.onclick=()=>{if(sort===k)desc=!desc;else{sort=k;desc=false;}draw();};tr.append(th);}
- thead.append(tr);table.append(thead);
- const tbody=make('tbody');for(const row of shown){const tr=make('tr');for(const [k] of cols)tr.append(make('td',format(row[k]),['pieces','meters','units','quantity','price'].includes(k)?'num':''));tbody.append(tr);}table.append(tbody);body.append(table);
-}
-function details(){
- const holder=$('stats');holder.replaceChildren();
- const snap=snapshots[mode];if(!snap){holder.hidden=true;$('note').textContent='';draw();return;}
- const p=snap.data||{};const stock=p.rows||[];
- let items;
- if(mode==='product'){
-  items=[['編號',stock.length],['匹數',format(stock.reduce((n,r)=>n+Number(r.pieces||0),0))],
-  ['米數',format(stock.reduce((n,r)=>n+Number(r.meters||0),0))],['在途',p.camino?.length||0],
-  ['歷史',p.history?.length||0],['預留',p.reservar?.length||0]];
-  $('note').textContent='歷史的 Caja 保留原始欄位名稱；在途 Unt 也保留原始單位，不把箱數當成匹數。價格以本機權限為準。'+((p.warnings||[]).length?'\n提醒：'+p.warnings.join('；'):'');
- }else if(p.kind==='reservar'){
-  items=[['Reservar 筆數',stock.length]];$('note').textContent='輸入 @ 查預留紀錄；顯示原本 ORDER Flask 的 Reservar 資料。';
- }else{
-  items=[['Nota',p.nota||queries.nota],['客戶',p.customer||'—'],
-  ['出貨',p.shipment_status||'未查到'],['出貨日期',p.shipped_at||'—'],['商品',stock.length]];
-  $('note').textContent='已開 Nota 不等於已出貨；出貨狀態依本機 CARGA 日期判斷，沒有紀錄只表示未查到。商品數量欄保留原始 UNT 單位。';
+ const reserved=d.kind==='reservar';
+ statsBox(reserved?[['预留客户/日期组',docs.length],['预留明细',d.rows?.length||0]]:[['Nota',d.nota||snap.q],['记录数',docs.length],['商品种类',d.rows?.length||0]]);
+ if(!docs.length){$('results').append(node('div','没有找到符合条件的记录','empty'));return;}
+ for(const doc of docs){
+  const detail=node('details',undefined,'doc'),summ=node('summary'),top=node('div',undefined,'doc-head');
+  top.append(node('div',reserved?(doc.customer||'未知客户'):'Nota '+(doc.nota||snap.q),'doc-title'));
+  top.append(node('span',reserved?'预留记录':doc.shipped_at?'查到出货日期':'未查到出货记录','tag'));
+  summ.append(top);
+  const cells=node('div',undefined,'doc-info');
+  if(reserved){addField(cells,'日期',doc.date);addField(cells,'客户',doc.customer);addField(cells,'明细数量',(doc.rows||[]).length);}
+  else{addField(cells,'开单日期',doc.date);addField(cells,'客户',doc.customer);addField(cells,'出货日期',doc.shipped_at);addField(cells,'承运人／司机（PILOTERO）',doc.pilotero);}
+  summ.append(cells,node('div','点击展开商品明细  ▾','doc-tip'));detail.append(summ);
+  const body=node('div',undefined,'doc-details');
+  if(!reserved){const extra=node('div',undefined,'doc-info');addField(extra,'Nota',doc.nota);addField(extra,'BULTOS（原系统）',doc.bultos);body.append(extra);}
+  body.append(node('h3',reserved?'预留商品明细':'Nota 商品明细'));
+  const itemCols=reserved?[['code','商品编号']]:[['code','商品编号'],['caja','CAJA'],['quantity','UNT']];
+  if(d.price_allowed){itemCols.push(...(reserved? [['amount','金额']]:[['price','单价'],['total','金额']]));}
+  const detailRows=doc.rows||[];
+  body.append(detailRows.length?makeTable(detailRows,itemCols,false):node('div','此条记录暂无商品明细','empty'));
+  detail.append(body);$('results').append(detail);
  }
- holder.hidden=false;for(const [label,val] of items){const c=make('div',undefined,'stat');c.append(make('span',label),make('strong',val));holder.append(c);}draw();
+ $('note').textContent=reserved?'@ 查询原系统 RESERVAR。点击客户可展开所属商品；金额仅管理员可查看。':
+ '出货日期来自 CARGA_FECHA；PILOTERO 是原系统的承运人/司机字段，并不代表已经取得车牌号码。找不到日期只表示未查到出货记录。';
 }
-function switchMode(next){
- if(next===mode)return;queries[mode]=$('q').value.trim();mode=next;++requestId;
- $('go').disabled=false;sort='';desc=false;$('filter').value='';
- for(const button of $('modes').querySelectorAll('[data-mode]'))button.classList.toggle('active',button.dataset.mode===mode);
+function render(){if(mode==='product')drawProduct();else showNota();}
+function changeMode(next){
+ if(next===mode)return;typed[mode]=$('q').value.trim();mode=next;++seq;
+ $('go').disabled=false;$('filter').value='';sort='';desc=false;
+ $('q').value=typed[mode]||'';$('q').placeholder=mode==='nota'?'输入五位数 Nota，或 @ 查询预留':'输入商品编号';updateClear();
  $('tabs').hidden=mode==='nota';
- $('q').value=queries[mode];$('q').placeholder=mode==='nota'?'輸入五位數 Nota，或 @ 查 Reservar':'輸入商品編號，例如 1314';
- $('status').textContent=snapshots[mode]?'顯示先前已查回的資料（切換不重新查詢）':'請輸入編號後按查詢';
- details();
+ for(const b of $('modes').querySelectorAll('[data-mode]'))b.classList.toggle('on',b.dataset.mode===mode);
+ $('q').blur();$('filter').blur();
+ showStatus(cache[mode]?'显示之前已查到的数据，不重新查询':'请输入编号后点击“查询”。');
+ render();
 }
-function selectTab(next){
- if(mode!=='product'||next===tab)return;tab=next;sort='';desc=false;$('filter').value='';
- for(const button of $('tabs').querySelectorAll('[data-tab]'))button.classList.toggle('active',button.dataset.tab===tab);
- $('status').textContent=snapshots.product?'正在顯示「'+labels[tab]+'」，沒有重新呼叫 API':'請先查商品編號';
- details();
+function changeTab(next){
+ if(next===tab||mode!=='product')return;tab=next;sort='';desc=false;$('filter').value='';
+ for(const b of $('tabs').querySelectorAll('[data-tab]'))b.classList.toggle('on',b.dataset.tab===tab);
+ showStatus(cache.product?'正在显示“'+titles[tab]+'”· 无需重新查询':'请先输入商品编号');
+ render();
 }
 async function search(){
- const q=$('q').value.trim(),initData=tg?.initData||'',myReq=++requestId,currentMode=mode;
- if(!initData){$('status').textContent='只能從 Telegram 授權的 Mini App 開啟';return;}
- if(currentMode==='product'&&!/^[A-Za-z0-9][A-Za-z0-9_.()\/\-]{1,39}$/.test(q)){$('status').textContent='請輸入商品編號';return;}
- if(currentMode==='nota'&&!(/^\d{5}$/.test(q)||q==='@')){$('status').textContent='請輸入五位數 Nota，或 @ 查 Reservar';return;}
- queries[currentMode]=q;snapshots[currentMode]=null;$('stats').hidden=true;$('count').textContent='';$('note').textContent='';$('filter').value='';$('results').replaceChildren(make('div','正在取得本機資料…','empty'));
- $('go').disabled=true;$('status').textContent=currentMode==='product'?'正在一次取得庫存、在途、歷史、價格與 Reservar…':'正在查詢 Nota / Reservar…';
+ const q=$('q').value.trim(),init=tg?.initData||'',id=++seq,using=mode;
+ if(!init){showStatus('请通过 Telegram Mini App 打开页面，普通浏览器不能查询。');return;}
+ if(using==='nota'&&!(/^\d{5}$/.test(q)||q==='@')){showStatus('请输入五位数字的 Nota，或 @ 查询预留');return;}
+ if(using==='product'&&!/^[A-Za-z0-9][A-Za-z0-9_.()\/\-]{1,39}$/.test(q)){showStatus('请输入正确的商品编号');return;}
+ typed[using]=q;cache[using]=null;sort='';desc=false;clearOutput('正在从本机获取完整数据……');
+ $('go').disabled=true;showStatus(using==='nota'?'正在查询 Nota / 预留记录……':'正在一次获取库存、在途、购买历史、价格和预留记录……');
  try{
-  const res=await fetch('/api/query',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({bot:alias,action:currentMode==='product'?'stock':'nota',q,init_data:initData})});
-  const body=await res.json();if(!res.ok||!body.ok)throw Error(body.error||body.detail||'查詢失敗');
-  if(myReq!==requestId)return;
-  snapshots[currentMode]={q,data:body.data||{}};sort='';desc=false;details();
-  $('status').textContent='查詢完成 · '+new Date().toLocaleTimeString()+' · 切換 Tab 不會重新打 API';
+  const res=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action:using==='nota'?'nota':'stock',q,init_data:init})});
+  const value=await res.json();if(!res.ok||!value.ok)throw new Error(value.error||value.detail||'查询失败');
+  if(id!==seq)return;
+  cache[using]={q,data:value.data||{}};render();
+  showStatus('查询完成 · '+new Date().toLocaleTimeString()+' · 展开明细或切换分类不会再次请求本机');
  }catch(e){
-  if(myReq!==requestId)return;
-  snapshots[currentMode]=null;$('stats').hidden=true;$('results').replaceChildren(make('div','查詢失敗，不代表零庫存／Nota 不存在','empty'));$('count').textContent='';
-  $('status').textContent=String(e.message||e);
- }finally{if(myReq===requestId)$('go').disabled=false;}
+  if(id!==seq)return;
+  clearOutput('查询未完成，不能作为零库存或未出货的依据');showStatus(String(e.message||e));
+ }finally{if(id===seq)$('go').disabled=false;}
 }
-$('go').onclick=search;$('q').onkeydown=e=>{if(e.key==='Enter')search();};
-$('filter').oninput=draw;
-$('modes').onclick=e=>{const b=e.target.closest('[data-mode]');if(b)switchMode(b.dataset.mode);};
-$('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b)selectTab(b.dataset.tab);};
-const launch=String(tg?.initDataUnsafe?.start_param||'').trim();
-if(/^[A-Za-z0-9][A-Za-z0-9_.()\/\-]{1,39}$/.test(launch)){queries.product=launch;$('q').value=launch;}
-if(!tg?.initData)$('status').textContent='請從 Telegram Mini App 開啟；一般瀏覽器無法查詢。';
-else if(launch)search();
+$('q').addEventListener('input',updateClear);
+$('clear').addEventListener('click',()=>{$('q').value='';updateClear();$('q').focus();});
+$('go').addEventListener('click',search);
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
+$('modes').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(b)changeMode(b.dataset.mode);});
+$('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)changeTab(b.dataset.tab);});
+$('filter').addEventListener('input',render);
+// Input deliberately starts blank even if Telegram supplied a startapp parameter.
+// Avoid auto-querying after opening the Mini App.
+$('q').value='';updateClear();
+if(!tg?.initData)showStatus('请从 Telegram 授权的 Mini App 入口打开；普通浏览器不能查询。');
 </script></body></html>
