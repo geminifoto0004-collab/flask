@@ -25,6 +25,11 @@ _LOCK = threading.Lock()
 _RECENT = {}
 _LIMIT = 5
 _PAGE_SIZE = 8
+_MENU_LABEL = "📋 全部客戶"
+_MENU_KEYBOARD = {"keyboard": [[{"text": _MENU_LABEL}]],
+                  "resize_keyboard": True, "is_persistent": True,
+                  "one_time_keyboard": False,
+                  "input_field_placeholder": "輸入客戶名稱，如 SERGIO"}
 
 
 def _allowed_ids():
@@ -217,57 +222,77 @@ def _share_url(row):
     return _base_url() + "/share/" + share_link_token(row.get("token_hash"))
 
 
-def _search_reply(query, rows, limit=_LIMIT, more_message=None, start_at=1):
-    """Compact HTML links: the *full customer name* itself opens the share.
+def _copy_buttons(entries):
+    """One compact copy grid; the number maps to the linked full name above."""
+    if not entries:
+        return []
+    if len(entries) == 1:
+        return [[{"text": "📋 複製連結", "copy_text": {"text": entries[0][1]}}]]
+    buttons = [{"text": "📋" + str(index), "copy_text": {"text": url}}
+               for index, url in entries]
+    return [buttons[pos:pos + 4] for pos in range(0, len(buttons), 4)]
 
-    No per-customer keyboard rows, truncated button labels, or copy buttons.
-    Only pagination controls, if needed, consume Telegram keyboard space.
-    """
+
+def _search_reply(query, rows, limit=_LIMIT, more_message=None, start_at=1):
+    """Clickable full names plus compact numbered native Telegram copy buttons."""
     if not rows:
-        return "没有找到符合名称的有效分享。请换一个客户名称。", []
-    lines = ["<b>📋 客户分享 · " + html.escape(_name(query, 80)) + "</b>",
-             "点击蓝色客户名称即可打开链接："]
+        return "沒有找到符合名稱的有效分享。請換一個客戶名稱。", []
+    lines = ["<b>📋 客戶分享 · " + html.escape(_name(query, 80)) + "</b>",
+             "點藍色姓名開啟連結："]
+    entries = []
     shown = 0
     for row in rows[:limit]:
-        name = " ".join(str(row.get("customer_name") or row.get("customer_key") or "").split())
-        name = html.escape(name)  # Do not truncate long customer names.
-        url = html.escape(_share_url(row), quote=True)
+        name = html.escape(" ".join(str(
+            row.get("customer_name") or row.get("customer_key") or "").split()))
+        url = _share_url(row)
         expiry = "永久" if not row.get("expires_at") else "至 " + _date(row["expires_at"])
-        line = (str(start_at + shown) + ". <a href=\"" + url + "\">" + name +
-                "</a>  ·  " + html.escape(expiry))
+        line = (str(start_at + shown) + '. <a href="' + html.escape(url, quote=True) +
+                '">' + name + "</a>  ·  " + html.escape(expiry))
         if len("\n".join(lines + [line])) > 3500:
             break
         lines.append(line)
+        # Telegram's CopyTextButton limits copied text to 256 characters.
+        if 1 <= len(url) <= 256:
+            entries.append((start_at + shown, url))
+        else:
+            # Rare long URLs stay copyable by long pressing monospace link text.
+            extra = "<code>" + html.escape(url) + "</code>"
+            if len("\n".join(lines + [extra])) < 3600:
+                lines.append(extra)
         shown += 1
+    if entries and len(entries) > 1:
+        lines.append("📋 點下方對應編號可複製連結")
     if len(rows) > shown:
-        lines.append(more_message or "还有更多结果，请输入更完整的客户名称。")
-    return "\n".join(lines), []
+        lines.append(more_message or "還有更多結果，請輸入更完整的客戶名稱。")
+    return "\n".join(lines), _copy_buttons(entries)
 
 
 def _all_reply(page, rows):
     text, buttons = _search_reply(
-        "全部有效分享 · 第 " + str(page) + " 页",
+        "全部有效分享 · 第 " + str(page) + " 頁",
         rows,
         limit=_PAGE_SIZE,
-        more_message="还有更多有效分享，点击「下一页」。",
+        more_message="還有更多有效分享，點「下一頁」。",
         start_at=(page - 1) * _PAGE_SIZE + 1,
     )
     if not rows:
-        text = "这一页没有有效分享。"
+        text = "這一頁沒有有效分享。"
     navigation = []
     if page > 1:
-        navigation.append({"text": "◀ 上一页", "callback_data": "order_shares:all:" + str(page - 1)})
+        navigation.append({"text": "◀ 上一頁", "callback_data": "order_shares:all:" + str(page - 1)})
+    navigation.append({"text": "📋 全部客戶", "callback_data": "order_shares:all:1"})
     if len(rows) > _PAGE_SIZE and page < 9999:
-        navigation.append({"text": "下一页 ▶", "callback_data": "order_shares:all:" + str(page + 1)})
-    if navigation:
-        buttons.append(navigation)
+        navigation.append({"text": "下一頁 ▶", "callback_data": "order_shares:all:" + str(page + 1)})
+    buttons.append(navigation)
     return text, buttons
 
 
-def _send_reply(token, chat_id, text, buttons=()):
+def _send_reply(token, chat_id, text, buttons=(), *, show_menu=False):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
                "link_preview_options": {"is_disabled": True}}
-    if buttons:
+    if show_menu:
+        payload["reply_markup"] = _MENU_KEYBOARD
+    elif buttons:
         payload["reply_markup"] = {"inline_keyboard": buttons}
     try:
         response = requests.post("https://api.telegram.org/bot" + token + "/sendMessage",
@@ -324,26 +349,31 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
         )
         return _send_reply(bot["token"], chat_id, reply)
 
-    if command in {"/start", "/help", "/links"} and (command != "/links" or not argument.strip()):
+    if command in {"/start", "/help", "/menu", "/links"} and (
+            command != "/links" or not argument.strip()) or text.strip() in {
+                "選單", "菜单", "功能表", "menu", "MENU"}:
         return _send_reply(
             bot["token"], chat_id,
-            "<b>XINGWANG ORDER LINK</b>\n输入 /all、全部或 todo 查看所有有效分享，"
-            "点击「下一页」翻页。输入 SERGIO、CONDO SERGIO 或 /links OSCAR 搜索客户。"
-            "\n直接点击完整客户名称打开网址；可在公司私人群组或 Bot 私聊使用。",
+            "<b>XINGWANG ORDER LINK</b>\n已開啟下方「📋 全部客戶」快捷鍵盤，"
+            "點一下即可查看有效分享。\n也可以輸入 SERGIO、CONDO SERGIO 搜尋客戶。"
+            "\n藍色客戶名稱可以開啟連結，📋 編號可以複製連結。",
+            show_menu=True,
         )
-    all_aliases = {"all", "todo", "todos", "全部"}
-    is_all = command in {"/all", "/todo", "/todos"} or text.strip().casefold() in all_aliases
+    all_aliases = {"all", "todo", "todos", "全部", "全部客戶", "全部客户",
+                   _MENU_LABEL.casefold(), "📋 全部客户"}
+    is_all = (command in {"/all", "/todo", "/todos"}
+              or text.strip().casefold() in all_aliases)
     if is_all:
         raw_page = argument.strip() if command in {"/all", "/todo", "/todos"} else "1"
         raw_page = raw_page or "1"
         if not raw_page.isdecimal() or not 1 <= int(raw_page) <= 9999:
-            return _send_reply(bot["token"], chat_id, "请输入 /all 或 /all 2 查看指定页。")
+            return _send_reply(bot["token"], chat_id, "請輸入 /all 或 /all 2 查看指定頁。")
         try:
             page = int(raw_page)
             rows = _lookup_all(page)
             reply, buttons = _all_reply(page, rows)
         except Exception:
-            reply, buttons = "分享资料暂时无法读取，请稍后重试。", []
+            reply, buttons = "分享資料暫時無法讀取，請稍後重試。", []
             _LOG.warning("ORDER share directory unavailable")
         return _send_reply(bot["token"], chat_id, reply, buttons)
     if text.startswith("/") and command != "/links":
