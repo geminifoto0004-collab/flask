@@ -35,6 +35,9 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 .doc-head{display:flex;align-items:center;justify-content:space-between;gap:7px}.doc-title{font-weight:800;font-size:15px}.tag{font-size:11px;white-space:nowrap;border:1px solid #8d9daf99;border-radius:50px;padding:3px 8px}
 .doc-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:11px}.field{min-width:0}.field small{display:block;font-size:11px;opacity:.65;margin-bottom:3px}.field span{font-size:13px;overflow-wrap:anywhere}
 .doc-tip{font-size:12px;opacity:.65;margin-top:10px}.doc[open] .doc-tip{display:none}
+.history-extra{padding:12px 8px;text-align:center}
+.history-extra button{width:100%;max-width:430px;font-size:13px}
+.history-info{padding:8px 5px 3px;font-size:12px;line-height:1.65;opacity:.75}
 .doc-details{padding:13px;border-top:1px solid #9caab855}.doc-details h3{font-size:14px;margin:3px 0 12px}.doc-details .tablewrap{max-height:45vh}
 [hidden]{display:none!important}
 @media(min-width:700px){body{max-width:1000px;margin:auto}.doc-info{grid-template-columns:repeat(4,minmax(0,1fr))}.tablewrap{max-height:74vh}}
@@ -138,17 +141,63 @@ function drawProduct(){
  const pSum=hasP?stock.reduce((s,x)=>s+Number(x.pieces||0),0):'—';
  const mSum=hasM?stock.reduce((s,x)=>s+Number(x.meters||0),0):'—';
  const incoming=(d.camino_caja_total===null||d.camino_caja_total===undefined)?'—':d.camino_caja_total;
- statsBox([['商品种类',stock.length],['库存匹数',pSum],['库存米数',mSum],['待到货(匹)',incoming]]);
+ const cards=[['商品种类',stock.length],['库存匹数',pSum],['库存米数',mSum],['待到货(匹)',incoming]];
+ if(tab==='history'){cards.push(['近365天',d.history_recent_count??'—'],['最近交易',d.history_last_date||'—']);}
+ statsBox(cards);
  let list=all.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes($('filter').value.trim().toLowerCase())));
  if(sort){list=list.slice().sort((a,b)=>{let x=a[sort],y=b[sort];let n=typeof x==='number'&&typeof y==='number'?x-y:String(x??'').localeCompare(String(y??''),undefined,{numeric:true});return desc?-n:n;});}
  $('filterline').hidden=false;$('count').textContent=list.length+' / '+all.length+' 条';
  const cols=tab==='history'&&d.price_allowed?[...fields.history,['price','成交单价']]:fields[tab];
  $('results').replaceChildren(list.length?makeTable(list,cols,true):node('div','暂无符合条件的数据','empty'));
+ if(tab==='history'){
+   const recent=Number(d.history_recent_count||0), cursor=Number(d.history_next_cursor||0);
+   const available=Number(d.history_retrievable_count??d.history_total_count??0);
+   const info=node('div',undefined,'history-info');
+   const backfill=Number(d.history_backfilled||0);
+   info.textContent='近365天 '+recent+' 条；已显示 '+(d.history||[]).length+' / '+(d.history_total_count||0)+' 条历史'+
+      (backfill>0?'（近一年较少，自动补充 '+backfill+' 条更早记录）':'')+
+      '。预定记录不算购买。';
+   $('results').append(info);
+   if(cursor<available){
+      const area=node('div',undefined,'history-extra'),btn=node('button',
+        cursor<recent?'加载更多近一年记录':'查看更早的历史记录');
+      btn.onclick=()=>loadHistoryPage(btn);
+      area.append(btn);$('results').append(area);
+   }
+ }
  const issues=[];
  if(d.camino_caja_missing)issues.push('有 '+d.camino_caja_missing+' 条待到货未提供 CAJA，汇总仅包含已知数量');
  if(tab==='history'&&!d.price_allowed)issues.push('成交价格需管理员授权，当前未显示');
  if(d.warnings?.length)issues.push(...d.warnings);
- $('note').textContent='切换分类不会重新向本机查询。'+(issues.length?' 提示：'+issues.join('；'):'');
+ $('note').textContent='首次查询获取库存、待到货、购买摘要和预定；切换分类不重查。只有点击查看更多历史时才从本机缓存读取。'+(issues.length?' 提示：'+issues.join('；'):'');
+}
+async function loadHistoryPage(button){
+ const snap=cache.product;if(!snap||!tg?.initData)return;
+ const data=snap.data||{},cursor=Number(data.history_next_cursor||0);
+ const recent=Number(data.history_recent_count||0);
+ const includeOlder=cursor>=recent;
+ const expected=seq,start=performance.now();
+ button.disabled=true;button.textContent='正在加载历史记录…';
+ try{
+   const response=await fetch('/api/query',{method:'POST',cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({bot:alias,action:'history_more',q:snap.q,init_data:tg.initData,
+                        cursor,include_older:includeOlder})});
+   const payload=await response.json();
+   if(!response.ok||!payload.ok)throw Error(payload.error||'加载历史失败');
+   if(expected!==seq||snap!==cache.product)return;
+   const more=payload.data||{};
+   data.history.push(...(more.rows||[]));
+   data.history_next_cursor=more.next_cursor??(cursor+(more.rows||[]).length);
+   data.history_has_more=more.has_more;
+   const seconds=((performance.now()-start)/1000).toFixed(2);
+   render();showStatus('加载历史耗时 '+seconds+' 秒 · 共显示 '+data.history.length+' 条');
+ }catch(err){
+   if(expected===seq){
+     button.disabled=false;button.textContent='重试加载历史';
+     showStatus(String(err.message||err));
+   }
+ }
 }
 function showNota(){
  const snap=cache.nota;if(!snap){clearOutput('请输入 Nota 前缀、客户名称，或 @ 查询预定记录');return;}
@@ -191,7 +240,7 @@ function render(){if(mode==='product')drawProduct();else showNota();}
 function changeMode(next){
  if(next===mode)return;typed[mode]=$('q').value.trim();mode=next;++seq;
  $('go').disabled=false;$('filter').value='';sort='';desc=false;
- $('q').value=typed[mode]||'';$('q').placeholder=mode==='nota'?'Nota 前缀 / 客户名称 / @ 预定':'输入商品编号';updateClear();
+ $('q').value=(typed[mode]||'').toLocaleUpperCase('es-CL');$('q').placeholder=mode==='nota'?'Nota 前缀 / 客户名称 / @ 预定':'输入商品编号';updateClear();
  $('tabs').hidden=mode==='nota';
  for(const b of $('modes').querySelectorAll('[data-mode]'))b.classList.toggle('on',b.dataset.mode===mode);
  $('q').blur();$('filter').blur();
@@ -205,7 +254,7 @@ function changeTab(next){
  render();
 }
 async function search(){
- const q=$('q').value.trim(),init=tg?.initData||'',id=++seq,using=mode,startMs=performance.now();
+ const q=$('q').value.trim().toLocaleUpperCase('es-CL'),init=tg?.initData||'',id=++seq,using=mode,startMs=performance.now();
  if(!init){showStatus('请通过 Telegram Mini App 打开页面，普通浏览器不能查询。');return;}
  if(using==='nota'){
    const validNumeric=/^\d{1,5}$/.test(q);
@@ -231,7 +280,23 @@ async function search(){
   clearOutput('查询未完成，不能作为零库存或未出货的依据');showStatus(String(e.message||e));
  }finally{if(id===seq)$('go').disabled=false;}
 }
-$('q').addEventListener('input',updateClear);
+let composing=false;
+function inputUppercase(){
+  if(!composing){
+    const input=$('q'),previous=input.value,next=previous.toLocaleUpperCase('es-CL');
+    if(previous!==next){
+      const start=input.selectionStart,end=input.selectionEnd;
+      input.value=next;
+      if(start!==null && end!==null){
+        try{input.setSelectionRange(start,end);}catch(_){} 
+      }
+    }
+  }
+  updateClear();
+}
+$('q').addEventListener('compositionstart',()=>{composing=true;});
+$('q').addEventListener('compositionend',()=>{composing=false;inputUppercase();});
+$('q').addEventListener('input',inputUppercase);
 $('clear').addEventListener('click',()=>{$('q').value='';updateClear();$('q').focus();});
 $('go').addEventListener('click',search);
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
