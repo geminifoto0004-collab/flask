@@ -102,8 +102,8 @@ def _update_password(password):
     """Store only salted PBKDF2 hash. Changing it revokes all issued cookies."""
     if not _secret_ready():
         raise RuntimeError("Flask SECRET_KEY is missing")
-    if not isinstance(password, str) or not 12 <= len(password) <= 128:
-        raise ValueError("password must contain 12 to 128 characters")
+    if not isinstance(password, str) or not 6 <= len(password) <= 128:
+        raise ValueError("password must contain 6 to 128 characters")
     _ensure_schema()
     digest = generate_password_hash(password, method="pbkdf2:sha256:600000", salt_length=16)
     revision = secrets.token_hex(20)
@@ -263,8 +263,8 @@ def admin_password():
         return make_response("CSRF validation failed", 403)
     password = request.form.get("password", "")
     confirm = request.form.get("confirm", "")
-    if password != confirm or not 12 <= len(password) <= 128:
-        return make_response("密碼必須至少 12 字元、最多 128 字元，且兩次輸入一致。", 400)
+    if password != confirm or not 6 <= len(password) <= 128:
+        return make_response("密碼必須至少 6 字元、最多 128 字元，且兩次輸入一致。", 400)
     try:
         _update_password(password)
     except Exception:
