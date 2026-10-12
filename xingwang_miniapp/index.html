@@ -25,6 +25,10 @@ table{border-collapse:collapse;min-width:100%;font-size:13px}
 th,td{padding:11px 10px;text-align:left;white-space:nowrap;border-bottom:1px solid #9caab833}
 th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font-size:12px;cursor:pointer}
 .num{text-align:right;font-variant-numeric:tabular-nums}
+.customer-short{border:0;background:transparent;color:inherit;text-align:left;font-size:13px;font-weight:400;display:block;max-width:116px;width:116px;padding:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:0;text-decoration:none}
+.customer-short.expanded{max-width:min(70vw,340px);width:auto;white-space:normal;overflow-wrap:anywhere}
+.customer-short:focus-visible{outline:2px solid var(--tg-theme-button-color,#1686e9);outline-offset:2px}
+
 .empty{text-align:center;padding:30px 12px;opacity:.7}.hint{margin-top:11px;font-size:12px;line-height:1.6;opacity:.72}
 .doc{border-radius:13px;background:var(--tg-theme-secondary-bg-color,#fff);margin:10px 0;overflow:hidden}
 .doc summary{list-style:none;cursor:pointer;padding:14px;display:block}.doc summary::-webkit-details-marker{display:none}
@@ -57,8 +61,8 @@ const $=id=>document.getElementById(id);
 const alias=location.pathname==='/admin'?'ADMIN':'STOCK';
 const fields={
  stock:[['code','商品编号'],['pieces','匹数'],['meters','米数'],['reserved','预定状态']],
- camino:[['code','商品编号'],['container','货柜'],['caja','CAJA'],['units','UNT'],['unit_type','单位'],['eta','到货日期']],
- history:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','Nota'],['quantity','CAJA']],
+ camino:[['code','商品编号'],['container','货柜'],['caja','匹数'],['units','米数'],['unit_type','单位'],['eta','到货日期']],
+ history:[['date','日期'],['nota','Nota'],['customer','客户'],['code','商品编号'],['quantity','CAJA']],
  reservar:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','预定单号']]
 };
 const titles={stock:'库存',camino:'待到货',history:'历史购买',reservar:'预定'};
@@ -66,6 +70,29 @@ let mode='product',tab='stock',sort='',desc=false,seq=0;
 const cache={product:null,nota:null};const typed={product:'',nota:''};
 const txt=(v)=>v===undefined||v===null||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
 const node=(tag,val,klass)=>{const el=document.createElement(tag);if(val!==undefined)el.textContent=String(val);if(klass)el.className=klass;return el};
+// Keep calendar dates independent of the phone timezone. Never show timestamp / GMT in history.
+function historyDate(raw){
+ if(raw===null||raw===undefined||raw==='')return '—';
+ const str=String(raw).trim();
+ let m=str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:$|[ T])/);
+ if(m)return m[3].padStart(2,'0')+'-'+m[2].padStart(2,'0')+'-'+m[1];
+ m=str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:$|\s)/);
+ if(m)return m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0')+'-'+m[3];
+ // Handle Flask's RFC-1123 dates such as "Sat, 10 Oct 2026 00:00:00 GMT".
+ const d=new Date(raw);
+ return Number.isNaN(d.getTime())?str:String(d.getUTCDate()).padStart(2,'0')+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+d.getUTCFullYear();
+}
+function incomingETA(raw){
+ const text=txt(raw);
+ // Do not repeat an Iquique, Chile destination beside its arrival date.
+ return text.replace(/(?:\s*[,|·;]\s*|\s+)Iquique\s*,\s*Chile\s*$/i,'').trim()||text;
+}
+function tableValue(key,row){
+ if(key==='reserved')return row.reserved?'有预定':'';
+ if(key==='date')return historyDate(row[key]);
+ if(key==='eta')return incomingETA(row[key]);
+ return txt(row[key]);
+}
 function addField(parent,label,value){
  const f=node('div',undefined,'field');f.append(node('small',label),node('span',txt(value)));parent.append(f);
 }
@@ -87,7 +114,21 @@ function makeTable(rows,cols,attach){
   tr.append(th);}
  head.append(tr);table.append(head);
  const tbody=node('tbody');
- for(const row of rows){const tr=node('tr');for(const [key]of cols)tr.append(node('td',key==='reserved'?(row.reserved?'有预定':''):txt(row[key]),['pieces','meters','quantity','price','units','caja','total'].includes(key)?'num':''));tbody.append(tr);}
+ for(const row of rows){
+  const tr=node('tr');
+  for(const [key]of cols){
+    const td=node('td',undefined,['pieces','meters','quantity','price','units','caja','total'].includes(key)?'num':'');
+    if(key==='customer'&&attach){
+      const full=txt(row[key]);
+      const button=node('button',full,'customer-short');
+      button.type='button';button.title=full;button.setAttribute('aria-label','展开或收起完整客户名称：'+full);
+      button.onclick=()=>{button.classList.toggle('expanded');};
+      td.append(button);
+    }else td.textContent=tableValue(key,row);
+    tr.append(td);
+  }
+  tbody.append(tr);
+}
  table.append(tbody);return wrap;
 }
 function drawProduct(){
@@ -97,7 +138,7 @@ function drawProduct(){
  const pSum=hasP?stock.reduce((s,x)=>s+Number(x.pieces||0),0):'—';
  const mSum=hasM?stock.reduce((s,x)=>s+Number(x.meters||0),0):'—';
  const incoming=(d.camino_caja_total===null||d.camino_caja_total===undefined)?'—':d.camino_caja_total;
- statsBox([['商品种类',stock.length],['库存匹数',pSum],['库存米数',mSum],['待到货 CAJA',incoming]]);
+ statsBox([['商品种类',stock.length],['库存匹数',pSum],['库存米数',mSum],['待到货(匹)',incoming]]);
  let list=all.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes($('filter').value.trim().toLowerCase())));
  if(sort){list=list.slice().sort((a,b)=>{let x=a[sort],y=b[sort];let n=typeof x==='number'&&typeof y==='number'?x-y:String(x??'').localeCompare(String(y??''),undefined,{numeric:true});return desc?-n:n;});}
  $('filterline').hidden=false;$('count').textContent=list.length+' / '+all.length+' 条';
@@ -154,17 +195,17 @@ function changeMode(next){
  $('tabs').hidden=mode==='nota';
  for(const b of $('modes').querySelectorAll('[data-mode]'))b.classList.toggle('on',b.dataset.mode===mode);
  $('q').blur();$('filter').blur();
- showStatus(cache[mode]?'显示之前已查到的数据，不重新查询':'请输入编号后点击“查询”。');
+ showStatus(cache[mode]?'耗时 '+cache[mode].elapsedSeconds.toFixed(2)+' 秒 · 显示已查询的数据，无需重新请求':'请输入编号后点击“查询”。');
  render();
 }
 function changeTab(next){
  if(next===tab||mode!=='product')return;tab=next;sort='';desc=false;$('filter').value='';
  for(const b of $('tabs').querySelectorAll('[data-tab]'))b.classList.toggle('on',b.dataset.tab===tab);
- showStatus(cache.product?'正在显示“'+titles[tab]+'”· 无需重新查询':'请先输入商品编号');
+ showStatus(cache.product?'耗时 '+cache.product.elapsedSeconds.toFixed(2)+' 秒 · 正在查看“'+titles[tab]+'”，无需重新查询':'请先输入商品编号');
  render();
 }
 async function search(){
- const q=$('q').value.trim(),init=tg?.initData||'',id=++seq,using=mode;
+ const q=$('q').value.trim(),init=tg?.initData||'',id=++seq,using=mode,startMs=performance.now();
  if(!init){showStatus('请通过 Telegram Mini App 打开页面，普通浏览器不能查询。');return;}
  if(using==='nota'){
    const validNumeric=/^\d{1,5}$/.test(q);
@@ -182,8 +223,9 @@ async function search(){
   const res=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action:using==='nota'?'nota':'stock',q,init_data:init})});
   const value=await res.json();if(!res.ok||!value.ok)throw new Error(value.error||value.detail||'查询失败');
   if(id!==seq)return;
-  cache[using]={q,data:value.data||{}};render();
-  showStatus('查询完成 · '+new Date().toLocaleTimeString()+' · 展开明细或切换分类不会再次请求本机');
+  const elapsedSeconds=(performance.now()-startMs)/1000;
+  cache[using]={q,data:value.data||{},elapsedSeconds};render();
+  showStatus('耗时 '+elapsedSeconds.toFixed(2)+' 秒 · 展开明细或切换分类无需重新查询');
  }catch(e){
   if(id!==seq)return;
   clearOutput('查询未完成，不能作为零库存或未出货的依据');showStatus(String(e.message||e));
