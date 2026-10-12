@@ -31,7 +31,6 @@ _MAX_FAILURES = 8
 _ADMIN_CSRF_COOKIE = "xingwang_cn_admin_csrf"
 _ADMIN_CSRF_AGE = 60 * 60
 _ADMIN_CSRF_PATH = "/admin/automation/china-links"
-_CN_CSRF_COOKIE = "xingwang_cn_form_csrf"
 _CN_CSRF_AGE = 60 * 60
 
 
@@ -277,20 +276,21 @@ def _new_cn_csrf(scope):
 
 
 def _cn_csrf_valid(scope):
-    """Protect form actions without relying on the parent admin session.
+    """Verify fresh server-signed login/logout form, without an extra cookie.
 
-    Form and private HttpOnly cookie must contain the same, fresh server-signed
-    token for the expected action. SameSite=Strict stops cross-site POSTs.
+    The password page is public and the user may open it through WeChat or
+    other embedded browsers that reject cookies before login. Its signed
+    form token is action-scoped and expires after one hour. Cross-site form
+    submissions are rejected when browser origin/fetch metadata is available.
+    The actual share data still requires the separate authenticated ticket.
     """
     form_token = str(request.form.get("csrf") or "")
-    cookie_token = str(request.cookies.get(_CN_CSRF_COOKIE) or "")
-    if (not form_token or not cookie_token or len(form_token) > 700
-            or not hmac.compare_digest(form_token, cookie_token)):
+    if not form_token or len(form_token) > 700:
         return False
-    # Extra defence if a browser supplies Origin. Missing Origin/Referer is
-    # allowed because embedded mobile browsers may omit both entirely.
-    origin = request.headers.get("Origin")
-    if origin and not _same_origin():
+    site = str(request.headers.get("Sec-Fetch-Site") or "").lower()
+    if site == "cross-site":
+        return False
+    if request.headers.get("Origin") and not _same_origin():
         return False
     try:
         payload = _cn_csrf_serializer().loads(form_token, max_age=_CN_CSRF_AGE)
@@ -300,32 +300,18 @@ def _cn_csrf_valid(scope):
         return False
 
 
-def _with_cn_csrf(response, token):
-    response.set_cookie(_CN_CSRF_COOKIE, token, max_age=_CN_CSRF_AGE,
-                        secure=True, httponly=True, samesite="Strict",
-                        path=_COOKIE_PATH)
-    return response
-
-
-def _clear_cn_csrf(response):
-    response.delete_cookie(_CN_CSRF_COOKIE, path=_COOKIE_PATH,
-                           secure=True, httponly=True, samesite="Strict")
-    return response
-
-
 def _login_page(error=None, status=200):
-    token = _new_cn_csrf("login")
-    response = make_response(render_template(
-        "order_share_telegram/cn_login.html", csrf=token, error=error
+    return make_response(render_template(
+        "order_share_telegram/cn_login.html",
+        csrf=_new_cn_csrf("login"), error=error
     ), status)
-    return _with_cn_csrf(response, token)
 
 
 def _directory_page():
-    token = _new_cn_csrf("logout")
-    response = make_response(render_template(
-        "order_share_telegram/index.html", china=True, logout_csrf=token))
-    return _with_cn_csrf(response, token)
+    return make_response(render_template(
+        "order_share_telegram/index.html", china=True,
+        logout_csrf=_new_cn_csrf("logout")
+    ))
 
 
 def _response_headers(response):
@@ -428,8 +414,7 @@ def login():
     except Exception:
         return make_response("驗證暫時無法使用，請稍後再試。", 503)
     response = redirect(url_for(".page"), code=303)
-    _set_cookie(response, settings["revision"])
-    return _clear_cn_csrf(response)
+    return _set_cookie(response, settings["revision"])
 
 
 @cn_bp.route("/cn/order-links/logout", methods=["POST"])
@@ -437,8 +422,7 @@ def logout():
     if not _cn_csrf_valid("logout"):
         return make_response(
             "退出表單已失效，請重新整理客戶清單後再試。", 403)
-    response = _clear_cookie(redirect(url_for(".page"), code=303))
-    return _clear_cn_csrf(response)
+    return _clear_cookie(redirect(url_for(".page"), code=303))
 
 
 @cn_bp.get("/cn/order-links/app.js")
