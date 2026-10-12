@@ -24,7 +24,9 @@ _SLOTS = threading.BoundedSemaphore(16)
 _LOCK = threading.Lock()
 _RECENT = {}
 _LIMIT = 5
-_PAGE_SIZE = 8
+_PAGE_SIZE = 8  # compatibility with old /all pagination messages
+_ALL_CHUNK_ROWS = 20
+_ALL_CHUNK_CHARS = 2850
 _MENU_LABEL = "📋 全部客戶"
 _MENU_KEYBOARD = {"keyboard": [[{"text": _MENU_LABEL}]],
                   "resize_keyboard": True, "is_persistent": True,
@@ -203,6 +205,28 @@ def _lookup_all(page):
         conn.close()
 
 
+def _lookup_all_full():
+    """One read-only SQL query retrieves all currently valid Render shares."""
+    from database import get_db_connection, get_cursor, get_row_dict
+
+    conn = get_db_connection()
+    try:
+        cur = get_cursor(conn)
+        cur.execute(
+            """SELECT s.token_hash, s.customer_key,
+                      COALESCE(NULLIF(c.customer_name,''), s.customer_key) AS customer_name,
+                      s.created_at, s.expires_at
+               FROM cloud_share_tokens s
+               JOIN cloud_customers c ON c.customer_key=s.customer_key
+               WHERE s.status='active' AND c.active=TRUE
+                 AND (s.expires_at IS NULL OR s.expires_at>UTC_TIMESTAMP())
+               ORDER BY c.customer_name, s.created_at DESC, s.token_hash"""
+        )
+        return [get_row_dict(row, cur) or {} for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def _date(value):
     if hasattr(value, "strftime"):
         return value.strftime("%d-%m-%Y")
@@ -267,24 +291,43 @@ def _search_reply(query, rows, limit=_LIMIT, more_message=None, start_at=1):
     return "\n".join(lines), _copy_buttons(entries)
 
 
-def _all_reply(page, rows):
-    text, buttons = _search_reply(
-        "全部有效分享 · 第 " + str(page) + " 頁",
-        rows,
-        limit=_PAGE_SIZE,
-        more_message="還有更多有效分享，點「下一頁」。",
-        start_at=(page - 1) * _PAGE_SIZE + 1,
-    )
+def _all_replies(rows):
+    """Send the complete active directory without asking staff to page manually.
+
+    20 clickable customer links / message maximum. Split early for long names
+    so Telegram's 4096-character message limit cannot silently drop rows.
+    Every resulting message retains its own numbered copy-link buttons.
+    """
     if not rows:
-        text = "這一頁沒有有效分享。"
-    navigation = []
-    if page > 1:
-        navigation.append({"text": "◀ 上一頁", "callback_data": "order_shares:all:" + str(page - 1)})
-    navigation.append({"text": "📋 全部客戶", "callback_data": "order_shares:all:1"})
-    if len(rows) > _PAGE_SIZE and page < 9999:
-        navigation.append({"text": "下一頁 ▶", "callback_data": "order_shares:all:" + str(page + 1)})
-    buttons.append(navigation)
-    return text, buttons
+        return [("目前沒有有效客戶分享連結。", [])]
+
+    chunks = []
+    part, estimated_chars = [], 120
+    for row in rows:
+        name = html.escape(" ".join(str(
+            row.get("customer_name") or row.get("customer_key") or "").split()))
+        # An HTML escaped link costs more than its displayed customer name.
+        estimate = len(name) + len(_share_url(row)) + 100
+        if part and (len(part) >= _ALL_CHUNK_ROWS
+                     or estimated_chars + estimate > _ALL_CHUNK_CHARS):
+            chunks.append(part)
+            part, estimated_chars = [], 120
+        part.append(row)
+        estimated_chars += estimate
+    if part:
+        chunks.append(part)
+
+    replies = []
+    offset = 1
+    for number, part in enumerate(chunks, 1):
+        label = ("全部有效分享 · 共 " + str(len(rows)) + " 筆"
+                 + (" · " + str(number) + "/" + str(len(chunks)) if len(chunks) > 1 else ""))
+        message, buttons = _search_reply(
+            label, part, limit=len(part), start_at=offset,
+        )
+        replies.append((message, buttons))
+        offset += len(part)
+    return replies
 
 
 def _send_reply(token, chat_id, text, buttons=(), *, show_menu=False):
@@ -355,7 +398,7 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
         return _send_reply(
             bot["token"], chat_id,
             "<b>XINGWANG ORDER LINK</b>\n已開啟下方「📋 全部客戶」快捷鍵盤，"
-            "點一下即可查看有效分享。\n也可以輸入 SERGIO、CONDO SERGIO 搜尋客戶。"
+            "點一下即可列出所有有效分享，不用翻頁。\n也可以輸入 SERGIO、CONDO SERGIO 搜尋客戶。"
             "\n藍色客戶名稱可以開啟連結，📋 編號可以複製連結。",
             show_menu=True,
         )
@@ -364,18 +407,19 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
     is_all = (command in {"/all", "/todo", "/todos"}
               or text.strip().casefold() in all_aliases)
     if is_all:
-        raw_page = argument.strip() if command in {"/all", "/todo", "/todos"} else "1"
-        raw_page = raw_page or "1"
-        if not raw_page.isdecimal() or not 1 <= int(raw_page) <= 9999:
-            return _send_reply(bot["token"], chat_id, "請輸入 /all 或 /all 2 查看指定頁。")
+        # Old /all 2 and old next-page callback buttons also open the complete
+        # current directory. Staff never need to request page two again.
         try:
-            page = int(raw_page)
-            rows = _lookup_all(page)
-            reply, buttons = _all_reply(page, rows)
+            rows = _lookup_all_full()
+            replies = _all_replies(rows)
         except Exception:
-            reply, buttons = "分享資料暫時無法讀取，請稍後重試。", []
+            replies = [("分享資料暫時無法讀取，請稍後重試。", [])]
             _LOG.warning("ORDER share directory unavailable")
-        return _send_reply(bot["token"], chat_id, reply, buttons)
+        for idx, (reply, buttons) in enumerate(replies):
+            if idx:
+                time.sleep(0.1)  # avoid bursts when splitting a larger list
+            _send_reply(bot["token"], chat_id, reply, buttons)
+        return
     if text.startswith("/") and command != "/links":
         return _send_reply(bot["token"], chat_id, "输入 /all、全部或 todo 查看全部，或输入客户名称查询。")
     query = " ".join((argument if command == "/links" else text).split())[:160]
