@@ -77,7 +77,7 @@ async function search(){
  el('go').disabled=true;el('status').textContent='正在向本機取得最新資料…';
  try{
  const response=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action,q,init_data:init})});
- const body=await response.json();if(!response.ok||!body.ok)throw Error(body.error||'查詢失敗');
+ const body=await response.json();if(!response.ok||!body.ok)throw Error(body.error||body.detail||(response.status===503?'本機尚未連線，請確認 Windows Bot 正在運行。':'查詢失敗'));
  if(requestId!==seq)return;
  rows=body.data?.rows||[];sort='';desc=false;el('filter').value='';stats(body.data||{});draw();
  el('status').textContent='已取得本機即時資料 · '+new Date().toLocaleTimeString();
