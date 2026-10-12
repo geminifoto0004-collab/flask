@@ -1,115 +1,148 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex,nofollow"><title>XINGWANG STOCK</title>
+<html lang="zh-Hant"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="robots" content="noindex,nofollow"/><title>XINGWANG · 業務查詢</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light dark}
-*{box-sizing:border-box}body{width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;margin:0;background:var(--tg-theme-bg-color,#f6f7fb);color:var(--tg-theme-text-color,#14243a)}
-header{padding:16px 14px 10px;background:var(--tg-theme-bg-color,#f6f7fb);border-bottom:1px solid #b4c0cd77;position:sticky;top:0;z-index:10}
-h1{font-size:18px;margin:0}.sub{font-size:12px;opacity:.7;margin-top:4px}.search{display:flex;gap:8px;margin:13px 0}
-input{min-width:0;max-width:100%;flex:1;padding:12px;border:1px solid #a1adba;border-radius:12px;font-size:16px;color:inherit;background:var(--tg-theme-secondary-bg-color,#fff)}
-button{border:0;border-radius:11px;padding:11px 12px;background:var(--tg-theme-button-color,#277fc1);color:var(--tg-theme-button-text-color,#fff);font-weight:700;cursor:pointer}
-button:disabled{opacity:.5}.tabs{display:flex;gap:7px;overflow:auto}.tab{flex:1;white-space:nowrap;font-size:13px;background:var(--tg-theme-secondary-bg-color,#e9eff4);color:inherit}
-.tab.active{background:var(--tg-theme-button-color,#277fc1);color:var(--tg-theme-button-text-color,#fff)}
-main{padding:12px 12px calc(32px + env(safe-area-inset-bottom,0px))}.status{font-size:13px;margin-bottom:8px;min-height:20px}.stats{display:flex;gap:8px;margin:10px 0}
-.stat{min-width:0;flex:1;padding:12px 9px;border-radius:13px;background:var(--tg-theme-secondary-bg-color,#fff)}.stat span{display:block;font-size:11px;opacity:.7}.stat strong{font-size:19px}
-.filters{display:flex;gap:9px;align-items:center;margin:10px 0}.filters input{padding:10px;font-size:16px}.count{font-size:12px;white-space:nowrap}
-.wrap{overflow:auto;max-height:65vh;background:var(--tg-theme-secondary-bg-color,#fff);border-radius:13px}
-table{border-collapse:collapse;min-width:100%;font-size:13px}th,td{border-bottom:1px solid #b4c0cd45;white-space:nowrap;text-align:left;padding:12px 10px}
-th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);cursor:pointer;font-size:12px}
-.qty{text-align:right;font-variant-numeric:tabular-nums}.empty{padding:28px;text-align:center;opacity:.7}.note{font-size:12px;opacity:.7;margin-top:12px;line-height:1.6}
-@media(min-width:700px){body{max-width:980px;margin:auto}.wrap{max-height:75vh}}
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color-scheme:light dark}
+*{box-sizing:border-box}body{margin:0;width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;background:var(--tg-theme-bg-color,#f6f7fb);color:var(--tg-theme-text-color,#13223a)}
+header{position:sticky;top:0;z-index:5;background:var(--tg-theme-bg-color,#f6f7fb);border-bottom:1px solid #a0b3c355;padding:15px 12px 10px}
+h1{font-size:18px;margin:0;font-weight:800;letter-spacing:.02em}.sub{font-size:11px;opacity:.7;margin:5px 0 11px}
+.mainmodes,.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}.mainmodes button,.tabs button{background:var(--tg-theme-secondary-bg-color,#e8eef4);color:inherit;white-space:nowrap;font-size:13px}
+.mainmodes button{flex:1}.tabs button{padding:10px 12px;flex-shrink:0}.mainmodes button.active,.tabs button.active{background:var(--tg-theme-button-color,#2381cb);color:var(--tg-theme-button-text-color,#fff)}
+.search{display:flex;gap:8px;margin:12px 0}.search input{flex:1;min-width:0;width:100%;border:1px solid #a7b6c4;border-radius:12px;padding:12px;font-size:16px;background:var(--tg-theme-secondary-bg-color,#fff);color:inherit}
+button{border:0;border-radius:10px;padding:11px 14px;cursor:pointer;font-weight:700;background:var(--tg-theme-button-color,#2381cb);color:var(--tg-theme-button-text-color,#fff)}button:disabled{opacity:.5}
+main{padding:12px 12px calc(35px + env(safe-area-inset-bottom,0px))}
+#status{font-size:13px;line-height:1.6;margin:2px 0 10px;white-space:pre-wrap}
+.stats{display:flex;gap:8px;overflow-x:auto;margin-bottom:10px}.stat{padding:12px;border-radius:12px;background:var(--tg-theme-secondary-bg-color,#fff);min-width:105px;flex:1}.stat span{font-size:11px;display:block;opacity:.65}.stat strong{font-size:18px;display:block;margin-top:3px}
+.toolbar{display:flex;gap:8px;align-items:center;margin:10px 0}.toolbar input{flex:1;min-width:0;border:1px solid #9dabbd;border-radius:11px;padding:10px;font-size:16px;color:inherit;background:var(--tg-theme-secondary-bg-color,#fff)}.count{font-size:12px;white-space:nowrap;opacity:.65}
+.tablewrap{overflow:auto;max-height:62vh;min-height:125px;border-radius:13px;background:var(--tg-theme-secondary-bg-color,#fff)}
+table{border-collapse:collapse;min-width:100%;font-size:13px}
+th,td{padding:11px 10px;border-bottom:1px solid #9cabbb36;white-space:nowrap;text-align:left}
+th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font-size:12px;cursor:pointer}
+.num{text-align:right;font-variant-numeric:tabular-nums}.empty{padding:28px;text-align:center;opacity:.7}.note{font-size:12px;line-height:1.65;opacity:.73;margin-top:13px}
+[hidden]{display:none!important}
+@media(min-width:700px){body{max-width:1050px;margin:auto}.tablewrap{max-height:75vh}}
 </style></head><body>
-<header><h1>XINGWANG STOCK</h1><div class="sub">Telegram 授權 · 本機即時查詢 · 不儲存業務資料</div>
-<div class="search"><input id="q" value="1314" placeholder="輸入商品編號" autocomplete="off">
-<button id="go">查詢</button></div>
-<div class="tabs" id="tabs"><button class="tab active" data-action="stock">庫存</button><button class="tab" data-action="camino">在途</button><button class="tab" data-action="orders">訂單</button><button class="tab" data-action="nota">Nota</button></div></header>
+<header><h1>XINGWANG STOCK</h1><div class="sub">同一個 Bot · 一次查詢 · 各頁籤共用本機即時結果</div>
+<div class="mainmodes" id="modes"><button data-mode="product" class="active">商品編號查詢</button><button data-mode="nota">Nota / @ Reservar</button></div>
+<div class="search"><input id="q" autocomplete="off" value="1314" placeholder="輸入商品編號，例如 1314"/><button id="go">查詢</button></div>
+<div class="tabs" id="tabs">
+<button class="active" data-tab="stock">庫存</button>
+<button data-tab="camino">在途</button>
+<button data-tab="history">歷史購買</button>
+<button data-tab="prices">價格</button>
+<button data-tab="reservar">Reservar</button>
+</div></header>
 <main>
-<div class="status" id="status">請在 Telegram 開啟 Mini App 後查詢</div>
-<div class="stats" id="stats" hidden></div>
-<div class="filters"><input id="filter" placeholder="在全部結果中篩選"/><span class="count" id="count"></span></div>
-<div class="wrap" id="wrap"><div class="empty">等待查詢</div></div>
+<div id="status">請在 Telegram Mini App 輸入商品編號。</div>
+<div id="stats" class="stats" hidden></div>
+<div class="toolbar"><input id="filter" placeholder="篩選目前頁籤全部結果" autocomplete="off"/><span class="count" id="count"></span></div>
+<div id="results" class="tablewrap"><div class="empty">等待查詢</div></div>
 <div class="note" id="note"></div>
-</main><script>
+</main>
+<script>
 'use strict';
-const tg=window.Telegram?.WebApp; if(tg){tg.ready();tg.expand();}
-const el=id=>document.getElementById(id);
-const fields={stock:['code','pieces','meters'],camino:['code','container','units','unit_type','eta'],orders:['order','customer','product','quantity','status','source'],nota:['code','quantity']};
-const captions={code:'商品編號',pieces:'匹數',meters:'米數',container:'櫃號',units:'在途數量(Unt)',unit_type:'單位(Tipo)',eta:'到港資訊',order:'訂單號',customer:'客戶',product:'商品名稱',quantity:'數量',status:'狀態',source:'來源'};
+const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
+const $=id=>document.getElementById(id);
 const alias=location.pathname==='/admin'?'ADMIN':'STOCK';
-let action='stock',rows=[],sort='',desc=false,seq=0,notaState=null;
-const queries={stock:"1314",camino:"1314",orders:"",nota:""};
-const actionLabels={stock:"庫存",camino:"在途",orders:"訂單",nota:"Nota"};
-const fmt=v=>v===null||v===undefined||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
-function elem(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=String(text);if(cls)n.className=cls;return n;}
-function draw(){
- const f=el('filter').value.toLowerCase().trim();
- let visible=rows.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes(f)));
- if(sort)visible=visible.slice().sort((a,b)=>{const av=a[sort],bv=b[sort];let diff=(typeof av==='number'&&typeof bv==='number')?av-bv:String(av??'').localeCompare(String(bv??''),undefined,{numeric:true});return desc?-diff:diff;});
- el('count').textContent=visible.length+' / '+rows.length+' 筆';
- const wrap=el('wrap');wrap.replaceChildren();
- if(!visible.length){const message=action==='nota'&&notaState?(notaState.found===false?'沒有找到 Nota：'+(notaState.nota||''):rows.length===0?'Nota 已找到，但沒有商品明細':'沒有符合篩選條件的商品'):'沒有符合資料';wrap.append(elem('div',message,'empty'));return;}
- const t=elem('table'),head=elem('thead'),hrow=elem('tr');
- for(const field of fields[action]){const th=elem('th',captions[field]+(sort===field?(desc?' ▼':' ▲'):''));if(['pieces','meters','quantity','units'].includes(field))th.className='qty';th.addEventListener('click',()=>{if(sort===field)desc=!desc;else{sort=field;desc=false;}draw();});hrow.append(th);}
- head.append(hrow);t.append(head);
- const body=elem('tbody');for(const row of visible){const tr=elem('tr');for(const field of fields[action])tr.append(elem('td',fmt(row[field]),['pieces','meters','quantity'].includes(field)?'qty':''));body.append(tr);}
- t.append(body);wrap.append(t);
+const columns={
+ stock:[['code','編號'],['pieces','匹數'],['meters','米數']],
+ camino:[['code','編號'],['container','貨櫃'],['units','Unt'],['unit_type','單位'],['eta','日期']],
+ history:[['date','日期'],['code','編號'],['customer','客戶'],['nota','Nota'],['quantity','Caja']],
+ prices:[['date','日期'],['code','編號'],['customer','客戶'],['nota','Nota'],['price','價格']],
+ reservar:[['date','日期'],['code','編號'],['customer','客戶'],['nota','Nota']],
+ nota:[['code','商品編號'],['customer','客戶'],['quantity','Unt']],
+ allres:[['date','日期'],['code','編號'],['customer','客戶'],['nota','預留']]
+};
+const labels={stock:'庫存',camino:'在途',history:'歷史購買',prices:'價格',reservar:'Reservar'};
+let mode='product',tab='stock',sort='',desc=false,requestId=0;
+const snapshots={product:null,nota:null},queries={product:'1314',nota:''};
+const format=v=>v===null||v===undefined||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
+const make=(tag,value,cls)=>{const x=document.createElement(tag);if(value!==undefined)x.textContent=String(value);if(cls)x.className=cls;return x;};
+function rowsForTab(){
+ const payload=snapshots[mode]?.data||{};
+ if(mode==='nota')return payload.rows||[];
+ return tab==='stock'?(payload.rows||[]):(payload[tab]||[]);
 }
-function stats(payload){
- const holder=el('stats');holder.replaceChildren();holder.hidden=false;
- const all=payload.rows||[]; const hasPieces=all.some(r=>r.pieces!==null&&r.pieces!==undefined);
- const hasMeters=all.some(r=>r.meters!==null&&r.meters!==undefined);
- const items=action==='stock'?[
-   ['商品編號',all.length],
-   ['庫存匹數',hasPieces?fmt(all.reduce((n,r)=>n+Number(r.pieces||0),0)):'—'],
-   ['庫存米數',hasMeters?fmt(all.reduce((n,r)=>n+Number(r.meters||0),0)):'—'],
-   ['在途筆數',(payload.camino||[]).length]
- ]:action==='nota'?[['Nota',payload.nota||'—'],['狀態',payload.found===false?'未找到':'已找到'],['商品明細',all.length]]:[['查詢筆數',all.length]];
- for(const [label,val]of items){
-   const card=elem('div',undefined,'stat');card.append(elem('span',label),elem('strong',val));holder.append(card);
+function viewColumns(){if(mode==='nota')return columns[snapshots.nota?.data?.kind==='reservar'?'allres':'nota'];return columns[tab];}
+function draw(){
+ const body=$('results');body.replaceChildren();
+ const snap=snapshots[mode];if(!snap){body.append(make('div','請輸入編號，再按「查詢」','empty'));$('count').textContent='';return;}
+ const payload=snap.data||{};
+ if(mode==='product'&&tab==='prices'&&!payload.price_allowed){
+  body.append(make('div','價格查詢需要管理員授權。本機 Python 未開放此 Bot 的 prices 權限。','empty'));$('count').textContent='未授權';return;
  }
- el('note').textContent=action==='stock'?
-   '匹數：沿用本機「Mostrar / Datos de Inventario」的 Cantidad；米數：本機庫存 API 的 Un。兩者按商品編號合併，每次查詢即時取得。':'';
+ let rows=rowsForTab(),filter=$('filter').value.trim().toLowerCase();
+ let shown=filter?rows.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes(filter))):rows.slice();
+ const cols=viewColumns();
+ if(sort)shown.sort((a,b)=>{let x=a[sort],y=b[sort];const cmp=(typeof x==='number'&&typeof y==='number')?x-y:String(x??'').localeCompare(String(y??''),undefined,{numeric:true});return desc?-cmp:cmp;});
+ $('count').textContent=shown.length+' / '+rows.length+' 筆';
+ if(shown.length===0){body.append(make('div',mode==='nota'&&payload.found===false?'未找到 Nota '+queries.nota:'沒有符合資料','empty'));return;}
+ const table=make('table'),thead=make('thead'),tr=make('tr');
+ for(const [k,title] of cols){const th=make('th',title+(sort===k?(desc?' ▼':' ▲'):''),['pieces','meters','units','quantity','price'].includes(k)?'num':'');th.onclick=()=>{if(sort===k)desc=!desc;else{sort=k;desc=false;}draw();};tr.append(th);}
+ thead.append(tr);table.append(thead);
+ const tbody=make('tbody');for(const row of shown){const tr=make('tr');for(const [k] of cols)tr.append(make('td',format(row[k]),['pieces','meters','units','quantity','price'].includes(k)?'num':''));tbody.append(tr);}table.append(tbody);body.append(table);
+}
+function details(){
+ const holder=$('stats');holder.replaceChildren();
+ const snap=snapshots[mode];if(!snap){holder.hidden=true;$('note').textContent='';draw();return;}
+ const p=snap.data||{};const stock=p.rows||[];
+ let items;
+ if(mode==='product'){
+  items=[['編號',stock.length],['匹數',format(stock.reduce((n,r)=>n+Number(r.pieces||0),0))],
+  ['米數',format(stock.reduce((n,r)=>n+Number(r.meters||0),0))],['在途',p.camino?.length||0],
+  ['歷史',p.history?.length||0],['預留',p.reservar?.length||0]];
+  $('note').textContent='歷史的 Caja 保留原始欄位名稱；在途 Unt 也保留原始單位，不把箱數當成匹數。價格以本機權限為準。';
+ }else if(p.kind==='reservar'){
+  items=[['Reservar 筆數',stock.length]];$('note').textContent='輸入 @ 查預留紀錄；顯示的是原系統的 Reservar，不是 R1/S1/RVA。';
+ }else{
+  items=[['Nota',p.nota||queries.nota],['客戶',p.customer||'—'],
+  ['出貨',p.shipment_status||'未查到'],['出貨日期',p.shipped_at||'—'],['商品',stock.length]];
+  $('note').textContent='已開 Nota 不等於已出貨；出貨狀態依本機 CARGA 日期判斷，沒有紀錄只表示未查到。商品數量欄保留原始 UNT 單位。';
+ }
+ holder.hidden=false;for(const [label,val] of items){const c=make('div',undefined,'stat');c.append(make('span',label),make('strong',val));holder.append(c);}draw();
+}
+function switchMode(next){
+ if(next===mode)return;queries[mode]=$('q').value.trim();mode=next;++requestId;
+ $('go').disabled=false;sort='';desc=false;$('filter').value='';
+ for(const button of $('modes').querySelectorAll('[data-mode]'))button.classList.toggle('active',button.dataset.mode===mode);
+ $('tabs').hidden=mode==='nota';
+ $('q').value=queries[mode];$('q').placeholder=mode==='nota'?'輸入五位數 Nota，或 @ 查 Reservar':'輸入商品編號，例如 1314';
+ $('status').textContent=snapshots[mode]?'顯示先前已查回的資料（切換不重新查詢）':'請輸入編號後按查詢';
+ details();
+}
+function selectTab(next){
+ if(mode!=='product'||next===tab)return;tab=next;sort='';desc=false;$('filter').value='';
+ for(const button of $('tabs').querySelectorAll('[data-tab]'))button.classList.toggle('active',button.dataset.tab===tab);
+ $('status').textContent=snapshots.product?'正在顯示「'+labels[tab]+'」，沒有重新呼叫 API':'請先查商品編號';
+ details();
 }
 async function search(){
- const q=el('q').value.trim(),init=tg?.initData||'',requestId=++seq;
- if(!init){el('status').textContent='請從 Telegram 官方 Mini App 入口開啟；一般瀏覽器不能查資料。';return;}
- if(!q){el('status').textContent='請輸入查詢內容';return;}
- queries[action]=q;el('go').disabled=true;rows=[];notaState=null;el('stats').hidden=true;el('stats').replaceChildren();el('filter').value='';el('count').textContent='';el('note').textContent='';el('wrap').replaceChildren(elem('div','正在查詢'+actionLabels[action]+'…','empty'));el('status').textContent='正在查詢'+actionLabels[action]+'，向本機取得最新資料…';
+ const q=$('q').value.trim(),initData=tg?.initData||'',myReq=++requestId,currentMode=mode;
+ if(!initData){$('status').textContent='只能從 Telegram 授權的 Mini App 開啟';return;}
+ if(currentMode==='product'&&!/^[A-Za-z0-9][A-Za-z0-9_.()\/\-]{1,39}$/.test(q)){$('status').textContent='請輸入商品編號';return;}
+ if(currentMode==='nota'&&!(/^\d{5}$/.test(q)||q==='@')){$('status').textContent='請輸入五位數 Nota，或 @ 查 Reservar';return;}
+ queries[currentMode]=q;snapshots[currentMode]=null;$('stats').hidden=true;$('count').textContent='';$('note').textContent='';$('filter').value='';$('results').replaceChildren(make('div','正在取得本機資料…','empty'));
+ $('go').disabled=true;$('status').textContent=currentMode==='product'?'正在一次取得庫存、在途、歷史、價格與 Reservar…':'正在查詢 Nota / Reservar…';
  try{
- const response=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action,q,init_data:init})});
- const body=await response.json();if(!response.ok||!body.ok)throw Error(body.error||body.detail||(response.status===503?'本機尚未連線，請確認 Windows Bot 正在運行。':'查詢失敗'));
- if(requestId!==seq)return;
- rows=body.data?.rows||[];notaState=action==='nota'?(body.data||{}):null;sort='';desc=false;el('filter').value='';stats(body.data||{});draw();
- el('status').textContent='已取得本機即時資料 · '+new Date().toLocaleTimeString();
- }catch(err){if(requestId!==seq)return;rows=[];notaState=null;el('stats').hidden=true;el('stats').replaceChildren();el('note').textContent='';el('count').textContent='';el('wrap').replaceChildren(elem('div',actionLabels[action]+'查詢失敗（不是零筆結果）','empty'));el('status').textContent=actionLabels[action]+'：'+String(err.message||err);}
- finally{if(requestId===seq)el('go').disabled=false;}
+  const res=await fetch('/api/query',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({bot:alias,action:currentMode==='product'?'stock':'nota',q,init_data:initData})});
+  const body=await res.json();if(!res.ok||!body.ok)throw Error(body.error||body.detail||'查詢失敗');
+  if(myReq!==requestId)return;
+  snapshots[currentMode]={q,data:body.data||{}};sort='';desc=false;details();
+  $('status').textContent='查詢完成 · '+new Date().toLocaleTimeString()+' · 切換 Tab 不會重新打 API';
+ }catch(e){
+  if(myReq!==requestId)return;
+  snapshots[currentMode]=null;$('stats').hidden=true;$('results').replaceChildren(make('div','查詢失敗，不代表零庫存／Nota 不存在','empty'));$('count').textContent='';
+  $('status').textContent=String(e.message||e);
+ }finally{if(myReq===requestId)$('go').disabled=false;}
 }
-el('go').addEventListener('click',search);el('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});el('filter').addEventListener('input',draw);
-el('tabs').addEventListener('click',e=>{
- const target=e.target.closest('[data-action]');
- if(!target||target.dataset.action===action)return;
- const previous=action;
- queries[previous]=el('q').value.trim();
- action=target.dataset.action;
- ++seq; // invalidate responses sent for the previous tab
- el('go').disabled=false;
- el('q').blur();el('filter').blur();
- for(const b of el('tabs').querySelectorAll('.tab'))b.classList.toggle('active',b===target);
- if((action==='stock'||action==='camino')&&(previous==='stock'||previous==='camino')&&!queries[action]){
-   queries[action]=queries[previous];
- }
- el('q').value=queries[action]||'';
- el('q').placeholder=action==='nota'?'輸入 Nota 單號（不是商品編號）':action==='orders'?'輸入訂單號或客戶名稱':'輸入商品編號';
- rows=[];notaState=null;sort='';desc=false;el('filter').value='';el('stats').hidden=true;el('count').textContent='';
- el('wrap').replaceChildren(elem('div','請輸入'+(action==='nota'?'Nota 單號':action==='orders'?'訂單號或客戶名稱':'商品編號')+'後按「查詢」','empty'));
- el('status').textContent=actionLabels[action]+'查詢 · 等待輸入';
- // Keep stock/camino convenient; do not accidentally query an old stock code as Nota or order number.
- if((action==='stock'||action==='camino')&&el('q').value)search();
-});
-const startCode=String(tg?.initDataUnsafe?.start_param||'').trim();
-if(/^[A-Za-z0-9][A-Za-z0-9_.()/\\-]{1,39}$/.test(startCode)){el('q').value=startCode;queries.stock=startCode;queries.camino=startCode;}
-if(!tg?.initData){el('status').textContent='請從 @XINGWANG_STOCK_BOT 的 Main Mini App 入口開啟；一般瀏覽器無法登入。';}
-else if(startCode){search();}
+$('go').onclick=search;$('q').onkeydown=e=>{if(e.key==='Enter')search();};
+$('filter').oninput=draw;
+$('modes').onclick=e=>{const b=e.target.closest('[data-mode]');if(b)switchMode(b.dataset.mode);};
+$('tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b)selectTab(b.dataset.tab);};
+const launch=String(tg?.initDataUnsafe?.start_param||'').trim();
+if(/^[A-Za-z0-9][A-Za-z0-9_.()\/\-]{1,39}$/.test(launch)){queries.product=launch;$('q').value=launch;}
+if(!tg?.initData)$('status').textContent='請從 Telegram Mini App 開啟；一般瀏覽器無法查詢。';
+else if(launch)search();
 </script></body></html>
