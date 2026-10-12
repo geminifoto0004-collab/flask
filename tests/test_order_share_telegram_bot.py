@@ -249,6 +249,49 @@ class TelegramShareTests(unittest.TestCase):
                     bot._base_url()
 
 
+class PrivateGroupAccessTests(unittest.TestCase):
+    def setUp(self):
+        from services import order_share_telegram_access as access
+        self.access = access
+        self.group_env = patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"})
+        self.group_env.start()
+
+    def tearDown(self):
+        self.group_env.stop()
+
+    def test_group_id_only_accepts_negative_numeric_chat(self):
+        self.assertEqual(self.access.group_id(), -100123456789)
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "12345"}):
+            self.assertFalse(self.access.configured())
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "groupname"}):
+            self.assertIsNone(self.access.group_id())
+
+    def test_actual_telegram_membership_verified_no_local_password(self):
+        for status, extra, expected in [
+            ("member", {}, True),
+            ("administrator", {}, True),
+            ("creator", {}, True),
+            ("restricted", {"is_member": True}, True),
+            ("restricted", {"is_member": False}, False),
+            ("left", {}, False),
+            ("kicked", {}, False),
+        ]:
+            response = Mock(status_code=200)
+            response.json.return_value = {"ok": True, "result": {"status": status, **extra}}
+            with patch.object(self.access.requests, "post", return_value=response) as post:
+                self.assertEqual(self.access.is_authorized("orders", 11, "test-token"), expected)
+                self.assertEqual(post.call_args.kwargs["json"],
+                                 {"chat_id": -100123456789, "user_id": 11})
+                self.assertEqual(post.call_args.kwargs["timeout"], 8)
+
+    def test_api_error_fails_closed_without_exposing_bot_token(self):
+        with patch.object(self.access.requests, "post", side_effect=RuntimeError("test-token")):
+            self.assertFalse(self.access.is_authorized("orders", 11, "test-token"))
+        with patch.object(self.access.requests, "post", return_value=Mock(status_code=403)):
+            self.assertFalse(self.access.is_authorized("orders", 11, "test-token"))
+        self.assertFalse(self.access.is_authorized("orders", 0, "test-token"))
+
+
 class ReadOnlyLookupTests(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
