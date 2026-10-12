@@ -387,6 +387,8 @@ def _process(bot_key, user_id, chat_id, text, callback_id=None):
         if not rows and staff_group and command != "/links":
             return
         reply, buttons = _search_reply(query, rows)
+        if rows:
+            buttons.append([{"text": "📋 全部客戶", "callback_data": "order_shares:all:1"}])
     except Exception:
         reply, buttons = "分享资料暂时无法读取，请稍后重试。", []
         _LOG.warning("ORDER share lookup unavailable")
