@@ -21,7 +21,7 @@ small{display:block;margin-top:22px;color:#8190a0;text-align:center;font-size:12
 <p>公司内部查询入口。无需 Telegram 或订单系统账号，请输入公司提供的专用密码。</p>
 {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
 <form action="/cn/order-links/login" method="post" autocomplete="off">
-<input type="hidden" name="csrf" value="{{ csrf }}">
+
 <label for="password">访问密码</label>
 <input id="password" name="password" type="password" required maxlength="128" autocomplete="current-password" autofocus placeholder="请输入专用密码">
 <button type="submit">进入客户清单</button>
