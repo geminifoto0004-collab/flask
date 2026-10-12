@@ -76,7 +76,12 @@ async def query(request:Request):
     finally:
         waiting.pop(req_id,None)
     if not response.get("ok"):
-        return JSONResponse({"ok":False,"error":str(response.get("error") or "查詢失敗")[:150]},status_code=403)
+        # Authorization problems are 403; local API failures are 502, never "zero inventory".
+        code = response.get("code") or "ACCESS_DENIED"
+        status = 502 if code in ("LOCAL_API", "INTERNAL") else 400 if code == "INPUT" else 403
+        return JSONResponse({"ok":False, "code":code,
+                             "error":str(response.get("error") or "查詢未完成")[:150]},
+                            status_code=status)
     return {"ok":True,"data":response.get("data")}
 
 @app.websocket("/bridge")
