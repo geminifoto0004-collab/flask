@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qsl
 
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, jsonify, request, send_file, render_template, make_response
 
 miniapp_bp = Blueprint("order_share_telegram_miniapp", __name__)
 _TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates" / "order_share_telegram"
@@ -78,7 +78,7 @@ def security_headers(response):
 
 @miniapp_bp.get("/telegram/order-shares")
 def index():
-    response = send_file(_TEMPLATE_DIR / "index.html", mimetype="text/html")
+    response = make_response(render_template("order_share_telegram/index.html", china=False))
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; script-src 'self' https://telegram.org; "
         "style-src 'unsafe-inline'; connect-src 'self'; "
