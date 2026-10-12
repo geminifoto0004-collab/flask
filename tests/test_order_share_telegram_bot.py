@@ -683,7 +683,7 @@ class ChinaPasswordDirectoryTests(unittest.TestCase):
     def test_csrf_origin_uses_current_website_not_telegram_public_base(self):
         # Bot link config can intentionally point elsewhere; password saving
         # must keep working on the HTTPS origin that served the admin form.
-        from blueprints.automation_hub import settings as active_settings
+        active_settings = sys.modules["blueprints.automation_hub.settings"]
         self.admin_mode()
         page = self.client.get("/admin/automation/china-links",
                                base_url="https://example.test")
