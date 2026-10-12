@@ -1,0 +1,28 @@
+name: ORDER Share Telegram Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/order_share_telegram_bot.py'
+      - 'services/order_share_telegram_access.py'
+      - 'tests/test_order_share_telegram_bot.py'
+      - '.github/workflows/telegram-share-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests flask python-dotenv pytz PyMySQL DBUtils cryptography
+      - name: Check syntax
+        run: python -m py_compile services/order_share_telegram_bot.py services/order_share_telegram_access.py tests/test_order_share_telegram_bot.py
+      - name: Run private group authorization and share lookup tests
+        run: python -m unittest discover -s tests -p 'test_order_share_telegram_bot.py' -v
