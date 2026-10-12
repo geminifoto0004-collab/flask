@@ -160,7 +160,7 @@ function drawProduct(){
    $('results').append(info);
    if(cursor<available){
       const area=node('div',undefined,'history-extra'),btn=node('button',
-        cursor<recent?'加载更多近一年记录':'查看更早的历史记录');
+        cursor<recent?'加载更多近一年记录（最多200条）':'查看更早的历史记录（最多200条）');
       btn.onclick=()=>loadHistoryPage(btn);
       area.append(btn);$('results').append(area);
    }
