@@ -191,16 +191,39 @@ class TelegramShareTests(unittest.TestCase):
                   callback(data="other:all:2")]:
             self.assertIsNone(bot._callback_actor(v))
 
-    def test_company_code_flow_requires_successful_enrolment(self):
-        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_ACCESS_CODE": "very-long-company-code"}), \
-             patch.object(bot, "_load_bot", return_value=self.fake_bot), \
-             patch("services.order_share_telegram_access.is_authorized", return_value=False), \
-             patch("services.order_share_telegram_access.authenticate", return_value="ok") as authenticate, \
-             patch.object(bot, "_lookup_shares", side_effect=AssertionError("not allowed before auth")), \
+    def test_group_id_command_only_accepts_group_chat(self):
+        group_update = update(user=11, chat=-100123456789, kind="supergroup",
+                              text="/groupid", update_id=903)
+        self.assertEqual(bot._group_actor(group_update), (11, -100123456789, "/groupid"))
+        self.assertIsNone(bot._group_actor(update(user=11, chat=-100123456789,
+                                                  kind="supergroup", text="/all")))
+        with patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch.object(bot, "_lookup_shares", side_effect=AssertionError("no group data")), \
              patch.object(bot, "_send_reply") as send:
-            bot._process("orders", 999, 999, "very-long-company-code")
-        authenticate.assert_called_once_with("orders", 999, "very-long-company-code")
-        self.assertIn("验证成功", send.call_args.args[2])
+            bot._process("orders", 11, -100123456789, "/groupid")
+        self.assertIn("-100123456789", send.call_args.args[2])
+
+    def test_private_group_members_only_and_no_company_passcodes(self):
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch("services.order_share_telegram_access.is_authorized", return_value=False) as member, \
+             patch.object(bot, "_lookup_all", side_effect=AssertionError("not authorized")), \
+             patch.object(bot, "_send_reply") as send:
+            bot._process("orders", 999, 999, "/all")
+        member.assert_called_once_with("orders", 999, "test-only-credential")
+        self.assertIn("私人群组", send.call_args.args[2])
+
+    def test_removing_staff_rechecks_group_membership_on_every_query(self):
+        with patch.dict(os.environ, {"ORDER_SHARE_TELEGRAM_GROUP_ID": "-100123456789"}), \
+             patch.object(bot, "_load_bot", return_value=self.fake_bot), \
+             patch("services.order_share_telegram_access.is_authorized", side_effect=[True, False]) as member, \
+             patch.object(bot, "_lookup_all", return_value=[]) as lookup, \
+             patch.object(bot, "_send_reply") as send:
+            bot._process("orders", 999, 999, "/all")
+            bot._process("orders", 999, 999, "/all")
+        self.assertEqual(member.call_count, 2)
+        lookup.assert_called_once_with(1)
+        self.assertIn("私人群组", send.call_args.args[2])
 
     def test_existing_share_signer_resolves_to_original_share_without_db_writes(self):
         spec = importlib.util.spec_from_file_location("signer_under_test", ROOT / "services/order_share_links.py")
