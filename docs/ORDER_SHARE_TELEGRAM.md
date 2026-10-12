@@ -1,50 +1,50 @@
-# Render 客户分享链接 Bot
+# XINGWANG ORDER LINK — Telegram 私人群组邀请制
 
-本机 ORDER_HOME_V140 保持原样。功能运行在 Render 已有的 Automation Hub，
-读取 TiDB 里目前有效的分享，使用与 Render 分享管理页相同的签名链接。
-不会建立新分享、修改权限、上传图片或把整个本机 ORDER 放上 Render。
+本机 ORDER_HOME_V140 保持原样；查询在 Render 运行，从 TiDB 读取当前有效的
+ORDER_SHARES。无须登入网页，也无须公司通行码或逐个登记员工数字 ID。
 
-## 一次性设定
+## 管理员：一次设定
 
-1. 如果没有专用 Bot，在 Telegram 的 `@BotFather` 用 `/newbot` 建立一个。
-2. Render 环境变量增加 `ORDER_SHARE_TELEGRAM_ALLOWED_IDS`。
-   填入获准查询所有客户分享的 **Telegram 数字用户 ID**，例如 `123456789`；
-   多个账号用逗号分隔。不要填电话、用户名或群组 ID。
-3. 使用原账号登入一次 [自动化中心](https://flask-393d.onrender.com/admin/automation)。
-   Bot key 可填 `order-shares`，名称填 `客户分享链接`，
-   Plugin 选 `客户分享链接 / ORDER_SHARES`，粘贴 BotFather 的 Token，保存。
-   原中心会加密保存 Token，并自动连接带密钥验证的 Telegram webhook。
-4. 如果还不知道数字用户 ID，可先完成第 3 步，在新 Bot 私聊发送 `/id`。
-   Bot 只回传发送者自己的 ID；未列入授权名单的账号不能查询客户。
-   把这个 ID 填入第 2 步的环境变量并部署后，即可查询。
-5. 原自动化中心若尚未配置 `AUTOMATION_MASTER_KEY`，按它既有的流程设置一次。
-   已配置时沿用原值；不要更改或重新生成，否则既有 Bot Token 无法解密。
-   正常 Render 服务会以 `RENDER_EXTERNAL_URL` 作为服务网址。
+1. 在 Telegram 建立**私人群组**（例如 `XINGWANG ORDER STAFF`），邀请公司员工。
+   群组邀请必须由管理员控制，不要把群组邀请链接公开。
+2. 将 `@XingwangOrderLinkBot` 加入该群组，并设为**管理员**。
+   Telegram Bot API 的 `getChatMember` 对其他用户可靠查询要求 Bot 是群组管理员。
+3. 在群组输入 `/groupid@XingwangOrderLinkBot`；Bot 返回负数的群组 ID，
+   例如 `-100123456789`（示例，不要照抄）。
+4. 打开 Render 的 `flask` Web Service → Environment，新增：
+   `ORDER_SHARE_TELEGRAM_GROUP_ID` = 上一步的完整负数 ID，
+   然后 **Save, deploy**，等部署完成。
+5. Bot 已在 [自动化中心](https://flask-393d.onrender.com/admin/automation)
+   绑定为 `客户分享链接 / ORDER_SHARES` 的情况下不用重新填写 Token。
+   没有绑定时，需要原管理员登入一次 Automation Hub 绑定 Bot Token。
 
-不要把 Bot Token 放进 Git 或公开聊天。
-若要沿用既有 Bot，先确认它不是正在连接另一套 webhook／轮询程序；
-同一 Bot 的 Telegram 更新只能由一个接收入口处理。
+旧环境变量 `ORDER_SHARE_TELEGRAM_ALLOWED_IDS` 仍可用于**群组未配置时**的旧白名单，
+但一旦配置私人群组，授权只看**是否仍在该群组中**，不再看旧白名单。
+不需要设置 `ORDER_SHARE_TELEGRAM_ACCESS_CODE`，也不需要发送 `/login`。
 
-## 平常使用
+## 员工日常使用
 
-在 Bot **私聊**输入 `OSCAR`、`SERGIO` 或客户名称的一部分。
-也可使用 `/links OSCAR`。Bot 回传名称、有效期与「打开／复制链接」按钮。
-未开通、已撤销或已过期的分享不会显示。
-多个符合的分享会显示最近匹配的最多 5 条；输入更完整名称可缩小范围。
-不同有效链接保留原有各自权限，不会自动合并或扩大客户可见范围。
+1. 由管理员邀请加入私人群组。
+2. 私聊 `@XingwangOrderLinkBot`，按 Start。
+3. 输入 `/all`：列出当前有效的全部客户分享，每页最多 8 条，
+   使用「下一页 / 上一页」翻页，或用 `/all 2` 直接跳第二页。
+4. 输入 `SERGIO`、`OSCAR` 或 `/links OSCAR`：搜索客户名称并给出
+   「打开 / 复制链接」按钮。搜索最多显示 5 条，请用更完整名称缩小范围。
+5. 将员工从群组移除，Bot 下一次查询就会拒绝该账号，不需要 Render 部署。
 
-以后查链接不需要再次登入网页；Render 持续运行时，本机关掉也能查询。
-Bot 只知道已经同步到 Render 的有效分享，无法查询尚未开通或未同步的本机客户。
+**客户分享 URL 只在私人聊天回覆**；在公司群组不允许查询客户，
+群组命令 `/groupid` 仅回覆群组数字 ID。
+外人即使搜到公开的 Bot 用户名或按 Start，因为不在私人群组也无法取得链接。
+同样只列出已同步到 Render、有效且未撤销的分享；不建立新链接，
+不修改客户可见性，不下载 B2 图片或修改本机 ORDER。
 
-## 改动与验证
+## 重要安全/运维说明
 
-- Automation Hub 只新增 `ORDER_SHARES` lazy plugin，不改 Aduana 的接收或通知。
-- 新模块 `services/order_share_telegram_bot.py`。
-- 查询最多一条有限结果 SELECT，不读订单图片、不压缩、不调用 B2。
-- Telegram 数字 ID 授权；群组、频道、陌生账号不会取得客户链接。
-- 单后台发送线程，最多 16 个待处理查询；Flask webhook 不等待 Telegram 回复网络。
-- 现有签名链接仍由原分享状态、有效期、可见权限和资源归属检查决定。
-- 使用模拟网络／临时数据库验证，不向真实客户发送测试讯息。
-
-Telegram 官方参考：
-[Bot API](https://core.telegram.org/bots/api) 的 webhook、sendMessage 与 CopyTextButton。
+- Telegram Bot 用户名不是私人入口；真正的授权来自私人群组成员身份，
+  每一次查询（包括按分页按钮）都向 Telegram 检查是否仍是成员。
+- Bot 必须是指定群组的管理员；若 Telegram API 无法确认成员身份，
+  采用拒绝访问（fail closed），不会泄露分享。
+- 保护 Bot Token、群组邀请链接及分享 URL；分享链接本身仍是可转发的 bearer URL。
+- 现有的 Automation Hub 负责 Token 加密、Webhook 验证；
+  请不要重新生成 `AUTOMATION_MASTER_KEY`。
+- 重用旧 Bot 时需确保它没有被其他 webhook 或轮询程序占用。
