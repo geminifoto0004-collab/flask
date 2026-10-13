@@ -118,11 +118,26 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "本機尚未回傳規範化庫存資料"}
     if data.get("product_code") != product_code:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "回傳商品編號不一致"}
-    # The worker must explicitly supply rolls/meters with their true units.
+    # V30 may report an unknown aggregate when one or more underlying SKU
+    # rows do not have that unit. Never silently convert a missing count to 0,
+    # and never accept a partial numeric aggregate as a complete total.
+    stock_rows = data.get("matches")
+    missing = {}
     for field in ("stock_rolls", "stock_meters"):
+        missing_field = field + "_missing"
+        absent = data.get(missing_field, 0)
+        if (type(absent) is not int or absent < 0 or
+                not isinstance(stock_rows, list) or absent > len(stock_rows)):
+            return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存缺失數量格式不正確"}
         value = data.get(field)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        if value is None:
+            if absent == 0:
+                return {"ok": False, "code": "INVALID_RESPONSE", "error": "回傳庫存格式不正確"}
+        elif (absent > 0 or isinstance(value, bool) or
+              not isinstance(value, (int, float)) or
+              not math.isfinite(value) or value < 0):
             return {"ok": False, "code": "INVALID_RESPONSE", "error": "回傳庫存格式不正確"}
+        missing[field] = absent
     for field in ("incoming_rolls", "incoming_meters"):
         value = data.get(field)
         if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0):
@@ -154,11 +169,18 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
     safe_incoming=safe_rows(incoming_matches, ("incoming_boxes",))
     if safe_stock is None or safe_incoming is None:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存明細單位不正確"}
+    for field in ("stock_rolls", "stock_meters"):
+        if safe_stock:
+            actual_missing = sum(item[field] is None for item in safe_stock)
+            if missing[field] != actual_missing:
+                return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存缺失數量與明細不一致"}
     return {
         "ok": True,
         "product_code": product_code,
         "stock_rolls": data["stock_rolls"],
         "stock_meters": data["stock_meters"],
+        "stock_rolls_missing": missing["stock_rolls"],
+        "stock_meters_missing": missing["stock_meters"],
         "incoming_rolls": data.get("incoming_rolls"),
         "incoming_meters": data.get("incoming_meters"),
         "incoming_boxes": boxes,
@@ -211,6 +233,8 @@ def pilot_stock_view(normalized: dict, requested_code: str) -> dict:
         "product_code": requested_code,
         "stock_rolls": normalized["stock_rolls"],
         "stock_meters": normalized["stock_meters"],
+        "stock_rolls_missing": normalized.get("stock_rolls_missing", 0),
+        "stock_meters_missing": normalized.get("stock_meters_missing", 0),
         "incoming_rolls": normalized.get("incoming_rolls"),
         "incoming_meters": normalized.get("incoming_meters"),
         "incoming_boxes": normalized.get("incoming_boxes"),
