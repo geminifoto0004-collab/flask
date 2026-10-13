@@ -147,23 +147,26 @@ async def query(request:Request):
         raise HTTPException(400,"Unsupported action")
     if not isinstance(q,str) or not ((q=="@" and action=="nota") or (action=="nota" and len(q)==1 and q.isdecimal()) or 2<=len(q)<=40) or not isinstance(init_data,str) or not (1<=len(init_data)<=4096):
         raise HTTPException(400,"Invalid input")
-    extra = {}
+    session = payload.get("miniapp_session", "")
+    if not isinstance(session, str) or len(session) > 100:
+        raise HTTPException(400, "Invalid Mini App session")
+    extra = {"miniapp_session": session}
     if action == "nota":
         span = payload.get("date_span","2y")
         if not isinstance(span,str) or span not in ("1y","2y","all"):
             raise HTTPException(400,"Invalid Nota date range")
-        extra = {"date_span":span}
+        extra.update({"date_span":span})
     if action == "history_more":
         cursor = payload.get("cursor")
         include_older = payload.get("include_older")
         if type(cursor) is not int or not (0<=cursor<=5000) or type(include_older) is not bool:
             raise HTTPException(400,"Invalid history pagination")
-        extra = {"cursor":cursor,"include_older":include_older}
+        extra.update({"cursor":cursor,"include_older":include_older})
     if action in ("nota_media","nota_details"):
         customer=payload.get("customer","")
         if not q.isdecimal() or not 2<=len(q)<=12 or not isinstance(customer,str) or len(customer)>130:
             raise HTTPException(400,"Invalid Nota image request")
-        extra = {"customer":customer}
+        extra.update({"customer":customer})
     async with bridge_lock:
         ws=active_bridge
         role=active_role
@@ -190,7 +193,11 @@ async def query(request:Request):
         return JSONResponse({"ok":False, "code":code,
                              "error":str(response.get("error") or "查詢未完成")[:150]},
                             status_code=status)
-    return {"ok":True,"data":response.get("data")}
+    result = {"ok":True,"data":response.get("data")}
+    session_return = response.get("miniapp_session", "")
+    if isinstance(session_return, str) and len(session_return) <= 100 and session_return.startswith("xw_"):
+        result["miniapp_session"] = session_return
+    return result
 
 @app.websocket("/bridge")
 async def bridge(ws:WebSocket):
