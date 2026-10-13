@@ -147,3 +147,41 @@ def test_http_mcp_rejects_anonymous_requests(valid_environment):
         assert meta.status_code == 200
         assert meta.json()["resource"] == RESOURCE_URL
         assert meta.json()["authorization_servers"]
+
+
+def test_worker_v24_box_units_remain_boxes_only():
+    src={
+      "ok":True,"source":"company",
+      "data":{
+        "product_code":"1314","stock_rolls":74,"stock_meters":8553.9,
+        "incoming_rolls":None,"incoming_meters":None,"incoming_boxes":46,
+        "incoming_boxes_missing":0,"match_mode":"prefix",
+        "matches":[
+          {"code":"1314-2","stock_rolls":32,"stock_meters":3821.2},
+          {"code":"1314-4","stock_rolls":42,"stock_meters":4732.7},
+        ],
+        "incoming_matches":[{"code":"1314-4","incoming_boxes":46}],
+      }
+    }
+    result=normalize_stock(src,"1314")
+    assert result["ok"] is True
+    assert result["stock_rolls"] == 74
+    assert result["incoming_boxes"] == 46
+    assert result["incoming_rolls"] is None and result["incoming_meters"] is None
+    assert len(result["matches"]) == 2
+    assert "source" in result and result["source"] == "company"
+    src["data"]["stock_meters"]=float("nan")
+    assert normalize_stock(src,"1314")["code"] == "INVALID_RESPONSE"
+
+def test_worker_errors_are_not_fake_zero():
+    for code in ("NOT_FOUND","LOCAL_OFFLINE","TIMEOUT","STANDBY"):
+        result=normalize_stock({"ok":False,"code":code},"1314")
+        assert result["ok"] is False and result["code"] == code
+        assert "stock_rolls" not in result
+
+def test_mcp_oauth_is_declared_on_stock_tool(valid_environment):
+    async def relay(code):
+        return {"ok":False,"code":"LOCAL_OFFLINE"}
+    server,_=create_stock_mcp(relay)
+    tools=asyncio.run(server.list_tools())
+    assert tools[0].meta["securitySchemes"] == [{"type":"oauth2","scopes":["stock:read"]}]
