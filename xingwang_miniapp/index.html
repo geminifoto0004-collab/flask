@@ -55,6 +55,8 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 .history-extra{padding:12px 8px;text-align:center}
 .history-extra button{width:100%;max-width:430px;font-size:13px}
 .history-info{padding:8px 5px 3px;font-size:12px;line-height:1.65;opacity:.75}
+.nota-progress{font-size:12px;opacity:.75;margin:9px 2px;line-height:1.6}
+.doc-tip{transition:opacity .15s}
 .doc-details{padding:13px;border-top:1px solid #9caab855}.doc-details h3{font-size:14px;margin:3px 0 12px}.doc-details .tablewrap{max-height:45vh}
 [hidden]{display:none!important}
 @media(min-width:700px){body{max-width:1000px;margin:auto}.doc-info{grid-template-columns:repeat(4,minmax(0,1fr))}.tablewrap{max-height:74vh}}
@@ -89,6 +91,8 @@ const titles={stock:'库存',camino:'待到货',history:'历史购买',reservar:
 let mode='product',tab='stock',sort='',desc=false,seq=0;
 const cache={product:null,nota:null};const typed={product:'',nota:''};
 const mediaCache=new Map(); // Only for this Nota search session
+let notaViews=[];
+const notaLoads=new Map();
 const txt=(v)=>v===undefined||v===null||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
 const node=(tag,val,klass)=>{const el=document.createElement(tag);if(val!==undefined)el.textContent=String(val);if(klass)el.className=klass;return el};
 // Keep calendar dates independent of the phone timezone. Never show timestamp / GMT in history.
@@ -266,9 +270,87 @@ function displayNotaMedia(host,data){
    if(data.sheet)host.append(node('div','工作表：'+data.sheet,'nota-media-status'));
  }else host.append(node('div',data.image_message||'未找到 Nota 图片文件','nota-media-status'));
 }
+
+// Details are hydrated into their ORIGINAL Nota cards, never re-sorted or re-appended.
+function refreshNotaProgress(){
+ if(mode!=='nota'||!cache.nota)return;
+ const d=cache.nota.data||{},docs=d.documents||[];
+ if(!d.details_pending)return;
+ const loaded=docs.filter(x=>x.details_loaded===true).length;
+ const errors=docs.filter(x=>x.details_error).length;
+ statsBox([['查询条件',cache.nota.q],['匹配单据',docs.length],
+           ['明细已加载',loaded+' / '+docs.length]]);
+ showStatus('已找到 '+docs.length+' 张 Nota · 已加载 '+loaded+' 张商品明细'+
+   (errors?' · '+errors+' 张暂时读取失败':'')+
+   ' · 首次查询耗时 '+cache.nota.elapsedSeconds.toFixed(2)+' 秒');
+}
+function updateNotaView(i){
+ const snap=cache.nota;if(!snap)return;
+ const doc=(snap.data?.documents||[])[i],view=notaViews[i];if(!doc||!view)return;
+ const {slot,tip,cols}=view;
+ if(doc.details_loaded===true){
+   slot.replaceChildren((doc.rows||[]).length?makeTable(doc.rows,cols,false):
+     node('div','此条 Nota 没有商品明细','empty'));
+   tip.textContent='商品明细已加载 · 点击展开 ▾';
+ }else if(doc.details_error){
+   slot.replaceChildren(node('div',doc.details_error,'empty'));
+   tip.textContent='商品明细暂时无法读取 · 点击展开查看 ▾';
+ }else{
+   slot.replaceChildren(node('div','正在后台读取商品明细，请稍候…','empty'));
+   tip.textContent='商品明细正在加载 · 点击展开 ▾';
+ }
+ refreshNotaProgress();
+}
+async function fetchNotaLines(index,runId){
+ const snap=cache.nota;
+ if(!snap||mode!=='nota'||runId!==seq||snap.data?.kind==='reservar')return;
+ const doc=snap.data?.documents?.[index];
+ if(!doc||doc.details_loaded||doc.details_error)return;
+ const nota=String(doc.nota||'').trim(),customer=String(doc.customer||'');
+ if(!/^[0-9]{2,12}$/.test(nota)||!customer){
+   doc.details_error='Nota 编号或客户名称无法用于读取明细';updateNotaView(index);return;
+ }
+ const key=runId+':'+index;
+ if(notaLoads.has(key))return notaLoads.get(key);
+ const job=(async()=>{
+   try{
+     const response=await fetch('/api/query',{method:'POST',cache:'no-store',
+       headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({bot:alias,action:'nota_details',q:nota,
+           customer:customer.slice(0,130),init_data:tg.initData})});
+     const payload=await response.json();
+     if(!response.ok||!payload.ok)throw Error(payload.error||'明细查询失败');
+     if(runId!==seq||snap!==cache.nota||mode!=='nota')return;
+     const detail=payload.data||{};
+     if(String(detail.nota)!==nota||String(detail.customer)!==customer)
+       throw Error('收到的 Nota 明细与当前单据不符');
+     if(!Array.isArray(detail.rows))throw Error('Nota 商品明细格式不正确');
+     doc.rows=detail.rows;doc.details_loaded=true;delete doc.details_error;
+   }catch(e){
+     if(runId!==seq||snap!==cache.nota||mode!=='nota')return;
+     doc.details_error='明细读取失败：'+String(e.message||e);
+   }finally{
+     notaLoads.delete(key);
+     if(runId===seq&&snap===cache.nota&&mode==='nota')updateNotaView(index);
+   }
+ })();
+ notaLoads.set(key,job);
+ return job;
+}
+async function prefetchNotaLines(runId){
+ const snap=cache.nota;
+ if(!snap||!snap.data?.details_pending||snap.data?.kind==='reservar')return;
+ const docs=snap.data.documents||[];
+ // At most one automatic detail request at a time, so a broad name search
+ // never creates hundreds of simultaneous Flask or Telegram requests.
+ for(let i=0;i<docs.length;i++){
+   if(runId!==seq||snap!==cache.nota||mode!=='nota')return;
+   await fetchNotaLines(i,runId);
+ }
+}
 function showNota(){
  const snap=cache.nota;if(!snap){clearOutput('请输入 Nota 前缀、客户名称，或 @ 查询预定记录');return;}
- const d=snap.data||{};$('filterline').hidden=true;$('results').replaceChildren();
+ const d=snap.data||{};notaViews=[];$('filterline').hidden=true;$('results').replaceChildren();
  if(d.found===false){statsBox([['查询条件',snap.q],['状态','未找到']]);$('results').append(node('div','没有找到匹配的 Nota；不能据此判断是否出货。','empty'));return;}
  let docs=d.documents;
  if(!Array.isArray(docs)||!docs.length){
@@ -280,9 +362,10 @@ function showNota(){
   }
  }
  const reserved=d.kind==='reservar';
- statsBox(reserved?[['预定分组',docs.length],['预定明细',d.rows?.length||0]]:[['查询条件',snap.q],['匹配单据',docs.length],['已加载商品',d.rows?.length||0]]);
+ statsBox(reserved?[['预定分组',docs.length],['预定明细',d.rows?.length||0]]:[['查询条件',snap.q],['匹配单据',docs.length],['明细已加载',docs.filter(x=>x.details_loaded===true).length+' / '+docs.length]]);
  if(!docs.length){$('results').append(node('div','没有找到符合条件的记录','empty'));return;}
- for(const doc of docs){
+ const fragment=document.createDocumentFragment();
+ for(const [i,doc] of docs.entries()){
   const detail=node('div',undefined,'doc'),expand=node('details',undefined,'doc-expand'),summ=node('summary'),top=node('div',undefined,'doc-head');
   top.append(node('div',reserved?(doc.customer||'未知客户'):'Nota '+(doc.nota||snap.q),'doc-title'));
   top.append(node('span',reserved?'预定记录':doc.shipped_at?'查到出货日期':'未查到出货记录','tag'));
@@ -290,6 +373,7 @@ function showNota(){
   const cells=node('div',undefined,'doc-info');
   if(reserved){addField(cells,'日期',doc.date);addField(cells,'客户',doc.customer);addField(cells,'明细数量',(doc.rows||[]).length);}
   else{addField(cells,'开单日期',doc.date);addField(cells,'客户',doc.customer);addField(cells,'出货日期',doc.shipped_at);addField(cells,'承运人／司机（PILOTERO）',doc.pilotero);}
+  const tip=node('div','点击展开商品明细  ▾','doc-tip');
   if(!reserved && d.price_allowed){
     const financial=node('div',undefined,'nota-money-line');
     addField(financial,'VENTA（销售总额）',doc.total);
@@ -298,9 +382,9 @@ function showNota(){
     const balanceNumber=Number(balanceText);
     if(balanceText && Number.isFinite(balanceNumber) && balanceNumber<0)
       financial.lastElementChild.querySelector('span').classList.add('money-minus');
-    summ.append(cells,financial,node('div','点击展开商品明细  ▾','doc-tip'));
+    summ.append(cells,financial,tip);
   }else{
-    summ.append(cells,node('div','点击展开商品明细  ▾','doc-tip'));
+    summ.append(cells,tip);
   }
   expand.append(summ);
   const body=node('div',undefined,'doc-details');
@@ -309,7 +393,18 @@ function showNota(){
   const itemCols=reserved?[['code','商品编号']]:[['code','商品编号'],['caja','CAJA'],['quantity','UNT']];
   if(d.price_allowed){itemCols.push(...(reserved? [['amount','金额']]:[['price','PRECIO'],['total','TOTAL']]));}
   const detailRows=doc.rows||[];
-  body.append(doc.details_loaded===false?node('div','商品明细尚未预取，请缩小查询范围','empty'):(detailRows.length?makeTable(detailRows,itemCols,false):node('div','此条记录暂无商品明细','empty')));
+  const slot=node('div',undefined,'nota-detail-items');
+  slot.append(doc.details_loaded===false?
+    node('div',doc.details_error||'正在后台读取商品明细，请稍候…','empty'):
+    (detailRows.length?makeTable(detailRows,itemCols,false):node('div','此条记录暂无商品明细','empty')));
+  body.append(slot);
+  notaViews[i]={slot,tip,cols:itemCols};
+  if(!reserved){
+    expand.addEventListener('toggle',()=>{
+      if(expand.open&&doc.details_loaded===false&&!doc.details_error)
+        void fetchNotaLines(i,seq);
+    });
+  }
   if(!reserved){
     const media=node('div',undefined,'nota-media');
     const button=node('button','📷 查看图片与重量','nota-media-button');
@@ -318,8 +413,10 @@ function showNota(){
     button.onclick=()=>loadNotaMedia(doc,button,host);
     media.append(button,host);detail.append(media);
   }
-  expand.append(body);detail.prepend(expand);$('results').append(detail);
+  expand.append(body);detail.prepend(expand);fragment.append(detail);
  }
+ $('results').append(fragment);
+ if(d.details_pending)refreshNotaProgress();
  $('note').textContent=reserved?'@ 查询原系统 RESERVAR 预定记录。点击客户展开商品；金额仅管理员可查看。':
  'VENTA 来自 NOTADATA.TOTAL；SALDO 来自原系统 CalculatedColumn（收入 - VENTA - 支出），负数以红色显示。PRECIO / TOTAL 来自原始商品明细。出货日期来自 CARGA_FECHA。';
 }
@@ -333,6 +430,7 @@ function changeMode(next){
  $('q').blur();$('filter').blur();
  showStatus(cache[mode]?'耗时 '+cache[mode].elapsedSeconds.toFixed(2)+' 秒 · 显示已查询的数据，无需重新请求':'请输入编号后点击“查询”。');
  render();
+ if(mode==='nota'&&cache.nota?.data?.details_pending)void prefetchNotaLines(seq);
 }
 function changeTab(next){
  if(next===tab||mode!=='product')return;tab=next;sort='';desc=false;$('filter').value='';
@@ -361,7 +459,9 @@ async function search(){
   if(id!==seq)return;
   const elapsedSeconds=(performance.now()-startMs)/1000;
   cache[using]={q,data:value.data||{},elapsedSeconds};render();
-  showStatus('耗时 '+elapsedSeconds.toFixed(2)+' 秒 · 展开明细或切换分类无需重新查询');
+  if(using==='nota'&&cache.nota.data?.details_pending){
+    refreshNotaProgress();void prefetchNotaLines(id);
+  }else showStatus('耗时 '+elapsedSeconds.toFixed(2)+' 秒 · 展开明细或切换分类无需重新查询');
  }catch(e){
   if(id!==seq)return;
   clearOutput('查询未完成，不能作为零库存或未出货的依据');showStatus(String(e.message||e));
