@@ -127,7 +127,7 @@ async def query(request:Request):
     except (ValueError,UnicodeError):raise HTTPException(400,"Invalid JSON")
     if not isinstance(payload,dict):raise HTTPException(400,"Invalid query")
     alias,action,q,init_data = (payload.get(k) for k in ("bot","action","q","init_data"))
-    if alias not in ("STOCK","ADMIN") or action not in ("stock","camino","orders","nota","history_more","nota_media"):
+    if alias not in ("STOCK","ADMIN") or action not in ("stock","camino","orders","nota","history_more","nota_media","nota_details"):
         raise HTTPException(400,"Unsupported action")
     if not isinstance(q,str) or not ((q=="@" and action=="nota") or (action=="nota" and len(q)==1 and q.isdecimal()) or 2<=len(q)<=40) or not isinstance(init_data,str) or not (1<=len(init_data)<=4096):
         raise HTTPException(400,"Invalid input")
@@ -138,7 +138,7 @@ async def query(request:Request):
         if type(cursor) is not int or not (0<=cursor<=5000) or type(include_older) is not bool:
             raise HTTPException(400,"Invalid history pagination")
         extra = {"cursor":cursor,"include_older":include_older}
-    if action == "nota_media":
+    if action in ("nota_media","nota_details"):
         customer=payload.get("customer","")
         if not q.isdecimal() or not 2<=len(q)<=12 or not isinstance(customer,str) or len(customer)>130:
             raise HTTPException(400,"Invalid Nota image request")
@@ -157,7 +157,7 @@ async def query(request:Request):
             waiting.pop(req_id,None)
             raise HTTPException(503,"連線中斷")
     try:
-        response=await asyncio.wait_for(future,25)
+        response=await asyncio.wait_for(future,45)
     except asyncio.TimeoutError:
         raise HTTPException(504,"查詢逾時")
     finally:
