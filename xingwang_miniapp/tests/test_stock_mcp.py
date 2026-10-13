@@ -691,7 +691,7 @@ def test_stock_trace_proves_fresh_request_and_reports_errors(monkeypatch):
                 "matches": [{"code": "6616", "stock_rolls": 13, "stock_meters": 273}],
                 "incoming_matches": [], "price": "SECRET_STOCK_PRICE",
             }}
-        return {"ok": False, "code": "LOCAL_OFFLINE"}
+        return {"ok": False, "code": "LOCAL_API"}
 
     monkeypatch.setattr(server, "relay_stock_mcp", fake_worker)
     with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
@@ -717,4 +717,119 @@ def test_stock_trace_proves_fresh_request_and_reports_errors(monkeypatch):
     ])
     assert one.headers["cache-control"].startswith("no-store")
     assert "noindex" in one.headers["x-robots-tag"]
-    assert third["code"] == "LOCAL_OFFLINE"
+    assert third["code"] == "LOCAL_API"
+
+
+def test_short_same_role_reconnect_preserves_lease_and_safe_cross_role_delay(monkeypatch):
+    """Fast home reconnection is safe only with locally recorded expired lease."""
+    import importlib
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+    monkeypatch.setattr(server.time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(server, "_last_active_role", None)
+    monkeypatch.setattr(server, "_last_active_lease_until", 0.0)
+    assert server._handover_delay_for("home") == server.HANDOVER_SECONDS
+    monkeypatch.setattr(server, "_last_active_role", "home")
+    monkeypatch.setattr(server, "_last_active_lease_until", 114.0)
+    assert server._handover_delay_for("home") == 14.0
+    assert server._handover_delay_for("company") == server.HANDOVER_SECONDS
+    monkeypatch.setattr(server, "_last_active_lease_until", 99.0)
+    assert server._handover_delay_for("home") == 0.0
+
+
+def test_stock_retry_transient_three_attempts_but_stop_on_real_errors(monkeypatch):
+    import asyncio
+    import importlib
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+    observed = []
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    async def fake_worker(code):
+        observed.append(code)
+        if len(observed) == 1:
+            return {"ok": False, "code": "LOCAL_OFFLINE"}
+        if len(observed) == 2:
+            return {"ok": False, "code": "SWITCHING"}
+        return {"ok": True, "source": "home", "data": {"product_code": code}}
+
+    monkeypatch.setattr(server.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(server, "relay_stock_mcp", fake_worker)
+    response = asyncio.run(server._relay_readonly_stock_with_reconnect_retry("6616"))
+    assert response["ok"] is True and response["bridge_attempts"] == 3
+    assert observed == ["6616", "6616", "6616"] and waits == [7.0, 8.0]
+
+    observed.clear()
+    waits.clear()
+    async def not_found(code):
+        observed.append(code)
+        return {"ok": False, "code": "NOT_FOUND"}
+    monkeypatch.setattr(server, "relay_stock_mcp", not_found)
+    response = asyncio.run(server._relay_readonly_stock_with_reconnect_retry("6616"))
+    assert response["code"] == "NOT_FOUND"
+    assert response["bridge_attempts"] == 1
+    assert observed == ["6616"] and waits == []
+
+    observed.clear()
+    async def local_api(code):
+        observed.append(code)
+        return {"ok": False, "code": "LOCAL_API"}
+    monkeypatch.setattr(server, "relay_stock_mcp", local_api)
+    response = asyncio.run(server._relay_readonly_stock_with_reconnect_retry("6616"))
+    assert response["code"] == "LOCAL_API"
+    assert observed == ["6616"] and waits == []
+
+    observed.clear()
+    waits.clear()
+    async def still_offline(code):
+        observed.append(code)
+        return {"ok": False, "code": "LOCAL_OFFLINE"}
+    monkeypatch.setattr(server, "relay_stock_mcp", still_offline)
+    response = asyncio.run(server._relay_readonly_stock_with_reconnect_retry("6616"))
+    assert response["ok"] is False
+    assert response["bridge_attempts"] == 3
+    assert observed == ["6616"] * 3 and waits == [7.0, 8.0]
+
+
+def test_stock_retry_in_http_api_preserves_no_price_rule(monkeypatch):
+    import importlib
+    from fastapi.testclient import TestClient
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+    monkeypatch.setenv("BRIDGE_SHARED_SECRET", "ci_only_bridge_secret_1234567890123")
+    monkeypatch.setattr(server, "public_stock_recent_calls", [])
+    tries = []
+
+    async def fake_sleep(seconds):
+        return None
+
+    async def relay(code):
+        tries.append(code)
+        if len(tries) == 1:
+            return {"ok": False, "code": "LOCAL_OFFLINE"}
+        return {"ok": True, "source": "home", "data": {
+            "product_code": code, "stock_rolls": -2, "stock_meters": 200,
+            "incoming_rolls": None, "incoming_meters": None,
+            "incoming_boxes": 0,
+            "matches": [{"code": code, "stock_rolls": -2, "stock_meters": 200}],
+            "incoming_matches": [{"code": code, "incoming_boxes": 0}],
+            "price": "SECRET_PRICE_DO_NOT_LEAK",
+            "customer": "SECRET_CUSTOMER_DO_NOT_LEAK",
+        }}
+
+    monkeypatch.setattr(server, "relay_stock_mcp", relay)
+    monkeypatch.setattr(server.asyncio, "sleep", fake_sleep)
+    with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
+        response = client.get("/stock", params={"code": "6616"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["bridge_attempts"] == 2
+        assert data["stock_rolls"] == -2
+        assert data["stock_meters"] == 200
+        assert data["incoming_boxes"] == 0
+        assert "SECRET_PRICE_DO_NOT_LEAK" not in response.text
+        assert "SECRET_CUSTOMER_DO_NOT_LEAK" not in response.text
+        page = client.get("/stock", params={"code": "6616", "format": "html"})
+        assert page.status_code == 200
+        assert "橋接查詢次數：1" in page.text
+    assert tries == ["6616", "6616", "6616"]

@@ -9,6 +9,7 @@ import json
 import os
 import time
 import logging
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -40,6 +41,12 @@ waiting = {}  # id -> (future, owner socket)
 MAX_INFLIGHT = 20
 # The old host's 12-sec local lease and in-flight requests must expire.
 HANDOVER_SECONDS = 32
+# Local LeaderGate.TTL_SECONDS is 12. Keep 2s extra for network/clock
+# scheduling when the SAME local machine reconnects. Different hosts and
+# cold Render restarts still wait the original conservative 32s.
+SAME_ROLE_RECONNECT_GRACE_SECONDS = 14
+_last_active_role = None
+_last_active_lease_until = 0.0
 HEARTBEAT_SECONDS = 3
 PEER_TIMEOUT_SECONDS = 10
 handover_task = None
@@ -111,9 +118,20 @@ def cancel_owner(ws):
             future.set_result({"ok":False,"code":"SWITCHING",
                                "error":"正在切换公司／家里的电脑，请稍后重新查询"})
 
-async def promote_after(version):
+def _handover_delay_for(selected: str) -> float:
+    """Short recovery ONLY if this process observed the old same-role owner.
+
+    Never shorten cold startup or cross-role handover; in those cases an old
+    machine/previous Render instance could still hold a Telegram lease.
+    """
+    if selected == _last_active_role and _last_active_lease_until > 0:
+        return min(HANDOVER_SECONDS, max(0.0, _last_active_lease_until - time.monotonic()))
+    return HANDOVER_SECONDS
+
+
+async def promote_after(version, delay: float):
     global active_bridge,active_role
-    await asyncio.sleep(HANDOVER_SECONDS)
+    await asyncio.sleep(delay)
     async with bridge_lock:
         if version!=handover_version or active_bridge is not None:return
         role=best_role()
@@ -125,10 +143,14 @@ async def promote_after(version):
             return
         active_bridge=target
         active_role=role
+        logging.getLogger("uvicorn.error").info(
+            "BRIDGE_ACTIVE role=%s epoch=%s", role, version
+        )
 
 async def rebalance():
     """Must hold bridge_lock. Old lease expires before promotion."""
     global active_bridge,active_role,handover_task,handover_version
+    global _last_active_role, _last_active_lease_until
     selected=best_role()
     if active_bridge is not None and active_role==selected:
         for role in peers:
@@ -137,6 +159,9 @@ async def rebalance():
                 except (RuntimeError,WebSocketDisconnect,OSError):pass
         return
     former=active_bridge
+    if former is not None:
+        _last_active_role=active_role
+        _last_active_lease_until=time.monotonic()+SAME_ROLE_RECONNECT_GRACE_SECONDS
     active_bridge=None
     active_role=None
     if former is not None:cancel_owner(former)
@@ -146,7 +171,12 @@ async def rebalance():
         try:await send_peer(role,{"type":"standby"})
         except (RuntimeError,WebSocketDisconnect,OSError):pass
     if selected is not None:
-        handover_task=asyncio.create_task(promote_after(handover_version))
+        delay=_handover_delay_for(selected)
+        logging.getLogger("uvicorn.error").info(
+            "BRIDGE_HANDOVER role=%s wait_seconds=%.2f same_role=%s",
+            selected, delay, selected == _last_active_role,
+        )
+        handover_task=asyncio.create_task(promote_after(handover_version,delay))
 
 async def peer_heartbeat(role,ws):
     while True:
@@ -154,6 +184,9 @@ async def peer_heartbeat(role,ws):
         entry=peers.get(role)
         if entry is None or entry["ws"] is not ws:return
         if time.monotonic()-entry["last_pong"]>PEER_TIMEOUT_SECONDS:
+            logging.getLogger("uvicorn.error").warning(
+                "BRIDGE_DISCONNECT role=%s cause=heartbeat_timeout", role
+            )
             try:await ws.close(code=1011,reason="Heartbeat timeout")
             except (RuntimeError,WebSocketDisconnect,OSError):pass
             return
@@ -256,8 +289,13 @@ async def bridge(ws:WebSocket):
                     future,owner=record
                     if owner is ws and not future.done():
                         future.set_result(msg)
-    except (WebSocketDisconnect,RuntimeError,ValueError):
-        pass
+    except (WebSocketDisconnect,RuntimeError,ValueError) as exc:
+        # Log only exception class and a WebSocket close code, not credentials.
+        logging.getLogger("uvicorn.error").warning(
+            "BRIDGE_DISCONNECT role=%s cause=%s close_code=%s",
+            role, type(exc).__name__,
+            getattr(exc, "code", None),
+        )
     finally:
         heartbeat.cancel()
         async with bridge_lock:
@@ -336,6 +374,34 @@ def _render_stock_variant_table(variants: list[dict]) -> str:
     return "".join(lines)
 
 
+async def _relay_readonly_stock_with_reconnect_retry(product_code: str) -> dict:
+    """Three attempts maximum; retry ONLY a safe, transient bridge handover.
+
+    No retry for NOT_FOUND, LOCAL_API, invalid data, timeout or busy workers.
+    7+8s is enough for the safe 14s same-host lease expiry in normal cases.
+    Cross-host/cold 32s safety hold is NOT bypassed; it can still return 503.
+    These are actual server-side retries; a GPT Cache miss before HTTP arrival
+    cannot be retried by Render.
+    """
+    reply = {"ok": False, "code": "LOCAL_OFFLINE"}
+    for attempt, backoff in enumerate((0.0, 7.0, 8.0), start=1):
+        if backoff:
+            await asyncio.sleep(backoff)
+        reply = await relay_stock_mcp(product_code)
+        if isinstance(reply, dict):
+            reply["bridge_attempts"] = attempt
+        if isinstance(reply, dict) and reply.get("ok") is True:
+            return reply
+        code = reply.get("code") if isinstance(reply, dict) else None
+        if code not in ("LOCAL_OFFLINE", "SWITCHING", "STANDBY"):
+            return reply
+        logging.getLogger("uvicorn.error").info(
+            "STOCK_BRIDGE_RETRY product=%r attempt=%s state=%s",
+            product_code, attempt, code,
+        )
+    return reply
+
+
 # ---------------- Public read-only stock URL ----------------
 # Example:
 #   /stock?code=1314
@@ -361,7 +427,7 @@ async def stock_public(request: Request, code: str = ""):
             raise HTTPException(429, "Public stock query limit reached")
         public_stock_recent_calls.append(now)
 
-    raw = await relay_stock_mcp(code)
+    raw = await _relay_readonly_stock_with_reconnect_retry(code)
     normalized = normalize_stock(raw, code)
     served_at_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
     request_id = request.state.stock_trace_id
@@ -382,6 +448,7 @@ async def stock_public(request: Request, code: str = ""):
                 "error": "STOCK_UNAVAILABLE",
                 "request_id": request_id,
                 "served_at_utc": served_at_utc,
+                "bridge_attempts": raw.get("bridge_attempts", 1),
             },
             status_code=status,
             headers=noindex_headers,
@@ -392,6 +459,7 @@ async def stock_public(request: Request, code: str = ""):
         "product_code": code,
         "request_id": request_id,
         "served_at_utc": served_at_utc,
+        "bridge_attempts": raw.get("bridge_attempts", 1),
         "stock_rolls": normalized["stock_rolls"],
         "stock_meters": normalized["stock_meters"],
         "stock_rolls_missing": normalized.get("stock_rolls_missing", 0),
@@ -431,6 +499,7 @@ async def stock_public(request: Request, code: str = ""):
             f"<p>查詢時間：{safe(clean['as_of'])}</p>"
             f"<p>本次請求編號：{safe(clean['request_id'])}</p>"
             f"<p>Render 回傳時間 (UTC)：{safe(clean['served_at_utc'])}</p>"
+            f"<p>橋接查詢次數：{safe(clean['bridge_attempts'])}</p>"
             + _render_stock_variant_table(clean["variants"])
             + "</main></body></html>"
         )
