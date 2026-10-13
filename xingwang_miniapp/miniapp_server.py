@@ -282,7 +282,7 @@ async def relay_stock_mcp(product_code: str) -> dict:
 @app.get("/stock-test")
 async def stock_test(request: Request, code: str = "", ticket: str = ""):
     from xingwang_miniapp.stock_mcp import (
-        PILOT_ITEM_CODE, normalize_stock, pilot_access_allowed, pilot_stock_view
+        normalize_stock, pilot_access_allowed, pilot_stock_view
     )
     if not pilot_access_allowed(
         code=code,
@@ -302,9 +302,9 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
             raise HTTPException(429, "Temporary test query limit reached")
         pilot_recent_calls.append(now)
 
-    raw = await relay_stock_mcp(PILOT_ITEM_CODE)
-    normalized = normalize_stock(raw, PILOT_ITEM_CODE)
-    clean = pilot_stock_view(normalized)
+    raw = await relay_stock_mcp(code)
+    normalized = normalize_stock(raw, code)
+    clean = pilot_stock_view(normalized, code)
     # No zero-stock fabrication on upstream failure.
     if not clean.get("ok"):
         return JSONResponse(
@@ -322,8 +322,8 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
         contents = (
             "<!doctype html><html lang='zh-Hant'><head>"
             "<meta charset='utf-8'><meta name='robots' content='noindex,nofollow,noarchive'>"
-            "<title>XINGWANG STOCK 1314 即時庫存</title></head><body>"
-            "<main><h1>XINGWANG STOCK：商品 1314</h1>"
+            f"<title>XINGWANG STOCK {safe(code)} 即時庫存</title></head><body>"
+            f"<main><h1>XINGWANG STOCK：商品 {safe(code)}</h1>"
             "<p>這是現有 Windows Flask 的即時查詢結果，僅供限時測試；不是模擬資料。</p>"
             f"<p>庫存匹數：<strong>{safe(clean['stock_rolls'])}</strong> 匹</p>"
             f"<p>庫存米數：<strong>{safe(clean['stock_meters'])}</strong> 米</p>"
