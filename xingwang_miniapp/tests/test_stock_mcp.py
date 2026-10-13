@@ -1,0 +1,109 @@
+# -*- coding: utf-8 -*-
+"""Tests for the MCP boundary. No real stock data or credentials required."""
+import asyncio
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import jwt
+import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+from xingwang_miniapp.stock_mcp import (
+    RESOURCE_URL,
+    OwnerJWTVerifier,
+    normalize_stock,
+    read_configuration,
+    create_stock_mcp,
+)
+
+ISSUER = "https://auth.example.com/"
+JWKS = "https://auth.example.com/.well-known/jwks.json"
+
+
+@pytest.fixture()
+def valid_environment(monkeypatch):
+    monkeypatch.setenv("XW_STOCK_OAUTH_ISSUER", ISSUER)
+    monkeypatch.setenv("XW_STOCK_OAUTH_JWKS_URI", JWKS)
+    monkeypatch.setenv("XW_STOCK_OAUTH_AUDIENCE", RESOURCE_URL)
+    monkeypatch.setenv("XW_STOCK_ALLOWED_SUBJECTS", "approved-user")
+
+
+def test_auth_config_fails_closed(monkeypatch):
+    for key in (
+        "XW_STOCK_OAUTH_ISSUER",
+        "XW_STOCK_OAUTH_JWKS_URI",
+        "XW_STOCK_OAUTH_AUDIENCE",
+        "XW_STOCK_ALLOWED_SUBJECTS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    with pytest.raises(RuntimeError, match="missing required environment"):
+        read_configuration()
+
+
+def test_resource_must_be_correct(valid_environment, monkeypatch):
+    monkeypatch.setenv("XW_STOCK_OAUTH_AUDIENCE", "https://evil.example/mcp")
+    with pytest.raises(RuntimeError, match="canonical"):
+        read_configuration()
+
+
+def test_jwks_cannot_be_arbitrary_host(valid_environment, monkeypatch):
+    monkeypatch.setenv("XW_STOCK_OAUTH_JWKS_URI", "https://other.example.com/jwks")
+    with pytest.raises(RuntimeError, match="trusted host"):
+        read_configuration()
+
+
+def test_signed_token_requires_owner_audience_and_scope(valid_environment, monkeypatch):
+    cfg = read_configuration()
+    verifier = OwnerJWTVerifier(cfg)
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setattr(verifier._jwks_client, "get_signing_key_from_jwt",
+                        lambda _: SimpleNamespace(key=private.public_key()))
+    now = datetime.now(tz=timezone.utc)
+
+    def signed(**overrides):
+        body = dict(
+            iss=ISSUER, aud=RESOURCE_URL, sub="approved-user",
+            scope="stock:read", iat=int(now.timestamp()),
+            exp=int((now + timedelta(minutes=5)).timestamp())
+        )
+        body.update(overrides)
+        return jwt.encode(body, private, algorithm="RS256")
+
+    valid = asyncio.run(verifier.verify_token(signed()))
+    assert valid is not None and valid.subject == "approved-user"
+    assert asyncio.run(verifier.verify_token(signed(sub="intruder"))) is None
+    assert asyncio.run(verifier.verify_token(signed(scope="orders:read"))) is None
+    assert asyncio.run(verifier.verify_token(signed(aud="https://other.example/mcp"))) is None
+    assert asyncio.run(verifier.verify_token(signed(exp=int((now-timedelta(hours=1)).timestamp())))) is None
+    assert asyncio.run(verifier.verify_token("not-a-jwt")) is None
+
+
+def test_stock_schema_does_not_guess_units():
+    raw = {
+        "ok": True,
+        "source": "company",
+        "data": {
+            "product_code": "1314",
+            "stock_rolls": 0,
+            "stock_meters": 0.0,
+        },
+    }
+    out = normalize_stock(raw, "1314")
+    assert out["ok"] is True
+    assert out["incoming_rolls"] is None
+    assert out["incoming_meters"] is None
+    assert normalize_stock(raw, "9999")["ok"] is False
+    assert normalize_stock({"ok": True, "data": {"product_code":"1314", "stock_rolls": "24","stock_meters": 99}}, "1314")["ok"] is False
+    assert normalize_stock({"ok": False, "code": "LOCAL_OFFLINE"}, "1314")["ok"] is False
+
+
+def test_mcp_registers_exactly_one_read_only_tool(valid_environment):
+    async def bridge(code):
+        raise AssertionError("No stock call should occur during MCP construction")
+    server, app = create_stock_mcp(bridge)
+    # Running through the SDK registry is better than inspecting private dicts.
+    tools = asyncio.run(server.list_tools())
+    assert len(tools) == 1
+    assert tools[0].name == "search_stock"
+    assert tools[0].annotations.read_only_hint is True
+    assert app is not None
