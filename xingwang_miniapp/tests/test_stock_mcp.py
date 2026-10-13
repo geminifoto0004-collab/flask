@@ -86,6 +86,8 @@ def test_stock_schema_does_not_guess_units():
             "product_code": "1314",
             "stock_rolls": 0,
             "stock_meters": 0.0,
+            "matches": [],
+            "incoming_matches": [],
         },
     }
     out = normalize_stock(raw, "1314")
