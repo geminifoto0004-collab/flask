@@ -287,6 +287,34 @@ async def relay_stock_mcp(product_code: str) -> dict:
     return {"ok": True, "data": reply.get("data"), "source": role}
 
 
+def _render_stock_variant_table(variants: list[dict]) -> str:
+    """HTML contains only already-allowlisted product codes and quantities."""
+    from html import escape
+    def safe(value):
+        return escape(str(value if value is not None else "未提供"), quote=True)
+    if not variants:
+        return "<h2>各商品庫存明細</h2><p>沒有可列出的子商品明細</p>"
+    lines = [
+        "<h2>各商品編號庫存明細</h2>",
+        "<table border='1' cellspacing='0' cellpadding='6'>",
+        "<thead><tr><th>商品編號</th><th>庫存匹數</th>"
+        "<th>庫存米數</th><th>待到貨箱數</th></tr></thead><tbody>",
+    ]
+    for row in variants:
+        lines.append(
+            "<tr>"
+            f"<td>{safe(row['code'])}</td>"
+            f"<td>{safe(row['stock_rolls'])}</td>"
+            f"<td>{safe(row['stock_meters'])}</td>"
+            f"<td>{safe(row['incoming_boxes'])}</td>"
+            "</tr>"
+        )
+    lines.append("</tbody></table>")
+    lines.append("<p>「未提供」不等於 0。負數庫存保留 ERP 原始數字；"
+                 "待到貨單位是箱，不換算成匹或米。</p>")
+    return "".join(lines)
+
+
 # ---------------- Public read-only stock URL ----------------
 # Example:
 #   /stock?code=1314
@@ -295,7 +323,7 @@ async def relay_stock_mcp(product_code: str) -> dict:
 # construct and read the URL directly. Keep the response strictly allowlisted.
 @app.get("/stock")
 async def stock_public(request: Request, code: str = ""):
-    from xingwang_miniapp.stock_mcp import CODE_PATTERN, normalize_stock
+    from xingwang_miniapp.stock_mcp import CODE_PATTERN, normalize_stock, stock_variant_breakdown
 
     code = (code or "").strip()
     if not CODE_PATTERN.fullmatch(code):
@@ -341,6 +369,7 @@ async def stock_public(request: Request, code: str = ""):
         "stock_meters": normalized["stock_meters"],
         "stock_rolls_missing": normalized.get("stock_rolls_missing", 0),
         "stock_meters_missing": normalized.get("stock_meters_missing", 0),
+        "variants": stock_variant_breakdown(normalized),
         "incoming_rolls": normalized.get("incoming_rolls"),
         "incoming_meters": normalized.get("incoming_meters"),
         "incoming_boxes": normalized.get("incoming_boxes"),
@@ -362,7 +391,8 @@ async def stock_public(request: Request, code: str = ""):
             "<meta charset='utf-8'>"
             "<meta name='robots' content='noindex,nofollow,noarchive'>"
             f"<title>XINGWANG STOCK {safe(code)}</title></head><body>"
-            f"<main><h1>商品 {safe(code)}</h1>"
+            f"<main><h1>商品系列 {safe(code)}</h1>"
+            "<h2>系列合計</h2>"
             f"<p>庫存匹數：<strong>{safe(clean['stock_rolls'])}</strong> 匹</p>"
             f"<p>庫存米數：<strong>{safe(clean['stock_meters'])}</strong> 米</p>"
             f"<p>匹數缺失筆數：{safe(clean['stock_rolls_missing'])}；"
@@ -372,7 +402,8 @@ async def stock_public(request: Request, code: str = ""):
             f"<p>待到貨米數：{safe(clean['incoming_meters'])}</p>"
             f"<p>資料來源：{safe(clean['source'])}</p>"
             f"<p>查詢時間：{safe(clean['as_of'])}</p>"
-            "</main></body></html>"
+            + _render_stock_variant_table(clean["variants"])
+            + "</main></body></html>"
         )
         return HTMLResponse(contents, headers=noindex_headers)
 
