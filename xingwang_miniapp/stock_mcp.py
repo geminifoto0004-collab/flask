@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from datetime import datetime, timezone
 from typing import Annotated, Awaitable, Callable
 from urllib.parse import urlsplit
 
@@ -41,7 +40,7 @@ def read_configuration() -> dict:
     if missing:
         raise RuntimeError("XINGWANG STOCK MCP missing required environment: " + ", ".join(missing))
 
-    issuer = values["XW_STOCK_OAUTH_ISSUER"].rstrip("/")
+    issuer = values["XW_STOCK_OAUTH_ISSUER"]  # Preserve exact issuer: Auth0 normally ends in "/"
     jwks_url = values["XW_STOCK_OAUTH_JWKS_URI"]
     if (
         urlsplit(issuer).scheme != "https"
