@@ -107,3 +107,43 @@ def test_mcp_registers_exactly_one_read_only_tool(valid_environment):
     assert tools[0].name == "search_stock"
     assert tools[0].annotations.read_only_hint is True
     assert app is not None
+
+
+def test_http_mcp_rejects_anonymous_requests(valid_environment):
+    """SDK-level auth must reject before WebSocket access."""
+    from contextlib import asynccontextmanager
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    called = []
+
+    async def bridge(code):
+        called.append(code)
+        raise AssertionError("The worker must never be called without OAuth")
+
+    server, mcp_app = create_stock_mcp(bridge)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        async with server.session_manager.run():
+            yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.mount("/", mcp_app)
+    with TestClient(app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
+        response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "tools/call",
+                "params": {"name": "search_stock", "arguments": {"product_code": "1314"}},
+            },
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+        assert response.status_code == 401
+        assert "WWW-Authenticate" in response.headers
+        assert not called
+        meta = client.get("/.well-known/oauth-protected-resource/mcp")
+        assert meta.status_code == 200
+        assert meta.json()["resource"] == RESOURCE_URL
+        assert meta.json()["authorization_servers"]
