@@ -174,10 +174,9 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
 
 
 # Temporary browser/ChatGPT voice URL pilot for arbitrary stock codes.
-# The URL is a short-lived bearer capability. Authorization still requires a
-# separate secret and is disabled by default; neither Telegram credentials nor
-# Auth0 passwords are passed in GET parameters.
-PILOT_MAX_SECONDS = 15 * 60
+# The URL is a revocable bearer capability with NO time-based expiry.
+# Authorization still requires a separate long secret and is OFF by default;
+# never accept Telegram credentials or Auth0 passwords as GET parameters.
 PILOT_SECRET_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 
 
@@ -187,10 +186,8 @@ def pilot_access_allowed(
     ticket: str,
     enabled: str,
     server_secret: str,
-    started_at: float,
-    now: float,
 ) -> bool:
-    """Require valid product syntax, a long secret and a 15-minute time box."""
+    """Require valid product syntax and a revocable long secret, without expiry."""
     import hmac
 
     if enabled != "1" or not isinstance(code, str) or not CODE_PATTERN.fullmatch(code):
@@ -198,8 +195,6 @@ def pilot_access_allowed(
     if not isinstance(server_secret, str) or not PILOT_SECRET_PATTERN.fullmatch(server_secret):
         return False
     if not isinstance(ticket, str) or len(ticket) != len(server_secret):
-        return False
-    if not (0 <= now - started_at < PILOT_MAX_SECONDS):
         return False
     return hmac.compare_digest(ticket, server_secret)
 
