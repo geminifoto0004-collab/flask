@@ -643,3 +643,30 @@ def test_v32_more_than_200_stock_rows_are_not_discarded():
     assert len(details) == 250
     assert details[0]["code"] == "1314-0"
     assert details[-1]["code"] == "1314-249"
+
+
+def test_v32_null_cells_render_as_null_text_in_stock_html(monkeypatch):
+    import importlib
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("BRIDGE_SHARED_SECRET", "ci_only_bridge_secret_1234567890123")
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+
+    async def fake_worker(code):
+        return {"ok": True, "source": "home", "data": {
+            "product_code": code,
+            "stock_rolls": None, "stock_meters": -3,
+            "stock_rolls_missing": 1, "stock_meters_missing": 0,
+            "incoming_boxes": None, "incoming_rolls": None, "incoming_meters": None,
+            "matches": [{"code": "1314-NULL", "stock_rolls": None, "stock_meters": -3}],
+            "incoming_matches": [{"code": "1314-NULL", "incoming_boxes": None}],
+            "price": "DO_NOT_EXPOSE_PRICE",
+        }}
+
+    monkeypatch.setattr(server, "relay_stock_mcp", fake_worker)
+    with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
+        resp = client.get("/stock", params={"code": "1314", "format": "html"})
+        assert resp.status_code == 200
+        assert "1314-NULL" in resp.text
+        assert "<td>NULL</td>" in resp.text
+        assert "<td>-3</td>" in resp.text
+        assert "DO_NOT_EXPOSE_PRICE" not in resp.text
