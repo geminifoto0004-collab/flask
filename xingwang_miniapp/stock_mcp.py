@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import math
 from typing import Annotated, Awaitable, Callable
 from urllib.parse import urlsplit
 
@@ -109,7 +110,9 @@ class OwnerJWTVerifier(TokenVerifier):
 def normalize_stock(raw: dict, product_code: str) -> dict:
     """Do not invent quantities or assume that incoming uses a particular unit."""
     if not isinstance(raw, dict) or raw.get("ok") is not True:
-        return {"ok": False, "code": "LOCAL_API", "error": "本機查詢未成功"}
+        code = raw.get("code") if isinstance(raw, dict) else None
+        code = code if code in ("NOT_FOUND", "LOCAL_OFFLINE", "TIMEOUT", "BUSY", "STANDBY", "LOCAL_API", "INTERNAL") else "LOCAL_API"
+        return {"ok": False, "code": code, "error": "本機查詢未成功"}
     data = raw.get("data")
     if not isinstance(data, dict):
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "本機尚未回傳規範化庫存資料"}
@@ -118,12 +121,39 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
     # The worker must explicitly supply rolls/meters with their true units.
     for field in ("stock_rolls", "stock_meters"):
         value = data.get(field)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
             return {"ok": False, "code": "INVALID_RESPONSE", "error": "回傳庫存格式不正確"}
     for field in ("incoming_rolls", "incoming_meters"):
         value = data.get(field)
-        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0):
             return {"ok": False, "code": "INVALID_RESPONSE", "error": "待到貨單位格式不正確"}
+    boxes = data.get("incoming_boxes")
+    if boxes is not None and (
+        isinstance(boxes, bool) or not isinstance(boxes, (int, float)) or
+        not math.isfinite(boxes) or boxes < 0
+    ):
+        return {"ok": False, "code": "INVALID_RESPONSE", "error": "待到貨箱數格式不正確"}
+    matches = data.get("matches")
+    incoming_matches = data.get("incoming_matches")
+    if not isinstance(matches, list) or not isinstance(incoming_matches, list) or len(matches) > 200 or len(incoming_matches) > 200:
+        return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存明細格式不正確"}
+    def safe_rows(rows, fields):
+        out=[]
+        for item in rows:
+            if not isinstance(item, dict) or not isinstance(item.get("code"), str) or not CODE_PATTERN.fullmatch(item["code"]):
+                return None
+            row={"code":item["code"]}
+            for field in fields:
+                n=item.get(field)
+                if n is not None and (isinstance(n,bool) or not isinstance(n,(int,float)) or not math.isfinite(n) or n<0):
+                    return None
+                row[field]=n
+            out.append(row)
+        return out
+    safe_stock=safe_rows(matches, ("stock_rolls", "stock_meters"))
+    safe_incoming=safe_rows(incoming_matches, ("incoming_boxes",))
+    if safe_stock is None or safe_incoming is None:
+        return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存明細單位不正確"}
     return {
         "ok": True,
         "product_code": product_code,
@@ -131,6 +161,11 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
         "stock_meters": data["stock_meters"],
         "incoming_rolls": data.get("incoming_rolls"),
         "incoming_meters": data.get("incoming_meters"),
+        "incoming_boxes": boxes,
+        "incoming_boxes_missing": data.get("incoming_boxes_missing"),
+        "matches": safe_stock,
+        "incoming_matches": safe_incoming,
+        "match_mode": data.get("match_mode") if data.get("match_mode") in ("exact", "prefix") else None,
         "as_of": data.get("as_of") if isinstance(data.get("as_of"), str) else None,
         "source": raw.get("source") if raw.get("source") in ("company", "home") else None,
     }
@@ -155,6 +190,7 @@ def create_stock_mcp(
     @server.tool(
         title="查詢 XINGWANG 商品即時庫存",
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False, destructive_hint=False),
+        meta={"securitySchemes": [{"type": "oauth2", "scopes": [READ_SCOPE]}]},
     )
     async def search_stock(
         product_code: Annotated[str, Field(min_length=2, max_length=40, description="商品編號，例如 1314")],
