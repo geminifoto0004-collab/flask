@@ -458,3 +458,93 @@ def test_v31_negative_inventory_public_html_and_json(monkeypatch):
         assert ">-5</strong>" in page.text
         assert ">-123.5</strong>" in page.text
         assert "DONT_EXPOSE_PRICE" not in page.text
+
+
+def test_v31_per_sku_totals_and_incoming_are_kept_separate():
+    from xingwang_miniapp.stock_mcp import stock_variant_breakdown
+    normalized = {
+        "ok": True,
+        "matches": [
+            {"code": "120-07-10", "stock_rolls": 4, "stock_meters": 220.0},
+            {"code": "120-07-2", "stock_rolls": 2, "stock_meters": 101.5},
+            {"code": "120-07-2", "stock_rolls": -1, "stock_meters": -10.0},
+            {"code": "120-07-3", "stock_rolls": None, "stock_meters": 30.0},
+            {"code": "120-07-3", "stock_rolls": 8, "stock_meters": None},
+        ],
+        "incoming_matches": [
+            {"code": "120-07-2", "incoming_boxes": 12},
+            {"code": "120-07-2", "incoming_boxes": 5},
+            {"code": "120-07-4", "incoming_boxes": 6},
+            {"code": "120-07-3", "incoming_boxes": None},
+        ],
+        "customer": "PRIVATE", "price": 125,
+    }
+    rows = stock_variant_breakdown(normalized)
+    assert [row["code"] for row in rows] == [
+        "120-07-2", "120-07-3", "120-07-4", "120-07-10"
+    ]
+    assert rows[0]["stock_rolls"] == 1
+    assert rows[0]["stock_meters"] == 91.5
+    assert rows[0]["incoming_boxes"] == 17
+    assert rows[1]["stock_rolls"] is None
+    assert rows[1]["stock_meters"] is None
+    assert rows[1]["incoming_boxes"] is None
+    assert rows[1]["stock_rolls_missing"] == 1
+    assert rows[1]["stock_meters_missing"] == 1
+    assert rows[2]["stock_rolls"] is None
+    assert rows[2]["incoming_boxes"] == 6
+    assert rows[3]["incoming_boxes"] is None
+    assert "PRIVATE" not in str(rows) and "125" not in str(rows)
+
+
+def test_v31_per_sku_public_json_and_html_match_no_pricing(monkeypatch):
+    import importlib
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("BRIDGE_SHARED_SECRET", "ci_only_bridge_secret_1234567890123")
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+
+    async def fake_worker(code):
+        return {
+            "ok": True, "source": "home",
+            "data": {
+                "product_code": code,
+                "stock_rolls": 7, "stock_meters": 410.5,
+                "stock_rolls_missing": 0, "stock_meters_missing": 0,
+                "incoming_rolls": None, "incoming_meters": None,
+                "incoming_boxes": 15,
+                "matches": [
+                    {"code": "120-07-2", "stock_rolls": 5, "stock_meters": 300.0},
+                    {"code": "120-07-10", "stock_rolls": 2, "stock_meters": 110.5},
+                ],
+                "incoming_matches": [
+                    {"code": "120-07-2", "incoming_boxes": 10},
+                    {"code": "120-07-11", "incoming_boxes": 5},
+                ],
+                "price": "SENSITIVE_PRICE_TOKEN",
+                "customer": "SENSITIVE_CUSTOMER_TOKEN",
+            },
+        }
+
+    monkeypatch.setattr(server, "relay_stock_mcp", fake_worker)
+    with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
+        response = client.get("/stock", params={"code": "120-07"})
+        assert response.status_code == 200
+        result = response.json()
+        assert result["stock_rolls"] == 7
+        assert result["stock_meters"] == 410.5
+        assert result["incoming_boxes"] == 15
+        assert [row["code"] for row in result["variants"]] == [
+            "120-07-2", "120-07-10", "120-07-11"
+        ]
+        assert result["variants"][0]["stock_rolls"] == 5
+        assert result["variants"][0]["incoming_boxes"] == 10
+        assert result["variants"][2]["stock_rolls"] is None
+        assert "SENSITIVE_PRICE_TOKEN" not in response.text
+        assert "SENSITIVE_CUSTOMER_TOKEN" not in response.text
+        page = client.get("/stock", params={"code": "120-07", "format": "html"})
+        assert page.status_code == 200
+        assert "系列合計" in page.text and "各商品編號庫存明細" in page.text
+        assert "120-07-2" in page.text and "120-07-11" in page.text
+        assert "410.5" in page.text and "未提供" in page.text
+        assert "SENSITIVE_PRICE_TOKEN" not in page.text
+        assert "SENSITIVE_CUSTOMER_TOKEN" not in page.text
