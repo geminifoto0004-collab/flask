@@ -7,6 +7,7 @@ import asyncio
 import hmac
 import json
 import os
+import time
 from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -18,9 +19,17 @@ if len(SECRET) < 32:
 app = FastAPI(docs_url=None,redoc_url=None,openapi_url=None)
 PAGE = Path(__file__).with_name("index.html").read_text(encoding="utf-8")
 active_bridge = None
+active_role = None
 bridge_lock = asyncio.Lock()
-waiting = {}
+peers = {}
+waiting = {}  # id -> (future, owner socket)
 MAX_INFLIGHT = 20
+# The old host's 12-sec local lease and in-flight requests must expire.
+HANDOVER_SECONDS = 32
+HEARTBEAT_SECONDS = 3
+PEER_TIMEOUT_SECONDS = 10
+handover_task = None
+handover_version = 0
 
 @app.middleware("http")
 async def nocache(request:Request,call_next):
@@ -41,7 +50,72 @@ async def admin():
 
 @app.get("/healthz")
 async def healthz():
-    return {"service":"xingwang-miniapp","local_online":active_bridge is not None}
+    return {"service":"xingwang-miniapp","local_online":active_bridge is not None,"active_site":active_role,"home_online":"home" in peers,"company_online":"company" in peers}
+
+
+async def send_peer(role, payload):
+    peer=peers.get(role)
+    if peer is not None:
+        async with peer["send_lock"]:
+            await peer["ws"].send_json(payload)
+
+def best_role():
+    return "company" if "company" in peers else "home" if "home" in peers else None
+
+def cancel_owner(ws):
+    for future,owner in waiting.values():
+        if owner is ws and not future.done():
+            future.set_result({"ok":False,"code":"SWITCHING",
+                               "error":"正在切换公司／家里的电脑，请稍后重新查询"})
+
+async def promote_after(version):
+    global active_bridge,active_role
+    await asyncio.sleep(HANDOVER_SECONDS)
+    async with bridge_lock:
+        if version!=handover_version or active_bridge is not None:return
+        role=best_role()
+        if role is None:return
+        target=peers[role]["ws"]
+        try:
+            await send_peer(role,{"type":"active","epoch":version})
+        except (RuntimeError,WebSocketDisconnect,OSError):
+            return
+        active_bridge=target
+        active_role=role
+
+async def rebalance():
+    """Must hold bridge_lock. Old lease expires before promotion."""
+    global active_bridge,active_role,handover_task,handover_version
+    selected=best_role()
+    if active_bridge is not None and active_role==selected:
+        for role in peers:
+            if role!=active_role:
+                try:await send_peer(role,{"type":"standby"})
+                except (RuntimeError,WebSocketDisconnect,OSError):pass
+        return
+    former=active_bridge
+    active_bridge=None
+    active_role=None
+    if former is not None:cancel_owner(former)
+    handover_version+=1
+    if handover_task is not None:handover_task.cancel()
+    for role in peers:
+        try:await send_peer(role,{"type":"standby"})
+        except (RuntimeError,WebSocketDisconnect,OSError):pass
+    if selected is not None:
+        handover_task=asyncio.create_task(promote_after(handover_version))
+
+async def peer_heartbeat(role,ws):
+    while True:
+        await asyncio.sleep(HEARTBEAT_SECONDS)
+        entry=peers.get(role)
+        if entry is None or entry["ws"] is not ws:return
+        if time.monotonic()-entry["last_pong"]>PEER_TIMEOUT_SECONDS:
+            try:await ws.close(code=1011,reason="Heartbeat timeout")
+            except (RuntimeError,WebSocketDisconnect,OSError):pass
+            return
+        try:await send_peer(role,{"type":"ping"})
+        except (RuntimeError,WebSocketDisconnect,OSError):return
 
 @app.post("/api/query")
 async def query(request:Request):
@@ -71,13 +145,14 @@ async def query(request:Request):
         extra = {"customer":customer}
     async with bridge_lock:
         ws=active_bridge
-        if ws is None:raise HTTPException(503,"本機未連線")
+        role=active_role
+        if ws is None or role is None:raise HTTPException(503,"本机切换中或未连线，请稍后重试")
         if len(waiting)>=MAX_INFLIGHT:raise HTTPException(429,"查詢過多")
         req_id=uuid4().hex
         future=asyncio.get_running_loop().create_future()
-        waiting[req_id]=future
+        waiting[req_id]=(future,ws)
         try:
-            await ws.send_json({"type":"query","id":req_id,"bot":alias,"action":action,"q":q,"init_data":init_data,**extra})
+            await send_peer(role,{"type":"query","id":req_id,"bot":alias,"action":action,"q":q,"init_data":init_data,**extra})
         except (RuntimeError,WebSocketDisconnect):
             waiting.pop(req_id,None)
             raise HTTPException(503,"連線中斷")
@@ -90,7 +165,7 @@ async def query(request:Request):
     if not response.get("ok"):
         # Authorization problems are 403; local API failures are 502, never "zero inventory".
         code = response.get("code") or "ACCESS_DENIED"
-        status = 502 if code in ("LOCAL_API", "INTERNAL") else 409 if code == "HISTORY_EXPIRED" else 400 if code == "INPUT" else 403
+        status = 503 if code in ("SWITCHING","STANDBY") else 502 if code in ("LOCAL_API", "INTERNAL") else 409 if code == "HISTORY_EXPIRED" else 400 if code == "INPUT" else 403
         return JSONResponse({"ok":False, "code":code,
                              "error":str(response.get("error") or "查詢未完成")[:150]},
                             status_code=status)
@@ -98,31 +173,40 @@ async def query(request:Request):
 
 @app.websocket("/bridge")
 async def bridge(ws:WebSocket):
-    global active_bridge
-    if not hmac.compare_digest(ws.headers.get("authorization",""),"Bearer "+SECRET):
+    role=ws.query_params.get("role","")
+    proto=ws.query_params.get("protocol","")
+    if (not hmac.compare_digest(ws.headers.get("authorization",""),"Bearer "+SECRET)
+        or role not in ("home","company") or proto!="v20"):
         await ws.close(code=1008)
         return
     await ws.accept()
     async with bridge_lock:
-        if active_bridge is not None:
+        if role in peers:
             await ws.close(code=1008)
             return
-        active_bridge=ws
+        peers[role]={"ws":ws,"last_pong":time.monotonic(),"send_lock":asyncio.Lock()}
+        await rebalance()
+    heartbeat=asyncio.create_task(peer_heartbeat(role,ws))
     try:
         while True:
-            try:
-                incoming=await asyncio.wait_for(ws.receive_json(),timeout=20)
-            except asyncio.TimeoutError:
-                await ws.send_json({"type":"ping"})
-                continue
-            if isinstance(incoming,dict) and incoming.get("type")=="response":
-                future=waiting.get(incoming.get("id"))
-                if future is not None and not future.done():
-                    future.set_result(incoming)
+            msg=await ws.receive_json()
+            if not isinstance(msg,dict):continue
+            if msg.get("type")=="pong":
+                entry=peers.get(role)
+                if entry is not None and entry["ws"] is ws:
+                    entry["last_pong"]=time.monotonic()
+            elif msg.get("type")=="response" and active_bridge is ws:
+                record=waiting.get(msg.get("id"))
+                if record is not None:
+                    future,owner=record
+                    if owner is ws and not future.done():
+                        future.set_result(msg)
     except (WebSocketDisconnect,RuntimeError,ValueError):
         pass
     finally:
+        heartbeat.cancel()
         async with bridge_lock:
-            if active_bridge is ws:active_bridge=None
-            for future in list(waiting.values()):
-                if not future.done():future.set_result({"ok":False,"error":"本機斷線，請重試"})
+            if peers.get(role,{}).get("ws") is ws:
+                peers.pop(role,None)
+                cancel_owner(ws)
+                await rebalance()
