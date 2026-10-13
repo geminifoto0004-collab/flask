@@ -93,6 +93,20 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
 const $=id=>document.getElementById(id);
 const alias=location.pathname==='/admin'?'ADMIN':'STOCK';
+// A renewable local login session is kept only inside Telegram WebView's tab.
+// Telegram initData remains the sole proof for the FIRST sign-in.
+const miniappSessionStorageKey='xw-miniapp-v28:'+alias;
+let miniappSession='';
+try{miniappSession=sessionStorage.getItem(miniappSessionStorageKey)||'';}catch(_){}
+function rememberMiniappSession(response){
+ if(response&&typeof response.miniapp_session==='string'&&/^xw_[A-Za-z0-9_-]{40,80}$/.test(response.miniapp_session)){
+   miniappSession=response.miniapp_session;
+   try{sessionStorage.setItem(miniappSessionStorageKey,miniappSession);}catch(_){}
+ }else if(response?.code==='TELEGRAM_AUTH'){
+   miniappSession='';
+   try{sessionStorage.removeItem(miniappSessionStorageKey);}catch(_){}
+ }
+}
 const fields={
  stock:[['code','商品编号'],['pieces','匹数'],['meters','米数'],['reserved','预定状态']],
  camino:[['code','商品编号'],['container','货柜'],['caja','匹数'],['units','米数'],['unit_type','单位'],['eta','到货日期']],
@@ -225,9 +239,9 @@ async function loadHistoryPage(button){
  try{
    const response=await fetch('/api/query',{method:'POST',cache:'no-store',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({bot:alias,action:'history_more',q:snap.q,init_data:tg.initData,
+    body:JSON.stringify({bot:alias,action:'history_more',q:snap.q,miniapp_session:miniappSession,init_data:tg.initData,
                         cursor,include_older:includeOlder})});
-   const payload=await response.json();
+   const payload=await response.json();rememberMiniappSession(payload);
    if(!response.ok||!payload.ok)throw Error(payload.error||'加载历史失败');
    if(expected!==seq||snap!==cache.product)return;
    const more=payload.data||{};
@@ -254,8 +268,8 @@ async function loadNotaMedia(doc,button,holder){
   const response=await fetch('/api/query',{method:'POST',cache:'no-store',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({bot:alias,action:'nota_media',q:nota,
-      customer:String(doc.customer||'').slice(0,130),init_data:tg.initData})});
-  const payload=await response.json();
+      customer:String(doc.customer||'').slice(0,130),miniapp_session:miniappSession,init_data:tg.initData})});
+  const payload=await response.json();rememberMiniappSession(payload);
   if(!response.ok||!payload.ok)throw Error(payload.error||'读取失败');
   const data=payload.data||{};
   mediaCache.set(key,data);
@@ -344,8 +358,8 @@ async function fetchNotaLines(index,runId){
      const response=await fetch('/api/query',{method:'POST',cache:'no-store',
        headers:{'Content-Type':'application/json'},
        body:JSON.stringify({bot:alias,action:'nota_details',q:nota,
-           customer:customer.slice(0,130),init_data:tg.initData})});
-     const payload=await response.json();
+           customer:customer.slice(0,130),miniapp_session:miniappSession,init_data:tg.initData})});
+     const payload=await response.json();rememberMiniappSession(payload);
      if(!response.ok||!payload.ok)throw Error(payload.error||'明细查询失败');
      if(runId!==seq||snap!==cache.nota||mode!=='nota')return;
      const detail=payload.data||{};
@@ -492,8 +506,8 @@ async function search(){
  typed[using]=q;cache[using]=null;if(using==='nota')mediaCache.clear();sort='';desc=false;clearOutput('正在从本机获取完整数据……');
  $('go').disabled=true;showStatus(using==='nota'?'正在查询匹配 Nota / 预定记录……':'正在一次获取库存、待到货、历史购买和预定记录……');
  try{
-  const res=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action:using==='nota'?'nota':'stock',q,init_data:init,date_span:(using==='nota'&&/[A-ZÀ-ÖØ-öø-ÿ]/i.test(q)&&q!=='@')?notaSpan:'all'})});
-  const value=await res.json();if(!res.ok||!value.ok)throw new Error(value.error||value.detail||'查询失败');
+  const res=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action:using==='nota'?'nota':'stock',q,miniapp_session:miniappSession,init_data:init,date_span:(using==='nota'&&/[A-ZÀ-ÖØ-öø-ÿ]/i.test(q)&&q!=='@')?notaSpan:'all'})});
+  const value=await res.json();rememberMiniappSession(value);if(!res.ok||!value.ok)throw new Error(value.error||value.detail||'查询失败');
   if(id!==seq)return;
   const elapsedSeconds=(performance.now()-startMs)/1000;
   cache[using]={q,data:value.data||{},elapsedSeconds};render();
