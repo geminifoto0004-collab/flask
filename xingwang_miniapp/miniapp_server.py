@@ -291,7 +291,7 @@ def _render_stock_variant_table(variants: list[dict]) -> str:
     """HTML contains only already-allowlisted product codes and quantities."""
     from html import escape
     def safe(value):
-        return escape(str(value if value is not None else "未提供"), quote=True)
+        return escape(str(value if value is not None else "NULL"), quote=True)
     if not variants:
         return "<h2>各商品庫存明細</h2><p>沒有可列出的子商品明細</p>"
     lines = [
@@ -310,7 +310,7 @@ def _render_stock_variant_table(variants: list[dict]) -> str:
             "</tr>"
         )
     lines.append("</tbody></table>")
-    lines.append("<p>「未提供」不等於 0。負數庫存保留 ERP 原始數字；"
+    lines.append("<p>「NULL」代表資料未提供，不等於 0。負數庫存保留 ERP 原始數字；"
                  "待到貨單位是箱，不換算成匹或米。</p>")
     return "".join(lines)
 
