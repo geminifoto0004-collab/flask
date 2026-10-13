@@ -132,6 +132,11 @@ async def query(request:Request):
     if not isinstance(q,str) or not ((q=="@" and action=="nota") or (action=="nota" and len(q)==1 and q.isdecimal()) or 2<=len(q)<=40) or not isinstance(init_data,str) or not (1<=len(init_data)<=4096):
         raise HTTPException(400,"Invalid input")
     extra = {}
+    if action == "nota":
+        span = payload.get("date_span","2y")
+        if not isinstance(span,str) or span not in ("1y","2y","all"):
+            raise HTTPException(400,"Invalid Nota date range")
+        extra = {"date_span":span}
     if action == "history_more":
         cursor = payload.get("cursor")
         include_older = payload.get("include_older")
