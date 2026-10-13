@@ -25,7 +25,7 @@ from pydantic import AnyHttpUrl, Field
 
 RESOURCE_URL = "https://xingwang-stock-miniapp.onrender.com/mcp"
 READ_SCOPE = "stock:read"
-CODE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{1,39}$")
+CODE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$")
 
 
 def read_configuration() -> dict:
@@ -118,6 +118,9 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "本機尚未回傳規範化庫存資料"}
     if data.get("product_code") != product_code:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "回傳商品編號不一致"}
+    # V32 uses exactly the literal prefix rules of the Telegram Mini App:
+    # 1314 includes 13140-3 and 1314A-1, never unrelated item codes.
+    # Keep the same parentheses allowance as Windows SAFE_CODE.
     # V31 preserves signed ERP stock values (including negative inventory).
     # V30 may report an unknown aggregate when one or more underlying SKU
     # rows do not have that unit. Never silently convert a missing count to 0,
@@ -146,17 +149,17 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
     boxes = data.get("incoming_boxes")
     if boxes is not None and (
         isinstance(boxes, bool) or not isinstance(boxes, (int, float)) or
-        not math.isfinite(boxes) or boxes < 0
+        not math.isfinite(boxes)
     ):
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "待到貨箱數格式不正確"}
     matches = data.get("matches")
     incoming_matches = data.get("incoming_matches")
-    if not isinstance(matches, list) or not isinstance(incoming_matches, list) or len(matches) > 200 or len(incoming_matches) > 200:
+    if not isinstance(matches, list) or not isinstance(incoming_matches, list) or len(matches) > 20000 or len(incoming_matches) > 20000:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存明細格式不正確"}
     def safe_rows(rows, fields, *, allow_negative=False):
         out=[]
         for item in rows:
-            if not isinstance(item, dict) or not isinstance(item.get("code"), str) or not CODE_PATTERN.fullmatch(item["code"]):
+            if not isinstance(item, dict) or not isinstance(item.get("code"), str) or not CODE_PATTERN.fullmatch(item["code"]) or not item["code"].upper().startswith(product_code.upper()):
                 return None
             row={"code":item["code"]}
             for field in fields:
@@ -167,7 +170,7 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
             out.append(row)
         return out
     safe_stock=safe_rows(matches, ("stock_rolls", "stock_meters"), allow_negative=True)
-    safe_incoming=safe_rows(incoming_matches, ("incoming_boxes",))
+    safe_incoming=safe_rows(incoming_matches, ("incoming_boxes",), allow_negative=True)
     if safe_stock is None or safe_incoming is None:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存明細單位不正確"}
     for field in ("stock_rolls", "stock_meters"):
