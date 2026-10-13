@@ -173,11 +173,11 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
 
 
 
-# Temporary single-item browser/ChatGPT URL pilot.
-# A separate short-lived secret is required. Neither Auth0/OAuth tokens nor
-# Telegram initData can be used as a GET parameter. No public fallback.
+# Temporary browser/ChatGPT voice URL pilot for arbitrary stock codes.
+# The URL is a short-lived bearer capability. Authorization still requires a
+# separate secret and is disabled by default; neither Telegram credentials nor
+# Auth0 passwords are passed in GET parameters.
 PILOT_MAX_SECONDS = 15 * 60
-PILOT_ITEM_CODE = "1314"
 PILOT_SECRET_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 
 
@@ -190,10 +190,10 @@ def pilot_access_allowed(
     started_at: float,
     now: float,
 ) -> bool:
-    """Fail closed. Only one fixed code, a strong temporary ticket, 15min max."""
+    """Require valid product syntax, a long secret and a 15-minute time box."""
     import hmac
 
-    if enabled != "1" or code != PILOT_ITEM_CODE:
+    if enabled != "1" or not isinstance(code, str) or not CODE_PATTERN.fullmatch(code):
         return False
     if not isinstance(server_secret, str) or not PILOT_SECRET_PATTERN.fullmatch(server_secret):
         return False
@@ -204,16 +204,16 @@ def pilot_access_allowed(
     return hmac.compare_digest(ticket, server_secret)
 
 
-def pilot_stock_view(normalized: dict) -> dict:
-    """Strict field allowlist. Prices, client names, history and Notes never leave."""
+def pilot_stock_view(normalized: dict, requested_code: str) -> dict:
+    """Never expose raw worker data: no prices, customers, history or notes."""
     if not isinstance(normalized, dict) or normalized.get("ok") is not True:
         return {"ok": False, "error": "庫存暫時無法取得"}
-    if normalized.get("product_code") != PILOT_ITEM_CODE:
+    if not CODE_PATTERN.fullmatch(requested_code) or normalized.get("product_code") != requested_code:
         return {"ok": False, "error": "商品編號不一致"}
     return {
         "ok": True,
         "test_only": True,
-        "product_code": PILOT_ITEM_CODE,
+        "product_code": requested_code,
         "stock_rolls": normalized["stock_rolls"],
         "stock_meters": normalized["stock_meters"],
         "incoming_rolls": normalized.get("incoming_rolls"),
@@ -222,6 +222,7 @@ def pilot_stock_view(normalized: dict) -> dict:
         "source": normalized.get("source"),
         "as_of": normalized.get("as_of"),
     }
+
 
 def create_stock_mcp(
     bridge_query: Callable[[str], Awaitable[dict]],

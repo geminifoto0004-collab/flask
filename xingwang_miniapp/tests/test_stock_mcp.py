@@ -189,7 +189,7 @@ def test_mcp_oauth_is_declared_on_stock_tool(valid_environment):
     assert tools[0].meta["securitySchemes"] == [{"type":"oauth2","scopes":["stock:read"]}]
 
 
-def test_pilot_access_is_restricted_to_1314_with_expiry():
+def test_pilot_access_validates_code_and_temporary_ticket():
     from xingwang_miniapp.stock_mcp import pilot_access_allowed
     secret = "This_is_an_independent_very_long_test_ticket_2026"
     required = dict(
@@ -197,8 +197,11 @@ def test_pilot_access_is_restricted_to_1314_with_expiry():
         started_at=5000.0,
     )
     assert pilot_access_allowed(**required, now=5050.0)
-    assert not pilot_access_allowed(**{**required, "code": "1314-4"}, now=5050.0)
-    assert not pilot_access_allowed(**{**required, "code": "9999"}, now=5050.0)
+    assert pilot_access_allowed(**{**required, "code": "1314-4"}, now=5050.0)
+    assert pilot_access_allowed(**{**required, "code": "120-07"}, now=5050.0)
+    assert not pilot_access_allowed(**{**required, "code": "a"}, now=5050.0)
+    assert not pilot_access_allowed(**{**required, "code": "120 07"}, now=5050.0)
+    assert not pilot_access_allowed(**{**required, "code": "<script>"}, now=5050.0)
     assert not pilot_access_allowed(**{**required, "enabled": "0"}, now=5050.0)
     assert not pilot_access_allowed(**{**required, "ticket": "guess"}, now=5050.0)
     assert not pilot_access_allowed(**{**required, "server_secret": "short"}, now=5050.0)
@@ -216,14 +219,15 @@ def test_pilot_payload_does_not_include_prices_or_customers():
         "precio": 123, "unit_price": 456, "cost": 789,
         "customer": "CONFIDENTIAL", "matches": [{"price": 999}],
     }
-    view = pilot_stock_view(normalized)
+    view = pilot_stock_view(normalized, "1314")
     assert view == {
         "ok": True, "test_only": True, "product_code": "1314",
         "stock_rolls": 2, "stock_meters": 166.5,
         "incoming_rolls": None, "incoming_meters": None, "incoming_boxes": 4,
         "source": "home", "as_of": None,
     }
-    assert pilot_stock_view({"ok": False})["ok"] is False
+    assert pilot_stock_view({"ok": False}, "1314")["ok"] is False
+    assert pilot_stock_view(normalized, "120-07")["ok"] is False
 
 
 def test_pilot_real_stock_url_rejects_bad_ticket(monkeypatch):
@@ -265,15 +269,15 @@ def test_pilot_real_stock_url_returns_only_live_worker_stock(monkeypatch):
 
     monkeypatch.setattr(server, "relay_stock_mcp", fake_worker)
     with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
-        wrong = client.get("/stock-test", params={"code": "9999", "ticket": ticket})
-        ok = client.get("/stock-test", params={"code": "1314", "ticket": ticket})
+        wrong = client.get("/stock-test", params={"code": "bad code", "ticket": ticket})
+        ok = client.get("/stock-test", params={"code": "120-07", "ticket": ticket})
         assert wrong.status_code == 404
         assert ok.status_code == 200
         assert ok.headers["x-robots-tag"].startswith("noindex")
         data = ok.json()
         assert data["stock_rolls"] == 3 and data["stock_meters"] == 291.5
         assert "price" not in data and "customer" not in data
-    assert calls == ["1314"]
+    assert calls == ["120-07"]
 
 
 def test_html_pilot_displays_only_allowed_stock_fields(monkeypatch):
@@ -309,13 +313,14 @@ def test_html_pilot_displays_only_allowed_stock_fields(monkeypatch):
     with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
         fail = client.get("/stock-test", params={"code": "1314", "ticket": "wrong", "format": "html"})
         assert fail.status_code == 404
-        html = client.get("/stock-test", params={"code": "1314", "ticket": ticket, "format": "html"})
+        html = client.get("/stock-test", params={"code": "120-07", "ticket": ticket, "format": "html"})
         assert html.status_code == 200
         assert html.headers["content-type"].startswith("text/html")
+        assert "120-07" in html.text
         assert "72" in html.text and "8553.9" in html.text and "307" in html.text
         assert "SECRET_PRICE_SENTINEL" not in html.text
         assert "SECRET_CUSTOMER_SENTINEL" not in html.text
         assert "noindex" in html.headers["x-robots-tag"]
-        plain = client.get("/stock-test", params={"code": "1314", "ticket": ticket})
+        plain = client.get("/stock-test", params={"code": "120-07", "ticket": ticket})
         assert plain.status_code == 200 and plain.json()["stock_rolls"] == 72
-    assert requests == ["1314", "1314"]
+    assert requests == ["120-07", "120-07"]
