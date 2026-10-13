@@ -56,6 +56,11 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 .history-extra button{width:100%;max-width:430px;font-size:13px}
 .history-info{padding:8px 5px 3px;font-size:12px;line-height:1.65;opacity:.75}
 .nota-progress{font-size:12px;opacity:.75;margin:9px 2px;line-height:1.6}
+.nota-range{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:2px 0 12px}
+.nota-range .range-label{font-size:12px;opacity:.8;flex:1;min-width:95px}
+.nota-range button{flex:1;min-width:73px;border:1px solid var(--tg-theme-hint-color,#9ba9b7);border-radius:9px;padding:8px 5px;font-size:12px;background:transparent;color:var(--tg-theme-text-color,#222)}
+.nota-range button.on{background:var(--tg-theme-button-color,#2878e9);border-color:var(--tg-theme-button-color,#2878e9);color:var(--tg-theme-button-text-color,#fff);font-weight:800}
+.nota-range .range-help{flex-basis:100%;font-size:11px;opacity:.65}
 .doc-tip{transition:opacity .15s}
 .doc-details{padding:13px;border-top:1px solid #9caab855}.doc-details h3{font-size:14px;margin:3px 0 12px}.doc-details .tablewrap{max-height:45vh}
 [hidden]{display:none!important}
@@ -65,6 +70,13 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 <h1>XINGWANG STOCK</h1><p class="sub">Telegram 授权 · 本机实时查询 · 一次获取，点击切换</p>
 <div class="modes" id="modes"><button class="on" data-mode="product">商品编号</button><button data-mode="nota">Nota / @ 预定</button></div>
 <div class="search"><div class="entry"><input id="q" value="" placeholder="输入商品编号" autocomplete="off" enterkeyhint="search"/><button type="button" id="clear" class="clear" aria-label="清除搜索内容">×</button></div><button type="button" id="go">查询</button></div>
+<div class="nota-range" id="notaRange" hidden>
+  <span class="range-label">客户姓名查询范围</span>
+  <button type="button" data-nota-span="1y">最近1年</button>
+  <button type="button" data-nota-span="2y" class="on">最近2年</button>
+  <button type="button" data-nota-span="all">全部</button>
+  <span class="range-help">仅对客户姓名生效，Nota 数字和 @ 预定不限年份</span>
+</div>
 <div class="tabs" id="tabs">
 <button class="on" data-tab="stock">库存</button><button data-tab="camino">待到货</button><button data-tab="history">历史购买</button><button data-tab="reservar">预定</button>
 </div>
@@ -88,10 +100,20 @@ const fields={
  reservar:[['date','日期'],['code','商品编号'],['customer','客户'],['nota','预定单号']]
 };
 const titles={stock:'库存',camino:'待到货',history:'历史购买',reservar:'预定'};
-let mode='product',tab='stock',sort='',desc=false,seq=0;
+let mode='product',tab='stock',sort='',desc=false,seq=0,notaSpan='2y';
 const cache={product:null,nota:null};const typed={product:'',nota:''};
 const mediaCache=new Map(); // Only for this Nota search session
 let notaViews=[];
+function notaRangeText(d){
+ const span=d.nota_date_span;
+ if(span!=='1y'&&span!=='2y')return '';
+ const period=span==='1y'?'最近1年':'最近2年';
+ if(d.nota_older_fallback)
+   return period+'没有交易，自动补充了较早的 '+(d.nota_visible_total||0)+' 张 Nota。';
+ const excluded=Math.max(0,Number(d.nota_match_total||0)-Number(d.nota_visible_total||0));
+ return period+'显示 '+(d.nota_visible_total||0)+' 张 Nota'+
+   (excluded?'；另有 '+excluded+' 张更早记录，可切换“全部”查看。':'。');
+}
 const notaLoads=new Map();
 const txt=(v)=>v===undefined||v===null||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
 const node=(tag,val,klass)=>{const el=document.createElement(tag);if(val!==undefined)el.textContent=String(val);if(klass)el.className=klass;return el};
@@ -280,7 +302,7 @@ function refreshNotaProgress(){
  const errors=docs.filter(x=>x.details_error).length;
  statsBox([['查询条件',cache.nota.q],['匹配单据',docs.length],
            ['明细已加载',loaded+' / '+docs.length]]);
- showStatus('已找到 '+docs.length+' 张 Nota · 已加载 '+loaded+' 张商品明细'+
+ showStatus(notaRangeText(d)+' 已找到 '+docs.length+' 张 Nota · 已加载 '+loaded+' 张商品明细'+
    (errors?' · '+errors+' 张暂时读取失败':'')+
    ' · 首次查询耗时 '+cache.nota.elapsedSeconds.toFixed(2)+' 秒');
 }
@@ -441,7 +463,7 @@ function changeMode(next){
  if(next===mode)return;typed[mode]=$('q').value.trim();mode=next;++seq;
  $('go').disabled=false;$('filter').value='';sort='';desc=false;
  $('q').value=(typed[mode]||'').toLocaleUpperCase('es-CL');$('q').placeholder=mode==='nota'?'Nota 前缀 / 客户名称 / @ 预定':'输入商品编号';updateClear();
- $('tabs').hidden=mode==='nota';
+ $('tabs').hidden=mode==='nota';$('notaRange').hidden=mode!=='nota';
  for(const b of $('modes').querySelectorAll('[data-mode]'))b.classList.toggle('on',b.dataset.mode===mode);
  $('q').blur();$('filter').blur();
  showStatus(cache[mode]?'耗时 '+cache[mode].elapsedSeconds.toFixed(2)+' 秒 · 显示已查询的数据，无需重新请求':'请输入编号后点击“查询”。');
@@ -470,14 +492,14 @@ async function search(){
  typed[using]=q;cache[using]=null;if(using==='nota')mediaCache.clear();sort='';desc=false;clearOutput('正在从本机获取完整数据……');
  $('go').disabled=true;showStatus(using==='nota'?'正在查询匹配 Nota / 预定记录……':'正在一次获取库存、待到货、历史购买和预定记录……');
  try{
-  const res=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action:using==='nota'?'nota':'stock',q,init_data:init})});
+  const res=await fetch('/api/query',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({bot:alias,action:using==='nota'?'nota':'stock',q,init_data:init,date_span:(using==='nota'&&/[A-ZÀ-ÖØ-öø-ÿ]/i.test(q)&&q!=='@')?notaSpan:'all'})});
   const value=await res.json();if(!res.ok||!value.ok)throw new Error(value.error||value.detail||'查询失败');
   if(id!==seq)return;
   const elapsedSeconds=(performance.now()-startMs)/1000;
   cache[using]={q,data:value.data||{},elapsedSeconds};render();
   if(using==='nota'&&cache.nota.data?.details_pending){
     refreshNotaProgress();void prefetchNotaLines(id);
-  }else showStatus('耗时 '+elapsedSeconds.toFixed(2)+' 秒 · 展开明细或切换分类无需重新查询');
+  }else showStatus(notaRangeText(cache[using].data)+' 耗时 '+elapsedSeconds.toFixed(2)+' 秒 · 展开明细或切换分类无需重新查询');
  }catch(e){
   if(id!==seq)return;
   clearOutput('查询未完成，不能作为零库存或未出货的依据');showStatus(String(e.message||e));
@@ -506,6 +528,16 @@ $('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
 $('modes').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(b)changeMode(b.dataset.mode);});
 $('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)changeTab(b.dataset.tab);});
 $('filter').addEventListener('input',render);
+$('notaRange').addEventListener('click',event=>{
+ const btn=event.target.closest('button[data-nota-span]');
+ if(!btn||btn.dataset.notaSpan===notaSpan)return;
+ notaSpan=btn.dataset.notaSpan;
+ for(const opt of $('notaRange').querySelectorAll('button[data-nota-span]'))
+   opt.classList.toggle('on',opt.dataset.notaSpan===notaSpan);
+ // Date filter does not alter numeric Nota searches or @ Reservar.
+ const q=$('q').value.trim();
+ if(mode==='nota'&&q!=='@'&&/[A-ZÀ-ÖØ-öø-ÿ]/i.test(q))void search();
+});
 // Input deliberately starts blank even if Telegram supplied a startapp parameter.
 // Avoid auto-querying after opening the Mini App.
 $('q').value='';updateClear();
