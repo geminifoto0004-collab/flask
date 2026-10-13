@@ -196,6 +196,59 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
 
 
 
+def stock_variant_breakdown(normalized: dict) -> list[dict]:
+    """Group the already-validated quantity-only rows per actual product code.
+
+    Retain signed inventory. A missing component makes that item's aggregate
+    unknown (None), never a partial/false zero. An item absent from either
+    source gets None for that source's fields. No price/customer raw rows here.
+    """
+    if not isinstance(normalized, dict) or normalized.get("ok") is not True:
+        return []
+    items = {}
+    for kind, rows in (
+        ("stock", normalized.get("matches") or []),
+        ("incoming", normalized.get("incoming_matches") or []),
+    ):
+        for row in rows:
+            code = row["code"]
+            item = items.setdefault(code, {
+                "code": code, "stock_rolls": None, "stock_meters": None,
+                "incoming_boxes": None, "stock_rolls_missing": 0,
+                "stock_meters_missing": 0, "incoming_boxes_missing": 0,
+                "stock_rows": 0, "incoming_rows": 0,
+            })
+            if kind == "stock":
+                if item["stock_rows"] == 0:
+                    item["stock_rolls"] = 0
+                    item["stock_meters"] = 0
+                item["stock_rows"] += 1
+                for field in ("stock_rolls", "stock_meters"):
+                    n = row[field]
+                    if n is None:
+                        item[field + "_missing"] += 1
+                    elif item[field] is not None:
+                        item[field] += n
+            else:
+                if item["incoming_rows"] == 0:
+                    item["incoming_boxes"] = 0
+                item["incoming_rows"] += 1
+                n = row["incoming_boxes"]
+                if n is None:
+                    item["incoming_boxes_missing"] += 1
+                elif item["incoming_boxes"] is not None:
+                    item["incoming_boxes"] += n
+    for item in items.values():
+        for field in ("stock_rolls", "stock_meters", "incoming_boxes"):
+            if item[field + "_missing"]:
+                item[field] = None
+    # Natural ordering: code '-2' appears before '-10'.
+    def natural_key(code):
+        return tuple((1, int(x)) if x.isdecimal() else (0, x.casefold())
+                     for x in re.split(r"(\d+)", code))
+    return [items[k] for k in sorted(items, key=natural_key)]
+
+
 # Temporary browser/ChatGPT voice URL pilot for arbitrary stock codes.
 # The URL is a revocable bearer capability with NO time-based expiry.
 # Authorization still requires a separate long secret and is OFF by default;
