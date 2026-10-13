@@ -339,6 +339,8 @@ async def stock_public(request: Request, code: str = ""):
         "product_code": code,
         "stock_rolls": normalized["stock_rolls"],
         "stock_meters": normalized["stock_meters"],
+        "stock_rolls_missing": normalized.get("stock_rolls_missing", 0),
+        "stock_meters_missing": normalized.get("stock_meters_missing", 0),
         "incoming_rolls": normalized.get("incoming_rolls"),
         "incoming_meters": normalized.get("incoming_meters"),
         "incoming_boxes": normalized.get("incoming_boxes"),
@@ -363,6 +365,8 @@ async def stock_public(request: Request, code: str = ""):
             f"<main><h1>商品 {safe(code)}</h1>"
             f"<p>庫存匹數：<strong>{safe(clean['stock_rolls'])}</strong> 匹</p>"
             f"<p>庫存米數：<strong>{safe(clean['stock_meters'])}</strong> 米</p>"
+            f"<p>匹數缺失筆數：{safe(clean['stock_rolls_missing'])}；"
+            f"米數缺失筆數：{safe(clean['stock_meters_missing'])}</p>"
             f"<p>待到貨箱數：<strong>{safe(clean['incoming_boxes'])}</strong> 箱</p>"
             f"<p>待到貨匹數：{safe(clean['incoming_rolls'])}</p>"
             f"<p>待到貨米數：{safe(clean['incoming_meters'])}</p>"
@@ -425,6 +429,8 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
             "<p>這是現有 Windows Flask 的即時查詢結果，僅供授權測試；不是模擬資料。</p>"
             f"<p>庫存匹數：<strong>{safe(clean['stock_rolls'])}</strong> 匹</p>"
             f"<p>庫存米數：<strong>{safe(clean['stock_meters'])}</strong> 米</p>"
+            f"<p>匹數缺失筆數：{safe(clean['stock_rolls_missing'])}；"
+            f"米數缺失筆數：{safe(clean['stock_meters_missing'])}</p>"
             f"<p>待到貨箱數：<strong>{safe(clean['incoming_boxes'])}</strong> 箱</p>"
             f"<p>待到貨匹數：{safe(clean['incoming_rolls'])}；"
             f"待到貨米數：{safe(clean['incoming_meters'])}</p>"
