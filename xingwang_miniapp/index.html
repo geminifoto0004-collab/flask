@@ -34,6 +34,9 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 .doc summary{list-style:none;cursor:pointer;padding:14px;display:block}.doc summary::-webkit-details-marker{display:none}
 .doc-head{display:flex;align-items:center;justify-content:space-between;gap:7px}.doc-title{font-weight:800;font-size:15px}.tag{font-size:11px;white-space:nowrap;border:1px solid #8d9daf99;border-radius:50px;padding:3px 8px}
 .doc-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:11px}.field{min-width:0}.field small{display:block;font-size:11px;opacity:.65;margin-bottom:3px}.field span{font-size:13px;overflow-wrap:anywhere}
+.money-minus{color:#e03b43!important;font-weight:800}
+.nota-money-line{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px;padding:10px;border-radius:9px;background:var(--tg-theme-bg-color,#f6f7fb)}
+.nota-money-line .field span{font-weight:750;font-variant-numeric:tabular-nums}
 .doc-tip{font-size:12px;opacity:.65;margin-top:10px}.doc-expand[open] .doc-tip{display:none}
 .doc-expand{min-width:0}
 .doc > .nota-media{margin:0;padding:10px 14px 14px;border-top:1px solid #9caab855}
@@ -287,12 +290,24 @@ function showNota(){
   const cells=node('div',undefined,'doc-info');
   if(reserved){addField(cells,'日期',doc.date);addField(cells,'客户',doc.customer);addField(cells,'明细数量',(doc.rows||[]).length);}
   else{addField(cells,'开单日期',doc.date);addField(cells,'客户',doc.customer);addField(cells,'出货日期',doc.shipped_at);addField(cells,'承运人／司机（PILOTERO）',doc.pilotero);}
-  summ.append(cells,node('div','点击展开商品明细  ▾','doc-tip'));expand.append(summ);
+  if(!reserved && d.price_allowed){
+    const financial=node('div',undefined,'nota-money-line');
+    addField(financial,'VENTA（销售总额）',doc.total);
+    addField(financial,'SALDO（余额）',doc.balance);
+    const balanceText=String(doc.balance??'').trim().replace(/[,\s]/g,'');
+    const balanceNumber=Number(balanceText);
+    if(balanceText && Number.isFinite(balanceNumber) && balanceNumber<0)
+      financial.lastElementChild.querySelector('span').classList.add('money-minus');
+    summ.append(cells,financial,node('div','点击展开商品明细  ▾','doc-tip'));
+  }else{
+    summ.append(cells,node('div','点击展开商品明细  ▾','doc-tip'));
+  }
+  expand.append(summ);
   const body=node('div',undefined,'doc-details');
   if(!reserved){const extra=node('div',undefined,'doc-info');addField(extra,'Nota',doc.nota);addField(extra,'BULTOS（原系统）',doc.bultos);body.append(extra);}
   body.append(node('h3',reserved?'预定商品明细':'Nota 商品明细'));
   const itemCols=reserved?[['code','商品编号']]:[['code','商品编号'],['caja','CAJA'],['quantity','UNT']];
-  if(d.price_allowed){itemCols.push(...(reserved? [['amount','金额']]:[['price','单价'],['total','金额']]));}
+  if(d.price_allowed){itemCols.push(...(reserved? [['amount','金额']]:[['price','PRECIO'],['total','TOTAL']]));}
   const detailRows=doc.rows||[];
   body.append(doc.details_loaded===false?node('div','商品明细尚未预取，请缩小查询范围','empty'):(detailRows.length?makeTable(detailRows,itemCols,false):node('div','此条记录暂无商品明细','empty')));
   if(!reserved){
@@ -306,7 +321,7 @@ function showNota(){
   expand.append(body);detail.prepend(expand);$('results').append(detail);
  }
  $('note').textContent=reserved?'@ 查询原系统 RESERVAR 预定记录。点击客户展开商品；金额仅管理员可查看。':
- '出货日期来自 CARGA_FECHA；PILOTERO 是原系统的承运人/司机字段，并不代表已经取得车牌号码。找不到日期只表示未查到出货记录。';
+ 'VENTA 来自 NOTADATA.TOTAL；SALDO 来自原系统 CalculatedColumn（收入 - VENTA - 支出），负数以红色显示。PRECIO / TOTAL 来自原始商品明细。出货日期来自 CARGA_FECHA。';
 }
 function render(){if(mode==='product')drawProduct();else showNota();}
 function changeMode(next){
