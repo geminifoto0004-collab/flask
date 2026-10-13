@@ -47,6 +47,12 @@ handover_version = 0
 pilot_recent_calls = []
 pilot_rate_lock = asyncio.Lock()
 
+# Public read-only stock URL for ChatGPT voice / browser URL reads.
+# Intentionally has NO token. It exposes only stock quantities and incoming
+# quantities, never prices, customers, orders, notes, or raw Flask payloads.
+public_stock_recent_calls = []
+public_stock_rate_lock = asyncio.Lock()
+
 @app.middleware("http")
 async def nocache(request:Request,call_next):
     response = await call_next(request)
@@ -279,6 +285,94 @@ async def relay_stock_mcp(product_code: str) -> dict:
     if reply.get("ok") is not True:
         return {"ok": False, "code": reply.get("code", "LOCAL_API")}
     return {"ok": True, "data": reply.get("data"), "source": role}
+
+
+# ---------------- Public read-only stock URL ----------------
+# Example:
+#   /stock?code=1314
+#   /stock?code=120-07&format=html
+# This endpoint is deliberately token-free so ordinary ChatGPT voice can
+# construct and read the URL directly. Keep the response strictly allowlisted.
+@app.get("/stock")
+async def stock_public(request: Request, code: str = ""):
+    from xingwang_miniapp.stock_mcp import CODE_PATTERN, normalize_stock
+
+    code = (code or "").strip()
+    if not CODE_PATTERN.fullmatch(code):
+        raise HTTPException(400, "Invalid product code")
+
+    # Global abuse guard. This is intentionally simple because the endpoint is
+    # public; it prevents the public URL from flooding the local Windows bridge.
+    async with public_stock_rate_lock:
+        now = time.monotonic()
+        public_stock_recent_calls[:] = [
+            t for t in public_stock_recent_calls if now - t < 60
+        ]
+        if len(public_stock_recent_calls) >= 30:
+            raise HTTPException(429, "Public stock query limit reached")
+        public_stock_recent_calls.append(now)
+
+    raw = await relay_stock_mcp(code)
+    normalized = normalize_stock(raw, code)
+
+    noindex_headers = {
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "Access-Control-Allow-Origin": "*",
+    }
+
+    if not normalized.get("ok"):
+        upstream_code = str(normalized.get("code") or "STOCK_UNAVAILABLE")
+        status = 404 if upstream_code == "NOT_FOUND" else 503
+        return JSONResponse(
+            {
+                "ok": False,
+                "product_code": code,
+                "code": upstream_code,
+                "error": "STOCK_UNAVAILABLE",
+            },
+            status_code=status,
+            headers=noindex_headers,
+        )
+
+    clean = {
+        "ok": True,
+        "product_code": code,
+        "stock_rolls": normalized["stock_rolls"],
+        "stock_meters": normalized["stock_meters"],
+        "incoming_rolls": normalized.get("incoming_rolls"),
+        "incoming_meters": normalized.get("incoming_meters"),
+        "incoming_boxes": normalized.get("incoming_boxes"),
+        "source": normalized.get("source"),
+        "as_of": normalized.get("as_of"),
+    }
+
+    if request.query_params.get("format") == "html":
+        from html import escape
+
+        def safe(value):
+            return escape(
+                str(value if value is not None else "未提供"),
+                quote=True,
+            )
+
+        contents = (
+            "<!doctype html><html lang='zh-Hant'><head>"
+            "<meta charset='utf-8'>"
+            "<meta name='robots' content='noindex,nofollow,noarchive'>"
+            f"<title>XINGWANG STOCK {safe(code)}</title></head><body>"
+            f"<main><h1>商品 {safe(code)}</h1>"
+            f"<p>庫存匹數：<strong>{safe(clean['stock_rolls'])}</strong> 匹</p>"
+            f"<p>庫存米數：<strong>{safe(clean['stock_meters'])}</strong> 米</p>"
+            f"<p>待到貨箱數：<strong>{safe(clean['incoming_boxes'])}</strong> 箱</p>"
+            f"<p>待到貨匹數：{safe(clean['incoming_rolls'])}</p>"
+            f"<p>待到貨米數：{safe(clean['incoming_meters'])}</p>"
+            f"<p>資料來源：{safe(clean['source'])}</p>"
+            f"<p>查詢時間：{safe(clean['as_of'])}</p>"
+            "</main></body></html>"
+        )
+        return HTMLResponse(contents, headers=noindex_headers)
+
+    return JSONResponse(clean, headers=noindex_headers)
 
 
 # ---------------- Temporary REAL STOCK URL pilot ----------------
