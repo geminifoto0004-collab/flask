@@ -390,3 +390,71 @@ def test_partial_stock_html_and_json_show_unknown_not_zero(monkeypatch):
         assert "未提供" in page.text
         assert "匹數缺失筆數：1" in page.text
         assert "SECRET_PRICE_NEVER_SEND" not in page.text
+
+
+def test_v31_negative_inventory_is_valid_but_never_leaks_prices():
+    raw = {
+        "ok": True, "source": "company",
+        "data": {
+            "product_code": "120-07",
+            "stock_rolls": -3, "stock_meters": -10.5,
+            "stock_rolls_missing": 0, "stock_meters_missing": 0,
+            "incoming_rolls": None, "incoming_meters": None,
+            "incoming_boxes": 8,
+            "matches": [{"code": "120-07", "stock_rolls": -3, "stock_meters": -10.5}],
+            "incoming_matches": [],
+            "price": "NEVER_EXPOSE_PRICE", "customer": "NEVER_EXPOSE_CUSTOMER",
+        },
+    }
+    got = normalize_stock(raw, "120-07")
+    assert got["ok"] is True
+    assert got["stock_rolls"] == -3
+    assert got["stock_meters"] == -10.5
+    assert got["matches"][0]["stock_rolls"] == -3
+    assert "NEVER_EXPOSE_PRICE" not in str(got)
+    assert "NEVER_EXPOSE_CUSTOMER" not in str(got)
+    invalid = {**raw, "data": {**raw["data"], "incoming_boxes": -8}}
+    assert normalize_stock(invalid, "120-07")["ok"] is False
+    invalid = {**raw, "data": {**raw["data"], "stock_rolls": float("nan")}}
+    assert normalize_stock(invalid, "120-07")["ok"] is False
+    invalid = {**raw, "data": {**raw["data"], "stock_meters_missing": 1}}
+    assert normalize_stock(invalid, "120-07")["ok"] is False
+
+
+def test_v31_negative_inventory_public_html_and_json(monkeypatch):
+    import importlib
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("BRIDGE_SHARED_SECRET", "ci_only_bridge_secret_1234567890123")
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+
+    async def fake_worker(code):
+        return {
+            "ok": True, "source": "company",
+            "data": {
+                "product_code": code,
+                "stock_rolls": -5, "stock_meters": -123.5,
+                "stock_rolls_missing": 0, "stock_meters_missing": 0,
+                "incoming_rolls": None, "incoming_meters": None,
+                "incoming_boxes": 2,
+                "matches": [{"code": code, "stock_rolls": -5, "stock_meters": -123.5}],
+                "incoming_matches": [],
+                "price": "DONT_EXPOSE_PRICE",
+                "customer": "DONT_EXPOSE_CUSTOMER",
+            },
+        }
+
+    monkeypatch.setattr(server, "relay_stock_mcp", fake_worker)
+    with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
+        response = client.get("/stock", params={"code": "120-07"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["stock_rolls"] == -5
+        assert data["stock_meters"] == -123.5
+        assert "DONT_EXPOSE_PRICE" not in response.text
+        assert "DONT_EXPOSE_CUSTOMER" not in response.text
+        page = client.get("/stock", params={"code": "120-07", "format": "html"})
+        assert page.status_code == 200
+        assert ">-5</strong>" in page.text
+        assert ">-123.5</strong>" in page.text
+        assert "DONT_EXPOSE_PRICE" not in page.text
