@@ -118,6 +118,7 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "本機尚未回傳規範化庫存資料"}
     if data.get("product_code") != product_code:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "回傳商品編號不一致"}
+    # V31 preserves signed ERP stock values (including negative inventory).
     # V30 may report an unknown aggregate when one or more underlying SKU
     # rows do not have that unit. Never silently convert a missing count to 0,
     # and never accept a partial numeric aggregate as a complete total.
@@ -135,7 +136,7 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
                 return {"ok": False, "code": "INVALID_RESPONSE", "error": "回傳庫存格式不正確"}
         elif (absent > 0 or isinstance(value, bool) or
               not isinstance(value, (int, float)) or
-              not math.isfinite(value) or value < 0):
+              not math.isfinite(value)):
             return {"ok": False, "code": "INVALID_RESPONSE", "error": "回傳庫存格式不正確"}
         missing[field] = absent
     for field in ("incoming_rolls", "incoming_meters"):
@@ -152,7 +153,7 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
     incoming_matches = data.get("incoming_matches")
     if not isinstance(matches, list) or not isinstance(incoming_matches, list) or len(matches) > 200 or len(incoming_matches) > 200:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存明細格式不正確"}
-    def safe_rows(rows, fields):
+    def safe_rows(rows, fields, *, allow_negative=False):
         out=[]
         for item in rows:
             if not isinstance(item, dict) or not isinstance(item.get("code"), str) or not CODE_PATTERN.fullmatch(item["code"]):
@@ -160,12 +161,12 @@ def normalize_stock(raw: dict, product_code: str) -> dict:
             row={"code":item["code"]}
             for field in fields:
                 n=item.get(field)
-                if n is not None and (isinstance(n,bool) or not isinstance(n,(int,float)) or not math.isfinite(n) or n<0):
+                if n is not None and (isinstance(n,bool) or not isinstance(n,(int,float)) or not math.isfinite(n) or (n < 0 and not allow_negative)):
                     return None
                 row[field]=n
             out.append(row)
         return out
-    safe_stock=safe_rows(matches, ("stock_rolls", "stock_meters"))
+    safe_stock=safe_rows(matches, ("stock_rolls", "stock_meters"), allow_negative=True)
     safe_incoming=safe_rows(incoming_matches, ("incoming_boxes",))
     if safe_stock is None or safe_incoming is None:
         return {"ok": False, "code": "INVALID_RESPONSE", "error": "庫存明細單位不正確"}
