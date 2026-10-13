@@ -42,9 +42,8 @@ HEARTBEAT_SECONDS = 3
 PEER_TIMEOUT_SECONDS = 10
 handover_task = None
 handover_version = 0
-# This pilot is OFF unless explicitly enabled with a separate 32+ char ticket.
-# Every process caps its lifespan to 15 minutes after startup.
-PILOT_STARTED_AT = time.time()
+# This pilot is OFF unless enabled with a separate, revocable 32+ char ticket.
+# No time-based expiry: operator can disable the flag or rotate the ticket.
 pilot_recent_calls = []
 pilot_rate_lock = asyncio.Lock()
 
@@ -289,8 +288,6 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
         ticket=ticket,
         enabled=os.environ.get("XW_STOCK_TEST_ENABLED", ""),
         server_secret=os.environ.get("XW_STOCK_TEST_TICKET", ""),
-        started_at=PILOT_STARTED_AT,
-        now=time.time(),
     ):
         # Do not reveal whether a real stock service is running.
         raise HTTPException(404, "Not Found")
@@ -324,7 +321,7 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
             "<meta charset='utf-8'><meta name='robots' content='noindex,nofollow,noarchive'>"
             f"<title>XINGWANG STOCK {safe(code)} 即時庫存</title></head><body>"
             f"<main><h1>XINGWANG STOCK：商品 {safe(code)}</h1>"
-            "<p>這是現有 Windows Flask 的即時查詢結果，僅供限時測試；不是模擬資料。</p>"
+            "<p>這是現有 Windows Flask 的即時查詢結果，僅供授權測試；不是模擬資料。</p>"
             f"<p>庫存匹數：<strong>{safe(clean['stock_rolls'])}</strong> 匹</p>"
             f"<p>庫存米數：<strong>{safe(clean['stock_meters'])}</strong> 米</p>"
             f"<p>待到貨箱數：<strong>{safe(clean['incoming_boxes'])}</strong> 箱</p>"
