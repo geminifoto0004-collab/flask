@@ -24,6 +24,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r xingwang_miniapp/requirements.txt pytest httpx
+      - name: Verify Auth0 tenant public OIDC/JWKS discovery
+        run: |
+          python - <<'PY'
+          import json
+          from urllib.request import urlopen
+          issuer = "https://dev-a7e4fupofgtxlva0.us.auth0.com/"
+          def read(url):
+              with urlopen(url, timeout=15) as response:
+                  assert response.status == 200
+                  return json.load(response)
+          metadata = read(issuer + ".well-known/openid-configuration")
+          assert metadata.get("issuer") == issuer, "Auth0 issuer mismatch"
+          assert metadata.get("jwks_uri") == issuer + ".well-known/jwks.json", "Unexpected Auth0 signing key endpoint"
+          assert "code" in metadata.get("response_types_supported", []), "No authorization-code support advertised"
+          keys = read(metadata["jwks_uri"]).get("keys", [])
+          assert any(k.get("kty") == "RSA" and k.get("use") in (None, "sig") for k in keys), "No public RSA signing key"
+          print("Auth0 discovery and public signing key verified; no credentials accessed")
+          PY
       - name: Python syntax
         run: python -m compileall -q xingwang_miniapp
       - name: OAuth and stock schema tests
