@@ -1,0 +1,41 @@
+name: XINGWANG STOCK MCP safety tests
+on:
+  push:
+    branches:
+      - feature/xingwang-stock-mcp-v1
+  pull_request:
+    branches:
+      - xingwang-telegram-miniapp-v1
+    paths:
+      - 'xingwang_miniapp/**'
+      - '.github/workflows/xingwang-stock-mcp-tests.yml'
+permissions:
+  contents: read
+jobs:
+  mcp-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install MCP server dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r xingwang_miniapp/requirements.txt pytest httpx
+      - name: Python syntax
+        run: python -m compileall -q xingwang_miniapp
+      - name: OAuth and stock schema tests
+        run: python -m pytest -q xingwang_miniapp/tests/test_stock_mcp.py
+      - name: Verify Telegram relay retained
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("xingwang_miniapp/miniapp_server.py").read_text()
+          for route in ('@app.post("/api/query")', '@app.websocket("/bridge")'):
+              assert route in source, route
+          assert '"stock_mcp"' in source
+          assert 'XW_STOCK_MCP_ENABLED' in source
+          print("Telegram routes preserved, MCP feature gated")
+          PY
