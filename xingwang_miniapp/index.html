@@ -306,6 +306,11 @@ async function fetchNotaLines(index,runId){
  if(!snap||mode!=='nota'||runId!==seq||snap.data?.kind==='reservar')return;
  const doc=snap.data?.documents?.[index];
  if(!doc||doc.details_loaded||doc.details_error)return;
+ // Some Nota searches contain repeat cargo rows for the same Nota.
+ // Reuse already loaded lines; keep the original row position and shipping data.
+ const previous=(snap.data?.documents||[]).find((entry,j)=>
+   j<index&&entry.nota===doc.nota&&entry.customer===doc.customer&&entry.details_loaded===true);
+ if(previous){doc.rows=previous.rows;doc.details_loaded=true;updateNotaView(index);return;}
  const nota=String(doc.nota||'').trim(),customer=String(doc.customer||'');
  if(!/^[0-9]{2,12}$/.test(nota)||!customer){
    doc.details_error='Nota 编号或客户名称无法用于读取明细';updateNotaView(index);return;
@@ -364,9 +369,16 @@ function showNota(){
  const reserved=d.kind==='reservar';
  statsBox(reserved?[['预定分组',docs.length],['预定明细',d.rows?.length||0]]:[['查询条件',snap.q],['匹配单据',docs.length],['明细已加载',docs.filter(x=>x.details_loaded===true).length+' / '+docs.length]]);
  if(!docs.length){$('results').append(node('div','没有找到符合条件的记录','empty'));return;}
- const fragment=document.createDocumentFragment();
- for(const [i,doc] of docs.entries()){
-  const detail=node('div',undefined,'doc'),expand=node('details',undefined,'doc-expand'),summ=node('summary'),top=node('div',undefined,'doc-head');
+ // Paint the first 30 cards immediately, then append remaining cards in fixed order.
+ const currentSnap=cache.nota,renderId=seq;
+ let position=0;
+ function appendNotaBatch(){
+  if(cache.nota!==currentSnap||mode!=='nota'||seq!==renderId)return;
+  const fragment=document.createDocumentFragment();
+  const stop=Math.min(docs.length,position+30);
+  for(let i=position;i<stop;i++){
+   const doc=docs[i];
+   const detail=node('div',undefined,'doc'),expand=node('details',undefined,'doc-expand'),summ=node('summary'),top=node('div',undefined,'doc-head');
   top.append(node('div',reserved?(doc.customer||'未知客户'):'Nota '+(doc.nota||snap.q),'doc-title'));
   top.append(node('span',reserved?'预定记录':doc.shipped_at?'查到出货日期':'未查到出货记录','tag'));
   summ.append(top);
@@ -414,8 +426,12 @@ function showNota(){
     media.append(button,host);detail.append(media);
   }
   expand.append(body);detail.prepend(expand);fragment.append(detail);
+  }
+  position=stop;
+  $('results').append(fragment);
+  if(position<docs.length)setTimeout(appendNotaBatch,0);
  }
- $('results').append(fragment);
+ appendNotaBatch();
  if(d.details_pending)refreshNotaProgress();
  $('note').textContent=reserved?'@ 查询原系统 RESERVAR 预定记录。点击客户展开商品；金额仅管理员可查看。':
  'VENTA 来自 NOTADATA.TOTAL；SALDO 来自原系统 CalculatedColumn（收入 - VENTA - 支出），负数以红色显示。PRECIO / TOTAL 来自原始商品明细。出货日期来自 CARGA_FECHA。';
