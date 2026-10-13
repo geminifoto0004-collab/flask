@@ -42,6 +42,11 @@ HEARTBEAT_SECONDS = 3
 PEER_TIMEOUT_SECONDS = 10
 handover_task = None
 handover_version = 0
+# This pilot is OFF unless explicitly enabled with a separate 32+ char ticket.
+# Every process caps its lifespan to 15 minutes after startup.
+PILOT_STARTED_AT = time.time()
+pilot_recent_calls = []
+pilot_rate_lock = asyncio.Lock()
 
 @app.middleware("http")
 async def nocache(request:Request,call_next):
@@ -268,6 +273,48 @@ async def relay_stock_mcp(product_code: str) -> dict:
     if reply.get("ok") is not True:
         return {"ok": False, "code": reply.get("code", "LOCAL_API")}
     return {"ok": True, "data": reply.get("data"), "source": role}
+
+
+# ---------------- Temporary REAL STOCK URL pilot ----------------
+# GET is needed for ordinary ChatGPT URL-reading experiments.
+# Never remove the ticket check; never expose prices or other Flask outputs.
+# This is not the long-term username/password login flow.
+@app.get("/stock-test")
+async def stock_test(code: str = "", ticket: str = ""):
+    from xingwang_miniapp.stock_mcp import (
+        PILOT_ITEM_CODE, normalize_stock, pilot_access_allowed, pilot_stock_view
+    )
+    if not pilot_access_allowed(
+        code=code,
+        ticket=ticket,
+        enabled=os.environ.get("XW_STOCK_TEST_ENABLED", ""),
+        server_secret=os.environ.get("XW_STOCK_TEST_TICKET", ""),
+        started_at=PILOT_STARTED_AT,
+        now=time.time(),
+    ):
+        # Do not reveal whether a real stock service is running.
+        raise HTTPException(404, "Not Found")
+
+    async with pilot_rate_lock:
+        now = time.monotonic()
+        pilot_recent_calls[:] = [t for t in pilot_recent_calls if now - t < 60]
+        if len(pilot_recent_calls) >= 8:
+            raise HTTPException(429, "Temporary test query limit reached")
+        pilot_recent_calls.append(now)
+
+    raw = await relay_stock_mcp(PILOT_ITEM_CODE)
+    normalized = normalize_stock(raw, PILOT_ITEM_CODE)
+    clean = pilot_stock_view(normalized)
+    # No zero-stock fabrication on upstream failure.
+    if not clean.get("ok"):
+        return JSONResponse(
+            {"ok": False, "test_only": True, "error": "本機庫存暫時無法取得"},
+            status_code=503,
+            headers={"X-Robots-Tag": "noindex, nofollow, noarchive"},
+        )
+    return JSONResponse(
+        clean, headers={"X-Robots-Tag": "noindex, nofollow, noarchive"}
+    )
 
 if os.environ.get("XW_STOCK_MCP_ENABLED", "") == "1":
     from xingwang_miniapp.stock_mcp import create_stock_mcp
