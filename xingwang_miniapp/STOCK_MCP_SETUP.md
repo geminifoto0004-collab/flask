@@ -15,6 +15,35 @@
 - Authentication only protects stock data when configured; plugin visibility PRIVATE is not a substitute.
 - No secrets committed.
 
+## Auth0 tenant confirmed (2026-10-13)
+
+Public issuer metadata and signing keys were checked using GitHub Actions. No
+credentials, login tokens, management API access or user account information
+were used in this test.
+
+| Render variable | Value |
+| --- | --- |
+| `XW_STOCK_OAUTH_ISSUER` | `https://dev-a7e4fupofgtxlva0.us.auth0.com/` |
+| `XW_STOCK_OAUTH_JWKS_URI` | `https://dev-a7e4fupofgtxlva0.us.auth0.com/.well-known/jwks.json` |
+| `XW_STOCK_OAUTH_AUDIENCE` | `https://xingwang-stock-miniapp.onrender.com/mcp` |
+| `XW_STOCK_ALLOWED_SUBJECTS` | **Must be copied from Auth0 User Management → Users → authorized user → User ID**, using exact `auth0|...` format; do not guess |
+| `XW_STOCK_MCP_ENABLED` | **Do not set to 1** until OAuth integration, V24 Windows worker installation and end-to-end tests |
+
+The Auth0 role `XINGWANG STOCK ADMIN` should be directly assigned to the
+authorized user and must contain only `stock:read`. The Auth0 API Identifier
+is the canonical MCP URL above. RBAC and Add Permissions in Access Token must
+be enabled. Under tenant Settings → Advanced, Resource Parameter Compatibility
+Profile ON, CIMD ON, DCR OFF, pending connection testing.
+
+**Do not paste Access Tokens, Client Secrets, Auth0 Management Tokens,
+passwords, or BRIDGE_SHARED_SECRET into chat or git.** The User ID is not a
+secret, but is account-specific, and should be stored only in Render environment.
+
+The public Auth0 OIDC/JWKS verification is **not** an OAuth login test.
+The full ChatGPT client CIMD registration path may need adjustment if Auth0
+rejects the client metadata (some tenants have reported `invalid_client_metadata`);
+do not turn on unrestricted DCR merely to skip that error.
+
 ## Required OAuth provider setup (not yet done)
 Use an established OAuth authorization server supporting MCP and **Authorization Code + PKCE S256**, ChatGPT CIMD or DCR, and RFC 8707 `resource` parameter (e.g. Auth0 Auth for MCP). Do not send login credentials or bearer tokens in a chat.
 
