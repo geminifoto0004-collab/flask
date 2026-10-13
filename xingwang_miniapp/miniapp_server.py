@@ -12,11 +12,23 @@ from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
+from contextlib import asynccontextmanager
 
 SECRET = os.environ.get("BRIDGE_SHARED_SECRET", "")
 if len(SECRET) < 32:
     raise RuntimeError("BRIDGE_SHARED_SECRET must be at least 32 characters")
-app = FastAPI(docs_url=None,redoc_url=None,openapi_url=None)
+stock_mcp_service = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # A mounted SDK sub-app does not run its own lifespan automatically.
+    if stock_mcp_service is None:
+        yield
+    else:
+        async with stock_mcp_service.session_manager.run():
+            yield
+
+app = FastAPI(docs_url=None,redoc_url=None,openapi_url=None, lifespan=lifespan)
 PAGE = Path(__file__).with_name("index.html").read_text(encoding="utf-8")
 active_bridge = None
 active_role = None
@@ -215,3 +227,50 @@ async def bridge(ws:WebSocket):
                 peers.pop(role,None)
                 cancel_owner(ws)
                 await rebalance()
+
+# ----------------------- XINGWANG STOCK MCP -----------------------
+# Completely separate from Telegram init_data. Disabled by default.
+# No public MCP endpoint exists until XW_STOCK_MCP_ENABLED=1 AND the
+# OAuth identity provider, audience and approved subjects are configured.
+async def relay_stock_mcp(product_code: str) -> dict:
+    async with bridge_lock:
+        ws = active_bridge
+        role = active_role
+        if ws is None or role is None:
+            return {"ok": False, "code": "LOCAL_OFFLINE"}
+        if len(waiting) >= MAX_INFLIGHT:
+            return {"ok": False, "code": "BUSY"}
+        req_id = uuid4().hex
+        future = asyncio.get_running_loop().create_future()
+        waiting[req_id] = (future, ws)
+        try:
+            # Distinct worker action; existing Telegram action='stock' cannot
+            # be called with missing or fabricated Telegram credentials.
+            await send_peer(role, {
+                "type": "query",
+                "id": req_id,
+                "source": "chatgpt_oauth",
+                "bot": "STOCK",
+                "action": "stock_mcp",
+                "q": product_code,
+            })
+        except (RuntimeError, WebSocketDisconnect, OSError):
+            waiting.pop(req_id, None)
+            return {"ok": False, "code": "LOCAL_OFFLINE"}
+    try:
+        reply = await asyncio.wait_for(future, timeout=35)
+    except asyncio.TimeoutError:
+        return {"ok": False, "code": "TIMEOUT"}
+    finally:
+        waiting.pop(req_id, None)
+    if not isinstance(reply, dict):
+        return {"ok": False, "code": "INVALID_RESPONSE"}
+    if reply.get("ok") is not True:
+        return {"ok": False, "code": reply.get("code", "LOCAL_API")}
+    return {"ok": True, "data": reply.get("data"), "source": role}
+
+if os.environ.get("XW_STOCK_MCP_ENABLED", "") == "1":
+    from xingwang_miniapp.stock_mcp import create_stock_mcp
+    stock_mcp_service, stock_mcp_asgi = create_stock_mcp(relay_stock_mcp)
+    # Mount LAST so /api/query, /bridge and the Mini App remain unchanged.
+    app.mount("/", stock_mcp_asgi, name="xingwang-stock-mcp")
