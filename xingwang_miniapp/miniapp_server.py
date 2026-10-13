@@ -280,7 +280,7 @@ async def relay_stock_mcp(product_code: str) -> dict:
 # Never remove the ticket check; never expose prices or other Flask outputs.
 # This is not the long-term username/password login flow.
 @app.get("/stock-test")
-async def stock_test(code: str = "", ticket: str = ""):
+async def stock_test(request: Request, code: str = "", ticket: str = ""):
     from xingwang_miniapp.stock_mcp import (
         PILOT_ITEM_CODE, normalize_stock, pilot_access_allowed, pilot_stock_view
     )
@@ -312,9 +312,30 @@ async def stock_test(code: str = "", ticket: str = ""):
             status_code=503,
             headers={"X-Robots-Tag": "noindex, nofollow, noarchive"},
         )
-    return JSONResponse(
-        clean, headers={"X-Robots-Tag": "noindex, nofollow, noarchive"}
-    )
+    noindex_headers = {"X-Robots-Tag": "noindex, nofollow, noarchive"}
+    if request.query_params.get("format") == "html":
+        # Render only the already-allowlisted stock fields; never forward
+        # raw Flask results, pricing, customers, or user-supplied HTML.
+        from html import escape
+        def safe(value):
+            return escape(str(value if value is not None else "未提供"), quote=True)
+        contents = (
+            "<!doctype html><html lang='zh-Hant'><head>"
+            "<meta charset='utf-8'><meta name='robots' content='noindex,nofollow,noarchive'>"
+            "<title>XINGWANG STOCK 1314 即時庫存</title></head><body>"
+            "<main><h1>XINGWANG STOCK：商品 1314</h1>"
+            "<p>這是現有 Windows Flask 的即時查詢結果，僅供限時測試；不是模擬資料。</p>"
+            f"<p>庫存匹數：<strong>{safe(clean['stock_rolls'])}</strong> 匹</p>"
+            f"<p>庫存米數：<strong>{safe(clean['stock_meters'])}</strong> 米</p>"
+            f"<p>待到貨箱數：<strong>{safe(clean['incoming_boxes'])}</strong> 箱</p>"
+            f"<p>待到貨匹數：{safe(clean['incoming_rolls'])}；"
+            f"待到貨米數：{safe(clean['incoming_meters'])}</p>"
+            f"<p>資料來源：{safe(clean['source'])}；查詢時間：{safe(clean['as_of'])}</p>"
+            "<p>本頁不提供售價、成本、客戶或訂單資料。</p>"
+            "</main></body></html>"
+        )
+        return HTMLResponse(contents, headers=noindex_headers)
+    return JSONResponse(clean, headers=noindex_headers)
 
 if os.environ.get("XW_STOCK_MCP_ENABLED", "") == "1":
     from xingwang_miniapp.stock_mcp import create_stock_mcp

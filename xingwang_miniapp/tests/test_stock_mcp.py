@@ -274,3 +274,48 @@ def test_pilot_real_stock_url_returns_only_live_worker_stock(monkeypatch):
         assert data["stock_rolls"] == 3 and data["stock_meters"] == 291.5
         assert "price" not in data and "customer" not in data
     assert calls == ["1314"]
+
+
+def test_html_pilot_displays_only_allowed_stock_fields(monkeypatch):
+    import time
+    import importlib
+    from fastapi.testclient import TestClient
+
+    ticket = "standalone_html_voice_pilot_ticket_testing_only_2026"
+    monkeypatch.setenv("BRIDGE_SHARED_SECRET", "ci_test_bridge_key_only_111111111111111")
+    monkeypatch.setenv("XW_STOCK_TEST_ENABLED", "1")
+    monkeypatch.setenv("XW_STOCK_TEST_TICKET", ticket)
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+    monkeypatch.setattr(server, "PILOT_STARTED_AT", time.time())
+    monkeypatch.setattr(server, "pilot_recent_calls", [])
+    requests = []
+
+    async def fake_stock(code):
+        requests.append(code)
+        return {
+            "ok": True, "source": "home",
+            "data": {
+                "product_code": code,
+                "stock_rolls": 72, "stock_meters": 8553.9,
+                "incoming_rolls": None, "incoming_meters": None,
+                "incoming_boxes": 307,
+                "matches": [], "incoming_matches": [],
+                "price": "SECRET_PRICE_SENTINEL",
+                "customer": "SECRET_CUSTOMER_SENTINEL",
+            },
+        }
+
+    monkeypatch.setattr(server, "relay_stock_mcp", fake_stock)
+    with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
+        fail = client.get("/stock-test", params={"code": "1314", "ticket": "wrong", "format": "html"})
+        assert fail.status_code == 404
+        html = client.get("/stock-test", params={"code": "1314", "ticket": ticket, "format": "html"})
+        assert html.status_code == 200
+        assert html.headers["content-type"].startswith("text/html")
+        assert "72" in html.text and "8553.9" in html.text and "307" in html.text
+        assert "SECRET_PRICE_SENTINEL" not in html.text
+        assert "SECRET_CUSTOMER_SENTINEL" not in html.text
+        assert "noindex" in html.headers["x-robots-tag"]
+        plain = client.get("/stock-test", params={"code": "1314", "ticket": ticket})
+        assert plain.status_code == 200 and plain.json()["stock_rolls"] == 72
+    assert requests == ["1314", "1314"]
