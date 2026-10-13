@@ -388,6 +388,8 @@ async def _relay_readonly_stock_with_reconnect_retry(product_code: str) -> dict:
         if backoff:
             await asyncio.sleep(backoff)
         reply = await relay_stock_mcp(product_code)
+        if isinstance(reply, dict):
+            reply["bridge_attempts"] = attempt
         if isinstance(reply, dict) and reply.get("ok") is True:
             return reply
         code = reply.get("code") if isinstance(reply, dict) else None
@@ -446,6 +448,7 @@ async def stock_public(request: Request, code: str = ""):
                 "error": "STOCK_UNAVAILABLE",
                 "request_id": request_id,
                 "served_at_utc": served_at_utc,
+                "bridge_attempts": raw.get("bridge_attempts", 1),
             },
             status_code=status,
             headers=noindex_headers,
@@ -456,6 +459,7 @@ async def stock_public(request: Request, code: str = ""):
         "product_code": code,
         "request_id": request_id,
         "served_at_utc": served_at_utc,
+        "bridge_attempts": raw.get("bridge_attempts", 1),
         "stock_rolls": normalized["stock_rolls"],
         "stock_meters": normalized["stock_meters"],
         "stock_rolls_missing": normalized.get("stock_rolls_missing", 0),
@@ -495,6 +499,7 @@ async def stock_public(request: Request, code: str = ""):
             f"<p>查詢時間：{safe(clean['as_of'])}</p>"
             f"<p>本次請求編號：{safe(clean['request_id'])}</p>"
             f"<p>Render 回傳時間 (UTC)：{safe(clean['served_at_utc'])}</p>"
+            f"<p>橋接查詢次數：{safe(clean['bridge_attempts'])}</p>"
             + _render_stock_variant_table(clean["variants"])
             + "</main></body></html>"
         )
