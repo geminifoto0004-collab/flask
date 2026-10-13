@@ -8,6 +8,8 @@ import hmac
 import json
 import os
 import time
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -55,7 +57,26 @@ public_stock_rate_lock = asyncio.Lock()
 
 @app.middleware("http")
 async def nocache(request:Request,call_next):
+    # A true server-side request receives a unique trace ID. A web search
+    # response copied from a prior crawl cannot have a fresh Render trace.
+    stock_trace = request.url.path == "/stock"
+    if stock_trace:
+        request.state.stock_trace_id = uuid4().hex
+        started = time.monotonic()
+        product = (request.query_params.get("code") or "")[:60]
+        logging.getLogger("uvicorn.error").info(
+            "STOCK_TRACE start id=%s product=%r",
+            request.state.stock_trace_id, product,
+        )
     response = await call_next(request)
+    if stock_trace:
+        trace_id = request.state.stock_trace_id
+        response.headers["X-XW-Stock-Request-ID"] = trace_id
+        logging.getLogger("uvicorn.error").info(
+            "STOCK_TRACE finish id=%s status=%s duration_ms=%d",
+            trace_id, response.status_code,
+            round((time.monotonic() - started) * 1000),
+        )
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -342,6 +363,8 @@ async def stock_public(request: Request, code: str = ""):
 
     raw = await relay_stock_mcp(code)
     normalized = normalize_stock(raw, code)
+    served_at_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    request_id = request.state.stock_trace_id
 
     noindex_headers = {
         "X-Robots-Tag": "noindex, nofollow, noarchive",
@@ -357,6 +380,8 @@ async def stock_public(request: Request, code: str = ""):
                 "product_code": code,
                 "code": upstream_code,
                 "error": "STOCK_UNAVAILABLE",
+                "request_id": request_id,
+                "served_at_utc": served_at_utc,
             },
             status_code=status,
             headers=noindex_headers,
@@ -365,6 +390,8 @@ async def stock_public(request: Request, code: str = ""):
     clean = {
         "ok": True,
         "product_code": code,
+        "request_id": request_id,
+        "served_at_utc": served_at_utc,
         "stock_rolls": normalized["stock_rolls"],
         "stock_meters": normalized["stock_meters"],
         "stock_rolls_missing": normalized.get("stock_rolls_missing", 0),
@@ -402,6 +429,8 @@ async def stock_public(request: Request, code: str = ""):
             f"<p>待到貨米數：{safe(clean['incoming_meters'])}</p>"
             f"<p>資料來源：{safe(clean['source'])}</p>"
             f"<p>查詢時間：{safe(clean['as_of'])}</p>"
+            f"<p>本次請求編號：{safe(clean['request_id'])}</p>"
+            f"<p>Render 回傳時間 (UTC)：{safe(clean['served_at_utc'])}</p>"
             + _render_stock_variant_table(clean["variants"])
             + "</main></body></html>"
         )
