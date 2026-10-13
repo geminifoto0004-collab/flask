@@ -189,24 +189,22 @@ def test_mcp_oauth_is_declared_on_stock_tool(valid_environment):
     assert tools[0].meta["securitySchemes"] == [{"type":"oauth2","scopes":["stock:read"]}]
 
 
-def test_pilot_access_validates_code_and_temporary_ticket():
+def test_pilot_access_validates_code_and_revocable_ticket_without_expiry():
     from xingwang_miniapp.stock_mcp import pilot_access_allowed
     secret = "This_is_an_independent_very_long_test_ticket_2026"
     required = dict(
         code="1314", ticket=secret, enabled="1", server_secret=secret,
-        started_at=5000.0,
     )
-    assert pilot_access_allowed(**required, now=5050.0)
-    assert pilot_access_allowed(**{**required, "code": "1314-4"}, now=5050.0)
-    assert pilot_access_allowed(**{**required, "code": "120-07"}, now=5050.0)
-    assert not pilot_access_allowed(**{**required, "code": "a"}, now=5050.0)
-    assert not pilot_access_allowed(**{**required, "code": "120 07"}, now=5050.0)
-    assert not pilot_access_allowed(**{**required, "code": "<script>"}, now=5050.0)
-    assert not pilot_access_allowed(**{**required, "enabled": "0"}, now=5050.0)
-    assert not pilot_access_allowed(**{**required, "ticket": "guess"}, now=5050.0)
-    assert not pilot_access_allowed(**{**required, "server_secret": "short"}, now=5050.0)
-    assert not pilot_access_allowed(**required, now=5900.0)
-    assert not pilot_access_allowed(**required, now=4900.0)
+    assert pilot_access_allowed(**required)
+    assert pilot_access_allowed(**{**required, "code": "1314-4"}, )
+    assert pilot_access_allowed(**{**required, "code": "120-07"}, )
+    assert not pilot_access_allowed(**{**required, "code": "a"}, )
+    assert not pilot_access_allowed(**{**required, "code": "120 07"}, )
+    assert not pilot_access_allowed(**{**required, "code": "<script>"}, )
+    assert not pilot_access_allowed(**{**required, "enabled": "0"}, )
+    assert not pilot_access_allowed(**{**required, "ticket": "guess"}, )
+    assert not pilot_access_allowed(**{**required, "server_secret": "short"}, )
+    assert pilot_access_allowed(**required)  # no 15-minute timeout
 
 
 def test_pilot_payload_does_not_include_prices_or_customers():
@@ -251,7 +249,6 @@ def test_pilot_real_stock_url_returns_only_live_worker_stock(monkeypatch):
     monkeypatch.setenv("XW_STOCK_TEST_ENABLED", "1")
     monkeypatch.setenv("XW_STOCK_TEST_TICKET", ticket)
     server = importlib.import_module("xingwang_miniapp.miniapp_server")
-    monkeypatch.setattr(server, "PILOT_STARTED_AT", time.time())
     calls = []
 
     async def fake_worker(code):
@@ -290,7 +287,6 @@ def test_html_pilot_displays_only_allowed_stock_fields(monkeypatch):
     monkeypatch.setenv("XW_STOCK_TEST_ENABLED", "1")
     monkeypatch.setenv("XW_STOCK_TEST_TICKET", ticket)
     server = importlib.import_module("xingwang_miniapp.miniapp_server")
-    monkeypatch.setattr(server, "PILOT_STARTED_AT", time.time())
     monkeypatch.setattr(server, "pilot_recent_calls", [])
     requests = []
 
