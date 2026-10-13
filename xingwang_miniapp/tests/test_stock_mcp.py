@@ -670,3 +670,51 @@ def test_v32_null_cells_render_as_null_text_in_stock_html(monkeypatch):
         assert "<td>NULL</td>" in resp.text
         assert "<td>-3</td>" in resp.text
         assert "DO_NOT_EXPOSE_PRICE" not in resp.text
+
+
+def test_stock_trace_proves_fresh_request_and_reports_errors(monkeypatch):
+    """Every actual HTTP GET has its own server-generated trace, even on failure."""
+    import importlib
+    from datetime import datetime
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("BRIDGE_SHARED_SECRET", "ci_only_bridge_secret_1234567890123")
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+    monkeypatch.setattr(server, "public_stock_recent_calls", [])
+
+    async def fake_worker(code):
+        if code == "6616":
+            return {"ok": True, "source": "home", "data": {
+                "product_code": code, "stock_rolls": 13, "stock_meters": 273,
+                "incoming_boxes": None, "incoming_rolls": None,
+                "incoming_meters": None,
+                "matches": [{"code": "6616", "stock_rolls": 13, "stock_meters": 273}],
+                "incoming_matches": [], "price": "SECRET_STOCK_PRICE",
+            }}
+        return {"ok": False, "code": "LOCAL_OFFLINE"}
+
+    monkeypatch.setattr(server, "relay_stock_mcp", fake_worker)
+    with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
+        one = client.get("/stock", params={"code": "6616"})
+        two = client.get("/stock", params={"code": "6616", "format": "html"})
+        fail = client.get("/stock", params={"code": "1268"})
+
+    assert one.status_code == 200 and two.status_code == 200
+    assert fail.status_code == 503
+    first = one.json()
+    third = fail.json()
+    ids = [first["request_id"], third["request_id"], two.headers["x-xw-stock-request-id"]]
+    assert all(len(identifier) == 32 for identifier in ids)
+    assert len(set(ids)) == 3
+    assert one.headers["x-xw-stock-request-id"] == first["request_id"]
+    assert fail.headers["x-xw-stock-request-id"] == third["request_id"]
+    assert "本次請求編號：" in two.text
+    assert ids[2] in two.text
+    assert "Render 回傳時間 (UTC)" in two.text
+    assert "SECRET_STOCK_PRICE" not in one.text and "SECRET_STOCK_PRICE" not in two.text
+    assert all(datetime.fromisoformat(value).tzinfo is not None for value in [
+        first["served_at_utc"], third["served_at_utc"],
+    ])
+    assert one.headers["cache-control"].startswith("no-store")
+    assert "noindex" in one.headers["x-robots-tag"]
+    assert third["code"] == "LOCAL_OFFLINE"
