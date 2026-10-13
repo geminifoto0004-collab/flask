@@ -413,8 +413,9 @@ def test_v31_negative_inventory_is_valid_but_never_leaks_prices():
     assert got["matches"][0]["stock_rolls"] == -3
     assert "NEVER_EXPOSE_PRICE" not in str(got)
     assert "NEVER_EXPOSE_CUSTOMER" not in str(got)
-    invalid = {**raw, "data": {**raw["data"], "incoming_boxes": -8}}
-    assert normalize_stock(invalid, "120-07")["ok"] is False
+    # V32 accepts true signed incoming ERP boxes as well as signed stock.
+    signed = {**raw, "data": {**raw["data"], "incoming_boxes": -8}}
+    assert normalize_stock(signed, "120-07")["incoming_boxes"] == -8
     invalid = {**raw, "data": {**raw["data"], "stock_rolls": float("nan")}}
     assert normalize_stock(invalid, "120-07")["ok"] is False
     invalid = {**raw, "data": {**raw["data"], "stock_meters_missing": 1}}
@@ -548,3 +549,97 @@ def test_v31_per_sku_public_json_and_html_match_no_pricing(monkeypatch):
         assert "410.5" in page.text and "未提供" in page.text
         assert "SENSITIVE_PRICE_TOKEN" not in page.text
         assert "SENSITIVE_CUSTOMER_TOKEN" not in page.text
+
+
+def test_v32_literal_prefix_allows_13140_and_1268a_1_variants():
+    from xingwang_miniapp.stock_mcp import normalize_stock, stock_variant_breakdown
+    raw = {
+        "ok": True, "source": "home",
+        "data": {
+            "product_code": "1314", "stock_rolls": 1, "stock_meters": 35.5,
+            "incoming_boxes": -4, "incoming_rolls": None, "incoming_meters": None,
+            "matches": [
+                {"code": "1314-2", "stock_rolls": 4, "stock_meters": 40.5},
+                {"code": "13140-3", "stock_rolls": -3, "stock_meters": -5},
+            ],
+            "incoming_matches": [
+                {"code": "13140-3", "incoming_boxes": -4},
+            ],
+            "price": "PRIVATE_NUMBER_SHOULD_NOT_LEAK",
+        },
+    }
+    data = normalize_stock(raw, "1314")
+    assert data["ok"] is True and data["stock_rolls"] == 1
+    assert data["incoming_boxes"] == -4
+    assert [x["code"] for x in stock_variant_breakdown(data)] == ["1314-2", "13140-3"]
+    assert "PRIVATE_NUMBER_SHOULD_NOT_LEAK" not in str(data)
+
+    # A raw worker must NOT attach an unrelated SKU to a valid prefix query.
+    changed = {**raw, "data": {
+        **raw["data"],
+        "matches": [*raw["data"]["matches"], {"code":"1315-1", "stock_rolls":1, "stock_meters":2}],
+    }}
+    assert normalize_stock(changed, "1314")["ok"] is False
+
+    raw2 = {**raw, "data": {
+        **raw["data"], "product_code": "1268A-1",
+        "matches": [
+            {"code": "1268A-1(2)", "stock_rolls": 1, "stock_meters": -1},
+            {"code": "1268A-10", "stock_rolls": 0, "stock_meters": 4},
+        ],
+        "stock_rolls": 1, "stock_meters": 3, "incoming_matches": [], "incoming_boxes": None,
+    }}
+    got = normalize_stock(raw2, "1268A-1")
+    assert got["ok"] is True
+    assert {r["code"] for r in stock_variant_breakdown(got)} == {"1268A-1(2)", "1268A-10"}
+
+
+def test_v32_null_signed_zero_are_shown_not_filtered():
+    from xingwang_miniapp.stock_mcp import normalize_stock, stock_variant_breakdown
+    raw = {"ok": True, "source": "home", "data": {
+        "product_code": "1314", "stock_rolls": None, "stock_meters": -8,
+        "stock_rolls_missing": 1, "stock_meters_missing": 0,
+        "incoming_boxes": None, "incoming_rolls": None, "incoming_meters": None,
+        "matches": [
+            {"code": "1314-NULL", "stock_rolls": None, "stock_meters": -10},
+            {"code": "1314-ZERO", "stock_rolls": 0, "stock_meters": 0},
+            {"code": "1314-NEG", "stock_rolls": -4, "stock_meters": 2},
+        ],
+        "incoming_matches": [
+            {"code": "1314-NULL", "incoming_boxes": None},
+            {"code": "1314-ZERO", "incoming_boxes": 0},
+            {"code": "1314-NEG", "incoming_boxes": -2},
+        ],
+        "incoming_boxes_missing": 1,
+    }}
+    result = normalize_stock(raw, "1314")
+    assert result["ok"] is True
+    rows = {r["code"]: r for r in stock_variant_breakdown(result)}
+    assert rows["1314-NULL"]["stock_rolls"] is None
+    assert rows["1314-NULL"]["incoming_boxes"] is None
+    assert rows["1314-NEG"]["stock_rolls"] == -4
+    assert rows["1314-NEG"]["incoming_boxes"] == -2
+    assert rows["1314-ZERO"]["stock_rolls"] == 0
+    assert rows["1314-ZERO"]["incoming_boxes"] == 0
+
+
+def test_v32_more_than_200_stock_rows_are_not_discarded():
+    from xingwang_miniapp.stock_mcp import normalize_stock, stock_variant_breakdown
+    rows = [
+        {"code": f"1314-{i}", "stock_rolls": 1, "stock_meters": 30}
+        for i in range(250)
+    ]
+    data = {
+        "ok": True, "source": "company",
+        "data": {
+            "product_code": "1314", "stock_rolls": 250, "stock_meters": 7500,
+            "incoming_rolls": None, "incoming_meters": None, "incoming_boxes": None,
+            "matches": rows, "incoming_matches": [],
+        },
+    }
+    result = normalize_stock(data, "1314")
+    assert result["ok"] is True
+    details = stock_variant_breakdown(result)
+    assert len(details) == 250
+    assert details[0]["code"] == "1314-0"
+    assert details[-1]["code"] == "1314-249"
