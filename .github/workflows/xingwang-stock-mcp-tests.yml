@@ -42,6 +42,48 @@ jobs:
           assert any(k.get("kty") == "RSA" and k.get("use") in (None, "sig") for k in keys), "No public RSA signing key"
           print("Auth0 discovery and public signing key verified; no credentials accessed")
           PY
+      - name: Live Render MCP anonymous-access security check
+        run: |
+          python - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          base = "https://xingwang-stock-miniapp.onrender.com"
+          issuer = "https://dev-a7e4fupofgtxlva0.us.auth0.com/"
+
+          def request(path, method="GET", body=None, headers=None):
+              req = Request(base + path, data=body, headers=headers or {}, method=method)
+              try:
+                  with urlopen(req, timeout=30) as resp:
+                      return resp.status, dict(resp.headers), resp.read(8192)
+              except HTTPError as exc:
+                  return exc.code, dict(exc.headers), exc.read(8192)
+
+          status, _, response = request("/healthz")
+          assert status == 200, f"Telegram /healthz unexpected HTTP {status}"
+          health = json.loads(response)
+          assert health.get("service") == "xingwang-miniapp", "Unexpected relay service"
+
+          status, _, response = request("/.well-known/oauth-protected-resource/mcp")
+          assert status == 200, f"Missing RFC 9728 resource metadata: {status}"
+          meta = json.loads(response)
+          assert meta.get("resource") == base + "/mcp", "MCP resource URL mismatch"
+          assert issuer in meta.get("authorization_servers", []), "Untrusted/missing Auth0 issuer"
+
+          body = json.dumps({
+              "jsonrpc": "2.0",
+              "id": 1,
+              "method": "tools/call",
+              "params": {"name": "search_stock", "arguments": {"product_code": "1314"}}
+          }).encode()
+          status, headers, _ = request(
+              "/mcp", "POST", body,
+              {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+          )
+          assert status == 401, f"Anonymous MCP access was not denied with 401: {status}"
+          assert "www-authenticate" in {k.lower() for k in headers}, "Missing OAuth challenge"
+          print("Live MCP discovered Auth0 and rejected anonymous requests (401); no stock data accessed")
+          PY
       - name: Python syntax
         run: python -m compileall -q xingwang_miniapp
       - name: OAuth and stock schema tests
