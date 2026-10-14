@@ -66,11 +66,11 @@ public_stock_rate_lock = asyncio.Lock()
 async def nocache(request:Request,call_next):
     # A true server-side request receives a unique trace ID. A web search
     # response copied from a prior crawl cannot have a fresh Render trace.
-    stock_trace = request.url.path == "/stock"
+    stock_trace = request.url.path == "/stock" or request.url.path.startswith("/stock/")
     if stock_trace:
         request.state.stock_trace_id = uuid4().hex
         started = time.monotonic()
-        product = (request.query_params.get("code") or "")[:60]
+        product = (request.url.path[len("/stock/"):] if request.url.path.startswith("/stock/") else request.query_params.get("code", ""))[:60]
         logging.getLogger("uvicorn.error").info(
             "STOCK_TRACE start id=%s product=%r",
             request.state.stock_trace_id, product,
@@ -519,6 +519,15 @@ async def stock_public(request: Request, code: str = ""):
         return HTMLResponse(contents, headers=noindex_headers)
 
     return JSONResponse(clean, headers=noindex_headers)
+
+
+# Path-style alias to give AI web readers and iOS Shortcuts a distinct URL for
+# each product. Both public URLs share the same live local bridge, schema,
+# rate limit and no-cache policy; no stock data is stored on Render.
+# Path changes alone cannot force a third-party web tool to bypass its cache.
+@app.get("/stock/{code}")
+async def stock_public_by_path(request: Request, code: str):
+    return await stock_public(request, code=code)
 
 
 # ---------------- Temporary REAL STOCK URL pilot ----------------
