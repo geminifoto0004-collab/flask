@@ -159,6 +159,14 @@ def _load_page(token):
     try:
         settings = _settings(token)
         share = dict(share); share.update(settings)
+        # The snapshot's header intentionally has no per-token visibility.
+        # Resolve that policy before filtering cards; a share-token setting must
+        # never be silently ignored by the native public HTML renderer.
+        resolved, _state = _fast._resolve_share(token)
+        if resolved:
+            share.update(resolved)
+        else:
+            return share, None, Response('Servicio temporalmente no disponible.', 503, mimetype='text/plain')
         if bundle:
             bundle = copy.deepcopy(bundle)
             space = bundle.get('space') if isinstance(bundle, dict) and isinstance(bundle.get('space'), dict) else bundle

@@ -481,6 +481,13 @@ def _apply_share_settings(token_hash, payload):
         conn.close()
 
     _drop_share_hash_caches(token_hash)
+    # The share was already committed. Purge stale persisted HTML as well as
+    # this worker's in-memory variant; otherwise a second Gunicorn worker can
+    # serve the former show_order decision after the admin presses Save.
+    from services import order_share_render_cache as html_cache
+    html_cache.invalidate_customer_html_cache(
+        str(current.get("customer_key") or "").strip(), purge_persisted=True,
+    )
     return _share_settings_detail(token_hash)
 
 

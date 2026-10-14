@@ -28,6 +28,8 @@ _INIT_LOCK = threading.Lock()
 _INITIALIZED = False
 _TIMER_LOCK = threading.Lock()
 _REFRESH_TIMERS = {}
+_BUILD_SLOTS = threading.BoundedSemaphore(2)
+_BUILD_LOCKS = {}
 
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_SYNC_ORDER = _cloud_service.sync_order
@@ -161,8 +163,17 @@ def _build_bundle(customer_key):
         "customer_name": str(first.get("customer_name") or "").strip(),
         "updated_at": first.get("row_updated_at"),
     }
+    source_hashes = {}
+    for row in order_rows:
+        raw = _page._decode_payload(row.get("render_payload"))
+        if isinstance(raw, dict):
+            canonical = json.dumps(raw, ensure_ascii=False, sort_keys=True,
+                                   separators=(",", ":"), default=str)
+            source_hashes[str(row.get("order_number") or "").strip()] = hashlib.sha256(
+                canonical.encode("utf-8")).hexdigest()
     return {
         "space": {"customer": customer, "orders": orders},
+        "source_payload_hashes": source_hashes,
         "asset_count": len(assets),
         "asset_order_count": len(
             {str(asset.get("order_number") or "") for asset in assets if asset.get("order_number")}
@@ -225,9 +236,14 @@ def rebuild_snapshot(customer_key):
     customer_key = str(customer_key or "").strip()
     if not customer_key:
         return None
-    bundle = _build_bundle(customer_key)
-    _persist_snapshot(customer_key, bundle)
-    _invalidate_local_cache(customer_key)
+    with _TIMER_LOCK:
+        customer_lock = _BUILD_LOCKS.setdefault(customer_key, threading.Lock())
+    # Concurrent batch/image callbacks cannot overwrite a newer snapshot with
+    # a slower older build. Bound TiDB reads across customers as well.
+    with customer_lock, _BUILD_SLOTS:
+        bundle = _build_bundle(customer_key)
+        _persist_snapshot(customer_key, bundle)
+        _invalidate_local_cache(customer_key)
     return bundle
 
 
@@ -241,7 +257,8 @@ def _refresh_worker(customer_key):
         )
     finally:
         with _TIMER_LOCK:
-            _REFRESH_TIMERS.pop(customer_key, None)
+            if _REFRESH_TIMERS.get(customer_key) is threading.current_thread():
+                _REFRESH_TIMERS.pop(customer_key, None)
 
 
 def queue_snapshot_refresh(customer_key, delay=1.5):

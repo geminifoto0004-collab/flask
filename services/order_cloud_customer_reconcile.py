@@ -16,6 +16,33 @@ from database import get_cursor, get_db_connection, get_row_dict
 from services.order_cloud_customer_storage import _INTENT_TABLE
 
 
+def _snapshot_manifest(raw):
+    """Certify the persisted bundle, never substitute current SQL rows for it."""
+    try:
+        snap = json.loads(raw or "{}")
+        space = snap.get("space") or {}
+        orders = space.get("orders") or []
+        if not isinstance(orders, list):
+            raise ValueError("invalid snapshot orders")
+        numbers, cards = set(), set()
+        for order in orders:
+            if not isinstance(order, dict):
+                raise ValueError("invalid snapshot order")
+            number = str(order.get("order_number") or "").strip()
+            if number:
+                numbers.add(number)
+            workflows = [w for w in (order.get("workflows") or []) if isinstance(w, dict)]
+            if workflows:
+                cards.update(str(w.get("workflow_number") or w.get("workflow_key") or "").strip()
+                             for w in workflows)
+            elif number:
+                cards.add(number)
+        hashes = snap.get("source_payload_hashes")
+        return sorted(numbers), sorted(cards - {""}), hashes if isinstance(hashes, dict) else None
+    except (TypeError, ValueError, AttributeError):
+        return None, None, None
+
+
 @b2_test_bp.before_app_request
 def _reconcile_customer_orders():
     if request.method != "POST" or request.path not in {
@@ -42,7 +69,7 @@ def _reconcile_customer_orders():
             cur = get_cursor(conn)
             try:
                 cur.execute(
-                    "SELECT order_number, render_payload FROM cloud_orders "
+                    "SELECT order_number, render_payload, active, order_status, customer_key FROM cloud_orders "
                     "WHERE customer_key=? ORDER BY order_number",
                     (customer_key,),
                 )
@@ -67,13 +94,28 @@ def _reconcile_customer_orders():
                         items.append({
                             "order_number": order_number,
                             "payload_sha256": payload_hash,
+                            "active": bool(data.get("active")),
+                            "order_status": str(data.get("order_status") or "ACTIVE").strip().upper(),
+                            "customer_key": str(data.get("customer_key") or "").strip(),
                         })
+                # Read-only verification: a successful logical ORDER upsert does
+                # not imply the customer-facing persisted snapshot is refreshed.
+                cur.execute("SELECT payload FROM cloud_customer_share_snapshot "
+                            "WHERE customer_key=? LIMIT 1", (customer_key,))
+                snapshot_row = cur.fetchone()
+                snapshot_obj = get_row_dict(snapshot_row, cur) if snapshot_row else {}
+                snapshot_numbers, snapshot_cards, snapshot_hashes = _snapshot_manifest(
+                    (snapshot_obj or {}).get("payload"))
             finally:
                 conn.close()
             return jsonify({"ok": True, "result": {
                 "customer_key": customer_key,
                 "orders": items,
                 "order_count": len(items),
+                "snapshot_order_numbers": snapshot_numbers,
+                "snapshot_card_keys": snapshot_cards,
+                "snapshot_payload_hashes": snapshot_hashes,
+                "manifest_version": 141,
             }})
 
         if request.path.endswith("/snapshot"):

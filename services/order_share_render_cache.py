@@ -18,6 +18,7 @@ from services.order_share_links import share_token_hash
 
 import copy
 import hashlib
+import json
 import threading
 import time
 import traceback
@@ -80,8 +81,19 @@ def _variant_key(share):
     customer_key, history_scope, status_filter_mode, show_pdf_pages, allow_report_pdf_download, show_images, show_workflow_images, include_cancelled = _share_variant(share)
     if not customer_key:
         return ""
+    # HTML varies by share token and by its actual per-order visibility rules.
+    # Only the SHA256 of the token is stored, never the raw share URL.
+    token_hash = str((share or {}).get("token_hash") or "").strip().lower()
+    if not token_hash:
+        return ""
+    visibility = (share or {}).get("order_visibility")
+    if not isinstance(visibility, dict):
+        return ""  # no policy => never pre-render or reuse another token's HTML
+    canonical_policy = json.dumps(visibility, sort_keys=True, default=str,
+                                  ensure_ascii=False, separators=(",", ":"))
+    policy_hash = hashlib.sha256(canonical_policy.encode("utf-8")).hexdigest()
     raw = (
-        f"{_TEMPLATE_HASH}\0{customer_key}\0{history_scope}\0{status_filter_mode}\0"
+        f"{_TEMPLATE_HASH}\0{token_hash}\0{policy_hash}\0{customer_key}\0{history_scope}\0{status_filter_mode}\0"
         f"{1 if show_pdf_pages else 0}\0{1 if allow_report_pdf_download else 0}\0"
         f"image-sources-v2\0{1 if show_images else 0}\0{1 if show_workflow_images else 0}\0{1 if include_cancelled else 0}"
     )
@@ -276,7 +288,18 @@ def _queue_persisted_recheck(share):
 
     def worker():
         try:
-            _load_one_persisted(payload)
+            refreshed = _load_one_persisted(payload)
+            # A visibility update deletes old persistent variants. Evict rather
+            # than repeatedly serving the orphaned in-memory HTML forever.
+            with _LOCK:
+                stale_tokens = [th for th, item in _TOKEN_HTML.items()
+                                if item.get("variant_key") == key]
+                for th in stale_tokens:
+                    _TOKEN_HTML.pop(th, None)
+                if not refreshed:
+                    _HTML.pop(key, None)
+                    _HTML_CUSTOMERS.pop(key, None)
+                    _HTML_CHECKED_AT.pop(key, None)
         finally:
             with _LOCK:
                 _REFRESHING.discard(key)
@@ -308,7 +331,7 @@ def _hot_shares():
             share, error = _page._validate_share(share)
             if error or not share:
                 continue
-            if share.get("customer_key"):
+            if share.get("customer_key") and isinstance(share.get("order_visibility"), dict):
                 shares.append(share)
     return shares
 
@@ -327,9 +350,27 @@ def _db_shares():
                    WHERE status='active' AND customer_key IS NOT NULL"""
             )
             rows = [get_row_dict(row, cur) for row in cur.fetchall()]
+            # Hydrate every token's visibility policy before constructing HTML.
+            # Do not make a shared, unscoped customer page at startup.
+            cur.execute("""SELECT token_hash, order_number, show_order, show_images,
+                                  show_workflow_images, show_logistics
+                           FROM cloud_share_order_visibility""")
+            policies = {}
+            for record in cur.fetchall():
+                value = get_row_dict(record, cur) or {}
+                th = str(value.get("token_hash") or "").strip().lower()
+                number = str(value.get("order_number") or "").strip()
+                if th and number:
+                    policies.setdefault(th, {})[number] = {
+                        "show_order": bool(value.get("show_order")),
+                        "show_images": value.get("show_images"),
+                        "show_workflow_images": value.get("show_workflow_images"),
+                        "show_logistics": value.get("show_logistics"),
+                    }
         finally:
             conn.close()
         for row in rows:
+            row["order_visibility"] = policies.get(str(row.get("token_hash") or "").strip().lower(), {})
             share, error = _page._validate_share(row)
             if not error and share:
                 result.append(share)
@@ -346,9 +387,9 @@ def _active_shares():
     # Hot memory is authoritative for the startup fast path.  DB rows only add shares
     # that were not present there; they are not required for successful pre-render.
     for share in _hot_shares() + _db_shares():
-        variant = _share_variant(share)
-        if variant[0]:
-            by_variant[variant] = share
+        key = _variant_key(share)
+        if key:
+            by_variant[key] = share
     return list(by_variant.values())
 
 
@@ -495,9 +536,26 @@ def _drop_customer(customer_key):
             _HTML_CHECKED_AT.pop(key, None)
 
 
-def invalidate_customer_html_cache(customer_key):
-    """Drop pre-rendered public HTML for one customer after lightweight data changes."""
+def invalidate_customer_html_cache(customer_key, *, purge_persisted=False):
+    """Invalidate one customer's HTML and optionally its persisted variants.
+
+    A permission update must not leave old HTML in TiDB for another worker to
+    reload. The caller has already committed its policy before calling this.
+    """
     _drop_customer(customer_key)
+    if purge_persisted:
+        _ensure_table()
+        conn = get_db_connection()
+        cur = get_cursor(conn)
+        try:
+            cur.execute(f"DELETE FROM {_TABLE} WHERE customer_key=?",
+                        (str(customer_key or "").strip(),))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
 
 def _cache_space_and_prerender(customer_key, bundle):
