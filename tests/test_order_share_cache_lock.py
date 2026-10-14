@@ -2,6 +2,7 @@
 import ast
 import hashlib
 import io
+import json
 from pathlib import Path
 import threading
 import time
@@ -28,7 +29,7 @@ def load_functions(path, names, scope):
 def cache_scope():
     from test_order_share_links import links
     share_token_hash = links.share_token_hash
-    scope = dict(hashlib=hashlib, share_token_hash=share_token_hash, time=time, _LOCK=threading.RLock(),
+    scope = dict(json=json, hashlib=hashlib, share_token_hash=share_token_hash, time=time, _LOCK=threading.RLock(),
                  _HTML={}, _HTML_CUSTOMERS={}, _HTML_CHECKED_AT={}, _TOKEN_HTML={},
                  _TEMPLATE_HASH='test-template', _TABLE='existing_html_cache',
                  _ensure_table=lambda: None, _ORIGINAL_CACHE_SPACE=lambda *args: None,
@@ -51,8 +52,8 @@ def fake_database(scope, rows):
 class HtmlCacheLockTests(unittest.TestCase):
     def test_background_database_wait_does_not_block_another_public_wall(self):
         scope = cache_scope()
-        target = {'customer_key': 'updated-customer'}
-        visitor = {'customer_key': 'other-customer'}
+        target = {'token_hash': 'a' * 64, 'order_visibility': {}, 'customer_key': 'updated-customer'}
+        visitor = {'token_hash': 'a' * 64, 'order_visibility': {}, 'customer_key': 'other-customer'}
         scope['_memory_put'](target, 'updated HTML')
         scope['_memory_put'](visitor, 'other HTML')
         waiting = threading.Event()
@@ -90,11 +91,11 @@ class HtmlCacheLockTests(unittest.TestCase):
 
     def test_invalidation_removes_all_target_variants_without_database_scan(self):
         scope = cache_scope()
-        variants = [{'customer_key': 'target', 'history_scope': 'current'},
-                    {'customer_key': 'target', 'history_scope': 'all', 'show_images': False}]
+        variants = [{'token_hash': 'a' * 64, 'order_visibility': {}, 'customer_key': 'target', 'history_scope': 'current'},
+                    {'token_hash': 'a' * 64, 'order_visibility': {}, 'customer_key': 'target', 'history_scope': 'all', 'show_images': False}]
         keys = [scope['_memory_put'](share, 'HTML') for share in variants]
-        other_key = scope['_memory_put']({'customer_key': 'other'}, 'other HTML')
-        scope['_TOKEN_HTML']['old-token-hash'] = {'customer_key': 'target', 'variant_key': keys[0]}
+        other_key = scope['_memory_put']({'token_hash': 'a' * 64, 'order_visibility': {}, 'customer_key': 'other'}, 'other HTML')
+        scope['_TOKEN_HTML']['old-token-hash'] = {'token_hash': 'a' * 64, 'order_visibility': {}, 'customer_key': 'target', 'variant_key': keys[0]}
         scope['_active_shares'] = lambda: self.fail('Invalidation performed a database scan')
         scope['_drop_customer']('target')
         for key in keys:
@@ -114,7 +115,7 @@ class HtmlCacheLockTests(unittest.TestCase):
 
     def test_cold_persisted_read_is_also_indexed_for_invalidation(self):
         scope = cache_scope()
-        share = {'customer_key': 'target'}
+        share = {'token_hash': 'a' * 64, 'order_visibility': {}, 'customer_key': 'target'}
         fake_database(scope, [{'html': 'HTML'}])
         self.assertEqual(scope['_load_one_persisted'](share), 'HTML')
         scope['_drop_customer']('target')
