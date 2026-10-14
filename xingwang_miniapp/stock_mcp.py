@@ -340,3 +340,62 @@ def create_stock_mcp(
         allowed_origins=["https://chatgpt.com"],
     )
     return server, server.streamable_http_app(transport_security=security)
+
+
+def create_public_stock_mcp(
+    bridge_query: Callable[[str], Awaitable[dict]],
+):
+    """Public, read-only MCP wrapper matching the already-public /stock surface.
+
+    This exposes ONLY the same allowlisted stock quantities that /stock already
+    returns. It never exposes prices, customers, orders, notes, or write tools.
+    """
+    server = MCPServer("XINGWANG STOCK")
+
+    @server.tool(
+        title="查詢 XINGWANG 商品即時庫存",
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            open_world_hint=False,
+            destructive_hint=False,
+        ),
+    )
+    async def search_stock(
+        product_code: Annotated[
+            str,
+            Field(
+                min_length=2,
+                max_length=40,
+                description="商品編號，例如 1314、120-07",
+            ),
+        ],
+    ) -> dict:
+        """唯讀查詢商品庫存匹數、米數及待到貨；不查客人、不查價格、不改資料。"""
+        product_code = product_code.strip()
+        if not CODE_PATTERN.fullmatch(product_code):
+            return {"ok": False, "code": "INPUT", "error": "商品編號格式不正確"}
+        response = await bridge_query(product_code)
+        normalized = normalize_stock(response, product_code)
+        if normalized.get("ok") is not True:
+            return normalized
+        return {
+            "ok": True,
+            "product_code": normalized["product_code"],
+            "stock_rolls": normalized["stock_rolls"],
+            "stock_meters": normalized["stock_meters"],
+            "stock_rolls_missing": normalized.get("stock_rolls_missing", 0),
+            "stock_meters_missing": normalized.get("stock_meters_missing", 0),
+            "incoming_rolls": normalized.get("incoming_rolls"),
+            "incoming_meters": normalized.get("incoming_meters"),
+            "incoming_boxes": normalized.get("incoming_boxes"),
+            "variants": stock_variant_breakdown(normalized),
+            "source": normalized.get("source"),
+            "as_of": normalized.get("as_of"),
+        }
+
+    from mcp.server.transport_security import TransportSecuritySettings
+    security = TransportSecuritySettings(
+        allowed_hosts=["xingwang-stock-miniapp.onrender.com"],
+        allowed_origins=["https://chatgpt.com"],
+    )
+    return server, server.streamable_http_app(transport_security=security)
