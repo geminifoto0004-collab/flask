@@ -113,6 +113,7 @@ def _reconcile_customer_orders():
                     snapshot_mode = 'invalid'
             finally:
                 conn.close()
+            from services import order_customer_share_snapshot as snapshot_runtime
             return jsonify({"ok": True, "result": {
                 "customer_key": customer_key,
                 "orders": items,
@@ -123,6 +124,8 @@ def _reconcile_customer_orders():
                 "manifest_version": 141,
                 "snapshot_data_mode": snapshot_mode,
                 "snapshot_updated_at": str((snapshot_obj or {}).get('updated_at') or ''),
+                "snapshot_refresh": dict(snapshot_runtime._BUILD_PROGRESS.get(customer_key) or {}),
+                "snapshot_refresh_slots_available": getattr(snapshot_runtime._BUILD_SLOTS, '_value', None),
             }})
 
         if request.path.endswith("/snapshot"):

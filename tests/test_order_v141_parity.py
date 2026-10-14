@@ -58,13 +58,42 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(result['source_payload_hashes']['1007705'], hashlib.sha256(canonical.encode()).hexdigest())
 
 class RefreshTests(unittest.TestCase):
+    def test_source_failures_release_all_refresh_slots(self):
+        def fail(customer): raise RuntimeError('temporary SQL read failure')
+        scope=functions('services/order_customer_share_snapshot.py', {'rebuild_snapshot'},
+            {'threading':threading,'time':time,'_TIMER_LOCK':threading.Lock(),
+             '_BUILD_LOCKS':{},'_BUILD_PROGRESS':{},'_BUILD_SLOTS':threading.BoundedSemaphore(2),
+             '_build_bundle':fail,'_persist_snapshot':lambda *a:None,'_invalidate_local_cache':lambda *a:None})
+        for i in range(3):
+            with self.assertRaisesRegex(RuntimeError, 'SQL read failure'):
+                scope['rebuild_snapshot']('CLIENT')
+        self.assertTrue(scope['_BUILD_SLOTS'].acquire(blocking=False))
+        self.assertTrue(scope['_BUILD_SLOTS'].acquire(blocking=False))
+        self.assertFalse(scope['_BUILD_SLOTS'].acquire(blocking=False))
+
+    def test_blocked_cache_invalidation_cannot_consume_build_slots(self):
+        scope=functions('services/order_customer_share_snapshot.py', {'rebuild_snapshot'},
+            {'threading':threading,'time':time,'_TIMER_LOCK':threading.Lock(),
+             '_BUILD_LOCKS':{},'_BUILD_PROGRESS':{},'_BUILD_SLOTS':threading.BoundedSemaphore(2),
+             '_build_bundle':lambda c: {'source_payload_hashes':{}},'_persist_snapshot':lambda *a:None,
+             '_invalidate_local_cache':lambda *a: None})
+        def invalidate(customer):
+            self.assertTrue(scope['_BUILD_SLOTS'].acquire(blocking=False))
+            self.assertTrue(scope['_BUILD_SLOTS'].acquire(blocking=False))
+            scope['_BUILD_SLOTS'].release();scope['_BUILD_SLOTS'].release()
+            raise RuntimeError('cache invalidation busy')
+        scope['_invalidate_local_cache']=invalidate
+        with self.assertRaisesRegex(RuntimeError, 'invalidation busy'):
+            scope['rebuild_snapshot']('CLIENT')
+        self.assertTrue(scope['_BUILD_LOCKS']['CLIENT'].acquire(blocking=False))
+
     def test_busy_customer_does_not_hold_a_request_indefinitely(self):
         entered=threading.Event(); release=threading.Event()
         def build(customer):
             entered.set(); release.wait(2); return {'source_payload_hashes': {}, 'data_mode':'test'}
         scope=functions('services/order_customer_share_snapshot.py', {'rebuild_snapshot'},
             {'threading':threading,'time':time,'_TIMER_LOCK':threading.Lock(),
-             '_BUILD_LOCKS':{},'_BUILD_SLOTS':threading.BoundedSemaphore(2),
+             '_BUILD_LOCKS':{},'_BUILD_PROGRESS':{},'_BUILD_SLOTS':threading.BoundedSemaphore(2),
              '_build_bundle':build,'_persist_snapshot':lambda *a:None,'_invalidate_local_cache':lambda *a:None})
         worker=threading.Thread(target=scope['rebuild_snapshot'],args=('CLIENT',));worker.start()
         try:

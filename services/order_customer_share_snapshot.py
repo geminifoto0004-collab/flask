@@ -31,6 +31,7 @@ _REFRESH_TIMERS = {}
 _BUILD_SLOTS = threading.BoundedSemaphore(2)
 _BUILD_LOCKS = {}
 _BUILD_FAILURES = {}
+_BUILD_PROGRESS = {}
 
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_SYNC_ORDER = _cloud_service.sync_order
@@ -216,21 +217,23 @@ def _invalidate_local_cache(customer_key):
     customer_key = str(customer_key or "").strip()
     if not customer_key:
         return
+    if not _page._cache_lock.acquire(timeout=0.25):
+        raise RuntimeError('snapshot cache invalidation busy; retry shortly')
     try:
-        with _page._cache_lock:
-            _page._space_cache.pop(customer_key, None)
-            stale_tokens = []
-            for token, item in list(_page._token_cache.items()):
-                try:
-                    share = item[1]
-                except Exception:
-                    continue
-                if str((share or {}).get("customer_key") or "").strip() == customer_key:
-                    stale_tokens.append(token)
-            for token in stale_tokens:
-                _page._token_cache.pop(token, None)
-    except Exception:
-        pass
+        _page._space_cache.pop(customer_key, None)
+        stale_tokens = []
+        for token, item in list(_page._token_cache.items()):
+            try:
+                share = item[1]
+            except Exception:
+                continue
+            if str((share or {}).get("customer_key") or "").strip() == customer_key:
+                stale_tokens.append(token)
+        for token in stale_tokens:
+            _page._token_cache.pop(token, None)
+    finally:
+        _page._cache_lock.release()
+
 
 
 def rebuild_snapshot(customer_key):
@@ -249,19 +252,28 @@ def rebuild_snapshot(customer_key):
         slot = _BUILD_SLOTS.acquire(timeout=0.25)
         if not slot:
             raise RuntimeError('snapshot refresh capacity busy; retry shortly')
+        _BUILD_PROGRESS[customer_key] = {'stage': 'source_read', 'started_epoch': time.time()}
         print(f'[ORDER Snapshot] build start customer={customer_key}', flush=True)
         bundle = _build_bundle(customer_key)
+        _BUILD_PROGRESS[customer_key]['stage'] = 'persist'
         print(f'[ORDER Snapshot] source ready customer={customer_key} '
               f'hashes={len((bundle or {}).get("source_payload_hashes") or {})} '
               f'mode={(bundle or {}).get("data_mode")} elapsed_s={time.monotonic()-started:.2f}', flush=True)
         _persist_snapshot(customer_key, bundle)
         print(f'[ORDER Snapshot] persisted customer={customer_key} elapsed_s={time.monotonic()-started:.2f}', flush=True)
-        _invalidate_local_cache(customer_key)
+    except Exception:
+        customer_lock.release()
+        raise
     finally:
         if slot:
             _BUILD_SLOTS.release()
+    try:
+        _BUILD_PROGRESS[customer_key]['stage'] = 'invalidate_cache'
+        _invalidate_local_cache(customer_key)
+        _BUILD_PROGRESS[customer_key]['stage'] = 'complete'
+        return bundle
+    finally:
         customer_lock.release()
-    return bundle
 
 
 def _refresh_worker(customer_key):
