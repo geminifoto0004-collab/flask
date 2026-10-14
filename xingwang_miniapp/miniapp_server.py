@@ -570,8 +570,15 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
         return HTMLResponse(contents, headers=noindex_headers)
     return JSONResponse(clean, headers=noindex_headers)
 
-if os.environ.get("XW_STOCK_MCP_ENABLED", "") == "1":
+if os.environ.get("XW_STOCK_MCP_PUBLIC", "") == "1":
+    from xingwang_miniapp.stock_mcp import create_public_stock_mcp
+    stock_mcp_service, stock_mcp_asgi = create_public_stock_mcp(
+        _relay_readonly_stock_with_reconnect_retry
+    )
+    # Mount LAST so /stock, /api/query, /bridge and the Mini App remain unchanged.
+    app.mount("/", stock_mcp_asgi, name="xingwang-stock-mcp")
+elif os.environ.get("XW_STOCK_MCP_ENABLED", "") == "1":
     from xingwang_miniapp.stock_mcp import create_stock_mcp
     stock_mcp_service, stock_mcp_asgi = create_stock_mcp(relay_stock_mcp)
-    # Mount LAST so /api/query, /bridge and the Mini App remain unchanged.
+    # OAuth-protected mode remains available for a future private deployment.
     app.mount("/", stock_mcp_asgi, name="xingwang-stock-mcp")
