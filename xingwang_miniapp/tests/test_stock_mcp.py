@@ -715,9 +715,58 @@ def test_stock_trace_proves_fresh_request_and_reports_errors(monkeypatch):
     assert all(datetime.fromisoformat(value).tzinfo is not None for value in [
         first["served_at_utc"], third["served_at_utc"],
     ])
-    assert one.headers["cache-control"].startswith("no-store")
+    assert "no-store" in one.headers["cache-control"]
     assert "noindex" in one.headers["x-robots-tag"]
     assert third["code"] == "LOCAL_API"
+
+
+
+def test_stock_path_alias_uses_same_live_worker_and_trace(monkeypatch):
+    """Path-style URLs and old query URLs both fetch the worker afresh."""
+    import importlib
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("BRIDGE_SHARED_SECRET", "ci_only_bridge_secret_1234567890123")
+    server = importlib.import_module("xingwang_miniapp.miniapp_server")
+    monkeypatch.setattr(server, "public_stock_recent_calls", [])
+    calls = []
+
+    async def fake_worker(code):
+        calls.append(code)
+        if code == "FAIL":
+            return {"ok": False, "code": "LOCAL_API"}
+        count = len(calls)
+        return {"ok": True, "source": "home", "data": {
+            "product_code": code, "stock_rolls": count, "stock_meters": count * 70,
+            "incoming_boxes": 1, "incoming_rolls": None, "incoming_meters": None,
+            "matches": [{"code": code + "-A", "stock_rolls": count, "stock_meters": count * 70}],
+            "incoming_matches": [{"code": code + "-A", "incoming_boxes": 1}],
+            "price": "MUST_NOT_LEAK",
+        }}
+
+    monkeypatch.setattr(server, "relay_stock_mcp", fake_worker)
+    with TestClient(server.app, base_url="https://xingwang-stock-miniapp.onrender.com") as client:
+        first = client.get("/stock/1268")
+        second = client.get("/stock/1268")
+        old = client.get("/stock", params={"code": "1268"})
+        dashed = client.get("/stock/12-225", params={"format": "html", "nonce": "probe-20261014"})
+        failure = client.get("/stock/FAIL")
+        invalid = client.get("/stock/%40bad")
+
+    assert [first.status_code, second.status_code, old.status_code, dashed.status_code] == [200] * 4
+    assert calls == ["1268", "1268", "1268", "12-225", "FAIL"]
+    assert first.json()["stock_rolls"] == 1
+    assert second.json()["stock_rolls"] == 2
+    assert old.json()["stock_rolls"] == 3
+    assert len(set([first.json()["request_id"], second.json()["request_id"],
+                    old.json()["request_id"], dashed.headers["x-xw-stock-request-id"],
+                    failure.json()["request_id"]])) == 5
+    assert first.json()["request_id"] == first.headers["x-xw-stock-request-id"]
+    assert "12-225" in dashed.text and "probe-20261014" in dashed.text
+    assert "MUST_NOT_LEAK" not in dashed.text
+    assert "no-store" in dashed.headers["cache-control"]
+    assert failure.status_code == 503 and failure.json()["code"] == "LOCAL_API"
+    assert invalid.status_code == 400
 
 
 def test_short_same_role_reconnect_preserves_lease_and_safe_cross_role_delay(monkeypatch):
