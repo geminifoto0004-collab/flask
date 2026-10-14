@@ -30,6 +30,7 @@ _TIMER_LOCK = threading.Lock()
 _REFRESH_TIMERS = {}
 _BUILD_SLOTS = threading.BoundedSemaphore(2)
 _BUILD_LOCKS = {}
+_BUILD_FAILURES = {}
 
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_SYNC_ORDER = _cloud_service.sync_order
@@ -240,25 +241,52 @@ def rebuild_snapshot(customer_key):
         customer_lock = _BUILD_LOCKS.setdefault(customer_key, threading.Lock())
     # Concurrent batch/image callbacks cannot overwrite a newer snapshot with
     # a slower older build. Bound TiDB reads across customers as well.
-    with customer_lock, _BUILD_SLOTS:
+    if not customer_lock.acquire(timeout=0.25):
+        raise RuntimeError('snapshot refresh already running for this customer')
+    slot = False
+    started = time.monotonic()
+    try:
+        slot = _BUILD_SLOTS.acquire(timeout=0.25)
+        if not slot:
+            raise RuntimeError('snapshot refresh capacity busy; retry shortly')
+        print(f'[ORDER Snapshot] build start customer={customer_key}', flush=True)
         bundle = _build_bundle(customer_key)
+        print(f'[ORDER Snapshot] source ready customer={customer_key} '
+              f'hashes={len((bundle or {}).get("source_payload_hashes") or {})} '
+              f'mode={(bundle or {}).get("data_mode")} elapsed_s={time.monotonic()-started:.2f}', flush=True)
         _persist_snapshot(customer_key, bundle)
+        print(f'[ORDER Snapshot] persisted customer={customer_key} elapsed_s={time.monotonic()-started:.2f}', flush=True)
         _invalidate_local_cache(customer_key)
+    finally:
+        if slot:
+            _BUILD_SLOTS.release()
+        customer_lock.release()
     return bundle
 
 
 def _refresh_worker(customer_key):
+    retry_delay = 0
     try:
         rebuild_snapshot(customer_key)
+        _BUILD_FAILURES.pop(customer_key, None)
     except Exception as exc:
-        print(
-            f"[WARN] ORDER share snapshot refresh failed for {customer_key}: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        attempts = _BUILD_FAILURES.get(customer_key, 0) + 1
+        _BUILD_FAILURES[customer_key] = attempts
+        retry_delay = min(300, 5 * 2 ** min(attempts - 1, 6))
+        if attempts == 1 or attempts % 5 == 0:
+            print(f'[ORDER Snapshot] refresh waiting customer={customer_key} '
+                  f'retry_s={retry_delay} reason={type(exc).__name__}: {exc}', flush=True)
     finally:
         with _TIMER_LOCK:
             if _REFRESH_TIMERS.get(customer_key) is threading.current_thread():
                 _REFRESH_TIMERS.pop(customer_key, None)
+                if retry_delay:
+                    # Schedule under the timer lock so a newer mutation
+                    # cannot be overwritten by this retry.
+                    timer = threading.Timer(retry_delay, _refresh_worker, args=(customer_key,))
+                    timer.daemon = True
+                    _REFRESH_TIMERS[customer_key] = timer
+                    timer.start()
 
 
 def queue_snapshot_refresh(customer_key, delay=1.5):
@@ -464,6 +492,7 @@ def _backfill_active_shares():
                     f"[WARN] ORDER share snapshot backfill failed for {key}: "
                     f"{type(exc).__name__}: {exc}"
                 )
+                queue_snapshot_refresh(key, delay=5)
     except Exception as exc:
         print(f"[WARN] ORDER share snapshot startup skipped: {type(exc).__name__}: {exc}")
 

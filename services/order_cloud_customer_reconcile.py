@@ -100,12 +100,17 @@ def _reconcile_customer_orders():
                         })
                 # Read-only verification: a successful logical ORDER upsert does
                 # not imply the customer-facing persisted snapshot is refreshed.
-                cur.execute("SELECT payload FROM cloud_customer_share_snapshot "
+                cur.execute("SELECT payload, updated_at FROM cloud_customer_share_snapshot "
                             "WHERE customer_key=? LIMIT 1", (customer_key,))
                 snapshot_row = cur.fetchone()
                 snapshot_obj = get_row_dict(snapshot_row, cur) if snapshot_row else {}
                 snapshot_numbers, snapshot_cards, snapshot_hashes = _snapshot_manifest(
                     (snapshot_obj or {}).get("payload"))
+                try:
+                    snapshot_meta = json.loads((snapshot_obj or {}).get('payload') or '{}')
+                    snapshot_mode = snapshot_meta.get('data_mode')
+                except (ValueError, TypeError, AttributeError):
+                    snapshot_mode = 'invalid'
             finally:
                 conn.close()
             return jsonify({"ok": True, "result": {
@@ -116,6 +121,8 @@ def _reconcile_customer_orders():
                 "snapshot_card_keys": snapshot_cards,
                 "snapshot_payload_hashes": snapshot_hashes,
                 "manifest_version": 141,
+                "snapshot_data_mode": snapshot_mode,
+                "snapshot_updated_at": str((snapshot_obj or {}).get('updated_at') or ''),
             }})
 
         if request.path.endswith("/snapshot"):

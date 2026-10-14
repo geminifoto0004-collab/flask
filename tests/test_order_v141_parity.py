@@ -4,6 +4,9 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+import threading
+import time
+from types import SimpleNamespace
 from test_order_share_cache_lock import cache_scope
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,5 +56,43 @@ class ParityTests(unittest.TestCase):
         result = scope['_build_bundle']('CLIENT A')
         canonical = json.dumps(source, ensure_ascii=False, sort_keys=True, separators=(',', ':'), default=str)
         self.assertEqual(result['source_payload_hashes']['1007705'], hashlib.sha256(canonical.encode()).hexdigest())
+
+class RefreshTests(unittest.TestCase):
+    def test_busy_customer_does_not_hold_a_request_indefinitely(self):
+        entered=threading.Event(); release=threading.Event()
+        def build(customer):
+            entered.set(); release.wait(2); return {'source_payload_hashes': {}, 'data_mode':'test'}
+        scope=functions('services/order_customer_share_snapshot.py', {'rebuild_snapshot'},
+            {'threading':threading,'time':time,'_TIMER_LOCK':threading.Lock(),
+             '_BUILD_LOCKS':{},'_BUILD_SLOTS':threading.BoundedSemaphore(2),
+             '_build_bundle':build,'_persist_snapshot':lambda *a:None,'_invalidate_local_cache':lambda *a:None})
+        worker=threading.Thread(target=scope['rebuild_snapshot'],args=('CLIENT',));worker.start()
+        try:
+            self.assertTrue(entered.wait(1)); start=time.monotonic()
+            with self.assertRaisesRegex(RuntimeError,'already running'):
+                scope['rebuild_snapshot']('CLIENT')
+            self.assertLess(time.monotonic()-start,.5)
+        finally: release.set();worker.join(2)
+        self.assertTrue(scope['_BUILD_SLOTS'].acquire(blocking=False))
+        scope['_BUILD_SLOTS'].release()
+
+    def test_failed_refresh_keeps_a_retry_and_preserves_newer_mutations(self):
+        current=object(); scheduled=[]
+        class Timer:
+            def __init__(self,delay,fn,args): self.delay=delay;self.fn=fn;self.args=args;scheduled.append(self)
+            def start(self): self.started=True
+        def fail(customer): raise RuntimeError('temporary read timeout')
+        scope=functions('services/order_customer_share_snapshot.py', {'_refresh_worker'},
+            {'threading':SimpleNamespace(current_thread=lambda:current,Timer=Timer),
+             '_TIMER_LOCK':threading.Lock(),'_REFRESH_TIMERS':{'CLIENT':current},
+             '_BUILD_FAILURES':{},'rebuild_snapshot':fail})
+        scope['_refresh_worker']('CLIENT')
+        self.assertEqual(scheduled[0].delay,5)
+        self.assertIs(scope['_REFRESH_TIMERS']['CLIENT'],scheduled[0])
+        self.assertTrue(scheduled[0].started)
+        newer=object();scope['_REFRESH_TIMERS']['CLIENT']=newer
+        scope['_refresh_worker']('CLIENT')
+        self.assertIs(scope['_REFRESH_TIMERS']['CLIENT'],newer)
+        self.assertEqual(len(scheduled),1)
 
 if __name__ == '__main__': unittest.main()
