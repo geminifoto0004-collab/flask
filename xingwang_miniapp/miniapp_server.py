@@ -84,8 +84,10 @@ async def nocache(request:Request,call_next):
             trace_id, response.status_code,
             round((time.monotonic() - started) * 1000),
         )
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Cache-Control"] = "private, no-store, no-cache, max-age=0, must-revalidate"
     response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["Surrogate-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
@@ -427,6 +429,13 @@ async def stock_public(request: Request, code: str = ""):
             raise HTTPException(429, "Public stock query limit reached")
         public_stock_recent_calls.append(now)
 
+    # Optional client-supplied nonce is echoed for end-to-end freshness checks.
+    # It never bypasses rate limits, never changes the stock lookup, and cannot
+    # force third-party AI web tools to make a network request.
+    nonce = request.query_params.get("nonce", "")
+    if nonce and (len(nonce) > 64 or not all(ch.isalnum() or ch in "-_" for ch in nonce)):
+        raise HTTPException(400, "Invalid nonce")
+
     raw = await _relay_readonly_stock_with_reconnect_retry(code)
     normalized = normalize_stock(raw, code)
     served_at_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -434,6 +443,7 @@ async def stock_public(request: Request, code: str = ""):
 
     noindex_headers = {
         "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "X-XW-Stock-Nonce": nonce,
         "Access-Control-Allow-Origin": "*",
     }
 
@@ -447,6 +457,7 @@ async def stock_public(request: Request, code: str = ""):
                 "code": upstream_code,
                 "error": "STOCK_UNAVAILABLE",
                 "request_id": request_id,
+                "nonce": nonce,
                 "served_at_utc": served_at_utc,
                 "bridge_attempts": raw.get("bridge_attempts", 1),
             },
@@ -458,6 +469,7 @@ async def stock_public(request: Request, code: str = ""):
         "ok": True,
         "product_code": code,
         "request_id": request_id,
+        "nonce": nonce,
         "served_at_utc": served_at_utc,
         "bridge_attempts": raw.get("bridge_attempts", 1),
         "stock_rolls": normalized["stock_rolls"],
@@ -498,6 +510,7 @@ async def stock_public(request: Request, code: str = ""):
             f"<p>資料來源：{safe(clean['source'])}</p>"
             f"<p>查詢時間：{safe(clean['as_of'])}</p>"
             f"<p>本次請求編號：{safe(clean['request_id'])}</p>"
+            f"<p>本次驗證參數 nonce：{safe(clean['nonce'])}</p>"
             f"<p>Render 回傳時間 (UTC)：{safe(clean['served_at_utc'])}</p>"
             f"<p>橋接查詢次數：{safe(clean['bridge_attempts'])}</p>"
             + _render_stock_variant_table(clean["variants"])
