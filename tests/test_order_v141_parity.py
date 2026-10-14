@@ -6,6 +6,7 @@ from pathlib import Path
 import unittest
 import threading
 import time
+import os
 from types import SimpleNamespace
 from test_order_share_cache_lock import cache_scope
 
@@ -58,6 +59,33 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(result['source_payload_hashes']['1007705'], hashlib.sha256(canonical.encode()).hexdigest())
 
 class RefreshTests(unittest.TestCase):
+    @unittest.skipUnless(hasattr(os, 'fork'), 'Gunicorn fork test requires POSIX')
+    def test_preloaded_worker_does_not_inherit_occupied_refresh_slots(self):
+        scope=functions('services/order_customer_share_snapshot.py', {'_reset_snapshot_coordination_after_fork'},
+            {'threading':threading,'sys':__import__('sys'),'_page':SimpleNamespace(_cache_lock=threading.RLock(),
+                                                         _space_cache={'CLIENT': 'completed data'})})
+        slots=threading.BoundedSemaphore(2); slots.acquire(); slots.acquire()
+        scope.update(_BUILD_SLOTS=slots,_BUILD_LOCKS={'CLIENT':threading.Lock()},
+                     _REFRESH_TIMERS={'CLIENT':object()},_BUILD_PROGRESS={'CLIENT':{'stage':'persist'}},
+                     _BUILD_FAILURES={'CLIENT':1},_INIT_LOCK=threading.Lock(),_TIMER_LOCK=threading.Lock())
+        os.register_at_fork(after_in_child=scope['_reset_snapshot_coordination_after_fork'])
+        reader,writer=os.pipe()
+        pid=os.fork()
+        if pid==0:
+            try:
+                os.close(reader)
+                result={'slots':scope['_BUILD_SLOTS']._value,'timers':len(scope['_REFRESH_TIMERS']),
+                        'locks':len(scope['_BUILD_LOCKS']),'progress':len(scope['_BUILD_PROGRESS']),
+                        'data':scope['_page']._space_cache}
+                os.write(writer,json.dumps(result).encode())
+            finally: os._exit(0)
+        os.close(writer)
+        with os.fdopen(reader) as pipe: result=json.load(pipe)
+        _,status=os.waitpid(pid,0)
+        self.assertEqual(status,0)
+        self.assertEqual(result,{'slots':2,'timers':0,'locks':0,'progress':0,'data':{'CLIENT':'completed data'}})
+        self.assertEqual(scope['_BUILD_SLOTS']._value,0,'parent coordination stays independent')
+
     def test_source_failures_release_all_refresh_slots(self):
         def fail(customer): raise RuntimeError('temporary SQL read failure')
         scope=functions('services/order_customer_share_snapshot.py', {'rebuild_snapshot'},

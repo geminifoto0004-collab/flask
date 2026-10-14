@@ -15,6 +15,8 @@ from services.order_share_links import share_token_hash
 import copy
 import hashlib
 import json
+import os
+import sys
 import threading
 import time
 
@@ -32,6 +34,50 @@ _BUILD_SLOTS = threading.BoundedSemaphore(2)
 _BUILD_LOCKS = {}
 _BUILD_FAILURES = {}
 _BUILD_PROGRESS = {}
+
+
+def _reset_snapshot_coordination_after_fork():
+    """Preloaded daemon threads do not survive Gunicorn's fork.
+
+    Preserve completed data caches, but never inherit their occupied locks,
+    semaphore permits, timer handles or in-flight build state into the worker.
+    This callback performs no network access and starts no threads.
+    """
+    global _INIT_LOCK, _TIMER_LOCK, _BUILD_SLOTS, _BUILD_LOCKS
+    global _REFRESH_TIMERS, _BUILD_FAILURES, _BUILD_PROGRESS
+    _INIT_LOCK = threading.Lock()
+    _TIMER_LOCK = threading.Lock()
+    _BUILD_SLOTS = threading.BoundedSemaphore(2)
+    _BUILD_LOCKS = {}
+    _REFRESH_TIMERS = {}
+    _BUILD_FAILURES = {}
+    _BUILD_PROGRESS = {}
+    _page._cache_lock = threading.RLock()
+    # These modules may also have prewarmed under daemon-owned locks. Resolve
+    # already-loaded modules only: importing or doing I/O in a fork hook is unsafe.
+    for name, attributes in (
+        ('services.order_share_render_cache', ('_LOCK', '_TABLE_LOCK')),
+        ('services.order_public_share_fast', ('_cache_lock', '_share_columns_lock')),
+        ('services.order_share_visibility_live_patch', ('_LOCK',)),
+        ('services.order_share_image_source_patch', ('_LOCK',)),
+        ('services.order_share_thumb_metadata_patch', ('_B2_RECOVERY_LOCK', '_B2_RECOVERY_SCHEDULE_LOCK')),
+    ):
+        module = sys.modules.get(name)
+        if module is not None:
+            for attribute in attributes:
+                if hasattr(module, attribute):
+                    setattr(module, attribute, threading.RLock())
+    render = sys.modules.get('services.order_share_render_cache')
+    if render is not None:
+        render._REFRESHING = set()
+    recovery = sys.modules.get('services.order_share_thumb_metadata_patch')
+    if recovery is not None:
+        recovery._B2_RECOVERY_PENDING = set()
+        recovery._B2_RECOVERY_THREAD = None
+
+
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=_reset_snapshot_coordination_after_fork)
 
 _ORIGINAL_LOAD_PAGE_DATA = _page._load_page_data
 _ORIGINAL_SYNC_ORDER = _cloud_service.sync_order
