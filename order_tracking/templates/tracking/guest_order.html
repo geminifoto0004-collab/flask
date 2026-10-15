@@ -13,6 +13,8 @@
     </script>
     <script src="{{ url_for('tracking_bp.static', filename='js/ui_i18n.js') }}?v={{ STATIC_VER }}"></script>
     <script src="{{ url_for('tracking_bp.static', filename='js/theme.js') }}?v={{ STATIC_VER }}"></script>
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/pdf_documents.css') }}?v=142">
+<script defer src="{{ url_for('tracking_bp.static', filename='js/pdf_documents.js') }}?v=142"></script>
 </head>
 <body data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}">
 <div class="guest-shell">
@@ -48,10 +50,11 @@
         <p data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</p>
     </section>
 
-    {% if order.images %}
+    {% set ordinary_images = order.images | rejectattr('media_type', 'equalto', 'pdf_page') | list %}
+    {% if ordinary_images %}
     <div class="guest-gallery-shell">
-        <div class="guest-gallery" aria-label="Imágenes del pedido" data-guest-detail-gallery data-image-count="{{ order.images|length }}">
-            {% for image in order.images %}
+        <div class="guest-gallery" aria-label="Imágenes del pedido" data-guest-detail-gallery data-image-count="{{ ordinary_images|length }}">
+            {% for image in ordinary_images %}
             <div class="guest-slide">
                 <img {% if loop.index <= 2 %}src="{{ image.preview_url or image.url }}"{% else %}data-src="{{ image.preview_url or image.url }}"{% endif %}
                      data-full="{{ image.url }}"
@@ -62,9 +65,11 @@
             </div>
             {% endfor %}
         </div>
-        {% if order.images|length > 1 %}<button type="button" class="guest-web-nav guest-detail-prev" data-detail-nav="-1" aria-label="Previous image">‹</button><button type="button" class="guest-web-nav guest-detail-next" data-detail-nav="1" aria-label="Next image">›</button>{% endif %}
+        {% if ordinary_images|length > 1 %}<button type="button" class="guest-web-nav guest-detail-prev" data-detail-nav="-1" aria-label="Previous image">‹</button><button type="button" class="guest-web-nav guest-detail-next" data-detail-nav="1" aria-label="Next image">›</button>{% endif %}
     </div>
     {% endif %}
+
+    {% include 'tracking/_guest_pdf_documents.html' %}
 
     <section class="guest-panel">
         <h2 data-i18n="guest.order_info">Información del pedido</h2>

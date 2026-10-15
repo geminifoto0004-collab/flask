@@ -41,6 +41,8 @@
         else window.__guestPendingDesktopDetailUrl = card.href;
     }, false);
     </script>
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/pdf_documents.css') }}?v=142">
+<script defer src="{{ url_for('tracking_bp.static', filename='js/pdf_documents.js') }}?v=142"></script>
 </head>
 <body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}" data-guest-pickup-policy="all-batches-v1">
 <!--
@@ -214,8 +216,8 @@ SOFTWARE.
                     {# UI-only ordering: salesperson/workflow real images first, then supervisor/order images, PDF pages last. #}
                     {% set workflow_images = order.images | selectattr('_source_kind', 'equalto', 'workflow') | selectattr('media_type', 'equalto', 'image') | list %}
                     {% set order_images = order.images | selectattr('_source_kind', 'equalto', 'order') | selectattr('media_type', 'equalto', 'image') | list %}
-                    {% set workflow_pdf = order.images | selectattr('_source_kind', 'equalto', 'workflow') | selectattr('media_type', 'equalto', 'pdf_page') | list %}
-                    {% set order_pdf = order.images | selectattr('_source_kind', 'equalto', 'order') | selectattr('media_type', 'equalto', 'pdf_page') | list %}
+                    {% set workflow_pdf = order.images | selectattr('_source_kind', 'equalto', 'workflow') | selectattr('media_type', 'equalto', 'pdf_page') | selectattr('pdf_page_number', 'equalto', 1) | list %}
+                    {% set order_pdf = order.images | selectattr('_source_kind', 'equalto', 'order') | selectattr('media_type', 'equalto', 'pdf_page') | selectattr('pdf_page_number', 'equalto', 1) | list %}
                     {% set display_images = workflow_images + order_images + workflow_pdf + order_pdf %}
                     <div class="guest-cover-track" data-guest-carousel data-image-count="{{ display_images|length }}">
                         {% for image in display_images %}
@@ -226,7 +228,7 @@ SOFTWARE.
                                  loading="{% if loop.first and card_loop.index <= 4 %}eager{% else %}lazy{% endif %}"
                                  decoding="async"{% if loop.first and card_loop.index <= 2 %} fetchpriority="high"{% endif %}>
                             {% if image.media_type == 'pdf_page' %}
-                            <span class="guest-cover-pdf">PDF {{ image.pdf_page_number }}/{{ image.pdf_page_count }}</span>
+                            <span class="guest-cover-pdf">{{ image.document_name or image.name }} · PDF {{ image.pdf_page_number }}/{{ image.pdf_page_count }}</span>
                             {% endif %}
                         </span>
                         {% endfor %}
@@ -991,16 +993,18 @@ document.addEventListener('error', function (event) {
             const doc = new DOMParser().parseFromString(html, 'text/html');
             const orderHead = doc.querySelector('.guest-order-head');
             const galleryShell = doc.querySelector('.guest-gallery-shell');
-            const panels = Array.from(doc.querySelectorAll('.guest-panel'));
+            const documents = doc.querySelector('[data-pdf-documents]');
+            const panels = Array.from(doc.querySelectorAll('.guest-panel:not(.pdf-documents)'));
             if (!orderHead && !galleryShell && !panels.length) throw new Error('Invalid order detail');
 
             if (galleryShell) media.appendChild(galleryShell.cloneNode(true));
-            else {
+            else if (!documents) {
                 const empty = document.createElement('div');
                 empty.className = 'guest-desktop-detail-no-media';
                 empty.textContent = (window.getTrackingLanguage?.() === 'zh_cn') ? '此订单没有图片' : 'Este pedido no tiene imágenes';
                 media.appendChild(empty);
             }
+            if (documents) media.appendChild(documents.cloneNode(true));
             if (orderHead) info.appendChild(orderHead.cloneNode(true));
             panels.forEach(section => info.appendChild(section.cloneNode(true)));
 

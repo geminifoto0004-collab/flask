@@ -49,5 +49,11 @@ def filter_assets_in_space(space, settings):
     if isinstance(space, dict):
         for order in space.get('orders') or []:
             if isinstance(order, dict):
-                order['assets'] = [a for a in order.get('assets') or [] if asset_allowed(a, settings)]
+                pdf_shas = {str(p.get('sha256') or '') for d in order.get('documents') or [] for p in d.get('pages') or []}
+                all_pdf_shas = set(order.get('pdf_page_hashes') or []) | pdf_shas
+                for asset in order.get('assets') or []:
+                    if str(asset.get('sha256') or '') in all_pdf_shas:
+                        asset['asset_kind'] = 'PDF_PAGE'
+                order['assets'] = [a for a in order.get('assets') or [] if asset_allowed(a, settings) and (str(a.get('sha256') or '') not in all_pdf_shas or str(a.get('sha256') or '') in pdf_shas)]
+                order['documents'] = [d for d in order.get('documents') or [] if asset_allowed({'order_number': order.get('order_number'), 'workflow_key': d.get('workflow_key'), 'asset_kind': 'PDF_PAGE'}, settings)]
     return space

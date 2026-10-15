@@ -9,6 +9,7 @@ from __future__ import annotations
 from services.order_share_links import share_token_hash
 
 import copy
+import json
 import hashlib
 import threading
 import time
@@ -203,10 +204,25 @@ def _asset_for_share(token, asset_key):
     try:
         settings = _settings(token)
         share = dict(share); share.update(settings)
+        if asset and not _bool_default(settings.get('show_pdf_pages'), True):
+            conn = get_db_connection(); cur = get_cursor(conn)
+            try:
+                cur.execute('SELECT render_payload FROM cloud_orders WHERE order_number=? AND customer_key=? LIMIT 1',
+                            (asset.get('order_number'), asset.get('customer_key') or share.get('customer_key')))
+                row = cur.fetchone()
+                raw = get_row_dict(row, cur) if row else {}
+                payload = raw.get('render_payload') or {}
+                if isinstance(payload, (str, bytes)):
+                    payload = json.loads(payload)
+                shas = {str(p.get('sha256') or '') for d in payload.get('documents') or [] for p in d.get('pages') or []}
+                if str(asset.get('sha256') or '') in (shas | set(payload.get('pdf_page_hashes') or [])):
+                    asset = dict(asset, asset_kind='PDF_PAGE')
+            finally:
+                conn.close()
         if not _asset_allowed(asset, settings):
             return share, None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
     except Exception:
-        pass
+        return share, None, Response('Servicio temporalmente no disponible.', 503, mimetype='text/plain')
     return share, asset, error
 
 

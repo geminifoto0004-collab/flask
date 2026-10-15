@@ -103,15 +103,40 @@ def _images(order, workflow, token):
     else:
         groups = [("order", assets)]
     result = []
+    documents = order.get('documents') or []
+    document_shas = set(order.get('pdf_page_hashes') or []) | {str(p.get('sha256') or '') for d in documents for p in d.get('pages') or []}
     for kind, rows in groups:
         for asset in rows:
+            if str(asset.get('sha256') or '') in document_shas:
+                continue
             url = _route(token, asset)
             if url:
                 result.append({
-                    "name": str(asset.get("display_name") or asset.get("asset_key") or "Imagen"),
-                    "media_type": "image", "pdf_page_number": 0, "pdf_page_count": 0,
-                    "url": url, "preview_url": url, "_source_kind": kind,
+                    'name': str(asset.get('display_name') or 'Imagen'),
+                    'media_type': 'image', 'pdf_page_number': 0, 'pdf_page_count': 0,
+                    'url': url, 'preview_url': url, '_source_kind': kind,
                 })
+        by_sha = {str(a.get('sha256') or ''): a for a in rows}
+        for doc in sorted(documents, key=lambda d: (str(d.get('uploaded_at') or ''), str(d.get('id') or '')), reverse=True):
+            doc_workflow = str(doc.get('workflow_key') or '')
+            if (kind == 'workflow') != bool(doc_workflow):
+                continue
+            if doc_workflow and doc_workflow not in wf_keys:
+                continue
+            for page in sorted(doc.get('pages') or [], key=lambda p: int(p.get('page') or 0)):
+                asset = by_sha.get(str(page.get('sha256') or ''))
+                if not asset:
+                    continue
+                url = _route(token, asset)
+                result.append({
+                    'name': str(doc.get('filename') or 'PDF'), 'document_name': str(doc.get('filename') or 'PDF'),
+                    'document_id': str(doc.get('id') or doc.get('content_hash') or ''),
+                    'uploaded_at': str(doc.get('uploaded_at') or ''),
+                    'media_type': 'pdf_page', 'pdf_page_number': int(page.get('page') or 0),
+                    'pdf_page_count': int(doc.get('page_count') or 0),
+                    'url': url, 'preview_url': url.replace('/image/', '/thumb/', 1), '_source_kind': kind,
+                })
+
     return result
 
 
@@ -205,6 +230,10 @@ def _card(order, workflow, token, retired=None):
         "images": _images(order, workflow, token),
         "detail_url": f"/share/{token}/order/{quote(detail_key, safe='')}",
     }
+    card['documents'] = [dict(d, available_pages=sum(1 for image in card['images']
+                          if image.get('document_id') == d.get('id')))
+                         for d in order.get('documents') or []
+                         if not d.get('workflow_key') or str(d.get('workflow_key')) in {wf_no, str((workflow or {}).get('workflow_key') or '')}]
     if workflow:
         apply_shipping_summary(card, derive_shipping_summary(workflow.get("timeline") or []))
     if retired:
@@ -261,6 +290,8 @@ def _fingerprint():
         ORDER / "status_definitions.py", STATIC / "css" / "guest.css",
         STATIC / "js" / "ui_i18n.js", STATIC / "js" / "theme.js",
         STATIC / "js" / "guest_reports.js",
+        STATIC / "js" / "pdf_documents.js", STATIC / "css" / "pdf_documents.css",
+        TPL / "_guest_pdf_documents.html",
         STATIC / "css" / "share_queue_ui_patch.css",
         STATIC / "js" / "share_queue_ui_patch.js",
     ):
