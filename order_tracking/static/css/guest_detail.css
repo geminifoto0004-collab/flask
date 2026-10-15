@@ -91,3 +91,6 @@
 .od-image[aria-busy="true"]::after{content:'';position:absolute;right:12px;bottom:12px;width:16px;height:16px;border:2px solid #cbd5e1;border-top-color:#315acb;border-radius:50%;animation:od-loading .8s linear infinite;pointer-events:none}
 @keyframes od-loading{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.od-image[aria-busy="true"]::after{animation:none}}
+
+/* Keep the selected page's new-image marker inline with its date. */
+.od-description .media-new{position:static!important;flex:none;align-self:center;margin:0 0 0 4px;padding:1px 6px;font-size:10px;line-height:1.4;vertical-align:middle}
