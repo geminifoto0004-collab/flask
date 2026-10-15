@@ -308,6 +308,7 @@ def _fingerprint():
         STATIC / "js" / "guest_reports.js",
         STATIC / "js" / "media_new.js", STATIC / "css" / "media_new.css",
         STATIC / "js" / "pdf_documents.js", STATIC / "css" / "pdf_documents.css",
+        STATIC / "js" / "guest_detail.js", STATIC / "css" / "guest_detail.css",
         TPL / "_guest_pdf_documents.html",
         STATIC / "css" / "share_queue_ui_patch.css",
         STATIC / "js" / "share_queue_ui_patch.js",

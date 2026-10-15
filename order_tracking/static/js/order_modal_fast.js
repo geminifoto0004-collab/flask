@@ -18,6 +18,10 @@
     const detailInflight = new Map();
     let requestController = null;
     let activeUrl = '';
+    let requestVersion = 0;
+    let detailViewer = null;
+    let activeIndex = 0;
+    const detailCacheAt = new Map();
 
     function isDesktop() {
         return !!(desktopQuery && desktopQuery.matches);
@@ -35,6 +39,9 @@
     }
 
     function closeDetail() {
+        requestVersion++;
+        detailViewer?.destroy(); detailViewer = null;
+        panel.classList.remove('has-unified-detail');
         if (requestController) {
             try { requestController.abort(); } catch (_) {}
             requestController = null;
@@ -116,13 +123,14 @@
     }
 
     function showInstantCardShell(url) {
+        panel.classList.remove("has-unified-detail");
         const card = cardForUrl(url);
         media.replaceChildren();
         info.replaceChildren();
 
         if (card) {
-            const currentImage = card.querySelector('.guest-cover img');
-            if (currentImage) {
+            const currentImage = card.querySelectorAll('.guest-cover img')[activeIndex] || card.querySelector('.guest-cover img');
+            if (currentImage && !window.OrderGuestDetail) {
                 const shell = document.createElement('div');
                 shell.className = 'guest-gallery-shell';
                 const gallery = document.createElement('div');
@@ -171,6 +179,24 @@
             media.appendChild(empty);
         }
 
+        if (card && window.OrderGuestDetail) {
+            const head = info.querySelector('.guest-order-head');
+            const panels = Array.from(info.querySelectorAll('.guest-panel'));
+            const root = document.createElement('div');
+            root.dataset.orderMedia = '';
+            root.dataset.mediaJson = JSON.stringify(Array.from(card.querySelectorAll('.guest-cover img')).map(img => ({
+                media_type:'image', url:img.dataset.full || img.currentSrc || img.src,
+                name:img.alt, uploaded_at_epoch:Number(img.closest('.guest-cover-slide')?.querySelector('[data-media-uploaded-at]')?.dataset.mediaUploadedAt || 0)
+            })));
+            root.dataset.documentsJson = '[]';
+            const selected = card.querySelectorAll('.guest-cover img')[activeIndex] || card.querySelector('.guest-cover img');
+            const seed = selected?.currentSrc || selected?.getAttribute('src') || '';
+            media.replaceChildren(root); info.replaceChildren();
+            panel.classList.add('has-unified-detail');
+            detailViewer = window.OrderGuestDetail.mount(root,{head,panels,close:closeDetail,initialIndex:activeIndex,initialImage:seed});
+            root.classList.add('od-pending');
+        }
+
         if (typeof window.applyTrackingLanguage === 'function') window.applyTrackingLanguage(layout);
         guestApplyBilingualText();
         loading.hidden = true;
@@ -197,35 +223,42 @@
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const orderHead = doc.querySelector('.guest-order-head');
         const galleryShell = doc.querySelector('.guest-gallery-shell');
-        const panels = Array.from(doc.querySelectorAll('.guest-panel'));
+        const panels = Array.from(doc.querySelectorAll('.guest-panel:not(.pdf-documents)'));
         if (!orderHead && !galleryShell && !panels.length) return;
 
-        media.replaceChildren();
-        info.replaceChildren();
-        if (galleryShell) {
-            const clonedGallery = galleryShell.cloneNode(true);
-            normalizeDetailImages(clonedGallery);
-            media.appendChild(clonedGallery);
+        const unified = doc.querySelector('[data-order-media]');
+        const selectedUrl = detailViewer?.currentURL();
+        const seed = media.querySelector('.od-image img.od-ready')?.currentSrc || media.querySelector('[data-od-placeholder]')?.currentSrc || '';
+        detailViewer?.destroy(); detailViewer = null;
+        media.replaceChildren(); info.replaceChildren();
+        if (unified && window.OrderGuestDetail) {
+            panel.classList.add('has-unified-detail');
+            const root = unified.cloneNode(true); media.append(root);
+            detailViewer = window.OrderGuestDetail.mount(root,{
+                head:orderHead?.cloneNode(true),panels:panels.map(p => p.cloneNode(true)),
+                close:closeDetail,initialIndex:activeIndex,initialUrl:selectedUrl,initialImage:seed
+            });
         } else {
-            const empty = document.createElement('div');
-            empty.className = 'guest-desktop-detail-no-media';
-            empty.textContent = (window.getTrackingLanguage?.() === 'zh_cn') ? '此订单没有图片' : 'Este pedido no tiene imágenes';
-            media.appendChild(empty);
+            panel.classList.remove('has-unified-detail');
+            if (galleryShell) {const gallery=galleryShell.cloneNode(true); normalizeDetailImages(gallery);media.append(gallery);}
+            if (orderHead) info.append(orderHead.cloneNode(true));
+            panels.forEach(section => info.append(section.cloneNode(true)));
         }
-        if (orderHead) info.appendChild(orderHead.cloneNode(true));
-        panels.forEach(section => info.appendChild(section.cloneNode(true)));
         if (typeof window.applyTrackingLanguage === 'function') window.applyTrackingLanguage(layout);
         guestApplyBilingualText();
         initGallery(media);
         loading.hidden = true;
         layout.hidden = false;
         info.scrollTop = 0;
+        detailViewer?.root.querySelector('.od-close')?.focus({preventScroll:true});
     }
 
     function fetchDetail(url, signal) {
         const key = absoluteUrl(url);
-        if (detailCache.has(key)) return Promise.resolve(detailCache.get(key));
-        if (detailInflight.has(key)) return detailInflight.get(key);
+        if (detailCache.has(key) && Date.now() - (detailCacheAt.get(key) || 0) < 30000) return Promise.resolve(detailCache.get(key));
+        const pending = detailInflight.get(key);
+        if (pending && !pending.signal?.aborted) return pending.promise;
+
         const promise = fetch(url, {
             credentials:'same-origin',
             cache:'no-store',
@@ -235,30 +268,35 @@
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return response.text();
         }).then(function (html) {
-            detailCache.set(key, html);
-            detailInflight.delete(key);
+            detailCache.set(key, html); detailCacheAt.set(key, Date.now());
+            if(detailCache.size > 40){const oldest=detailCache.keys().next().value;detailCache.delete(oldest);detailCacheAt.delete(oldest);}
+            if(detailInflight.get(key)?.promise === promise) detailInflight.delete(key);
             return html;
         }).catch(function (error) {
-            detailInflight.delete(key);
+            if(detailInflight.get(key)?.promise === promise) detailInflight.delete(key);
             throw error;
         });
-        detailInflight.set(key, promise);
+        detailInflight.set(key, {promise,signal});
         return promise;
     }
 
     function prefetchDetail(url) {
         if (!isDesktop() || !url) return;
         const key = absoluteUrl(url);
-        if (detailCache.has(key) || detailInflight.has(key)) return;
+        if ((detailCache.has(key) && Date.now()-(detailCacheAt.get(key)||0)<30000) || detailInflight.has(key)) return;
         fetchDetail(url).catch(function () {});
     }
 
-    async function openDetail(url) {
+    async function openDetail(url, initialIndex = 0) {
         if (!isDesktop() || !url) return;
         if (requestController) {
             try { requestController.abort(); } catch (_) {}
         }
+        const version = ++requestVersion;
+        detailViewer?.destroy(); detailViewer = null;
+        activeIndex = Math.max(0,Number(initialIndex)||0);
         requestController = new AbortController();
+        const controller = requestController;
         activeUrl = absoluteUrl(url);
         overlay.hidden = false;
         overlay.setAttribute('aria-hidden', 'false');
@@ -268,14 +306,14 @@
         showInstantCardShell(url);
 
         try {
-            const html = await fetchDetail(url, requestController.signal);
-            hydrateDetailHtml(url, html);
+            const html = await fetchDetail(url, controller.signal);
+            if (version === requestVersion) hydrateDetailHtml(url, html);
         } catch (error) {
-            if (error?.name === 'AbortError') return;
+            if (version !== requestVersion || error?.name === 'AbortError') return;
             // Keep the instant card shell visible; only surface the background failure subtly.
             console.warn('[ORDER] modal detail hydration failed', error);
         } finally {
-            requestController = null;
+            if (version === requestVersion) requestController = null;
         }
     }
 
@@ -283,8 +321,10 @@
     if (window.__guestPendingDesktopDetailUrl) {
         const pendingUrl = window.__guestPendingDesktopDetailUrl;
         window.__guestPendingDesktopDetailUrl = '';
-        openDetail(pendingUrl);
+        document.addEventListener("DOMContentLoaded",()=>openDetail(pendingUrl,window.__guestPendingDetailIndex||0),{once:true});
     }
+
+    document.addEventListener('tracking:guestcardsupdated',()=>{detailCache.clear();detailCacheAt.clear();});
 
     // Start fetching before a click without competing with the first page paint.
     document.addEventListener('pointerenter', function (event) {

@@ -17,8 +17,10 @@
 <script defer src="{{ url_for('tracking_bp.static', filename='js/pdf_documents.js') }}?v=142"></script>
 <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/media_new.css') }}?v=143">
 <script defer src="{{ url_for('tracking_bp.static', filename='js/media_new.js') }}?v=143"></script>
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest_detail.css') }}?v=147">
+<script defer src="{{ url_for('tracking_bp.static', filename='js/guest_detail.js') }}?v=147"></script>
 </head>
-<body data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}">
+<body class="guest-order-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}">
 <div class="guest-shell">
     <header class="guest-head">
         <div class="guest-brand">
@@ -52,27 +54,7 @@
         <p data-guest-zh="{{ order.status_zh }}" data-guest-es="{{ order.status_es }}">{{ order.status_es }}</p>
     </section>
 
-    {% set ordinary_images = order.images | rejectattr('media_type', 'equalto', 'pdf_page') | list %}
-    {% if ordinary_images %}
-    <div class="guest-gallery-shell">
-        <div class="guest-gallery" aria-label="Imágenes del pedido" data-guest-detail-gallery data-image-count="{{ ordinary_images|length }}">
-            {% for image in ordinary_images %}
-            <div class="guest-slide">
-                <img {% if loop.index <= 2 %}src="{{ image.preview_url or image.url }}"{% else %}data-src="{{ image.preview_url or image.url }}"{% endif %}
-                     data-full="{{ image.url }}"
-                     alt="{{ image.name }}"
-                     loading="{% if loop.index <= 2 %}eager{% else %}lazy{% endif %}"
-                     decoding="async">
-<span class="media-new" data-media-uploaded-at="{{ image.uploaded_at_epoch or 0 }}" hidden>NEW~</span>
-                {% if image.media_type == 'pdf_page' %}<span class="guest-pdf-badge">PDF {{ image.pdf_page_number }}/{{ image.pdf_page_count }}</span>{% endif %}
-            </div>
-            {% endfor %}
-        </div>
-        {% if ordinary_images|length > 1 %}<button type="button" class="guest-web-nav guest-detail-prev" data-detail-nav="-1" aria-label="Previous image">‹</button><button type="button" class="guest-web-nav guest-detail-next" data-detail-nav="1" aria-label="Next image">›</button>{% endif %}
-    </div>
-    {% endif %}
-
-    {% include 'tracking/_guest_pdf_documents.html' %}
+    <div data-order-media data-media-json="{{ order.images|tojson|forceescape }}" data-documents-json="{{ (order.documents or [])|tojson|forceescape }}"></div>
 
     <section class="guest-panel">
         <h2 data-i18n="guest.order_info">Información del pedido</h2>
