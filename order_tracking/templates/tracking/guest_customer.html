@@ -55,11 +55,11 @@
     }, false);
     </script>
 <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/pdf_documents.css') }}?v=142">
-<script defer src="{{ url_for('tracking_bp.static', filename='js/pdf_documents.js') }}?v=142"></script>
+<script defer src="{{ url_for('tracking_bp.static', filename='js/pdf_documents.js') }}?v=151"></script>
 <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/media_new.css') }}?v=143">
 <script defer src="{{ url_for('tracking_bp.static', filename='js/media_new.js') }}?v=143"></script>
-<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest_detail.css') }}?v=150">
-<script defer src="{{ url_for('tracking_bp.static', filename='js/guest_detail.js') }}?v=150"></script>
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest_detail.css') }}?v=151">
+<script defer src="{{ url_for('tracking_bp.static', filename='js/guest_detail.js') }}?v=151"></script>
 </head>
 <body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}" data-guest-pickup-policy="all-batches-v1">
 <!--
@@ -162,7 +162,7 @@ SOFTWARE.
             <span id="guestVisibleCount">{{ normal_count }} pedido{% if normal_count != 1 %}s{% endif %}</span>
         </div>
         <div class="guest-status-filter-row" id="guestStatusFilterRow">
-            <button type="button" class="guest-status-chip" data-guest-new-filter aria-pressed="false" title="NEW~"><svg class="guest-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 2.5 5.5 6 .8-4.4 4.2 1.1 6-5.2-2.9-5.2 2.9 1.1-6L3 9.3l6-.8Z"/></svg><span>NEW~</span><small data-guest-new-count>0</small></button>
+            <button type="button" class="guest-status-chip" data-guest-new-filter aria-pressed="false" title="Imágenes nuevas de los últimos 7 días" aria-label="NUEVO: imágenes de los últimos 7 días"><svg class="guest-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 3l2.2 6.8L19 12l-6.8 2.2L10 21l-2.2-6.8L1 12l6.8-2.2Z M19 2v6 M16 5h6"/></svg><span>NUEVO</span><small data-guest-new-count>0</small></button>
             {% for key, icon, label in [('all','layout-grid','Todos'), ('unconfirmed','hourglass-empty','Sin conf.'), ('confirmed','circle-check','Confirm.'), ('done','checks','Complet.'), ('retired','logout','Retirado')] %}
             <button type="button" class="guest-status-chip{% if key == 'all' %} active{% endif %}" data-guest-status-filter="{{ key }}" aria-pressed="{{ 'true' if key == 'all' else 'false' }}">
                 <svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#guest-filter-icon-{{ icon }}"/></svg>
@@ -247,7 +247,7 @@ SOFTWARE.
                                  alt="{{ order.order_number }} · {{ loop.index }}/{{ display_images|length }}"
                                  loading="{% if loop.first and card_loop.index <= 4 %}eager{% else %}lazy{% endif %}"
                                  decoding="async"{% if loop.first and card_loop.index <= 2 %} fetchpriority="high"{% endif %}>
-<span class="media-new" data-media-uploaded-at="{{ image.uploaded_at_epoch or 0 }}" hidden>NEW~</span>
+<span class="media-new" data-media-uploaded-at="{{ image.uploaded_at_epoch or 0 }}" hidden>NUEVO</span>
                             {% if image.media_type == 'pdf_page' %}
                             <span class="guest-cover-pdf">{{ image.document_name or image.name }} · PDF {{ image.pdf_page_number }}/{{ image.pdf_page_count }}</span>
                             {% endif %}

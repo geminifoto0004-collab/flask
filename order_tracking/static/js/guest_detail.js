@@ -36,7 +36,7 @@ function mount(root,options={}){
  const seq=()=>source==='all'?all:source==='photos'?photos:source.pages;
  const current=()=>seq()[index];
  const isDesktop=()=>matchMedia('(min-width:1024px) and (hover:hover) and (pointer:fine)').matches;
- root.className='order-detail';root.dataset.detailVersion='150';
+ root.className='order-detail';root.dataset.detailVersion='151';
  const head=el('div','od-head');if(options.head)head.append(options.head);
  head.append(button(options.close?'close':'back',options.close?'Cerrar':'Volver a pedidos','od-close',options.close||(()=>document.getElementById('guestBackToOrders')?.click())));
  const view=el('div','od-view'),area=el('div','od-image'),caption=el('div','od-caption'),dots=el('div','od-dots');
@@ -57,7 +57,7 @@ function mount(root,options={}){
  const pane=el('div','od-pane');pane.append(list,mobilePicker,information);root.replaceChildren(head,view,tabs,mobileBar,pane);
  function tab(info){information.hidden=!info;list.hidden=info;mobilePicker.hidden=info;sourceButtons.forEach((b,k)=>b.setAttribute('aria-selected',String(info?k==='info':k===kind)));[mediaTab,infoTab].forEach((b,i)=>{b.setAttribute('role','tab');b.setAttribute('aria-selected',String(Boolean(i)===info));b.tabIndex=Boolean(i)===info?0:-1});}
  tabs.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const info=infoTab.getAttribute('aria-selected')!=='true';tab(info);(info?infoTab:mediaTab).focus()}});
- function badge(parent,epoch){const b=el('span','media-new','NEW~');b.dataset.mediaUploadedAt=String(epoch||0);b.hidden=true;parent.append(b)}
+ function badge(parent,epoch){const b=el('span','media-new','NUEVO');b.dataset.mediaUploadedAt=String(epoch||0);b.hidden=true;parent.append(b)}
  function stamp(row){const d=groups.find(g=>g.pages.includes(row));const actual=row.document_date||d?.document_date;const s=el('span','od-date',dateText(actual||row.uploaded_at||d?.uploaded_at));if(!actual){s.prepend(icon('up'));s.title='Fecha del archivo en el sistema local'}return s}
  function description(row,fullscreen=false){const out=el('span','od-description');if(!row)return out;const pdf=row.media_type==='pdf_page';const n=pdf?Number(row.pdf_page_number)||1:photos.indexOf(row)+1,total=pdf?Number(row.pdf_page_count)||seq().length:photos.length;
   const page=el('span','od-page',pdf?`Página ${n} de ${total}`:`${n} / ${total}`);if(!pdf)page.prepend(icon('photo'));out.append(page,stamp(row));

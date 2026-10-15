@@ -17,7 +17,7 @@ function init(root) {
  metadata.forEach(d=>{if(!groups.has(d.id))groups.set(d.id,[])});
  const list=root.querySelector('[data-pdf-list]'), stage=root.querySelector('[data-pdf-stage]');
  let active=[], index=0, opener=null, viewer=null;
- function badge(parent,row){const b=document.createElement('span');b.className='media-new';b.dataset.mediaUploadedAt=String(row.uploaded_at_epoch||0);b.textContent='NEW~';b.hidden=true;parent.append(b)}
+ function badge(parent,row){const b=document.createElement('span');b.className='media-new';b.dataset.mediaUploadedAt=String(row.uploaded_at_epoch||0);b.textContent='NUEVO';b.hidden=true;parent.append(b)}
  const text=(tag,value)=>{const n=document.createElement(tag);n.textContent=value;return n};
  function label(r){return `${r.document_name||r.original_filename||r.name} · ${r.pdf_page_number} / ${r.pdf_page_count}`}
  function image(url,alt,lazy=false){const img=new Image();img.alt=alt;img.loading=lazy?'lazy':'eager';img.decoding='async';img.src=url;return img}
