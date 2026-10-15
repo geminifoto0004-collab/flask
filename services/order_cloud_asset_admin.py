@@ -211,9 +211,13 @@ def order_cloud_admin_asset_delete():
                 failed.append({"asset_key": asset_key, "error": "asset not found"}); continue
             backend = _backend(row.get("storage_backend")) or PRIMARY
             try:
-                _delete_object(backend, row.get("object_key"))
+                cur.execute('SELECT COUNT(*) AS n FROM cloud_assets WHERE storage_backend=? AND sha256=? AND asset_key<>?', (backend, row.get('sha256'), asset_key))
+                references = get_row_dict(cur.fetchone(), cur) or {}
+                shared = int(references.get('n') or 0) > 0
+                if not shared:
+                    _delete_object(backend, row.get('object_key'))
                 thumb_key = row.get("thumb_object_key") or _thumb_key_from_sha(row.get("sha256"))
-                if thumb_key:
+                if thumb_key and not shared:
                     _delete_object(backend, thumb_key)
                 cur.execute("DELETE FROM cloud_assets WHERE asset_key=?", (asset_key,))
                 customer_keys.add(str(row.get("customer_key") or "")); deleted.append(asset_key)
@@ -300,3 +304,59 @@ def order_cloud_admin_delete_orphans():
         except Exception as exc:
             failed.append({"storage_backend": backend, "object_key": key, "error": f"{type(exc).__name__}: {exc}"[:500]})
     return jsonify({"ok": True, "partial": bool(failed), "deleted": deleted, "failed": failed, "deleted_count": len(deleted)}), (200 if not failed else 207)
+
+
+@b2_test_bp.route('/api/order-cloud/assets/retention-plan', methods=['GET'])
+def asset_retention_plan():
+    """Bounded, read-only review. Never lists B2 or deletes bytes automatically."""
+    _source, error = _order_cloud_auth_source()
+    if error:
+        return error
+    customer = str(request.args.get('customer_key') or '').strip()
+    if not customer:
+        return jsonify({'ok': False, 'error': 'customer_key is required'}), 400
+    after = str(request.args.get('after') or '')
+    from services.order_media_lifecycle import retention_reason
+    import json
+    conn = get_db_connection(); cur = get_cursor(conn)
+    try:
+        cur.execute('''SELECT a.asset_key,a.customer_key,a.order_number,a.workflow_key,a.sha256,
+                              a.storage_backend,a.object_key,a.thumb_object_key,a.file_size,a.thumb_file_size,
+                              o.active AS order_active,o.render_payload
+                       FROM cloud_assets a LEFT JOIN cloud_orders o
+                         ON o.customer_key=a.customer_key AND o.order_number=a.order_number
+                       WHERE a.customer_key=? AND a.asset_key>? ORDER BY a.asset_key LIMIT 100''',
+                    (customer, after))
+        rows = [get_row_dict(r, cur) for r in cur.fetchall()]
+        cur.execute("SELECT history_scope FROM cloud_share_tokens WHERE customer_key=? AND status='active' AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)", (customer,))
+        extended_history = any(str((get_row_dict(r, cur) or {}).get('history_scope') or 'current') in {'all','6m','12m'} for r in cur.fetchall())
+        candidates, retained = [], []
+        for row in rows:
+            raw = row.get('render_payload')
+            payload = json.loads(raw) if isinstance(raw, (str, bytes)) and raw else (raw or {})
+            reason = 'keep_missing_order_evidence' if row.get('order_active') is None else retention_reason(payload, row, bool(row.get('order_active')))
+            if reason == 'candidate_completed_over_three_months' and extended_history:
+                reason = 'keep_extended_history_share'
+            if reason.startswith('candidate_'):
+                # The same content-addressed B2 object can belong to multiple orders/customers.
+                cur.execute('''SELECT a.asset_key,a.workflow_key,a.sha256,o.render_payload,o.active AS order_active
+                               FROM cloud_assets a LEFT JOIN cloud_orders o
+                                 ON o.customer_key=a.customer_key AND o.order_number=a.order_number
+                               WHERE a.storage_backend=? AND a.sha256=? AND a.asset_key<>?''',
+                            (row.get('storage_backend'), row.get('sha256'), row['asset_key']))
+                references = [get_row_dict(r, cur) for r in cur.fetchall()]
+                for ref in references:
+                    source = ref.get('render_payload')
+                    other = json.loads(source) if isinstance(source, (str, bytes)) and source else (source or {})
+                    if ref.get('order_active') is None or not retention_reason(other, ref, bool(ref.get('order_active'))).startswith('candidate_'):
+                        reason = 'keep_shared_object_reference'
+                        break
+            item = {k: row.get(k) for k in ('asset_key','order_number','workflow_key','file_size','thumb_file_size')}
+            item['reason'] = reason
+            (candidates if reason.startswith('candidate_') else retained).append(item)
+        return jsonify({'ok': True, 'read_only': True, 'requires_review': True,
+                        'customer_key': customer, 'candidates': candidates, 'retained': retained,
+                        'next_after': rows[-1]['asset_key'] if len(rows) == 100 else None,
+                        'candidate_bytes': sum(int(r.get('file_size') or 0)+int(r.get('thumb_file_size') or 0) for r in candidates)})
+    finally:
+        conn.close()

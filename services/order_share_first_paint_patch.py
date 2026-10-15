@@ -50,13 +50,16 @@ def _inline_guest_assets(text):
         text,
         count=1,
     )
-    for filename in ("ui_i18n.js", "theme.js", "guest_reports.js"):
+    for filename in ("ui_i18n.js", "theme.js", "guest_reports.js", "media_new.js"):
         text = re.sub(
             r'<script\b[^>]*\bsrc="/tracking/static/tracking/js/' + re.escape(filename) + r'[^\"]*"[^>]*>\s*</script>',
             lambda _, filename=filename: '<script data-order-inline-asset="' + filename + '">' + raw_file("js/" + filename) + '</script>',
             text,
             count=1,
         )
+
+    text = re.sub(r'<link\s+rel="stylesheet"\s+href="/tracking/static/tracking/css/media_new\.css[^\"]*"\s*>',
+                  lambda _: '<style>' + raw_file('css/media_new.css') + '</style>', text, count=1)
 
     # theme.js discovers its dynamic queue assets from document.currentScript.src.
     # Its inline form has no src; provide both assets explicitly instead.

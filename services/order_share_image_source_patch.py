@@ -197,6 +197,35 @@ def _filter_space(space, share):
     return result
 
 
+_MEDIA_SOURCE_CACHE = {}
+
+
+def _source_order_for_media(asset):
+    key = (str(asset.get('customer_key') or ''), str(asset.get('order_number') or ''))
+    now = time.monotonic()
+    with _LOCK:
+        cached = _MEDIA_SOURCE_CACHE.get(key)
+        if cached and cached[0] > now:
+            return copy.deepcopy(cached[1])
+    conn = get_db_connection(); cur = get_cursor(conn)
+    try:
+        cur.execute('SELECT render_payload, active, order_status FROM cloud_orders WHERE customer_key=? AND order_number=? LIMIT 1', key)
+        row = cur.fetchone(); data = get_row_dict(row, cur) if row else {}
+        payload = None
+        if data and _bool_default(data.get('active'), False):
+            payload = data.get('render_payload') or {}
+            if isinstance(payload, (str, bytes)):
+                payload = json.loads(payload)
+            payload = dict(payload, order_number=key[1], order_status=data.get('order_status') or payload.get('order_status'))
+    finally:
+        conn.close()
+    with _LOCK:
+        if len(_MEDIA_SOURCE_CACHE) >= 128:
+            _MEDIA_SOURCE_CACHE.clear()
+        _MEDIA_SOURCE_CACHE[key] = (now + 5, copy.deepcopy(payload))
+    return payload
+
+
 def _asset_for_share(token, asset_key):
     share, asset, error = _BASE_ASSET(token, asset_key)
     if error or not share:
@@ -204,21 +233,19 @@ def _asset_for_share(token, asset_key):
     try:
         settings = _settings(token)
         share = dict(share); share.update(settings)
-        if asset and not _bool_default(settings.get('show_pdf_pages'), True):
-            conn = get_db_connection(); cur = get_cursor(conn)
-            try:
-                cur.execute('SELECT render_payload FROM cloud_orders WHERE order_number=? AND customer_key=? LIMIT 1',
-                            (asset.get('order_number'), asset.get('customer_key') or share.get('customer_key')))
-                row = cur.fetchone()
-                raw = get_row_dict(row, cur) if row else {}
-                payload = raw.get('render_payload') or {}
-                if isinstance(payload, (str, bytes)):
-                    payload = json.loads(payload)
-                shas = {str(p.get('sha256') or '') for d in payload.get('documents') or [] for p in d.get('pages') or []}
-                if str(asset.get('sha256') or '') in (shas | set(payload.get('pdf_page_hashes') or [])):
-                    asset = dict(asset, asset_kind='PDF_PAGE')
-            finally:
-                conn.close()
+        if asset:
+            payload = _source_order_for_media(asset)
+            if payload is None:
+                return share, None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
+            effective = dict(share)
+            effective.update(settings)
+            test_space = {'orders': [dict(payload, assets=[dict(asset)])]}
+            _fast._filter_space(test_space, effective)
+            selected = test_space.get('orders') or []
+            workflow_key = str(asset.get('workflow_key') or '')
+            visible_keys = {str(w.get('workflow_key') or w.get('workflow_number') or '') for order in selected for w in order.get('workflows') or []}
+            if not selected or not selected[0].get('assets') or (workflow_key and workflow_key not in visible_keys):
+                return share, None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
         if not _asset_allowed(asset, settings):
             return share, None, Response('Archivo no encontrado.', 404, mimetype='text/plain')
     except Exception:

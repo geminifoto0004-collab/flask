@@ -1,6 +1,8 @@
 """Use ORDER's native guest templates on Render while preserving all fast caches."""
 from __future__ import annotations
 
+from services.order_share_image_policy import source_match
+
 import copy
 import hashlib
 import importlib.util
@@ -90,7 +92,18 @@ def _route(token, asset):
 
 
 def _images(order, workflow, token):
-    assets = [a for a in (order.get("assets") or []) if _is_image(a)]
+    assets = []
+    for raw in order.get('assets') or []:
+        if not _is_image(raw):
+            continue
+        source = source_match(raw, order)
+        if source is False:
+            continue
+        asset = dict(raw)
+        if source:
+            asset['source_uploaded_at'] = source.get('uploaded_at')
+            asset['source_uploaded_at_epoch'] = source.get('uploaded_at_epoch')
+        assets.append(asset)
     wf_keys = {
         str((workflow or {}).get("workflow_key") or "").strip(),
         str((workflow or {}).get("workflow_number") or "").strip(),
@@ -115,6 +128,8 @@ def _images(order, workflow, token):
                     'name': str(asset.get('display_name') or 'Imagen'),
                     'media_type': 'image', 'pdf_page_number': 0, 'pdf_page_count': 0,
                     'url': url, 'preview_url': url, '_source_kind': kind,
+                    'uploaded_at': str(asset.get('source_uploaded_at') or ''),
+                    'uploaded_at_epoch': int(asset.get('source_uploaded_at_epoch') or 0),
                 })
         by_sha = {str(a.get('sha256') or ''): a for a in rows}
         for doc in sorted(documents, key=lambda d: (str(d.get('uploaded_at') or ''), str(d.get('id') or '')), reverse=True):
@@ -132,6 +147,7 @@ def _images(order, workflow, token):
                     'name': str(doc.get('filename') or 'PDF'), 'document_name': str(doc.get('filename') or 'PDF'),
                     'document_id': str(doc.get('id') or doc.get('content_hash') or ''),
                     'uploaded_at': str(doc.get('uploaded_at') or ''),
+                    'uploaded_at_epoch': int((source_match(asset, order) or {}).get('uploaded_at_epoch') or 0),
                     'media_type': 'pdf_page', 'pdf_page_number': int(page.get('page') or 0),
                     'pdf_page_count': int(doc.get('page_count') or 0),
                     'url': url, 'preview_url': url.replace('/image/', '/thumb/', 1), '_source_kind': kind,
@@ -290,6 +306,7 @@ def _fingerprint():
         ORDER / "status_definitions.py", STATIC / "css" / "guest.css",
         STATIC / "js" / "ui_i18n.js", STATIC / "js" / "theme.js",
         STATIC / "js" / "guest_reports.js",
+        STATIC / "js" / "media_new.js", STATIC / "css" / "media_new.css",
         STATIC / "js" / "pdf_documents.js", STATIC / "css" / "pdf_documents.css",
         TPL / "_guest_pdf_documents.html",
         STATIC / "css" / "share_queue_ui_patch.css",

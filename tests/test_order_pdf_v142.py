@@ -12,7 +12,7 @@ asset_allowed=policy.asset_allowed
 
 def images(order,workflow=None):
     tree=ast.parse((ROOT/'services/order_share_native_order_ui.py').read_text())
-    scope={'_is_image':lambda a:True,'_route':lambda t,a:'/share/token/image/'+a['asset_key']}
+    scope={'source_match':policy.source_match,'_is_image':lambda a:True,'_route':lambda t,a:'/share/token/image/'+a['asset_key']}
     node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_images')
     exec(compile(ast.Module(body=[node],type_ignores=[]),'<native-images>','exec'),scope)
     return scope['_images'](order,workflow,'token')

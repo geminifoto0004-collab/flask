@@ -9,11 +9,12 @@ function init(root) {
  metadata.forEach(d=>{if(!groups.has(d.id))groups.set(d.id,[])});
  const list=root.querySelector('[data-pdf-list]'), stage=root.querySelector('[data-pdf-stage]');
  let active=[], index=0, opener=null, viewer=null;
+ function badge(parent,row){const b=document.createElement('span');b.className='media-new';b.dataset.mediaUploadedAt=String(row.uploaded_at_epoch||0);b.textContent='NEW~';b.hidden=true;parent.append(b)}
  const text=(tag,value)=>{const n=document.createElement(tag);n.textContent=value;return n};
  function label(r){return `${r.document_name||r.original_filename||r.name} · Página ${r.pdf_page_number} de ${r.pdf_page_count}`}
  function image(url,alt,lazy=false){const img=new Image();img.alt=alt;img.loading=lazy?'lazy':'eager';img.decoding='async';img.src=url;return img}
  function show(){const r=active[index]; if(!r)return;stage.replaceChildren();
-  const title=text('div',label(r));title.className='pdf-page-label';stage.append(title);
+  const title=text('div',label(r));title.className='pdf-page-label';badge(title,r);stage.append(title);
   const button=document.createElement('button');button.type='button';button.className='pdf-open-page';button.setAttribute('aria-label',label(r));button.append(image(r.preview_url||r.url,label(r)));button.onclick=()=>open(button);stage.append(button);
   const nav=document.createElement('div');nav.className='pdf-page-nav';
   [-1,1].forEach(delta=>{const b=text('button',delta<0?'‹ Anterior':'Siguiente ›');b.type='button';b.disabled=index+delta<0||index+delta>=active.length;b.onclick=()=>{index+=delta;show()};nav.append(b)});stage.append(nav);
@@ -38,7 +39,7 @@ function init(root) {
  groups.forEach((pages,id)=>{pages.sort((a,b)=>a.pdf_page_number-b.pdf_page_number);const doc=metadata.find(d=>d.id===id)||{}, first=pages[0]||{document_name:doc.filename,name:doc.filename,uploaded_at:doc.uploaded_at,pdf_page_count:doc.page_count};
   const button=document.createElement('button');button.type='button';button.className='pdf-document-row';
   if(first.preview_url||first.url){const cover=image(first.preview_url||first.url,first.document_name||first.name,true);cover.loading='lazy';button.append(cover)}
-  const copy=document.createElement('span');copy.append(text('strong',first.document_name||first.name));copy.append(text('small',`${first.document_date?'Fecha del doc.: '+first.document_date:'Subido: '+(first.uploaded_at||'—').slice(0,10)} · ${first.pdf_page_count} páginas`));button.append(copy);
+  const copy=document.createElement('span');copy.append(text('strong',first.document_name||first.name));copy.append(text('small',`${first.document_date?'Fecha del doc.: '+first.document_date:'Subido: '+(first.uploaded_at||'—').slice(0,10)} · ${first.pdf_page_count} páginas`));button.append(copy);badge(button,first);
   if(!pages.length){button.disabled=true;copy.append(text('small',doc.status==='failed'||doc.status==='missing'?'Vista previa no disponible; pendiente de revisión':'Preparando vista previa…'))}else if(pages.length<first.pdf_page_count){copy.append(text('small','Sincronizando páginas…'))}
   button.onclick=()=>{active=pages;index=0;list.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));show()};button.setAttribute('aria-pressed','false');list.append(button);
  });

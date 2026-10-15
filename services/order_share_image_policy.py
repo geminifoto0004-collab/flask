@@ -1,3 +1,12 @@
+def source_match(asset, order):
+    if not order.get('image_sources_authoritative'):
+        return None
+    key = (str(asset.get('workflow_key') or ''), str(asset.get('sha256') or ''))
+    matches = [s for s in order.get('image_sources') or []
+               if (str(s.get('workflow_key') or ''), str(s.get('sha256') or '')) == key]
+    return max(matches, key=lambda s: int(s.get('uploaded_at_epoch') or 0)) if matches else False
+
+
 """Shared image-source policy for public HTML and authorized media reads."""
 
 
@@ -49,6 +58,7 @@ def filter_assets_in_space(space, settings):
     if isinstance(space, dict):
         for order in space.get('orders') or []:
             if isinstance(order, dict):
+                order['assets'] = [a for a in order.get('assets') or [] if source_match(a, order) is not False]
                 pdf_shas = {str(p.get('sha256') or '') for d in order.get('documents') or [] for p in d.get('pages') or []}
                 all_pdf_shas = set(order.get('pdf_page_hashes') or []) | pdf_shas
                 for asset in order.get('assets') or []:

@@ -43,6 +43,8 @@
     </script>
 <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/pdf_documents.css') }}?v=142">
 <script defer src="{{ url_for('tracking_bp.static', filename='js/pdf_documents.js') }}?v=142"></script>
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/media_new.css') }}?v=143">
+<script defer src="{{ url_for('tracking_bp.static', filename='js/media_new.js') }}?v=143"></script>
 </head>
 <body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}" data-guest-pickup-policy="all-batches-v1">
 <!--
@@ -180,6 +182,7 @@ SOFTWARE.
         </div>
     </div>
     </div>
+    {# V143: 原始 PDF 雲端下載暫停，保留原有入口供日後恢復。
     {% if allow_pdf_download and pdf_count > 0 %}
     <a class="guest-pdf-bundle" href="{{ url_for('tracking_bp.local_guest_pdf_bundle', token=token) }}">
         <span class="guest-pdf-bundle-icon" aria-hidden="true">
@@ -194,6 +197,7 @@ SOFTWARE.
         <span class="guest-pdf-bundle-arrow" aria-hidden="true">›</span>
     </a>
     {% endif %}
+    #}
 
     {% if allow_report_pdf_download %}
     <button type="button" class="guest-pdf-bundle guest-report-download guest-report-pdf" data-guest-report-create="pdf" data-estimate-url="{{ url_for('tracking_bp.local_guest_report_estimate', token=token, report_format='pdf') }}">
@@ -227,6 +231,7 @@ SOFTWARE.
                                  alt="{{ order.order_number }} · {{ loop.index }}/{{ display_images|length }}"
                                  loading="{% if loop.first and card_loop.index <= 4 %}eager{% else %}lazy{% endif %}"
                                  decoding="async"{% if loop.first and card_loop.index <= 2 %} fetchpriority="high"{% endif %}>
+<span class="media-new" data-media-uploaded-at="{{ image.uploaded_at_epoch or 0 }}" hidden>NEW~</span>
                             {% if image.media_type == 'pdf_page' %}
                             <span class="guest-cover-pdf">{{ image.document_name or image.name }} · PDF {{ image.pdf_page_number }}/{{ image.pdf_page_count }}</span>
                             {% endif %}
