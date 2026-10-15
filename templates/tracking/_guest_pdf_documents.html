@@ -1,6 +1,6 @@
 {% set pdf_images = order.images | selectattr('media_type', 'equalto', 'pdf_page') | list %}
 {% if pdf_images or order.documents %}
-<section class="guest-panel pdf-documents" data-pdf-documents data-pdf-json="{{ pdf_images|tojson|forceescape }}" data-pdf-metadata="{{ (order.documents or [])|tojson|forceescape }}">
-<h2>Documentos</h2><div class="pdf-document-layout"><div data-pdf-list></div><div data-pdf-stage><p>Seleccione un documento para ver sus páginas.</p></div></div>
+<section class="guest-panel pdf-documents" aria-label="Documentos" data-pdf-documents data-pdf-json="{{ pdf_images|tojson|forceescape }}" data-pdf-metadata="{{ (order.documents or [])|tojson|forceescape }}">
+<div class="pdf-document-layout"><div data-pdf-list></div><div data-pdf-stage hidden></div></div>
 </section>
 {% endif %}
