@@ -58,8 +58,8 @@
 <script defer src="{{ url_for('tracking_bp.static', filename='js/pdf_documents.js') }}?v=142"></script>
 <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/media_new.css') }}?v=143">
 <script defer src="{{ url_for('tracking_bp.static', filename='js/media_new.js') }}?v=143"></script>
-<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest_detail.css') }}?v=149">
-<script defer src="{{ url_for('tracking_bp.static', filename='js/guest_detail.js') }}?v=149"></script>
+<link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest_detail.css') }}?v=150">
+<script defer src="{{ url_for('tracking_bp.static', filename='js/guest_detail.js') }}?v=150"></script>
 </head>
 <body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}" data-guest-pickup-policy="all-batches-v1">
 <!--
@@ -1099,6 +1099,27 @@ document.addEventListener('tracking:guestcardsupdated',bindGuestCarousels);
     const storageKey = 'trackingGuestReturn:' + guestToken;
     const focusClass = 'guest-return-focus';
     let restoreTimers = [];
+    let homeRequested = false;
+    function goHomePosition() {
+        try { if (sessionStorage.getItem('trackingGuestHome:' + guestToken) !== '1') return false;
+            sessionStorage.removeItem('trackingGuestHome:' + guestToken);
+            sessionStorage.removeItem(storageKey);
+        } catch (_) { return false; }
+        homeRequested = true;
+        restoreTimers.forEach(clearTimeout); restoreTimers = [];
+        const state = {...(history.state || {})}; delete state.__trackingGuestReturn;
+        history.replaceState(state, '', location.href);
+        document.querySelectorAll('.' + focusClass).forEach(card => card.classList.remove(focusClass));
+        window.scrollTo(0, 0);
+        return true;
+    }
+    document.querySelector('.guest-logo')?.addEventListener('click', function(event) {
+        if(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        try {sessionStorage.setItem('trackingGuestHome:' + guestToken, '1')} catch (_) {}
+        goHomePosition();
+    });
+
 
     function safeParse(raw) {
         try { return JSON.parse(raw || 'null'); } catch (_) { return null; }
@@ -1115,6 +1136,7 @@ document.addEventListener('tracking:guestcardsupdated',bindGuestCarousels);
 
     function saveCardAnchor(card) {
         if (!card) return;
+        homeRequested = false;
         const orderKey = String(card.dataset.guestOrderKey || '').trim();
         if (!orderKey) return;
         const rect = card.getBoundingClientRect();
@@ -1166,6 +1188,8 @@ document.addEventListener('tracking:guestcardsupdated',bindGuestCarousels);
     }
 
     function restoreSavedCard() {
+        goHomePosition();
+        if (homeRequested) { window.scrollTo(0, 0); return; }
         const payload = currentReturnState();
         if (!payload) return;
         // Ignore very old stale anchors from a forgotten tab/session.

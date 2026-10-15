@@ -87,3 +87,7 @@
  .od-mobile-eye:disabled{opacity:.35}
  .od-pending .od-mobile-picker{visibility:hidden}
 }
+/* Retain the decoded image during an on-demand source change. */
+.od-image[aria-busy="true"]::after{content:'';position:absolute;right:12px;bottom:12px;width:16px;height:16px;border:2px solid #cbd5e1;border-top-color:#315acb;border-radius:50%;animation:od-loading .8s linear infinite;pointer-events:none}
+@keyframes od-loading{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.od-image[aria-busy="true"]::after{animation:none}}
