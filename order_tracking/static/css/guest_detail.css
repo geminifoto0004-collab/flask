@@ -50,3 +50,36 @@
 @media(min-width:1024px) and (hover:hover) and (pointer:fine){.guest-order-page .guest-shell{width:min(1260px,calc(100% - 60px));max-width:1260px}.guest-order-page .order-detail{height:min(780px,calc(100dvh - 180px))}}
 
 .od-image img{opacity:0}.od-image img.od-ready,.od-image img[data-od-placeholder]{opacity:1}.od-image img[data-od-placeholder]{position:absolute;inset:0;pointer-events:none}.od-pending .od-list,.od-pending .od-caption{visibility:hidden}
+
+/* Mobile files stay beside one another immediately below the image. Only the
+   PDF strip scrolls horizontally; changing documents never moves the page. */
+@media(max-width:1023px),(hover:none),(pointer:coarse){
+ .order-detail{grid-template-rows:auto var(--od-mobile-view-height,36vh) auto auto}
+ .od-pane{padding:8px;min-width:0}
+ .od-list{display:flex;align-items:center;gap:4px;min-width:0}
+ .od-list .od-group{padding:0;border:0;border-radius:0;margin:0;min-width:0}
+ .od-list .od-all-group,.od-list .od-photo-group{flex:0 0 42px}
+ .od-list .od-row{position:relative;height:66px;min-height:66px;margin:0;border:1px solid var(--guest-border,#e0e4ed);border-radius:12px}
+ .od-all-group .od-row,.od-photo-group .od-row{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:6px 3px}
+ .od-list .od-icon{background:none;flex:0 0 19px;width:19px;height:19px;border-radius:0}
+ .od-list .od-icon svg{width:19px;height:19px}
+ .od-list .od-copy{flex:none;min-width:0}
+ .od-all-group .od-copy strong,.od-photo-group .od-copy strong{font-size:11px;line-height:15px;text-align:center}
+ .od-list .od-row[aria-pressed=true] .od-icon,.od-list .od-row.od-here .od-icon{background:transparent}
+ .od-list .od-pdf-group{position:relative;display:flex;flex:1 1 0;gap:4px;overflow-x:auto;overflow-y:hidden;padding:2px 0;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+ .od-pdf-group::-webkit-scrollbar{display:none}
+ .od-pdf-group .od-row{display:flex;align-items:center;gap:4px;flex:0 0 106px;width:106px;padding:15px 5px 5px}
+ .od-pdf-group .od-icon{flex-basis:15px;width:15px;height:18px}
+ .od-pdf-group .od-icon svg{width:15px;height:18px}
+ .od-pdf-group .od-copy{flex:1}
+ .od-pdf-group .od-copy strong{display:block;white-space:nowrap;font-size:11px;line-height:16px;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+ .od-pdf-group .od-copy small{font-size:10px;line-height:14px;margin-top:2px;gap:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .od-pdf-group .od-copy small svg{width:11px;height:11px}
+ .od-pdf-group .od-row .media-new{position:absolute!important;top:2px;right:5px;left:auto;bottom:auto;margin:0;padding:0 5px;font-size:8px;line-height:12px}
+ .od-doc-heading{order:4;flex:0 0 28px;width:28px;margin:0;justify-content:center}
+ .od-doc-heading>svg,.od-doc-heading>span{display:none}
+ .od-eye{width:28px;height:44px;padding:4px}.od-eye:disabled{opacity:.35}
+ .od-pdf-group{order:3}
+ .od-information .guest-panel{margin:6px 0 10px}
+ .od-caption .od-filename{max-height:25vh;overflow:auto;pointer-events:auto}
+}
