@@ -147,6 +147,7 @@ SOFTWARE.
             <span id="guestVisibleCount">{{ normal_count }} pedido{% if normal_count != 1 %}s{% endif %}</span>
         </div>
         <div class="guest-status-filter-row" id="guestStatusFilterRow">
+            <button type="button" class="guest-status-chip" data-guest-new-filter aria-pressed="false" title="NEW~"><svg class="guest-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 2.5 5.5 6 .8-4.4 4.2 1.1 6-5.2-2.9-5.2 2.9 1.1-6L3 9.3l6-.8Z"/></svg><span>NEW~</span><small data-guest-new-count>0</small></button>
             {% for key, icon, label in [('all','layout-grid','Todos'), ('unconfirmed','hourglass-empty','Sin conf.'), ('confirmed','circle-check','Confirm.'), ('done','checks','Complet.'), ('retired','logout','Retirado')] %}
             <button type="button" class="guest-status-chip{% if key == 'all' %} active{% endif %}" data-guest-status-filter="{{ key }}" aria-pressed="{{ 'true' if key == 'all' else 'false' }}">
                 <svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#guest-filter-icon-{{ icon }}"/></svg>
@@ -354,7 +355,7 @@ document.addEventListener('error', function (event) {
     const searchClear = document.getElementById('guestOrderSearchClear');
     const emptyNode = document.getElementById('guestFilterEmpty');
     let cards = Array.from(document.querySelectorAll('[data-guest-card]'));
-    const filterMode = !window.matchMedia?.('(max-width: 767px)').matches && String(document.body.dataset.guestStatusFilterMode || 'simple').toLowerCase() === 'full' ? 'full' : 'simple';
+    let filterMode = !window.matchMedia?.('(max-width: 767px)').matches && String(document.body.dataset.guestStatusFilterMode || 'simple').toLowerCase() === 'full' ? 'full' : 'simple';
     const L = {
         es: {subtitle:'Consulta temporal', permanent:'Acceso permanente', expires:'Caduca en',
             estado:'Estado', logistica:'Logística', all:'Todos', unconfirmed:'Sin conf.', confirmed:'Confirm.', done:'Complet.', retired:'Retirado',
@@ -419,6 +420,7 @@ document.addEventListener('error', function (event) {
         return 'confirmed';
     }
     function rebuildFilters() {
+        filterMode=!window.matchMedia?.('(max-width: 767px)').matches && String(document.body.dataset.guestStatusFilterMode||'simple').toLowerCase()==='full'?'full':'simple';
         cards = Array.from(document.querySelectorAll('[data-guest-card]'));
         const seen = new Set();
         cards = cards.filter(function (card) {
@@ -480,6 +482,7 @@ document.addEventListener('error', function (event) {
             btn.append(icon, label, count);
             row.appendChild(btn);
         });
+        const newChip=row.querySelector('[data-guest-new-filter]');if(newChip)row.appendChild(newChip);
         availableKeys = new Set(filterItems.map(function (item) { return item.key; }));
         if (selected !== 'all' && !availableKeys.has(selected)) selected = 'all';
         updateLogisticsCounts();
@@ -490,6 +493,8 @@ document.addEventListener('error', function (event) {
     const scopeStorageKey = 'trackingGuestFilterScope:' + guestToken;
     const logisticsStorageKey = 'trackingGuestLogistics:' + guestToken;
     const searchStorageKey = 'trackingGuestSearch:' + guestToken;
+    let newOnly=false;
+    function cardIsNew(card){const now=Date.now()/1000;return Array.from(card.querySelectorAll('[data-media-uploaded-at]')).some(n=>{const epoch=Number(n.dataset.mediaUploadedAt);return epoch>0&&now>=epoch&&now-epoch<7*86400})}
     let selected = 'all';
     let selectedSort = 'order';
     let selectedScope = 'status';
@@ -591,13 +596,15 @@ document.addEventListener('error', function (event) {
         logisticsRow?.querySelectorAll('.guest-logistics-radio').forEach(function (radio) {
             radio.checked = selectedScope === 'logistics' && radio.value === selectedLogistics;
         });
+        const newButton=row.querySelector('[data-guest-new-filter]');
+        if(newButton){newButton.classList.toggle('active',newOnly);newButton.setAttribute('aria-pressed',String(newOnly));newButton.querySelector('small').textContent=String(cards.filter(c=>(selectedScope==='logistics'?matchesLogistics(c,selectedLogistics):c.dataset.guestExtraPickup!=='1')&&cardIsNew(c)).length)}
         let visible = 0;
         cards.forEach(function (card) {
             const cardKey = filterMode === 'full' ? String(card.dataset.guestStatusKey || '') : String(card.dataset.guestStatusGroup || 'confirmed');
             const inScope = selectedScope === 'logistics'
                 ? matchesLogistics(card, selectedLogistics)
                 : card.dataset.guestExtraPickup !== '1' && (key === 'all' || cardKey === key);
-            const show = inScope && matchesOrderSearch(card);
+            const show = inScope && matchesOrderSearch(card) && (!newOnly || cardIsNew(card));
             card.hidden = !show;
             if (show) {
                 visible += 1;
@@ -636,6 +643,8 @@ document.addEventListener('error', function (event) {
     }
 
     row.addEventListener('click', function (event) {
+        const newBtn=event.target.closest('[data-guest-new-filter]');
+        if(newBtn){newOnly=!newOnly;apply(selected);return;}
         const btn = event.target.closest('[data-guest-status-filter]');
         if (!btn) return;
         const top = window.scrollY;
@@ -695,6 +704,7 @@ document.addEventListener('error', function (event) {
         sortCards(selectedSort);
         apply(selected);
     });
+    setInterval(()=>apply(selected),60000);
     rebuildFilters();
     sortCards(selectedSort);
     apply(selected);
@@ -702,62 +712,61 @@ document.addEventListener('error', function (event) {
     new MutationObserver(translate).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
 })();
 
-// Keep a page left open by the customer fresh. Poll markup without loading its images;
-// reload only when order/status/settings changed, and restore the prior reading position.
+// Poll markup, then update only changed cards. Preserve filters and reading position.
 (function () {
-    const token = String(document.body.dataset.guestToken || '');
-    if (!token || typeof fetch !== 'function' || typeof DOMParser === 'undefined') return;
-    const scrollKey = 'trackingGuestAutoScroll:' + token;
-    try {
-        const saved = Number(sessionStorage.getItem(scrollKey) || 0);
-        sessionStorage.removeItem(scrollKey);
-        if (saved > 0) requestAnimationFrame(function () { window.scrollTo(0, saved); });
-    } catch (_) {}
-    function signature(root) {
-        const body = root.body || document.body;
-        const cardParts = [];
-        root.querySelectorAll('[data-guest-card]').forEach(function (card) {
-            const carousel = card.querySelector('[data-guest-carousel]');
-            cardParts.push([
-                card.dataset.guestOrderKey || '',
-                card.dataset.guestStatusKey || '',
-                card.dataset.guestLogisticsKeys || card.dataset.guestLogisticsKey || '',
-                card.dataset.guestRetired || '0',
-                carousel ? carousel.dataset.imageCount || '0' : '0',
-                String(card.textContent || '').replace(/\s+/g, ' ').trim()
-            ].join(':'));
-        });
-        // Client-side sorting must not look like a server data change.
-        cardParts.sort();
-        return [String(body.dataset.guestStatusFilterMode || 'simple')].concat(cardParts).join('|');
+ if(!document.body.dataset.guestToken||typeof fetch!=='function')return;
+ function stamp(card){return JSON.stringify([
+  card.dataset.guestOrderKey,card.dataset.guestStatusKey,card.dataset.guestLogisticsKeys,
+  card.dataset.guestRetired,card.dataset.guestExtraPickup,card.dataset.guestOrderDate,card.dataset.guestShippingDate,
+  card.querySelector('.guest-card-product')?.textContent||'',
+  Array.from(card.querySelectorAll('img[data-full]')).map(i=>i.dataset.full),
+  Array.from(card.querySelectorAll('[data-media-uploaded-at]')).map(n=>n.dataset.mediaUploadedAt)
+ ])}
+ let checking=false;
+ async function refresh(){
+  if(checking||document.hidden||document.getElementById('guestDesktopDetailOverlay')?.hidden===false)return;
+  checking=true;
+  try{
+   const response=await fetch(location.href,{credentials:'same-origin',cache:'no-store',headers:{'X-Guest-Auto-Refresh':'1'}});
+   if(!response.ok)return;
+   const next=new DOMParser().parseFromString(await response.text(),'text/html');
+   const grid=document.getElementById('guestGrid'),nextGrid=next.getElementById('guestGrid');
+   if(!grid||!nextGrid)return;
+   const anchor=Array.from(grid.querySelectorAll('[data-guest-card]')).find(c=>!c.hidden&&c.getBoundingClientRect().bottom>0);
+   const anchorKey=anchor?.dataset.guestOrderKey,anchorTop=anchor?.getBoundingClientRect().top,oldScroll=window.scrollY;
+   const old=new Map(Array.from(grid.querySelectorAll('[data-guest-card]')).map(c=>[c.dataset.guestOrderKey,c]));
+   let changed=(document.body.dataset.guestStatusFilterMode||'simple')!==(next.body.dataset.guestStatusFilterMode||'simple');
+   for(const card of nextGrid.querySelectorAll('[data-guest-card]')){
+    const prior=old.get(card.dataset.guestOrderKey);old.delete(card.dataset.guestOrderKey);
+    if(prior&&stamp(prior)===stamp(card))continue;
+    // Retain loaded thumbnails when only the card text changes.
+    const node=document.importNode(card,true);
+    if(prior){const loaded=new Map(Array.from(prior.querySelectorAll('img[data-full]')).map(i=>[i.dataset.full,i.getAttribute('src')]));node.querySelectorAll('img[data-full]').forEach(i=>{const src=loaded.get(i.dataset.full);if(src){i.src=src;i.removeAttribute('data-src')}})}
+    if(prior&&prior.getBoundingClientRect().bottom>0&&prior.getBoundingClientRect().top<innerHeight){
+     const image=node.querySelector('img[data-full]'),url=image?.getAttribute('src')||image?.dataset.src;
+     if(url){const warm=new Image();await Promise.race([new Promise(resolve=>{warm.onload=warm.onerror=resolve;warm.src=url}),new Promise(resolve=>setTimeout(resolve,1500))]);image.src=url;image.removeAttribute('data-src')}
     }
-    let currentSignature = signature(document);
-    let checking = false;
-    setInterval(async function () {
-        if (checking || document.hidden || document.getElementById('guestDesktopDetailOverlay')?.hidden === false) return;
-        checking = true;
-        try {
-            const response = await fetch(location.href, {credentials:'same-origin', cache:'no-store', headers:{'X-Guest-Auto-Refresh':'1'}});
-            if (!response.ok) return;
-            const next = new DOMParser().parseFromString(await response.text(), 'text/html');
-            const nextSignature = signature(next);
-            if (nextSignature !== currentSignature) {
-                currentSignature = nextSignature;
-                try { sessionStorage.setItem(scrollKey, String(window.scrollY || 0)); } catch (_) {}
-                location.reload();
-            }
-        } catch (_) {
-            // A temporary network failure must not disturb an already usable page.
-        } finally {
-            checking = false;
-        }
-    }, 45000);
+    if(prior)prior.replaceWith(node);else grid.append(node);
+    changed=true;
+   }
+   old.forEach(card=>{card.remove();changed=true});
+   if(changed){
+    document.body.dataset.guestStatusFilterMode=next.body.dataset.guestStatusFilterMode||'simple';
+    document.dispatchEvent(new CustomEvent('tracking:guestcardsupdated'));
+    guestApplyBilingualText();
+    const restored=Array.from(grid.querySelectorAll('[data-guest-card]')).find(c=>c.dataset.guestOrderKey===anchorKey&&!c.hidden);
+    window.scrollTo(0,restored?window.scrollY+restored.getBoundingClientRect().top-anchorTop:oldScroll);
+   }
+  }catch(_){}finally{checking=false}
+ }
+ setInterval(refresh,45000);
 })();
 
 // Temporary guest customer wall: swipe each order's media without opening the order.
 // A tap still opens order detail; a horizontal swipe only changes the preview image/page.
-(function () {
+function bindGuestCarousels() {
     document.querySelectorAll('[data-guest-carousel]').forEach(function (track) {
+        if(track.dataset.guestCarouselBound)return;track.dataset.guestCarouselBound='1';
         const card = track.closest('[data-guest-card]');
         const cover = track.closest('.guest-cover');
         const count = Math.max(1, Number(track.dataset.imageCount || 1));
@@ -867,7 +876,10 @@ document.addEventListener('error', function (event) {
             }
         }, true);
     });
-})();
+}
+bindGuestCarousels();
+document.addEventListener('tracking:guestcardsupdated',bindGuestCarousels);
+
 
 // Desktop WEB: open order detail in-place, Xiaohongshu-style, instead of leaving the wall.
 // Mobile/touch navigation is deliberately unchanged and continues to use the existing detail page.

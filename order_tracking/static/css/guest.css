@@ -625,3 +625,6 @@ html[data-theme="dark"] {
     .guest-customer-page .guest-search-sort .guest-sort-row { padding:2px; }
     .guest-customer-page .guest-search-sort .guest-sort-row .guest-status-chip { min-height:28px; }
 }
+
+/* NEW uses the existing status chip; six equal positions on phones. */
+@media(max-width:1023px){.guest-customer-page .guest-status-filter-row:has([data-guest-new-filter]){grid-template-columns:repeat(6,minmax(0,1fr))}}
