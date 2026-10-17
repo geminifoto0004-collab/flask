@@ -10,7 +10,7 @@ import logging
 import os
 from urllib.parse import urlsplit, parse_qs
 
-LOG = logging.getLogger("xiaozhi-mcp")
+LOG = logging.getLogger("uvicorn.error")  # Render-visible info; never log MCP credentials
 TOOL_NAME = "search_stock"
 TOOL = {
     "name": TOOL_NAME,
