@@ -24,12 +24,22 @@ stock_mcp_service = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # A mounted SDK sub-app does not run its own lifespan automatically.
-    if stock_mcp_service is None:
-        yield
-    else:
-        async with stock_mcp_service.session_manager.run():
+    # One additional background client inside this same Render web service.
+    # Completely disabled by default; Telegram and ChatGPT MCP stay unchanged.
+    xiaozhi_task = None
+    if os.environ.get("XW_XIAOZHI_ENABLED", "0") == "1":
+        from xingwang_miniapp.xiaozhi_mcp import run_forever
+        xiaozhi_task = asyncio.create_task(run_forever(), name="xiaozhi-mcp")
+    try:
+        if stock_mcp_service is None:
             yield
+        else:
+            async with stock_mcp_service.session_manager.run():
+                yield
+    finally:
+        if xiaozhi_task is not None:
+            xiaozhi_task.cancel()
+            await asyncio.gather(xiaozhi_task, return_exceptions=True)
 
 app = FastAPI(docs_url=None,redoc_url=None,openapi_url=None, lifespan=lifespan)
 PAGE = Path(__file__).with_name("index.html").read_text(encoding="utf-8")
