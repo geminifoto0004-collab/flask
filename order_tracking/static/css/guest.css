@@ -557,7 +557,10 @@ html[data-theme="dark"] {
 .guest-search-sort .guest-sort-row .guest-status-chip { min-width:0; min-height:32px; padding:5px 7px; gap:4px; border:0; border-radius:8px; font-size:11px; box-shadow:none; }
 .guest-customer-page .guest-status-chip.active { color:var(--red); background:var(--redbg); }
 .guest-customer-page .guest-card[data-guest-status-group="unconfirmed"] .guest-card-status { background:#fff1cb; color:#825600; }
-.guest-customer-page .guest-card[data-guest-status-group="confirmed"] .guest-card-status { background:#e6f0ff; color:#2157a5; }
+.guest-customer-page .guest-card[data-guest-status-group="in_progress"] .guest-card-status { background:#e6f0ff; color:#2157a5; }
+.guest-customer-page .guest-card[data-guest-status-key="QUOTE_CONFIRMING"] .guest-card-status,
+.guest-customer-page .guest-card[data-guest-status-key="DRAFT_CONFIRMING"] .guest-card-status,
+.guest-customer-page .guest-card[data-guest-status-key="SAMPLE_CONFIRMING"] .guest-card-status { background:#fff1cb; color:#825600; }
 .guest-customer-page .guest-card[data-guest-status-group="done"] .guest-card-status { background:#dcf5e6; color:#17683c; }
 .guest-customer-page .guest-card[data-guest-status-group="retired"] .guest-card-status { background:#e8e9ed; color:#555b68; }
 .guest-card-logistics { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--mute); flex-wrap:wrap; }
@@ -574,12 +577,13 @@ html[data-theme="dark"] {
     .guest-customer-page .guest-status-filter { margin:0; }
     .guest-customer-page .guest-status-filter-label { font-size:11px; margin:0 0 6px; color:var(--mute); }
     .guest-customer-page .guest-status-filter-row, .guest-customer-page .guest-logistics-row { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:2px; padding:3px; border:1px solid var(--line); border-radius:12px; background:var(--card); overflow:visible; }
-    .guest-customer-page .guest-logistics-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .guest-customer-page .guest-logistics-row { grid-template-columns:repeat(4,minmax(0,1fr)); }
     .guest-customer-page .guest-logistics-under-status { margin-top:9px; }
     .guest-customer-page .guest-status-filter-row .guest-status-chip,
     .guest-customer-page .guest-logistics-row .guest-status-chip { display:grid; grid-template-columns:auto auto; grid-template-rows:20px auto; align-items:center; justify-content:center; column-gap:4px; row-gap:2px; width:auto; min-width:0; min-height:49px; margin:0; padding:5px 1px; border:0; border-radius:8px; font-size:10px; line-height:1.2; color:var(--mute); background:transparent; box-shadow:none; }
     .guest-customer-page .guest-status-filter-row .guest-status-chip span,
-    .guest-customer-page .guest-logistics-row .guest-status-chip span { grid-column:1 / -1; grid-row:2; text-align:center; white-space:nowrap; }
+    .guest-customer-page .guest-logistics-row .guest-status-chip span { grid-column:1 / -1; grid-row:2; text-align:center; white-space:normal; }
+    .guest-customer-page .guest-status-filter-row .guest-status-chip span { white-space:normal; }
     .guest-customer-page .guest-status-filter-row .guest-status-chip small,
     .guest-customer-page .guest-logistics-row .guest-status-chip small { grid-column:2; grid-row:1; padding:0; background:none; font-size:15px; font-weight:800; color:inherit; }
     .guest-customer-page .guest-status-filter-row .guest-filter-icon,
@@ -626,5 +630,5 @@ html[data-theme="dark"] {
     .guest-customer-page .guest-search-sort .guest-sort-row .guest-status-chip { min-height:28px; }
 }
 
-/* NEW uses the existing status chip; six equal positions on phones. */
-@media(max-width:1023px){.guest-customer-page .guest-status-filter-row:has([data-guest-new-filter]){grid-template-columns:repeat(6,minmax(0,1fr))}}
+/* Five Estado buttons on both phones and tablets, without additional rows. */
+@media(max-width:1023px){.guest-customer-page .guest-status-filter-row:has([data-guest-new-filter]){grid-template-columns:repeat(5,minmax(0,1fr))}}
