@@ -436,7 +436,7 @@ document.addEventListener('error', function (event) {
     function customerMustConfirm(card) {return card.dataset.guestExtraPickup !== '1' && pendingKeys.has(statusOf(card));}
     function simpleKey(status) {
         const key=statusOf(status);
-        return key==='RETIRED' ? 'retired' : (doneKeys.has(key) ? 'done' : 'in_progress');
+        return key==='RETIRED' || doneKeys.has(key) ? 'done' : 'in_progress';
     }
     function statusMatches(card,key) {
         if(key==='all')return true;
