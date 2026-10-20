@@ -162,8 +162,8 @@ SOFTWARE.
             <span id="guestVisibleCount">{{ normal_count }} pedido{% if normal_count != 1 %}s{% endif %}</span>
         </div>
         <div class="guest-status-filter-row" id="guestStatusFilterRow">
-            <button type="button" class="guest-status-chip" data-guest-new-filter aria-pressed="false" title="Imágenes nuevas de los últimos 7 días" aria-label="NUEVO: imágenes de los últimos 7 días"><svg class="guest-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 3l2.2 6.8L19 12l-6.8 2.2L10 21l-2.2-6.8L1 12l6.8-2.2Z M19 2v6 M16 5h6"/></svg><span>NUEVO</span><small data-guest-new-count>0</small></button>
-            {% for key, icon, label in [('all','layout-grid','Todos'), ('unconfirmed','hourglass-empty','Sin conf.'), ('confirmed','circle-check','Confirm.'), ('done','checks','Complet.'), ('retired','logout','Retirado')] %}
+            <button type="button" class="guest-status-chip" data-guest-new-filter aria-pressed="false" title="Imágenes nuevas de los últimos 7 días" aria-label="NUEVO: imágenes de los últimos 7 días"><svg class="guest-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 3l2.2 6.8L19 12l-6.8 2.2L10 21l-2.2-6.8L1 12l6.8-2.2Z M19 2v6 M16 5h6"/></svg><span data-mobile-text="new">NUEVO</span><small data-guest-new-count>0</small></button>
+            {% for key, icon, label in [('all','layout-grid','Todos'), ('in_progress','circle-check','En curso'), ('done','checks','Finalizado'), ('unconfirmed','hourglass-empty','Sin confirmar')] %}
             <button type="button" class="guest-status-chip{% if key == 'all' %} active{% endif %}" data-guest-status-filter="{{ key }}" aria-pressed="{{ 'true' if key == 'all' else 'false' }}">
                 <svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#guest-filter-icon-{{ icon }}"/></svg>
                 <span data-mobile-text="{{ key }}">{{ label }}</span><small>{{ status_counts.get(key, 0) if status_counts is defined else (normal_count if key == 'all' else 0) }}</small>
@@ -173,7 +173,7 @@ SOFTWARE.
         <div class="guest-logistics-under-status">
             <div class="guest-status-filter-label" data-mobile-text="logistica">Logística</div>
             <div class="guest-logistics-row">
-                {% for key, id, icon, label in [('all','All','layout-grid','Todos'), ('in_transit','Transit','ship','En camino'), ('pending_pickup','Pickup','package','Pend. retiro')] %}
+                {% for key, id, icon, label in [('all','All','layout-grid','Todos'), ('in_transit','Transit','ship','En camino'), ('pending_pickup','Pickup','package','Pend. retiro'), ('retired','Retired','logout','Retirado')] %}
                 <input class="guest-logistics-radio" type="radio" name="guestLogisticsFilter" id="guestLogistics{{ id }}" value="{{ key }}">
                 <label class="guest-status-chip" for="guestLogistics{{ id }}"><svg class="guest-filter-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#guest-filter-icon-{{ icon }}"/></svg><span data-mobile-text="{{ key }}">{{ label }}</span><small data-guest-logistics-count="{{ key }}">{{ logistics_counts.get(key, 0) if logistics_counts is defined else 0 }}</small></label>
                 {% endfor %}
@@ -342,8 +342,8 @@ guestApplyBilingualText();
     tick(); setInterval(tick, 1000);
 })();
 
-// Customer-friendly filters. Mobile uses five compact groups; an admin can
-// switch an existing share to exact/full statuses without creating a new URL.
+// Customer-friendly filtering: the same five Estado actions on web and mobile.
+// Exact ORDER workflow labels remain on each card, in both languages.
 // The order/media list itself is still rebuilt from current database/file rows on each page load;
 // this only hides/shows cards already authorized for this token/customer.
 // A thumbnail may have metadata before its B2 object is actually available. If that
@@ -370,23 +370,23 @@ document.addEventListener('error', function (event) {
     const searchClear = document.getElementById('guestOrderSearchClear');
     const emptyNode = document.getElementById('guestFilterEmpty');
     let cards = Array.from(document.querySelectorAll('[data-guest-card]'));
-    let filterMode = !window.matchMedia?.('(max-width: 767px)').matches && String(document.body.dataset.guestStatusFilterMode || 'simple').toLowerCase() === 'full' ? 'full' : 'simple';
+    const filterMode = 'simple';
     const L = {
         es: {subtitle:'Consulta temporal', permanent:'Acceso permanente', expires:'Caduca en',
-            estado:'Estado', logistica:'Logística', all:'Todos', unconfirmed:'Sin conf.', confirmed:'Confirm.', done:'Complet.', retired:'Retirado',
+            estado:'Estado', logistica:'Logística', all:'Todos', in_progress:'En curso', unconfirmed:'Sin confirmar', done:'Finalizado', retired:'Retirado', new:'NUEVO',
             in_transit:'En camino', pending_pickup:'Pend. retiro', order:'Pedido', shipping:'Envío', sort:'Orden',
             search:'Buscar pedido…', searchLabel:'Buscar número de pedido', clear:'Borrar búsqueda', language:'Cambiar idioma', theme:'Cambiar tema',
             empty:'No hay pedidos que coincidan con estos filtros.', noOrders:'No hay pedidos disponibles.', noImage:'Sin imagen',
             count:n => n + (n === 1 ? ' pedido' : ' pedidos'),
-            status:{unconfirmed:'Sin confirmar',confirmed:'Confirmado',done:'Completado',retired:'Retirado'},
+            status:{in_progress:'En curso',unconfirmed:'Sin confirmar',done:'Finalizado',retired:'Retirado'},
             logistics:{in_transit:'En camino',pending_pickup:'Pendiente retiro'}, resetLogistics:'Volver a pulsar para quitar el filtro'},
         zh: {subtitle:'臨時查看', permanent:'永久客戶入口', expires:'剩餘時間',
-            estado:'状态', logistica:'物流', all:'全部', unconfirmed:'未确认', confirmed:'已确认', done:'已完成', retired:'已取完',
+            estado:'状态', logistica:'物流', all:'全部', in_progress:'进行中', unconfirmed:'待确认', done:'已完成', retired:'已取完', new:'新图',
             in_transit:'運送中', pending_pickup:'待取貨', order:'訂單', shipping:'出貨日期', sort:'排序',
             search:'搜索订单号…', searchLabel:'搜索订单号', clear:'清除搜索', language:'切換語言', theme:'切換深色模式',
             empty:'没有符合筛选条件的订单。', noOrders:'没有可显示的订单。', noImage:'暂无图片',
             count:n => n + ' 个订单',
-            status:{unconfirmed:'未确认',confirmed:'已确认',done:'已完成',retired:'已取完'},
+            status:{in_progress:'进行中',unconfirmed:'待确认',done:'已完成',retired:'已取完'},
             logistics:{in_transit:'運送中',pending_pickup:'待取貨'}, resetLogistics:'再點一次解除物流篩選'}
     };
     function words() { return L[currentLang() === 'zh_cn' ? 'zh' : 'es']; }
@@ -401,11 +401,12 @@ document.addEventListener('error', function (event) {
         }
         document.querySelectorAll('.guest-logistics-row label').forEach(node => { node.title = l.resetLogistics; });
         cards.forEach(card => {
-            const group = simpleKey(card.dataset.guestStatusKey);
+            // Show the real ORDER stage: customer approval, artwork, sample or production.
             const tag = card.querySelector('.guest-card-status');
-            if (tag && filterMode === 'simple') {
-                tag.removeAttribute('data-guest-zh'); tag.removeAttribute('data-guest-es');
-                tag.textContent = l.status[group];
+            if (tag) {
+                tag.textContent = currentLang() === 'zh_cn'
+                    ? (card.dataset.guestStatusZh || l.status.in_progress)
+                    : (card.dataset.guestStatusEs || l.status.in_progress);
             }
             const retired = card.querySelector('[data-guest-retired-banner] span:last-child');
             if (retired) { retired.removeAttribute('data-guest-zh'); retired.removeAttribute('data-guest-es'); retired.textContent = l.retired; }
@@ -420,22 +421,29 @@ document.addEventListener('error', function (event) {
         return words().count(n);
     }
 
-    const exactCounts = new Map();
+    // Customer confirmation is a separate action view; it does not undo order progress.
+    const pendingKeys = new Set(['QUOTE_CONFIRMING','DRAFT_CONFIRMING','SAMPLE_CONFIRMING','报价待确认','報價待確認','图稿待确认','圖稿待確認','打样待确认','打樣待確認']);
+    const doneKeys = new Set(['COMPLETED','ALL_SHIPPED','SHIPPED','已完成','已全部出货','已全部出貨']);
     const simpleGroups = [
-        {key:'unconfirmed', zh:'未确认', es:'Sin confirmar', statuses:new Set(['QUOTE_CONFIRMING','DRAFT_CONFIRMING','SAMPLE_CONFIRMING'])},
-        {key:'confirmed', zh:'已确认', es:'Confirmado', statuses:null},
-        {key:'done', zh:'已完成', es:'Completado', statuses:new Set(['COMPLETED','ALL_SHIPPED','SHIPPED'])},
-        {key:'retired', zh:'已取完', es:'Retirado', statuses:new Set(['RETIRED'])}
+        {key:'in_progress', zh:'进行中', es:'En curso'},
+        {key:'done', zh:'已完成', es:'Finalizado'},
+        {key:'unconfirmed', zh:'待确认', es:'Sin confirmar'}
     ];
+    function statusOf(cardOrStatus) {
+        const raw = typeof cardOrStatus === 'string' ? cardOrStatus : (cardOrStatus?.dataset.guestStatusKey || '');
+        return String(raw || '').trim().toUpperCase();
+    }
+    function customerMustConfirm(card) {return card.dataset.guestExtraPickup !== '1' && pendingKeys.has(statusOf(card));}
     function simpleKey(status) {
-        status = String(status || '').trim().toUpperCase();
-        if (simpleGroups[0].statuses.has(status)) return 'unconfirmed';
-        if (simpleGroups[3].statuses.has(status)) return 'retired';
-        if (simpleGroups[2].statuses.has(status)) return 'done';
-        return 'confirmed';
+        const key=statusOf(status);
+        return key==='RETIRED' || doneKeys.has(key) ? 'done' : 'in_progress';
+    }
+    function statusMatches(card,key) {
+        if(key==='all')return true;
+        if(key==='unconfirmed')return customerMustConfirm(card);
+        return card.dataset.guestStatusGroup===key;
     }
     function rebuildFilters() {
-        filterMode=!window.matchMedia?.('(max-width: 767px)').matches && String(document.body.dataset.guestStatusFilterMode||'simple').toLowerCase()==='full'?'full':'simple';
         cards = Array.from(document.querySelectorAll('[data-guest-card]'));
         const seen = new Set();
         cards = cards.filter(function (card) {
@@ -445,29 +453,17 @@ document.addEventListener('error', function (event) {
             return true;
         });
         const normalCards = cards.filter(function (card) { return card.dataset.guestExtraPickup !== '1'; });
-        exactCounts.clear();
         row.querySelectorAll('[data-guest-status-filter]:not([data-guest-status-filter="all"])').forEach(function (button) { button.remove(); });
         const allCount = row.querySelector('[data-guest-status-filter="all"] small');
         if (allCount) allCount.textContent = String(normalCards.length);
         cards.forEach(card => { card.dataset.guestStatusGroup = simpleKey(card.dataset.guestStatusKey); });
-        normalCards.forEach(function (card) {
-            const key = String(card.dataset.guestStatusKey || '__order__');
-            card.dataset.guestStatusGroup = simpleKey(key);
-            const zh = String(card.dataset.guestStatusZh || '订单');
-            const es = String(card.dataset.guestStatusEs || 'Pedido');
-            const item = exactCounts.get(key) || {key:key, zh:zh, es:es, count:0};
-            item.count += 1;
-            exactCounts.set(key, item);
-        });
-
-        const filterItems = filterMode === 'full' ? Array.from(exactCounts.values()) : simpleGroups.map(function (group) {
-            return {...group, count:normalCards.filter(function (card) { return card.dataset.guestStatusGroup === group.key; }).length};
+        const filterItems = simpleGroups.map(function (group) {
+            return {...group, count:normalCards.filter(card => statusMatches(card,group.key)).length};
         });
         const statusIcons = {
-            unconfirmed: {name:'hourglass-empty', tone:'warn'},
-            confirmed: {name:'circle-check', tone:'go'},
+            in_progress: {name:'circle-check', tone:'go'},
             done: {name:'checks', tone:'ok'},
-            retired: {name:'logout', tone:'muted'}
+            unconfirmed: {name:'hourglass-empty', tone:'warn'}
         };
         filterItems.forEach(function (item) {
             const btn = document.createElement('button');
@@ -475,7 +471,7 @@ document.addEventListener('error', function (event) {
             btn.className = 'guest-status-chip';
             btn.dataset.guestStatusFilter = item.key;
             btn.setAttribute('aria-pressed', 'false');
-            const iconInfo = statusIcons[filterMode === 'full' ? simpleKey(item.key) : item.key];
+            const iconInfo = statusIcons[item.key];
             const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             icon.setAttribute('class', 'guest-filter-icon guest-filter-icon--' + iconInfo.tone);
             icon.setAttribute('viewBox', '0 0 24 24');
@@ -485,13 +481,8 @@ document.addEventListener('error', function (event) {
             use.setAttribute('href', '#guest-filter-icon-' + iconInfo.name);
             icon.appendChild(use);
             const label = document.createElement('span');
-            if (filterMode === 'simple') {
-                label.dataset.mobileText = item.key;
-                label.textContent = words()[item.key];
-            } else {
-                label.dataset.guestZh = item.zh; label.dataset.guestEs = item.es;
-                label.textContent = currentLang() === 'zh_cn' ? item.zh : item.es;
-            }
+            label.dataset.mobileText = item.key;
+            label.textContent = words()[item.key];
             const count = document.createElement('small');
             count.textContent = String(item.count);
             btn.append(icon, label, count);
@@ -523,11 +514,13 @@ document.addEventListener('error', function (event) {
     } catch (_) {}
     let availableKeys = new Set();
     if (!['order','shipping'].includes(selectedSort)) selectedSort = 'order';
-    if (!['all','in_transit','pending_pickup'].includes(selectedLogistics)) selectedLogistics = 'all';
+    if (!['all','in_transit','pending_pickup','retired'].includes(selectedLogistics)) selectedLogistics = 'all';
 
     function matchesLogistics(card, key) {
         const keys = String(card.dataset.guestLogisticsKeys || card.dataset.guestLogisticsKey || 'none').split(/\s+/);
-        return key === 'all' ? keys.includes('in_transit') || keys.includes('pending_pickup') : keys.includes(key);
+        if(key==='all')return keys.includes('in_transit') || keys.includes('pending_pickup');
+        if(key==='retired')return card.dataset.guestRetired==='1' || statusOf(card)==='RETIRED';
+        return keys.includes(key);
     }
     function matchesOrderSearch(card) {
         const query = String(searchInput?.value || '').trim().toLocaleLowerCase();
@@ -612,13 +605,18 @@ document.addEventListener('error', function (event) {
             radio.checked = selectedScope === 'logistics' && radio.value === selectedLogistics;
         });
         const newButton=row.querySelector('[data-guest-new-filter]');
-        if(newButton){newButton.classList.toggle('active',newOnly);newButton.setAttribute('aria-pressed',String(newOnly));newButton.querySelector('small').textContent=String(cards.filter(c=>(selectedScope==='logistics'?matchesLogistics(c,selectedLogistics):c.dataset.guestExtraPickup!=='1')&&cardIsNew(c)).length)}
+        if(newButton) {
+            newButton.classList.toggle('active',newOnly);
+            newButton.setAttribute('aria-pressed',String(newOnly));
+            newButton.querySelector('small').textContent=String(cards.filter(c=>c.dataset.guestExtraPickup!=='1'&&cardIsNew(c)).length);
+            newButton.title=currentLang()==='zh_cn'?'最近7天的新图片':'Imágenes nuevas de los últimos 7 días';
+            newButton.setAttribute('aria-label',newButton.title);
+        }
         let visible = 0;
         cards.forEach(function (card) {
-            const cardKey = filterMode === 'full' ? String(card.dataset.guestStatusKey || '') : String(card.dataset.guestStatusGroup || 'confirmed');
             const inScope = selectedScope === 'logistics'
                 ? matchesLogistics(card, selectedLogistics)
-                : card.dataset.guestExtraPickup !== '1' && (key === 'all' || cardKey === key);
+                : card.dataset.guestExtraPickup !== '1' && statusMatches(card,key);
             const show = inScope && matchesOrderSearch(card) && (!newOnly || cardIsNew(card));
             card.hidden = !show;
             if (show) {
@@ -629,7 +627,7 @@ document.addEventListener('error', function (event) {
             }
         });
         row.querySelectorAll('[data-guest-status-filter]').forEach(function (btn) {
-            const active = String(btn.dataset.guestStatusFilter || '') === key;
+            const active = selectedScope==='status' && !newOnly && String(btn.dataset.guestStatusFilter || '') === key;
             btn.classList.toggle('active', active);
             btn.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
@@ -659,10 +657,17 @@ document.addEventListener('error', function (event) {
 
     row.addEventListener('click', function (event) {
         const newBtn=event.target.closest('[data-guest-new-filter]');
-        if(newBtn){newOnly=!newOnly;apply(selected);return;}
+        if(newBtn){
+            newOnly=!newOnly;
+            const top=window.scrollY;
+            apply('all','status'); // Show new images across all statuses immediately.
+            requestAnimationFrame(()=>window.scrollTo({top:top,left:0,behavior:'auto'}));
+            return;
+        }
         const btn = event.target.closest('[data-guest-status-filter]');
         if (!btn) return;
         const top = window.scrollY;
+        newOnly=false;
         apply(btn.dataset.guestStatusFilter || 'all', 'status');
         // Hiding a masonry row must not move the customer's viewport.
         requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
@@ -673,7 +678,8 @@ document.addEventListener('error', function (event) {
         const radio = label ? document.getElementById(label.htmlFor) : event.target.closest('.guest-logistics-radio');
         if (radio && selectedScope === 'logistics' && selectedLogistics === radio.value) {
             event.preventDefault();
-            apply(selected, 'status');
+            newOnly=false;
+            apply('all', 'status');
             // Radio default-action cancellation may restore its checked state.
             queueMicrotask(() => { radio.checked = false; });
         }
@@ -683,6 +689,7 @@ document.addEventListener('error', function (event) {
         if (!event.target.matches('.guest-logistics-radio')) return;
         const top = window.scrollY;
         selectedLogistics = event.target.value;
+        newOnly=false;
         apply('all', 'logistics');
         requestAnimationFrame(function () { window.scrollTo({top:top, left:0, behavior:'auto'}); });
     });
@@ -711,7 +718,7 @@ document.addEventListener('error', function (event) {
     });
 
     document.addEventListener('tracking:languagechange', function () {
-        apply(row.querySelector('.guest-status-chip.active')?.dataset.guestStatusFilter || selected);
+        apply(selected);
     });
 
     document.addEventListener('tracking:guestcardsupdated', function () {
@@ -731,7 +738,7 @@ document.addEventListener('error', function (event) {
 (function () {
  if(!document.body.dataset.guestToken||typeof fetch!=='function')return;
  function stamp(card){return JSON.stringify([
-  card.dataset.guestOrderKey,card.dataset.guestStatusKey,card.dataset.guestLogisticsKeys,
+  card.dataset.guestOrderKey,card.dataset.guestStatusKey,card.dataset.guestStatusZh,card.dataset.guestStatusEs,card.dataset.guestLogisticsKeys,
   card.dataset.guestRetired,card.dataset.guestExtraPickup,card.dataset.guestOrderDate,card.dataset.guestShippingDate,
   card.querySelector('.guest-card-product')?.textContent||'',
   Array.from(card.querySelectorAll('img[data-full]')).map(i=>i.dataset.full),
