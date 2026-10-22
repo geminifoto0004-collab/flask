@@ -65,7 +65,7 @@ class StablePresignTests(unittest.TestCase):
         self.assertNotIn('upload_url', result)
 
     def test_missing_oversized_object_cannot_receive_upload_url(self):
-        with self.assertRaisesRegex(ValueError, 'optimized image exceeds'):
+        with self.assertRaisesRegex(ValueError, 'historical B2 image missing'):
             self._run(file_size=1_500_000, b2_found=False)
 
 
