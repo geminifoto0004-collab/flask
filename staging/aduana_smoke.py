@@ -117,3 +117,11 @@ try:
         logging.warning("MONITOR_ORIGINAL_UI_TEMPLATE_OK size=%d matched=2 unmatched=9 custom=21d",len(preview_html))
 except Exception:
     logging.exception("MONITOR_ORIGINAL_UI_TEMPLATE_FAILED")
+
+
+# Whole integration syntax checks, without importing connected DB or auth services.
+for _name in ("services/aduana_free_time_service.py","services/monitor_service.py",
+              "blueprints/monitor_bp.py"):
+    _path = pathlib.Path(__file__).parents[1] / _name
+    compile(_path.read_text(encoding="utf-8"), str(_path), "exec")
+logging.warning("MONITOR_INTEGRATION_PYTHON_COMPILE_OK files=3")
