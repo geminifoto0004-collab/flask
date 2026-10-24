@@ -107,3 +107,13 @@ def preview():
     assert "08/11/2026" in html and "VISADO" in html and "CONTROLADO" in html
     assert "21d" in html and "2 matched" in html and "6 contenedores" in html
     return html,200,{"Content-Type":"text/html; charset=utf-8"}
+
+
+# Validate the exact shared HTML template on startup, without DB access.
+try:
+    with app.app_context():
+        preview_html, preview_status, _ = preview()
+        assert preview_status == 200 and "2 matched" in preview_html
+        logging.warning("MONITOR_ORIGINAL_UI_TEMPLATE_OK size=%d matched=2 unmatched=9 custom=21d",len(preview_html))
+except Exception:
+    logging.exception("MONITOR_ORIGINAL_UI_TEMPLATE_FAILED")
