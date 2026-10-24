@@ -489,6 +489,72 @@ def delete_monitor_task_admin(task_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ========== Aduana / Free Time administration (isolated from ZOFRI + ITI) ==========
+@monitor_bp.route('/admin/monitor-free-time', methods=['GET'])
+@admin_required
+def monitor_free_time_admin_page():
+    from services.monitor_service import get_all_active_monitor_tasks
+    available = get_all_active_monitor_tasks()
+    # Never send ZOFRI passwords, API keys or Telegram tokens to the browser.
+    choices = [{'id': t['id'], 'label': t.get('company_name') or ('Monitor %s' % t['id'])}
+               for t in available]
+    return render_template('admin/monitor_free_time.html', tasks=choices)
+
+
+@monitor_bp.route('/api/admin/monitor/free-time/containers', methods=['GET'])
+@admin_required
+def monitor_free_time_containers():
+    from services.monitor_service import get_monitor_task, _build_telegram_html_context
+    try:
+        task_id = int(request.args.get('task_id') or '0')
+        config = get_monitor_task(task_id)
+        if not config:
+            return jsonify({'success': False, 'error': 'Monitor task not found'}), 404
+        raw = config.get('last_check_result') or {}
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        if not isinstance(raw, dict):
+            return jsonify({'success': False, 'error': 'No monitor data'}), 400
+        ctx = _build_telegram_html_context(
+            raw.get('containers') or [], include_matched=True,
+            include_unmatched=True, task_id=task_id)
+        rows = []
+        for group in ctx['matched_groups'] + ctx['unmatched_groups']:
+            for c in group['contenedores']:
+                rows.append({
+                    'container_no': c['contenedor'], 'vessel': group['nave'],
+                    'eta': group.get('eta'), 'programacion': group.get('arrival_programacion'),
+                    'free_days': c.get('manual_days'),
+                    'loading_date': c.get('loading_date') or '',
+                })
+        return jsonify({'success': True, 'containers': rows})
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return jsonify({'success': False, 'error': 'Invalid task or data'}), 400
+    except Exception:
+        return jsonify({'success': False, 'error': 'Could not read monitor settings'}), 500
+
+
+@monitor_bp.route('/api/admin/monitor/free-time', methods=['POST'])
+@admin_required
+def monitor_free_time_save():
+    from services.aduana_free_time_service import save_manual_override
+    if not request.is_json or request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return jsonify({'success': False, 'error': 'JSON AJAX request required'}), 400
+    data = request.get_json(silent=True) or {}
+    try:
+        saved = save_manual_override(
+            task_id=int(data.get('task_id') or '0'),
+            container_no=data.get('container_no'),
+            loading_date=data.get('loading_date') or None,
+            free_days=data.get('free_days'),
+        )
+        return jsonify({'success': True, 'saved': saved})
+    except (ValueError, TypeError) as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception:
+        return jsonify({'success': False, 'error': 'Could not save free time'}), 500
+
+
 # ========== 公開 API：監控檢查（用於 cron-job） ==========
 @monitor_bp.route('/monitor/report', methods=['GET'])
 def monitor_report_page():

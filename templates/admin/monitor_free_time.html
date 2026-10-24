@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ITI MONITOR 免用箱設定</title>
+<style>
+*{box-sizing:border-box}body{font-family:system-ui,"Microsoft JhengHei",sans-serif;background:#f1f5f9;color:#183550;margin:0;padding:16px}
+main{max-width:760px;margin:auto}.hero{background:#163f71;color:white;border-radius:16px;padding:18px;margin-bottom:12px}
+h1{font-size:21px;margin:0 0 8px}p{font-size:13px;line-height:1.55;margin:6px 0}
+section{background:#fff;border:1px solid #dce7f0;border-radius:14px;padding:15px;margin:12px 0}
+label{display:block;font-size:13px;font-weight:700;margin:12px 0 5px}
+select,input,button{font:inherit;padding:10px;border-radius:8px;max-width:100%}
+select,input{width:100%;border:1px solid #b8cbd8;background:white}
+button{background:#14568c;border:0;color:white;font-weight:700;cursor:pointer;margin-top:12px}
+button:disabled{opacity:.5}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+small{color:#708090}#message{padding:10px;white-space:pre-wrap;font-size:13px}
+.table{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid #e5eef5;text-align:left;padding:9px 5px}
+@media(max-width:480px){.grid{grid-template-columns:1fr}body{padding:8px}section{padding:12px}}
+</style></head><body><main>
+<div class="hero"><h1>ITI MONITOR · 免用箱設定</h1><p>管理員專用 · 空白 = 14 天 · ETA 由海關取得</p></div>
+<section>
+<label for="task">監控任務</label>
+<select id="task">{% for t in tasks %}<option value="{{ t.id }}">{{ t.label }} ({{ t.id }})</option>{% endfor %}</select>
+<button id="load" type="button">載入目前貨櫃</button>
+<p><small>僅能設定已確定對應海關航次的貨櫃；找不到 ETA 時不會亂套用。</small></p>
+</section>
+<section>
+<form id="editor">
+<label for="container">CONTENEDOR</label>
+<select id="container" required><option value="">請先載入貨櫃</option></select>
+<div class="grid"><div><label for="loading">裝櫃日期（可留空）</label><input type="date" id="loading"></div>
+<div><label for="days">免用箱期（可留空）</label><input id="days" type="number" min="1" max="120" placeholder="預設 14 天"></div></div>
+<p id="voyage"><small>選擇貨櫃顯示船名、ETA 和艙單計畫號。</small></p>
+<button id="save" type="submit" disabled>儲存設定</button></form>
+<div id="message" role="status"></div>
+</section>
+<section><h3>貨櫃清單</h3><div class="table"><table>
+<thead><tr><th>CONTENEDOR</th><th>NAVE</th><th>ETA</th><th>DÍAS</th></tr></thead>
+<tbody id="rows"><tr><td colspan="4">尚未載入</td></tr></tbody></table></div></section>
+</main>
+<script>
+var records=[];
+var task=document.getElementById('task'),list=document.getElementById('container');
+var days=document.getElementById('days'),loading=document.getElementById('loading');
+var save=document.getElementById('save'),message=document.getElementById('message'),voyage=document.getElementById('voyage');
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function current(){return records.filter(function(r){return r.container_no===list.value})[0]}
+function choose(){
+var r=current();save.disabled=!r||!r.programacion;
+if(!r){voyage.textContent='請選擇貨櫃';return}
+days.value=r.free_days==null?'':r.free_days;loading.value=(r.loading_date||'').slice(0,10);
+voyage.textContent='船：'+r.vessel+' · ETA：'+(r.eta||'未知')+' · Programación：'+(r.programacion||'未確定');
+}
+async function loadData(){
+message.textContent='讀取中…';save.disabled=true;
+try{
+var response=await fetch('/api/admin/monitor/free-time/containers?task_id='+encodeURIComponent(task.value),{credentials:'same-origin',cache:'no-store'});
+var data=await response.json();if(!response.ok||!data.success)throw new Error(data.error||'讀取失敗');
+records=data.containers||[];
+list.innerHTML='<option value="">請選貨櫃</option>'+records.map(function(r){return '<option value="'+esc(r.container_no)+'">'+esc(r.container_no)+' · '+esc(r.vessel)+'</option>'}).join('');
+document.getElementById('rows').innerHTML=records.map(function(r){
+return '<tr><td>'+esc(r.container_no)+'</td><td>'+esc(r.vessel)+'</td><td>'+esc(r.eta||'-')+'</td><td>'+ (r.free_days==null?'14（預設）':esc(r.free_days)+'（自訂）')+'</td></tr>'
+}).join('')||'<tr><td colspan="4">沒有貨櫃</td></tr>';
+message.textContent='讀取 '+records.length+' 個貨櫃';voyage.textContent='請選貨櫃';
+}catch(error){message.textContent=error.message}
+}
+document.getElementById('load').addEventListener('click',loadData);
+list.addEventListener('change',choose);
+document.getElementById('editor').addEventListener('submit',async function(e){
+e.preventDefault();var r=current();if(!r)return;save.disabled=true;
+try{
+var resp=await fetch('/api/admin/monitor/free-time',{method:'POST',credentials:'same-origin',
+headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'},
+body:JSON.stringify({task_id:Number(task.value),container_no:r.container_no,
+loading_date:loading.value||null,free_days:days.value===''?null:Number(days.value)})});
+var data=await resp.json();if(!resp.ok||!data.success)throw new Error(data.error||'儲存失敗');
+await loadData();list.value=r.container_no;choose();message.textContent='已儲存 '+r.container_no;
+}catch(error){message.textContent=error.message}finally{if(current())save.disabled=!current().programacion}
+});
+</script></body></html>

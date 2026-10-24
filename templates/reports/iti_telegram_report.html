@@ -133,6 +133,34 @@
     .um-container { font-size: 9.6px; }
     .um-estado { font-size: 7px; }
   }
+
+  /* Minimal additions only; keep all original columns and existing styles. */
+  .today-chile { margin-top:-9px;margin-bottom:12px;position:relative;z-index:1;
+    font:600 10px 'DM Mono',monospace;color:#b4d5f3; }
+  .v-head .v-name,.um-head .um-vessel-name { flex:1; min-width:0; overflow-wrap:anywhere; }
+  .ship-extras { margin-left:auto; display:flex;align-items:center;justify-content:flex-end;
+    gap:5px;flex-wrap:wrap;min-width:0; }
+  .v-head .v-badge,.um-head .um-vessel-count { margin-left:0; flex-shrink:0; }
+  .eta-mini { font:600 9px 'DM Mono',monospace;color:#7385a2;white-space:nowrap; }
+  .timer-mini { display:inline-flex;align-items:center;vertical-align:middle;
+    gap:2px;font:700 10px 'DM Mono',monospace;white-space:nowrap; }
+  .timer-green { color:#008b65; }
+  .timer-amber { color:#b66c05; }
+  .timer-red { color:#d41e35; }
+  .timer-svg { flex-shrink:0;display:inline-block;vertical-align:middle; }
+  .custom-days { color:#84601e; margin-left:4px;font-size:9px;font-weight:700; }
+  .delivery-inline { white-space:nowrap; }
+  .delivery-inline .timer-mini { margin-left:3px; }
+  .um-item .custom-days { font-size:8px; margin-left:2px; }
+  @media(max-width:430px) {
+    .today-chile { font-size:9px;margin-bottom:8px; }
+    .eta-mini { font-size:7px; }
+    .timer-mini { font-size:9px; }
+    .ship-extras { gap:3px; }
+    .timer-svg { width:10px;height:10px; }
+    .custom-days { font-size:8px;margin-left:2px; }
+    .t-fecha .timer-mini { font-size:8px; }
+  }
 </style>
 </head>
 <body>
@@ -145,6 +173,7 @@
       <span class="nico">{{ company_name }}</span><span class="sep">·</span><span class="iti">ITI MONITOR</span>
     </div>
   </div>
+  <div class="today-chile">Hoy: {{ generated_date }} (Chile)</div>
   <div class="stats">
     <div class="stat total"><div class="stat-num">{{ total_count }}</div><div class="stat-lbl">Total</div></div>
     <div class="stat matched"><div class="stat-num">{{ matched_count }}</div><div class="stat-lbl">Matched</div></div>
@@ -164,7 +193,7 @@
   <div class="v-head">
     <div class="v-icon">🛳️</div>
     <span class="v-name">{{ g.nave }}</span>
-    <span class="v-badge">{{ g.count }} matched</span>
+    <span class="ship-extras">{% if g.eta %}<span class="eta-mini">ETA {{ g.eta }}</span><span class="timer-mini {% if g.ship_timer.remaining <= 3 %}timer-red{% elif g.ship_timer.remaining == 4 %}timer-amber{% else %}timer-green{% endif %}" title="Plazo referencial 14 días; no equivale a free time contractual">{% if g.ship_timer.remaining <= 3 %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% else %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M5 3h14M5 21h14M7 3c0 6 5 6 5 9s-5 3-5 9M17 3c0 6-5 6-5 9s5 3 5 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>{% endif %}{% if g.ship_timer.remaining < 0 %}逾{{ -g.ship_timer.remaining }}{% else %}{{ g.ship_timer.remaining }}{% endif %}</span>{% endif %}<span class="v-badge">{{ g.count }} matched</span></span>
   </div>
   <table>
     <colgroup>
@@ -177,8 +206,8 @@
       {% for c in g.contenedores %}
       <tr class="matched {{ 'row-odd' if loop.index is odd else 'row-even' }}">
         <td class="t-folio">{{ c.folio }}</td>
-        <td class="t-container">{{ c.contenedor }}</td>
-        <td class="t-fecha">{{ c.fecha_entrega }}</td>
+        <td class="t-container">{{ c.contenedor }}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% endif %}</td>
+        <td class="t-fecha"><span class="delivery-inline">{{ c.fecha_entrega }}{% if c.delivery_risk is not none %}<span class="timer-mini timer-red" title="Días disponibles en la fecha ENTREGA; plazo referencial"><svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% if c.delivery_risk < 0 %}逾{{ -c.delivery_risk }}{% else %}{{ c.delivery_risk }}{% endif %}</span>{% endif %}</span></td>
         <td class="t-estado">{{ c.estado }}</td>
       </tr>
       {% endfor %}
@@ -199,12 +228,12 @@
 <div class="um-card">
   <div class="um-head">
     <span class="um-vessel-name">🛳️ {{ g.nave }}</span>
-    <span class="um-vessel-count">{{ g.count }} contenedores</span>
+    <span class="ship-extras">{% if g.eta %}<span class="eta-mini">ETA {{ g.eta }}</span><span class="timer-mini {% if g.ship_timer.remaining <= 3 %}timer-red{% elif g.ship_timer.remaining == 4 %}timer-amber{% else %}timer-green{% endif %}" title="Plazo referencial 14 días; no equivale a free time contractual">{% if g.ship_timer.remaining <= 3 %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% else %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M5 3h14M5 21h14M7 3c0 6 5 6 5 9s-5 3-5 9M17 3c0 6-5 6-5 9s5 3 5 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>{% endif %}{% if g.ship_timer.remaining < 0 %}逾{{ -g.ship_timer.remaining }}{% else %}{{ g.ship_timer.remaining }}{% endif %}</span>{% endif %}<span class="um-vessel-count">{{ g.count }} contenedores</span></span>
   </div>
   <div class="um-grid">
     {% for c in g.contenedores %}
     <div class="um-item">
-      <span class="um-container">{{ c.contenedor }}</span>
+      <span class="um-container">{{ c.contenedor }}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% endif %}</span>
       <span class="um-estado">{{ c.estado }}</span>
     </div>
     {% endfor %}
@@ -223,6 +252,17 @@
 (() => {
   const apiKey = "{{ api_key }}";
   let currentHash = "{{ result_hash }}";
+  // The reference timer is derived from the Chile calendar date, never stored as a daily counter.
+  const renderedChileDate = "{{ generated_date }}";
+  const chileToday = () => {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Santiago", day: "2-digit", month: "2-digit", year: "numeric"
+    }).formatToParts(new Date());
+    const pick = key => parts.find(p => p.type === key)?.value || "";
+    return pick("day") + "/" + pick("month") + "/" + pick("year");
+  };
+  // Refresh if the viewer leaves the report open across midnight in Chile.
+  setInterval(() => { if (chileToday() !== renderedChileDate) window.location.reload(); }, 60000);
   if (!apiKey) return;
 
   const poll = async () => {
