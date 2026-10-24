@@ -125,3 +125,20 @@ for _name in ("services/aduana_free_time_service.py","services/monitor_service.p
     _path = pathlib.Path(__file__).parents[1] / _name
     compile(_path.read_text(encoding="utf-8"), str(_path), "exec")
 logging.warning("MONITOR_INTEGRATION_PYTHON_COMPILE_OK files=3")
+
+
+@app.get("/verify-november")
+def verify_november():
+    """Read-only real Aduana request to confirm cross-month parsing in Oregon."""
+    try:
+        rows = fetch_month(2026, 11)
+        target = {k: [] for k in TARGET}
+        for r in rows:
+            for name in TARGET:
+                if normalize_ship(r["ship_key"]) == normalize_ship(name):
+                    target[name].append({"eta":r["eta"].isoformat(),"voyage":r["voyage"],
+                                       "programacion":r["programacion"]})
+        return jsonify(ok=True, month="2026-11", parsed_rows=len(rows), vessels=target)
+    except Exception as exc:
+        return jsonify(ok=False, month="2026-11", error_type=type(exc).__name__,
+                       message=str(exc)[:200]), 502
