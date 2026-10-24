@@ -63,7 +63,8 @@ def verify():
 import json
 import logging
 try:
-    _check = verify().get_json()
+    with app.app_context():
+        _check = verify().get_json()
     logging.warning("ADUANA_STAGING_TEST %s", json.dumps(_check, ensure_ascii=False))
 except Exception as e:
     logging.exception("ADUANA_STAGING_TEST_FAILED %s", type(e).__name__)
@@ -71,3 +72,38 @@ except Exception as e:
 @app.get("/verify")
 def verify_cached():
     return jsonify(_check if "_check" in globals() else {"ok": False, "reason":"staging smoke failed"})
+
+
+@app.get("/preview")
+def preview():
+    """Render unchanged mobile report template with fake data; no TiDB."""
+    from flask import render_template_string
+    from jinja2 import Environment, FileSystemLoader
+    template_dir = pathlib.Path(__file__).parents[1] / "templates" / "reports"
+    env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=True)
+    template = env.get_template("iti_telegram_report.html")
+    normal = calculate("20/10/2026", 14, at=date(2026,10,31))
+    custom = calculate("20/10/2026", 21, at=date(2026,10,31),entrega="08/11/2026")
+    def group(ship, eta, n, matched, free=None):
+        return {"nave":ship,"count":n,"eta":eta,"ship_timer":calculate(eta, at=date(2026,10,31)),
+                "contenedores":[]}
+    m=group("MSC IKARIA VI","20/10/2026",2,True)
+    m["contenedores"]=[
+        {"folio":"115","contenedor":"TXGU5436783","fecha_entrega":"24/10/2026 · 12:18",
+         "estado":"CONTROLADO","manual_days":None,"delivery_risk":None},
+        {"folio":"262","contenedor":"TGBU9874527","fecha_entrega":"08/11/2026 · 11:52",
+         "estado":"CONTROLADO","manual_days":21,"delivery_risk":2},
+    ]
+    u1=group("MANZANILLO EXPRESS","24/10/2026",6,False)
+    u1["contenedores"]=[{"contenedor":code,"estado":"VISADO","manual_days":None} for code in
+        ["CAJU5973223","HAMU2343723","HLBU9941809","TEMU7551438","TLLU5363704","UETU6873190"]]
+    u2=group("MSC TORONTO VIII","27/10/2026",3,False)
+    u2["contenedores"]=[{"contenedor":code,"estado":"VISADO","manual_days":None} for code in
+        ["MSGU5404705","MSGU5404726","MSGU5407833"]]
+    html=template.render(company_name="XINGWANG",total_count=11,matched_count=2,unmatched_count=9,
+        matched_groups=[m],unmatched_groups=[u1,u2],show_matched=True,show_unmatched=True,
+        generated_date="31/10/2026",generated_time="14:47",api_key="",result_hash="")
+    assert "Hoy: 31/10/2026 (Chile)" in html
+    assert "08/11/2026" in html and "VISADO" in html and "CONTROLADO" in html
+    assert "21d" in html and "2 matched" in html and "6 contenedores" in html
+    return html,200,{"Content-Type":"text/html; charset=utf-8"}
