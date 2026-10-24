@@ -14,7 +14,6 @@ def index():
     return jsonify(service="aduana-monitor-staging", status="ok", routes=["/verify"])
 
 
-@app.get("/verify")
 def verify():
     checks = {}
     checks["14_days_oct31"] = calculate("20/10/2026", at=date(2026, 10, 31))
@@ -34,3 +33,17 @@ def verify():
              "ata": r["ata"], "programacion": r["programacion"]}
             for r in rows if normalize_ship(r["ship_key"]) == normalize_ship(target)]
     return jsonify(ok=True, fetched_rows=len(rows), vessels=matched, tests=checks)
+
+
+# Run once as the isolated staging worker starts; log verified values, not secrets.
+import json
+import logging
+try:
+    _check = verify().get_json()
+    logging.warning("ADUANA_STAGING_TEST %s", json.dumps(_check, ensure_ascii=False))
+except Exception as e:
+    logging.exception("ADUANA_STAGING_TEST_FAILED %s", type(e).__name__)
+
+@app.get("/verify")
+def verify_cached():
+    return jsonify(_check if "_check" in globals() else {"ok": False, "reason":"staging smoke failed"})
