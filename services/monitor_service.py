@@ -26,6 +26,7 @@ from services.zofri_iti_service import (
 )
 from services.unified_iti_service import get_unified_iti_legacy_rows_fresh
 from utils.time_utils import get_chile_time_naive
+from services.aduana_free_time_service import enrich_groups, schedule_refresh
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -940,6 +941,11 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         }
         
         print(f"[監控檢查-{execution_id}] 監控檢查完成")
+        # Non-blocking, once per day. Never affect ZOFRI/ITI result on Aduana failure.
+        try:
+            schedule_refresh(all_containers)
+        except Exception as refresh_error:
+            print("[Aduana] optional ETA refresh skipped:", type(refresh_error).__name__)
         return True, result, ""
         
     except Exception as e:
@@ -1651,7 +1657,8 @@ def _format_telegram_fecha_for_image(row: Dict) -> str:
 def _build_telegram_html_context(
     containers: List[Dict],
     include_matched: bool,
-    include_unmatched: bool
+    include_unmatched: bool,
+    task_id=None,
 ) -> Dict[str, Any]:
     matched_rows, unmatched_rows = _collect_telegram_rows(
         containers=containers,
@@ -1692,6 +1699,11 @@ def _build_telegram_html_context(
         })
 
     now_local = get_chile_time_naive()
+    # Read saved ETA and manual days only; no network or DB writes on report views.
+    try:
+        enrich_groups(matched_groups, unmatched_groups, task_id=task_id, today=now_local.date())
+    except Exception as enrich_error:
+        print("[Aduana] optional report enrichment skipped:", type(enrich_error).__name__)
     return {
         'total_count': len(matched_rows) + len(unmatched_rows),
         'matched_count': len(matched_rows),
@@ -1729,7 +1741,8 @@ def get_monitor_report_context_by_api_key(api_key: str) -> Tuple[Optional[Dict[s
     context = _build_telegram_html_context(
         containers=containers,
         include_matched=include_matched,
-        include_unmatched=include_unmatched
+        include_unmatched=include_unmatched,
+        task_id=task_config.get('id')
     )
     context['company_name'] = _safe_text(task_config.get('company_name'), 'NICO').upper()
     context['task_id'] = task_config.get('id')
@@ -1767,7 +1780,8 @@ def _render_telegram_html_image(
     company_name: str,
     containers: List[Dict],
     include_matched: bool,
-    include_unmatched: bool
+    include_unmatched: bool,
+    task_id=None
 ) -> Tuple[Optional[bytes], str]:
     template_dir = Path(__file__).resolve().parent.parent / "templates" / "reports"
     template_path = template_dir / "iti_telegram_report.html"
@@ -1783,7 +1797,8 @@ def _render_telegram_html_image(
         context = _build_telegram_html_context(
             containers=containers,
             include_matched=include_matched,
-            include_unmatched=include_unmatched
+            include_unmatched=include_unmatched,
+            task_id=task_id
         )
         context['company_name'] = _safe_text(company_name, 'NICO').upper()
         html_content = template.render(**context)
@@ -2141,12 +2156,13 @@ def _render_telegram_table_image_pillow(containers: List[Dict], company_name: st
 
 # ========== 發送 Telegram 通知 ==========
 
-def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int) -> Tuple[List[bytes], str]:
+def _render_telegram_table_image(containers: List[Dict], company_name: str, include_matched: bool, include_unmatched: bool, max_rows: int, task_id=None) -> Tuple[List[bytes], str]:
     html_png, html_err = _render_telegram_html_image(
         company_name=company_name,
         containers=containers,
         include_matched=include_matched,
-        include_unmatched=include_unmatched
+        include_unmatched=include_unmatched,
+        task_id=task_id
     )
     if html_png:
         return [html_png], ""
@@ -2230,7 +2246,8 @@ def send_notification_telegram(
             company_name=company_name,
             include_matched=include_matched,
             include_unmatched=include_unmatched,
-            max_rows=max_rows
+            max_rows=max_rows,
+            task_id=task_config.get('id')
         )
         if not image_pages:
             image_ok = False
