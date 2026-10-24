@@ -317,6 +317,7 @@ def enrich_groups(matched_groups, unmatched_groups, task_id=None, today=None):
             manual = item.get("free_days") if item else None
             # If manually specified 14d, show 14d: this is an explicit choice.
             c["manual_days"] = int(manual) if manual is not None else None
+            c["loading_date"] = str(item.get("loading_date") or "") if item else ""
             calc = calculate(rec["eta"], manual, at=today,
                              entrega=c.get("fecha_entrega") if "fecha_entrega" in c else None) if rec else None
             c["timer"] = calc
