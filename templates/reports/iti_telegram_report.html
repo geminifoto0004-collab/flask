@@ -252,6 +252,17 @@
 (() => {
   const apiKey = "{{ api_key }}";
   let currentHash = "{{ result_hash }}";
+  // The reference timer is derived from the Chile calendar date, never stored as a daily counter.
+  const renderedChileDate = "{{ generated_date }}";
+  const chileToday = () => {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Santiago", day: "2-digit", month: "2-digit", year: "numeric"
+    }).formatToParts(new Date());
+    const pick = key => parts.find(p => p.type === key)?.value || "";
+    return pick("day") + "/" + pick("month") + "/" + pick("year");
+  };
+  // Refresh if the viewer leaves the report open across midnight in Chile.
+  setInterval(() => { if (chileToday() !== renderedChileDate) window.location.reload(); }, 60000);
   if (!apiKey) return;
 
   const poll = async () => {
