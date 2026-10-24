@@ -3,7 +3,31 @@ No TiDB credentials and no production imports of Flask app.
 """
 from datetime import date
 from flask import Flask, jsonify
-from services.aduana_free_time_service import fetch_month, calculate, normalize_ship
+# Import the exact production module without importing unrelated ORDER/ZOFRI packages.
+# In this staging environment DB access is deliberately forbidden.
+import importlib.util
+import pathlib
+import sys
+import types
+from datetime import datetime
+from zoneinfo import ZoneInfo
+fake_db = types.ModuleType("database")
+def denied(*args, **kwargs):
+    raise RuntimeError("No database access in isolated staging")
+fake_db.execute_sql = denied
+fake_db.get_db_connection = denied
+sys.modules["database"] = fake_db
+fake_utils = types.ModuleType("utils")
+fake_utils.__path__ = []
+sys.modules["utils"] = fake_utils
+fake_time = types.ModuleType("utils.time_utils")
+fake_time.get_chile_time_naive = lambda: datetime.now(ZoneInfo("America/Santiago")).replace(tzinfo=None)
+sys.modules["utils.time_utils"] = fake_time
+source = pathlib.Path(__file__).parents[1] / "services" / "aduana_free_time_service.py"
+spec = importlib.util.spec_from_file_location("staging_aduana_service", source)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+fetch_month, calculate, normalize_ship = module.fetch_month, module.calculate, module.normalize_ship
 
 app = Flask(__name__)
 TARGET = ("MSC IKARIA VI", "MANZANILLO EXPRESS", "MSC TORONTO VIII")
