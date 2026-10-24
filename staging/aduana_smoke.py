@@ -142,3 +142,12 @@ def verify_november():
     except Exception as exc:
         return jsonify(ok=False, month="2026-11", error_type=type(exc).__name__,
                        message=str(exc)[:200]), 502
+
+
+try:
+    _november_rows = fetch_month(2026, 11)
+    logging.warning("ADUANA_NOVEMBER_REAL_CHECK parsed_rows=%d sample=%s",
+                    len(_november_rows), 
+                    [{"ship":x["ship_name"],"eta":x["eta"].isoformat()} for x in _november_rows[:3]])
+except Exception as e:
+    logging.warning("ADUANA_NOVEMBER_REAL_CHECK_FAILED %s: %s",type(e).__name__,str(e)[:160])
