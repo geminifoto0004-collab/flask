@@ -167,6 +167,26 @@
   .web-days .ft-svg{flex:none;display:inline-block;width:12px;height:12px}
   .web-days .col-remaining{width:51px}
   .web-days .t-remaining{text-align:right;padding-left:0}
+  /* Desktop four-column presentation: place hourglass beside ESTADO so it
+     cannot become a clipped fifth table column. Mobile keeps its original
+     five-column design and separately positioned hourglass. Web only. */
+  .web-days .v-card.matched .desktop-inline-remaining{display:none}
+  @media(min-width:431px){
+    .web-days .v-card.matched table{table-layout:fixed;width:100%}
+    .web-days .v-card.matched .col-folio{width:8%}
+    .web-days .v-card.matched .col-fecha{width:31%}
+    .web-days .v-card.matched .col-estado{width:26%}
+    .web-days .v-card.matched .col-container{width:35%}
+    .web-days .v-card.matched .col-remaining,
+    .web-days .v-card.matched .t-remaining,
+    .web-days .v-card.matched .t-remaining-h{display:none}
+    .web-days .v-card.matched td{padding-left:4px;padding-right:4px}
+    .web-days .v-card.matched .t-container{font-size:11px;letter-spacing:0;white-space:nowrap}
+    .web-days .v-card.matched .t-fecha{font-size:9.5px;letter-spacing:0;white-space:nowrap}
+    .web-days .v-card.matched .t-estado{font-size:7.7px;letter-spacing:0;white-space:nowrap}
+    .web-days .v-card.matched .desktop-inline-remaining{display:inline-flex;vertical-align:middle;margin-left:4px}
+    .web-days .v-card.matched .desktop-inline-remaining .ft-remaining{font-size:9px;padding:3px 4px;gap:2px}
+  }
   /* WEB matched rows: keep container number + total-days calendar on ONE line.
      Compact only this table on narrow iPhone screens; no Telegram snapshot changes. */
   .web-days .v-card.matched .t-container{white-space:nowrap}
@@ -250,7 +270,7 @@
       <col class="col-folio"><col class="col-container"><col class="col-fecha"><col class="col-estado">{% if web_report_only %}<col class="col-remaining">{% endif %}
     </colgroup>
     <thead><tr>
-      <th>Folio</th><th>Contenedor</th><th>Entrega</th><th>Estado</th>{% if web_report_only %}<th aria-label="剩餘天數"></th>{% endif %}
+      <th>Folio</th><th>Contenedor</th><th>Entrega</th><th>Estado</th>{% if web_report_only %}<th class="t-remaining-h" aria-label="剩餘天數"></th>{% endif %}
     </tr></thead>
     <tbody>
       {% for c in g.contenedores %}
@@ -258,7 +278,7 @@
         <td class="t-folio">{{ c.folio }}</td>
         <td class="t-container">{{ c.contenedor }}{% if web_report_only %}{% if c.manual_days is not none %}{{ ft_total(c.manual_days) }}{% elif c.get('excel_days') is not none %}{{ ft_total(c.excel_days) }}{% endif %}{% else %}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% elif c.get('excel_days') is not none %}<span class="custom-days" title="Excel 匯入的免箱天數">{{ c.excel_days }}d</span>{% endif %}{% endif %}</td>
         <td class="t-fecha"><span class="delivery-inline">{{ c.fecha_entrega }}{% if not web_report_only %}{% if c.delivery_risk is not none %}<span class="timer-mini timer-red" title="Días disponibles en la fecha ENTREGA; plazo referencial"><svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% if c.delivery_risk < 0 %}逾{{ -c.delivery_risk }}{% else %}{{ c.delivery_risk }}{% endif %}</span>{% endif %}{% endif %}</span></td>
-        <td class="t-estado">{{ c.estado }}</td>{% if web_report_only %}<td class="t-remaining">{% if c.get('timer') and (c.manual_days is not none or c.get('excel_days') is not none) %}{{ ft_remaining(c.timer.remaining) }}{% endif %}</td>{% endif %}
+        <td class="t-estado">{{ c.estado }}{% if web_report_only and c.get('timer') and (c.manual_days is not none or c.get('excel_days') is not none) %}<span class="desktop-inline-remaining">{{ ft_remaining(c.timer.remaining) }}</span>{% endif %}</td>{% if web_report_only %}<td class="t-remaining">{% if c.get('timer') and (c.manual_days is not none or c.get('excel_days') is not none) %}{{ ft_remaining(c.timer.remaining) }}{% endif %}</td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>
