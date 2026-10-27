@@ -227,11 +227,11 @@ def lookup_excel_days(container_names, today=None):
         result = {}
         for start in range(0, len(codes), 200):
             chunk = codes[start:start+200]
-            sql = ("SELECT container_no, free_days FROM monitor_excel_container_days "
+            sql = ("SELECT container_no, MAX(free_days) AS free_days FROM monitor_excel_container_days "
                    "WHERE loading_date BETWEEN ? AND ? AND container_no IN (" +
                    ",".join("?" for _ in chunk) +
                    ") GROUP BY container_no HAVING COUNT(*) = 1")
-            # SELECT a non-aggregated free_days in an unambiguous 1-row group only.
+            # MAX(free_days) satisfies ONLY_FULL_GROUP_BY; HAVING 1 row prevents ambiguity.
             cur.execute(sql, [first, today] + chunk)
             for row in cur.fetchall():
                 value = int(row["free_days"])
