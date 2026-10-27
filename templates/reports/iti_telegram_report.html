@@ -44,9 +44,12 @@
   .hero-eyebrow .nico { color: #7EE8A2; }
   .hero-eyebrow .sep  { color: rgba(255,255,255,0.2); margin: 0 6px; }
   .hero-eyebrow .iti  { color: #63b3ff; }
-  .excel-entry{display:inline-flex;align-items:center;flex-shrink:0;text-decoration:none;color:#deefff;font:700 11px 'DM Sans',sans-serif;border:1px solid rgba(200,229,255,.35);border-radius:8px;padding:7px 9px;background:rgba(255,255,255,.10);white-space:nowrap;letter-spacing:0}
-  .excel-entry:hover{background:rgba(255,255,255,.2)}
-  @media(max-width:400px){.excel-entry{font-size:10px;padding:6px 7px}.hero-eyebrow{font-size:19px}}
+  /* A spreadsheet receiving data: SVG-only entry, with accessible tooltip. */
+  .excel-entry{display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;width:34px;height:34px;text-decoration:none;color:#deefff;border:1px solid rgba(200,229,255,.35);border-radius:8px;background:rgba(255,255,255,.10)}
+  .excel-entry svg{width:21px;height:21px;display:block;flex:none}
+  .excel-entry:hover,.excel-entry:focus-visible{background:rgba(255,255,255,.2)}
+  .excel-entry:focus-visible{outline:2px solid #7ee8a2;outline-offset:2px}
+  @media(max-width:400px){.excel-entry{flex-basis:32px;width:32px;height:32px}.hero-eyebrow{font-size:19px}}
 
   .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; position:relative; z-index:1; }
   .stat { background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:12px 10px; text-align:center; }
@@ -212,7 +215,13 @@
     <div class="hero-eyebrow">
       <span class="nico">{{ company_name }}</span><span class="sep">·</span><span class="iti">ITI MONITOR</span>
     </div>
-    {% if api_key %}<a class="excel-entry" href="/admin/container-excel" aria-label="Excel 貨櫃匯入">Excel 匯入</a>{% endif %}
+    {% if api_key %}<a class="excel-entry" href="/admin/container-excel" aria-label="匯入 Excel 貨櫃資料" title="匯入 Excel 貨櫃資料">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M13.5 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9"/>
+        <path d="M4 9h8M4 13h8M8 9v9"/>
+        <path d="M18 3v10m-4-4 4 4 4-4"/>
+      </svg>
+    </a>{% endif %}
   </div>
   <div class="today-chile">Hoy: {{ generated_date }} (Chile)</div>
   <div class="stats">

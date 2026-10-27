@@ -86,6 +86,18 @@ class MonitorBadgesTests(unittest.TestCase):
         self.assertIn("TLLU5363704", html)
         self.assertIn('class="ft-total"', html)
 
+    def test_excel_import_entry_is_svg_only_and_accessible(self):
+        web = render_monitor(True)
+        self.assertIn('href="/admin/container-excel"', web)
+        self.assertIn('aria-label="匯入 Excel 貨櫃資料"', web)
+        self.assertIn('class="excel-entry"', web)
+        entry = web.split('class="excel-entry"', 1)[1].split("</a>", 1)[0]
+        self.assertIn('<svg ', entry)
+        self.assertIn('M18 3v10', entry)
+        self.assertNotIn(">Excel 匯入", entry)
+        snapshot = render_monitor(False)
+        self.assertNotIn('class="excel-entry"', snapshot)
+
     def test_telegram_image_markup_remains_original(self):
         html = render_monitor(False)
         self.assertIn("21d", html)
