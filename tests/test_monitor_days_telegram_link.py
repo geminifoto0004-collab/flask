@@ -86,6 +86,18 @@ class MonitorBadgesTests(unittest.TestCase):
         self.assertIn("TLLU5363704", html)
         self.assertIn('class="ft-total"', html)
 
+    def test_desktop_matched_has_visible_hourglass_inside_status_not_fifth_column(self):
+        web = render_monitor(True)
+        self.assertIn('class="desktop-inline-remaining"', web)
+        self.assertIn('class="t-remaining-h"', web)
+        self.assertIn("ft_remaining(c.timer.remaining)", (ROOT / "templates" / "reports" / "iti_telegram_report.html").read_text(encoding="utf-8-sig"))
+        source = (ROOT / "templates" / "reports" / "iti_telegram_report.html").read_text(encoding="utf-8-sig")
+        self.assertIn(".web-days .v-card.matched .t-remaining,", source)
+        self.assertIn(".web-days .v-card.matched .desktop-inline-remaining{display:inline-flex", source)
+        self.assertIn("@media(min-width:431px)", source)
+        telegram = render_monitor(False)
+        self.assertNotIn('class="desktop-inline-remaining"', telegram)
+
     def test_excel_import_entry_is_svg_only_and_accessible(self):
         web = render_monitor(True)
         self.assertIn('href="/admin/container-excel"', web)
