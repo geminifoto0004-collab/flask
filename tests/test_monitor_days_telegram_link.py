@@ -76,6 +76,16 @@ class MonitorBadgesTests(unittest.TestCase):
         self.assertNotIn("14d", html)
         self.assertNotIn('class="timer-mini timer-red"', html)
         self.assertNotIn("Plazo referencial 14 días", html)
+    def test_matched_container_and_svg_are_one_line_on_mobile(self):
+        # CSS is scoped to WEB matched rows, leaving Telegram PNG unchanged.
+        source = (ROOT / "templates" / "reports" / "iti_telegram_report.html").read_text(encoding="utf-8-sig")
+        self.assertIn(".web-days .v-card.matched .t-container{white-space:nowrap}", source)
+        self.assertIn(".web-days .v-card.matched table{table-layout:fixed}", source)
+        self.assertIn(".web-days .v-card.matched .t-container .ft-total", source)
+        html = render_monitor(True)
+        self.assertIn("TLLU5363704", html)
+        self.assertIn('class="ft-total"', html)
+
     def test_telegram_image_markup_remains_original(self):
         html = render_monitor(False)
         self.assertIn("21d", html)
