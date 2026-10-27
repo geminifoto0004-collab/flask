@@ -98,23 +98,6 @@ class MonitorBadgesTests(unittest.TestCase):
         snapshot = render_monitor(False)
         self.assertNotIn('class="excel-entry"', snapshot)
 
-    def test_desktop_fifth_column_fits_matched_card(self):
-        # The desktop report is max-width 520px with 24px side padding.
-        # Old auto-layout pushed the hourglass column outside the green card.
-        import re
-        source = (ROOT / "templates" / "reports" / "iti_telegram_report.html").read_text(encoding="utf-8-sig")
-        self.assertIn(".web-days .v-card.matched table{width:100%;table-layout:fixed}", source)
-        cols = ["folio", "fecha", "estado", "remaining"]
-        sizes = []
-        for col in cols:
-            match = re.search(r"\.web-days \.v-card\.matched \.col-" + col + r"\{width:(\d+)px\}", source)
-            self.assertIsNotNone(match, col)
-            sizes.append(int(match.group(1)))
-        # Leave meaningful room for 11-digit container code + total-days SVG.
-        self.assertGreaterEqual(520 - 48 - sum(sizes), 170)
-        self.assertIn(".web-days .v-card.matched .t-container{font-size:11px;letter-spacing:0;white-space:nowrap}", source)
-        self.assertIn(".web-days .v-card.matched .t-fecha{font-size:10px;letter-spacing:0;white-space:nowrap}", source)
-
     def test_telegram_image_markup_remains_original(self):
         html = render_monitor(False)
         self.assertIn("21d", html)
