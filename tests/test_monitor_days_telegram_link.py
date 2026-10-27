@@ -12,9 +12,9 @@ REPORT = "https://flask-393d.onrender.com/monitor/report?api_key=TESTTOKEN"
 
 
 def render_monitor(web):
-    templates = ROOT / "templates" / "reports"
+    templates = ROOT / "templates"
     env = Environment(loader=FileSystemLoader(str(templates)), autoescape=select_autoescape(["html", "xml"]))
-    template = env.get_template("iti_telegram_report.html")
+    template = env.get_template("reports/iti_telegram_report.html")
 
     def container(code, days, remaining, matched=False):
         return {
