@@ -1790,10 +1790,10 @@ def _render_telegram_html_image(
 
     try:
         env = Environment(
-            loader=FileSystemLoader(str(template_dir)),
+            loader=FileSystemLoader(str(template_dir.parent)),
             autoescape=select_autoescape(["html", "xml"])
         )
-        template = env.get_template("iti_telegram_report.html")
+        template = env.get_template("reports/iti_telegram_report.html")
         context = _build_telegram_html_context(
             containers=containers,
             include_matched=include_matched,
