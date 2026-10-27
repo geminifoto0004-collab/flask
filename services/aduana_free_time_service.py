@@ -305,6 +305,17 @@ def enrich_groups(matched_groups, unmatched_groups, task_id=None, today=None):
         [g["nave"] for g in all_groups],
         [c["contenedor"] for g in all_groups for c in g["contenedores"]])
     today = today or get_chile_time_naive().date()
+    # Excel values are a separate optional read-only layer. Missing table/DB never
+    # interrupts Monitor; manual per-voyage overrides always take priority.
+    try:
+        from blueprints.container_excel_bp import lookup_excel_days
+        excel_days = lookup_excel_days(
+            [item.get("contenedor") for grp in all_groups for item in grp["contenedores"]],
+            today=today,
+        )
+    except Exception as exc:
+        LOGGER.warning("Optional Excel free-time lookup failed: %s", type(exc).__name__)
+        excel_days = {}
     for group in all_groups:
         rec = vessels.get(normalize_ship(group["nave"]))
         group["eta"] = parse_eta(rec["eta"]).strftime("%d/%m/%Y") if rec else None
@@ -315,10 +326,13 @@ def enrich_groups(matched_groups, unmatched_groups, task_id=None, today=None):
             item = (overrides.get((normalize_container(c["contenedor"]), str(rec["programacion"])))
                     if rec else None)
             manual = item.get("free_days") if item else None
-            # If manually specified 14d, show 14d: this is an explicit choice.
+            # A manual 14d is still explicit and must not be replaced by Excel.
             c["manual_days"] = int(manual) if manual is not None else None
+            excel = excel_days.get(normalize_container(c["contenedor"]))
+            c["excel_days"] = excel if manual is None else None
             c["loading_date"] = str(item.get("loading_date") or "") if item else ""
-            calc = calculate(rec["eta"], manual, at=today,
+            effective_days = manual if manual is not None else excel
+            calc = calculate(rec["eta"], effective_days, at=today,
                              entrega=c.get("fecha_entrega") if "fecha_entrega" in c else None) if rec else None
             c["timer"] = calc
             # The delivery-risk warning uses the ENTREGA date, not today's remaining days.
