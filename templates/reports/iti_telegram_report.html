@@ -1,4 +1,5 @@
-﻿<!DOCTYPE html>
+﻿{% from "monitor_days_badges.html" import total as ft_total, remaining as ft_remaining %}
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -152,6 +153,23 @@
   .timer-red { color:#d41e35; }
   .timer-svg { flex-shrink:0;display:inline-block;vertical-align:middle; }
   .custom-days { color:#84601e; margin-left:4px;font-size:9px;font-weight:700; }
+  /* WEB ONLY: compact calendar total + hourglass remaining; snapshot markup unchanged. */
+  .web-days .ft-total,.web-days .ft-remaining{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;gap:3px;white-space:nowrap;font:700 10px 'DM Mono',monospace;line-height:1.2}
+  .web-days .ft-total{color:#185fc6;background:#eaf3ff;border-radius:6px;padding:3px 5px;margin-left:4px}
+  .web-days .ft-remaining{border-radius:7px;padding:4px 6px}
+  .web-days .ft-ship{font-size:11px;padding:4px 7px}
+  .web-days .ft-safe{color:#00734d;background:#e3f7eb}
+  .web-days .ft-soon{color:#b96a00;background:#fff0ca}
+  .web-days .ft-danger{color:#c71934;background:#fbe5e9}
+  .web-days .ft-svg{flex:none;display:inline-block;width:12px;height:12px}
+  .web-days .col-remaining{width:51px}
+  .web-days .t-remaining{text-align:right;padding-left:0}
+  .web-days .um-item{gap:4px}
+  .web-days .um-estado{margin-left:auto}
+  .web-days .um-item .ft-total{font-size:9px;padding:2px 4px;margin-left:2px}
+  .web-days .um-item .ft-remaining{font-size:9px;padding:3px 4px}
+  @media(max-width:430px){.web-days .col-remaining{width:43px}.web-days .ft-remaining{padding:3px 4px}.web-days .ft-ship{font-size:10px}.web-days .ft-svg{width:11px;height:11px}.web-days .t-container .ft-total{font-size:9px;padding:2px 3px}.web-days .um-item .ft-svg{width:9px;height:9px}}
+
   .delivery-inline { white-space:nowrap; }
   .delivery-inline .timer-mini { margin-left:3px; }
   .um-item .custom-days { font-size:8px; margin-left:2px; }
@@ -166,7 +184,7 @@
   }
 </style>
 </head>
-<body>
+<body class="{{ 'web-days' if web_report_only else '' }}">
 
 <div class="hero">
   <div class="hero-orb1"></div>
@@ -197,22 +215,22 @@
   <div class="v-head">
     <div class="v-icon">🛳️</div>
     <span class="v-name">{{ g.nave }}</span>
-    <span class="ship-extras">{% if g.eta %}<span class="eta-mini">ETA {{ g.eta }}</span><span class="timer-mini {% if g.ship_timer.remaining <= 3 %}timer-red{% elif g.ship_timer.remaining == 4 %}timer-amber{% else %}timer-green{% endif %}" title="Plazo referencial 14 días; no equivale a free time contractual">{% if g.ship_timer.remaining <= 3 %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% else %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M5 3h14M5 21h14M7 3c0 6 5 6 5 9s-5 3-5 9M17 3c0 6-5 6-5 9s5 3 5 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>{% endif %}{% if g.ship_timer.remaining < 0 %}逾{{ -g.ship_timer.remaining }}{% else %}{{ g.ship_timer.remaining }}{% endif %}</span>{% endif %}<span class="v-badge">{{ g.count }} matched</span></span>
+    <span class="ship-extras">{% if g.eta %}<span class="eta-mini">ETA {{ g.eta }}</span>{% if web_report_only %}{{ ft_remaining(g.web_ship_remaining, true) }}{% else %}<span class="timer-mini {% if g.ship_timer.remaining <= 3 %}timer-red{% elif g.ship_timer.remaining == 4 %}timer-amber{% else %}timer-green{% endif %}" title="Plazo referencial 14 días; no equivale a free time contractual">{% if g.ship_timer.remaining <= 3 %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% else %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M5 3h14M5 21h14M7 3c0 6 5 6 5 9s-5 3-5 9M17 3c0 6-5 6-5 9s5 3 5 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>{% endif %}{% if g.ship_timer.remaining < 0 %}逾{{ -g.ship_timer.remaining }}{% else %}{{ g.ship_timer.remaining }}{% endif %}</span>{% endif %}{% endif %}<span class="v-badge">{{ g.count }} matched</span></span>
   </div>
   <table>
     <colgroup>
-      <col class="col-folio"><col class="col-container"><col class="col-fecha"><col class="col-estado">
+      <col class="col-folio"><col class="col-container"><col class="col-fecha"><col class="col-estado">{% if web_report_only %}<col class="col-remaining">{% endif %}
     </colgroup>
     <thead><tr>
-      <th>Folio</th><th>Contenedor</th><th>Entrega</th><th>Estado</th>
+      <th>Folio</th><th>Contenedor</th><th>Entrega</th><th>Estado</th>{% if web_report_only %}<th aria-label="剩餘天數"></th>{% endif %}
     </tr></thead>
     <tbody>
       {% for c in g.contenedores %}
       <tr class="matched {{ 'row-odd' if loop.index is odd else 'row-even' }}">
         <td class="t-folio">{{ c.folio }}</td>
-        <td class="t-container">{{ c.contenedor }}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% elif c.get('excel_days') is not none %}<span class="custom-days" title="Excel 匯入的免箱天數">{{ c.excel_days }}d</span>{% endif %}</td>
-        <td class="t-fecha"><span class="delivery-inline">{{ c.fecha_entrega }}{% if c.delivery_risk is not none %}<span class="timer-mini timer-red" title="Días disponibles en la fecha ENTREGA; plazo referencial"><svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% if c.delivery_risk < 0 %}逾{{ -c.delivery_risk }}{% else %}{{ c.delivery_risk }}{% endif %}</span>{% endif %}</span></td>
-        <td class="t-estado">{{ c.estado }}</td>
+        <td class="t-container">{{ c.contenedor }}{% if web_report_only %}{% if c.manual_days is not none %}{{ ft_total(c.manual_days) }}{% elif c.get('excel_days') is not none %}{{ ft_total(c.excel_days) }}{% endif %}{% else %}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% elif c.get('excel_days') is not none %}<span class="custom-days" title="Excel 匯入的免箱天數">{{ c.excel_days }}d</span>{% endif %}{% endif %}</td>
+        <td class="t-fecha"><span class="delivery-inline">{{ c.fecha_entrega }}{% if not web_report_only %}{% if c.delivery_risk is not none %}<span class="timer-mini timer-red" title="Días disponibles en la fecha ENTREGA; plazo referencial"><svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% if c.delivery_risk < 0 %}逾{{ -c.delivery_risk }}{% else %}{{ c.delivery_risk }}{% endif %}</span>{% endif %}{% endif %}</span></td>
+        <td class="t-estado">{{ c.estado }}</td>{% if web_report_only %}<td class="t-remaining">{% if c.get('timer') and (c.manual_days is not none or c.get('excel_days') is not none) %}{{ ft_remaining(c.timer.remaining) }}{% endif %}</td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>
@@ -232,13 +250,13 @@
 <div class="um-card">
   <div class="um-head">
     <span class="um-vessel-name">🛳️ {{ g.nave }}</span>
-    <span class="ship-extras">{% if g.eta %}<span class="eta-mini">ETA {{ g.eta }}</span><span class="timer-mini {% if g.ship_timer.remaining <= 3 %}timer-red{% elif g.ship_timer.remaining == 4 %}timer-amber{% else %}timer-green{% endif %}" title="Plazo referencial 14 días; no equivale a free time contractual">{% if g.ship_timer.remaining <= 3 %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% else %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M5 3h14M5 21h14M7 3c0 6 5 6 5 9s-5 3-5 9M17 3c0 6-5 6-5 9s5 3 5 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>{% endif %}{% if g.ship_timer.remaining < 0 %}逾{{ -g.ship_timer.remaining }}{% else %}{{ g.ship_timer.remaining }}{% endif %}</span>{% endif %}<span class="um-vessel-count">{{ g.count }} contenedores</span></span>
+    <span class="ship-extras">{% if g.eta %}<span class="eta-mini">ETA {{ g.eta }}</span>{% if web_report_only %}{{ ft_remaining(g.web_ship_remaining, true) }}{% else %}<span class="timer-mini {% if g.ship_timer.remaining <= 3 %}timer-red{% elif g.ship_timer.remaining == 4 %}timer-amber{% else %}timer-green{% endif %}" title="Plazo referencial 14 días; no equivale a free time contractual">{% if g.ship_timer.remaining <= 3 %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% else %}<svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M5 3h14M5 21h14M7 3c0 6 5 6 5 9s-5 3-5 9M17 3c0 6-5 6-5 9s5 3 5 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>{% endif %}{% if g.ship_timer.remaining < 0 %}逾{{ -g.ship_timer.remaining }}{% else %}{{ g.ship_timer.remaining }}{% endif %}</span>{% endif %}{% endif %}<span class="um-vessel-count">{{ g.count }} contenedores</span></span>
   </div>
   <div class="um-grid">
     {% for c in g.contenedores %}
     <div class="um-item">
-      <span class="um-container">{{ c.contenedor }}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% elif c.get('excel_days') is not none %}<span class="custom-days" title="Excel 匯入的免箱天數">{{ c.excel_days }}d</span>{% endif %}</span>
-      <span class="um-estado">{{ c.estado }}</span>
+      <span class="um-container">{{ c.contenedor }}{% if web_report_only %}{% if c.manual_days is not none %}{{ ft_total(c.manual_days) }}{% elif c.get('excel_days') is not none %}{{ ft_total(c.excel_days) }}{% endif %}{% else %}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% elif c.get('excel_days') is not none %}<span class="custom-days" title="Excel 匯入的免箱天數">{{ c.excel_days }}d</span>{% endif %}{% endif %}</span>
+      <span class="um-estado">{{ c.estado }}</span>{% if web_report_only and c.get('timer') and (c.manual_days is not none or c.get('excel_days') is not none) %}{{ ft_remaining(c.timer.remaining) }}{% endif %}
     </div>
     {% endfor %}
   </div>

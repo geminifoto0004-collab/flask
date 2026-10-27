@@ -2212,15 +2212,17 @@ def send_notification_telegram(
     )
     caption = _build_telegram_image_caption(company_name, containers)
     report_url = (report_url or "").strip()
+    # Fixed PIN-protected free-time importer. Do not put the PIN in Telegram.
+    free_days_url = "https://flask-393d.onrender.com/admin/container-excel"
+    free_days_hint = "\n設定／匯入免箱天數（需輸入密碼）：\n" + free_days_url
 
     text_ok = None
     image_ok = None
     error_messages = []
 
     def build_photo_caption(base_caption: str) -> str:
-        if not report_url:
-            return base_caption
-        suffix = f"\n🔗 {report_url}"
+        # Keep existing Monitor URL as-is; add only the Excel setup URL below.
+        suffix = (f"\n🔗 {report_url}" if report_url else "") + free_days_hint
         max_len = 1024
         if len(base_caption) + len(suffix) <= max_len:
             return base_caption + suffix
@@ -2234,6 +2236,9 @@ def send_notification_telegram(
 
     if telegram_mode == "text" and report_url:
         text_message = f"{text_message}\n\n🔗 Ver reporte web:\n{report_url}"
+    if telegram_mode in ("text", "both"):
+        text_message = (text_message[:max(0, 4096 - len(free_days_hint) - 3)] + "..."
+                        if len(text_message) + len(free_days_hint) > 4096 else text_message) + free_days_hint
 
     if telegram_mode in ("text", "both"):
         text_ok, text_err = send_telegram_message(bot_token, chat_id, text_message)
@@ -2282,6 +2287,8 @@ def send_notification_telegram(
         # fallback to text to avoid total loss
         if report_url:
             text_message = f"{text_message}\n\n🔗 Ver reporte web:\n{report_url}"
+        text_message = (text_message[:max(0, 4096 - len(free_days_hint) - 3)] + "..."
+                        if len(text_message) + len(free_days_hint) > 4096 else text_message) + free_days_hint
         fallback_ok, fallback_err = send_telegram_message(bot_token, chat_id, text_message)
         if fallback_ok:
             return True, "Telegram image failed, fallback text sent"
