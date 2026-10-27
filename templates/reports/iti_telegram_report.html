@@ -164,6 +164,25 @@
   .web-days .ft-svg{flex:none;display:inline-block;width:12px;height:12px}
   .web-days .col-remaining{width:51px}
   .web-days .t-remaining{text-align:right;padding-left:0}
+  /* WEB matched rows: keep container number + total-days calendar on ONE line.
+     Compact only this table on narrow iPhone screens; no Telegram snapshot changes. */
+  .web-days .v-card.matched .t-container{white-space:nowrap}
+  @media(max-width:430px){
+    .web-days .v-card.matched table{table-layout:fixed}
+    .web-days .v-card.matched .col-folio{width:26px}
+    .web-days .v-card.matched .col-fecha{width:100px}
+    .web-days .v-card.matched .col-estado{width:47px}
+    .web-days .v-card.matched .col-remaining{width:36px}
+    .web-days .v-card.matched td{padding-left:3px;padding-right:3px}
+    .web-days .v-card.matched .t-container{font-size:9.5px;letter-spacing:0;white-space:nowrap}
+    .web-days .v-card.matched .t-container .ft-total{font-size:9px;gap:2px;margin-left:2px;padding:2px 3px}
+    .web-days .v-card.matched .t-container .ft-svg{width:10px;height:10px}
+    .web-days .v-card.matched .t-fecha{font-size:8.5px;letter-spacing:0}
+    .web-days .v-card.matched .t-estado{font-size:6.7px;letter-spacing:0}
+    .web-days .v-card.matched .t-remaining{padding-left:0;padding-right:2px}
+    .web-days .v-card.matched .t-remaining .ft-remaining{font-size:9px;gap:2px;padding:3px}
+    .web-days .v-card.matched .t-remaining .ft-svg{width:10px;height:10px}
+  }
   .web-days .um-item{gap:4px}
   .web-days .um-estado{margin-left:auto}
   .web-days .um-item .ft-total{font-size:9px;padding:2px 4px;margin-left:2px}
