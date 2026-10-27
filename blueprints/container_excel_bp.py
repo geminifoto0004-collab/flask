@@ -14,7 +14,7 @@ from flask import Blueprint, jsonify, redirect, render_template, request, sessio
 
 from config import config
 from database import get_db_connection, get_db_connection_for_target
-from tidb_targets import preferred_target, target_configured
+from tidb_targets import preferred_target, target_configured, mirror_enabled
 from utils.time_utils import get_chile_time_naive
 
 LOG = logging.getLogger(__name__)
@@ -130,8 +130,13 @@ def _targets():
     if config.DATABASE_TYPE not in ("mysql", "tidb"):
         raise RuntimeError("目前的 Render 未設定 TiDB；沒有寫入任何資料")
     first = preferred_target()
-    ordered = [first, "TIDB2" if first == "TIDB1" else "TIDB1"]
-    return [t for t in ordered if target_configured(t)]
+    second = "TIDB2" if first == "TIDB1" else "TIDB1"
+    # Match existing Render mirror policy; never write a disabled standby.
+    ordered = [first, second] if mirror_enabled() else [first]
+    configured = [t for t in ordered if target_configured(t)]
+    if not configured and target_configured(second):
+        configured = [second]
+    return configured
 
 
 @container_excel_bp.route("/admin/container-excel", methods=["GET"])
