@@ -1,0 +1,33 @@
+name: Monitor Day SVG and Telegram URL Checks
+on:
+  pull_request:
+    paths:
+      - 'blueprints/monitor_bp.py'
+      - 'services/monitor_service.py'
+      - 'services/aduana_free_time_service.py'
+      - 'templates/reports/iti_telegram_report.html'
+      - 'templates/reports/monitor_days_badges.html'
+      - 'tests/test_monitor_days_telegram_link.py'
+      - '.github/workflows/monitor-days-telegram-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/monitor_service.py'
+      - 'services/aduana_free_time_service.py'
+      - 'templates/reports/**'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install Jinja2
+      - name: Python syntax
+        run: python -m py_compile blueprints/monitor_bp.py services/monitor_service.py services/aduana_free_time_service.py
+      - name: Check unchanged Telegram image and new web SVG
+        run: python -m unittest discover -s tests -p 'test_monitor_days_telegram_link.py' -v
