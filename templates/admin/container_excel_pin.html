@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-Hant"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XINGWANG · Excel 匯入驗證</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#f2f5f9;font:15px system-ui,"Microsoft JhengHei",sans-serif;color:#20324a}
+.panel{width:min(420px,calc(100vw - 28px));background:#fff;border-radius:18px;border:1px solid #e0e7ee;padding:30px;box-shadow:0 15px 48px #2a3c5022}
+.brand{font-size:14px;letter-spacing:.12em;color:#217276;font-weight:800}.heading{font-size:23px;font-weight:800;margin:13px 0 6px}.desc{font-size:13px;color:#637787;line-height:1.6;margin:0 0 22px}
+label{display:block;font-size:13px;font-weight:750;margin:12px 0 7px}
+input{display:block;outline:none;width:100%;padding:15px 12px;border:1px solid #b7c7d2;border-radius:10px;text-align:center;font-size:26px;letter-spacing:5px}
+input:focus{border-color:#147f84;box-shadow:0 0 0 3px #dcefea}
+button{margin-top:19px;display:block;width:100%;border:0;border-radius:10px;background:#126e78;color:#fff;padding:13px;font-size:15px;font-weight:800;cursor:pointer}
+button:disabled{background:#a6b4bd;cursor:not-allowed}.error{color:#af2534;background:#fceeee;padding:10px;border-radius:8px;margin:12px 0 0;font-size:13px}
+.note{display:block;margin-top:17px;font-size:12px;text-align:center;color:#758997}
+</style>
+</head><body>
+<div class="panel">
+<div class="brand">XINGWANG MONITOR</div>
+<h1 class="heading">Excel 貨櫃匯入</h1>
+<p class="desc">不需要登入管理控制台。請輸入你在 Render 環境變數設定的 1～6 位數字密碼。</p>
+<form method="post" action="/admin/container-excel/login">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="pin">匯入密碼</label>
+<input id="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{1,6}" minlength="1" maxlength="6" autocomplete="off" placeholder="••••" required autofocus {% if unconfigured %}disabled{% endif %}>
+<button type="submit" {% if unconfigured %}disabled{% endif %}>解鎖 Excel 表格</button>
+</form>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if unconfigured %}<p class="error">請先在 Render → Environment 加入 XINGWANG_EXCEL_PIN（值為你自訂的 1～6 位數字），儲存並完成部署。</p>{% endif %}
+<span class="note">資料僅於瀏覽器內解析；登入有效期限為 60 分鐘</span>
+</div>
+</body></html>
