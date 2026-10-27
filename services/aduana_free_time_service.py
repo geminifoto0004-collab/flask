@@ -338,6 +338,14 @@ def enrich_groups(matched_groups, unmatched_groups, task_id=None, today=None):
             # The delivery-risk warning uses the ENTREGA date, not today's remaining days.
             c["delivery_risk"] = (calc["delivery_remaining"] if calc and
                                   calc["delivery_warning"] and "fecha_entrega" in c else None)
+        # Web ship-level hourglass must reflect the earliest expiry of its
+        # containers, rather than always assuming default 14 days for the ship.
+        # Unconfigured rows retain their existing 14-day reference behaviour.
+        remaining_values = [
+            entry["timer"]["remaining"] for entry in group["contenedores"]
+            if entry.get("timer") and entry["timer"].get("remaining") is not None
+        ]
+        group["web_ship_remaining"] = min(remaining_values) if remaining_values else None
     return all_groups
 
 
