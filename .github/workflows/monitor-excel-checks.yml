@@ -8,6 +8,8 @@ on:
       - 'services/aduana_free_time_service.py'
       - 'templates/reports/iti_telegram_report.html'
       - 'tests/test_container_excel_import.py'
+      - 'tests/test_container_excel_pin.py'
+      - 'templates/admin/container_excel_pin.html'
       - '.github/workflows/monitor-excel-checks.yml'
   push:
     branches: [main]
@@ -32,3 +34,5 @@ jobs:
         run: node --check static/js/monitor_excel_import.js
       - name: Validate import safety
         run: python -m unittest discover -s tests -p 'test_container_excel_import.py' -v
+      - name: Validate PIN access
+        run: python -m unittest discover -s tests -p 'test_container_excel_pin.py' -v

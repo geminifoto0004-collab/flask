@@ -43,6 +43,9 @@
   .hero-eyebrow .nico { color: #7EE8A2; }
   .hero-eyebrow .sep  { color: rgba(255,255,255,0.2); margin: 0 6px; }
   .hero-eyebrow .iti  { color: #63b3ff; }
+  .excel-entry{display:inline-flex;align-items:center;flex-shrink:0;text-decoration:none;color:#deefff;font:700 11px 'DM Sans',sans-serif;border:1px solid rgba(200,229,255,.35);border-radius:8px;padding:7px 9px;background:rgba(255,255,255,.10);white-space:nowrap;letter-spacing:0}
+  .excel-entry:hover{background:rgba(255,255,255,.2)}
+  @media(max-width:400px){.excel-entry{font-size:10px;padding:6px 7px}.hero-eyebrow{font-size:19px}}
 
   .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; position:relative; z-index:1; }
   .stat { background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:12px 10px; text-align:center; }
@@ -172,6 +175,7 @@
     <div class="hero-eyebrow">
       <span class="nico">{{ company_name }}</span><span class="sep">·</span><span class="iti">ITI MONITOR</span>
     </div>
+    {% if api_key %}<a class="excel-entry" href="/admin/container-excel" aria-label="Excel 貨櫃匯入">Excel 匯入</a>{% endif %}
   </div>
   <div class="today-chile">Hoy: {{ generated_date }} (Chile)</div>
   <div class="stats">
