@@ -412,7 +412,7 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
         # can be linked only after confirming their bytes already exist in B2;
         # never issue a new PUT URL for an oversized image.
         if file_size > _NEW_IMAGE_MAX_BYTES:
-            raise ValueError('optimized image exceeds 1,000,000-byte policy')
+            raise ValueError('historical B2 image missing; recompress under 1,000,000-byte policy')
     else:
         object_key = _object_key(asset_sha256, content_type)
 
