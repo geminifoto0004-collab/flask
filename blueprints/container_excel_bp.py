@@ -7,10 +7,17 @@ from __future__ import annotations
 
 import logging
 import re
+import os
+import secrets
+import hmac
+import hashlib
+import time
+import threading
+from collections import deque
 from datetime import date, datetime
 from functools import wraps
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for, current_app
 
 from config import config
 from database import get_db_connection, get_db_connection_for_target
@@ -40,17 +47,129 @@ UPSERT = """INSERT INTO monitor_excel_container_days
  imported_by=VALUES(imported_by), imported_at=VALUES(imported_at)"""
 
 
-def admin_only(fn):
+# This scoped PIN never grants any main-site administrator permissions.
+PIN_TTL_SECONDS = 3600
+PIN_WINDOW_SECONDS = 900
+PIN_GLOBAL_FAILURE_LIMIT = 24
+PIN_CLIENT_FAILURE_LIMIT = 4
+_PIN_FAILURES = deque()
+_PIN_CLIENT_FAILURES = {}
+_PIN_LOCK = threading.Lock()
+
+
+def _configured_pin():
+    pin = (os.environ.get("XINGWANG_EXCEL_PIN") or "").strip()
+    return pin if re.fullmatch(r"[0-9]{1,6}", pin) else None
+
+
+def _pin_signature(pin):
+    secret = current_app.secret_key
+    secret = secret if isinstance(secret, bytes) else str(secret).encode("utf-8")
+    return hmac.new(secret, b"container_excel_access_v1:" + pin.encode("ascii"),
+                    hashlib.sha256).hexdigest()
+
+
+def _has_excel_access():
+    if session.get("logged_in") and session.get("role") in ("admin", "super_admin"):
+        return True
+    pin = _configured_pin()
+    try:
+        granted = int(session.get("excel_pin_granted_at") or 0)
+        stored = str(session.get("excel_pin_signature") or "")
+    except (TypeError, ValueError):
+        return False
+    return bool(pin and granted and 0 <= time.time()-granted < PIN_TTL_SECONDS
+                and hmac.compare_digest(stored, _pin_signature(pin)))
+
+
+def excel_access(fn):
     @wraps(fn)
     def guarded(*args, **kwargs):
-        if not session.get("logged_in"):
+        if not _has_excel_access():
             if request.path.startswith("/api/"):
-                return jsonify(success=False, error="請先登入管理員"), 401
-            return redirect(url_for("login", next=request.path))
-        if session.get("role") not in ("admin", "super_admin"):
-            return jsonify(success=False, error="需要管理員權限"), 403
+                return jsonify(success=False, error="請先輸入 Excel 匯入密碼"), 401
+            return redirect(url_for("container_excel.excel_page"))
         return fn(*args, **kwargs)
     return guarded
+
+
+def _csrf_token():
+    token = session.get("excel_pin_csrf")
+    if not token:
+        token = secrets.token_urlsafe(24)
+        session["excel_pin_csrf"] = token
+    return token
+
+
+def _pin_client_id():
+    # Do not trust user-provided forwarding headers; use the request peer only.
+    return str(request.remote_addr or "unknown")
+
+
+def _prune_failures(now):
+    while _PIN_FAILURES and now - _PIN_FAILURES[0] >= PIN_WINDOW_SECONDS:
+        _PIN_FAILURES.popleft()
+    for client_id in list(_PIN_CLIENT_FAILURES):
+        recent = _PIN_CLIENT_FAILURES[client_id]
+        while recent and now - recent[0] >= PIN_WINDOW_SECONDS:
+            recent.popleft()
+        if not recent:
+            del _PIN_CLIENT_FAILURES[client_id]
+
+
+def _pin_attempt_allowed(client_id):
+    with _PIN_LOCK:
+        now = time.monotonic()
+        _prune_failures(now)
+        recent = _PIN_CLIENT_FAILURES.get(client_id, ())
+        return (len(_PIN_FAILURES) < PIN_GLOBAL_FAILURE_LIMIT
+                and len(recent) < PIN_CLIENT_FAILURE_LIMIT)
+
+
+def _record_pin_failure(client_id):
+    with _PIN_LOCK:
+        now = time.monotonic()
+        _prune_failures(now)
+        _PIN_FAILURES.append(now)
+        _PIN_CLIENT_FAILURES.setdefault(client_id, deque()).append(now)
+
+
+@container_excel_bp.route("/admin/container-excel/login", methods=["POST"])
+def excel_pin_login():
+    pin = _configured_pin()
+    if not pin:
+        return render_template("admin/container_excel_pin.html",
+                               csrf=_csrf_token(), unconfigured=True,
+                               error="尚未在 Render 設定 XINGWANG_EXCEL_PIN"), 503
+    supplied_csrf = str(request.form.get("csrf") or "")
+    stored_csrf = str(session.get("excel_pin_csrf") or "")
+    if not (stored_csrf and hmac.compare_digest(supplied_csrf, stored_csrf)):
+        return render_template("admin/container_excel_pin.html",
+                               csrf=_csrf_token(), unconfigured=False,
+                               error="驗證頁面已失效，請重新輸入"), 403
+    user_pin = str(request.form.get("pin") or "")
+    client = _pin_client_id()
+    if not _pin_attempt_allowed(client):
+        return render_template("admin/container_excel_pin.html",
+                               csrf=_csrf_token(), unconfigured=False,
+                               error="嘗試次數過多，請稍後再試"), 429
+    if not re.fullmatch(r"[0-9]{1,6}", user_pin) or not hmac.compare_digest(user_pin, pin):
+        _record_pin_failure(client)
+        return render_template("admin/container_excel_pin.html",
+                               csrf=_csrf_token(), unconfigured=False,
+                               error="密碼不正確"), 401
+    session.clear()
+    session["excel_pin_granted_at"] = int(time.time())
+    session["excel_pin_signature"] = _pin_signature(pin)
+    session.permanent = False
+    return redirect(url_for("container_excel.excel_page"), code=303)
+
+
+@container_excel_bp.route("/admin/container-excel/logout", methods=["POST"])
+def excel_pin_logout():
+    session.pop("excel_pin_granted_at", None)
+    session.pop("excel_pin_signature", None)
+    return redirect(url_for("container_excel.excel_page"), code=303)
 
 
 def _check_origin():
@@ -140,14 +259,19 @@ def _targets():
 
 
 @container_excel_bp.route("/admin/container-excel", methods=["GET"])
-@admin_only
 def excel_page():
-    response = render_template("admin/container_excel_import.html")
+    if _has_excel_access():
+        response = render_template("admin/container_excel_import.html")
+    else:
+        response = render_template(
+            "admin/container_excel_pin.html", csrf=_csrf_token(),
+            unconfigured=(_configured_pin() is None), error=None,
+        )
     return response, 200, {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 
 @container_excel_bp.route("/api/admin/container-excel/commit", methods=["POST"])
-@admin_only
+@excel_access
 def excel_commit():
     if not request.is_json or not _check_origin():
         return jsonify(success=False, error="請從匯入頁面確認後送出"), 403
@@ -180,7 +304,7 @@ def excel_commit():
 
 
 @container_excel_bp.route("/api/admin/container-excel/status", methods=["GET"])
-@admin_only
+@excel_access
 def excel_status():
     try:
         targets = _targets()
