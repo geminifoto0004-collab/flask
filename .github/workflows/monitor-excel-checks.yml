@@ -1,0 +1,34 @@
+name: Monitor Excel ACFH Checks
+on:
+  pull_request:
+    paths:
+      - 'blueprints/container_excel_bp.py'
+      - 'static/js/monitor_excel_import.js'
+      - 'templates/admin/container_excel_import.html'
+      - 'services/aduana_free_time_service.py'
+      - 'templates/reports/iti_telegram_report.html'
+      - 'tests/test_container_excel_import.py'
+      - '.github/workflows/monitor-excel-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'blueprints/container_excel_bp.py'
+      - 'static/js/monitor_excel_import.js'
+      - 'tests/test_container_excel_import.py'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Python syntax
+        run: python -m py_compile app.py blueprints/container_excel_bp.py services/aduana_free_time_service.py
+      - name: JavaScript syntax
+        run: node --check static/js/monitor_excel_import.js
+      - name: Validate import safety
+        run: python -m unittest discover -s tests -p 'test_container_excel_import.py' -v
