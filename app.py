@@ -21,6 +21,7 @@ from blueprints.user_auth_bp import user_auth_bp
 from blueprints.api_auth_bp import api_auth_bp
 from blueprints.monitor_bp import monitor_bp
 from blueprints.container_bp import container_bp
+from blueprints.container_excel_bp import container_excel_bp
 from blueprints.b2_test_bp import b2_test_bp
 from services.config_service import config_service
 from services import container_iti_service
@@ -54,6 +55,7 @@ def _finish_order_request_timing(response):
 app.register_blueprint(user_auth_bp)
 app.register_blueprint(api_auth_bp)
 app.register_blueprint(monitor_bp)
+app.register_blueprint(container_excel_bp)
 app.register_blueprint(container_bp)
 app.register_blueprint(b2_test_bp)
 

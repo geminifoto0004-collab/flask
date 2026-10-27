@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XINGWANG · Excel 貨櫃匯入</title>
+<style>
+:root{--ink:#183047;--muted:#60758a;--line:#dce6eb;--teal:#0d6470;--bg:#f4f7fa}
+*{box-sizing:border-box}body{font:14px "Microsoft JhengHei","Noto Sans TC",system-ui,sans-serif;background:var(--bg);color:var(--ink);margin:0}
+header{background:#13293c;color:white;padding:18px 3%}header strong{font-size:20px}header span{font-size:12px;color:#b9d0dd;margin-left:12px}
+main{max-width:1500px;margin:auto;padding:24px 22px}h1{font-size:25px;margin:0 0 8px}h2{font-size:17px;margin:0 0 9px}p{line-height:1.65;margin:4px 0 10px;color:var(--muted)}
+.card{border-radius:13px;background:#fff;border:1px solid var(--line);padding:18px;margin-bottom:15px}
+.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.row.between{justify-content:space-between}
+.columns{display:grid;grid-template-columns:1.15fr 1fr;gap:14px}.drop{padding:27px;border:2px dashed #a8d1d0;border-radius:11px;cursor:pointer;text-align:center;background:#f6fcfb}
+.drop.drag{background:#e3f7f5}.drop strong{display:block;margin-bottom:9px}input,select,button{font:inherit}button{border:1px solid #c8d7df;background:white;color:var(--ink);padding:9px 13px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:650}
+button:hover:not(:disabled){background:#eff6f6}button.primary{background:var(--teal);color:#fff;border-color:var(--teal)}button:disabled{opacity:.47;cursor:not-allowed}
+input[type=date],input[type=text],input[type=number],select{border:1px solid #d1dee5;border-radius:7px;padding:8px;background:white;max-width:100%}
+.label{font-weight:700;font-size:12px;color:#617488;display:block;margin-bottom:6px}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.metric strong{font-size:27px;display:block}.metric small{color:var(--muted)}.good{color:#087952}.bad{color:#b42d3c}.warn{color:#986000}
+.notice{padding:10px 13px;border-radius:7px;background:#eff8f6;font-size:12px;line-height:1.6}
+.table-card{padding:0;overflow:hidden}.tablebar{padding:17px 18px;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.scroll{overflow:auto;max-height:680px}table{border-collapse:collapse;width:100%;min-width:1210px;font-size:12px;table-layout:fixed}
+thead th{position:sticky;top:0;background:#eef3f6;color:#5b7080;z-index:2;padding:12px 8px;text-align:left}
+td{padding:7px 8px;border-bottom:1px solid #edf1f3;vertical-align:middle}tbody tr:hover{background:#f6fafb}
+tbody tr.invalid{background:#fff1f1}tbody tr.conflict{background:#fff8eb}tbody tr.duplicate:not(.selected){color:#84919d}
+td input:not([type=checkbox]){width:100%;border-color:transparent;background:transparent;padding:7px 4px;min-width:0}
+td input:not([type=checkbox]):focus{background:white;border-color:#47a1a6;outline:none}
+td input[type=checkbox]{width:17px;height:17px;accent-color:var(--teal)}.original{background:#f5faff;white-space:pre-wrap;overflow-wrap:anywhere}
+.original small{display:block;color:#246e8a;font-size:10px;margin-top:4px}.status{font-size:11px;font-weight:700}.pager{padding:11px 17px;border-top:1px solid var(--line)}
+#toast{position:fixed;right:18px;bottom:18px;background:#18394b;color:white;padding:12px 17px;border-radius:10px;display:none;max-width:360px;z-index:10}
+#toast.show{display:block}#issues{display:none;background:#fff8e9;color:#755324}#issues.show{display:block}
+.footer-note{font-size:12px;color:#6b8290}#dbState{font-size:12px}
+@media(max-width:850px){main{padding:14px 9px}.columns{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.metric:last-child{grid-column:span 2}}
+</style>
+</head>
+<body>
+<header><strong>▦ XINGWANG</strong><span>CONTENEDOR · Excel 貨櫃資料管理</span></header>
+<main>
+<div class="row between"><div><h1>貨櫃 Excel 匯入</h1><p>沿用 V3 操作：掃描全部工作表，只讀 A 日期及原文、C 箱號、F 備註、H 免箱天數。原始 Excel 不上傳。</p></div><div class="notice">🔒 僅將最後勾選的四欄資料送往 TiDB</div></div>
+<div class="columns">
+<section class="card"><h2>① 選擇 Excel</h2><div class="drop" id="drop" role="button" tabindex="0"><strong>▤ 拖入或點擊選擇 Excel</strong><span>支援 .xls、.xlsx、.xlsm · 本機 JavaScript 解析</span><div style="margin-top:10px"><button id="browse" type="button">選擇檔案</button></div><input id="file" type="file" accept=".xls,.xlsx,.xlsm" hidden></div>
+<p id="fileStatus">尚未選取檔案</p><p id="progress" aria-live="polite"></p></section>
+<section class="card"><h2>② 篩選裝櫃日期</h2><div class="row"><div><label class="label" for="fromDate">從</label><input id="fromDate" type="date"></div><div><label class="label" for="toDate">到</label><input id="toDate" type="date"></div><button id="recent" type="button">最近三個月</button></div>
+<div class="notice" style="margin-top:15px">✓ 完全不使用工作表名稱判斷年份。<br>✓ A 欄空白時繼承上筆日期及整段文字。<br>✓ H 欄沒有有效天數，整列標紅且不能同步。<br>✓ 相同箱號衝突不自動勾選。</div>
+<div class="row between" style="margin-top:14px"><b>TiDB 狀態</b><span id="dbState">查詢中…</span></div></section>
+</div>
+<section class="metrics">
+<div class="card metric"><strong id="sheets">—</strong><small>工作表</small></div>
+<div class="card metric"><strong id="found">—</strong><small>範圍內貨櫃</small></div>
+<div class="card metric"><strong class="good" id="selected">—</strong><small>已選同步</small></div>
+<div class="card metric"><strong class="warn" id="dup">—</strong><small>重複</small></div>
+<div class="card metric"><strong class="bad" id="problems">—</strong><small>衝突／缺天數</small></div>
+</section>
+<div class="card" id="issues"></div>
+<section class="card table-card">
+<div class="tablebar"><div><h2>③ 表格預覽與選取</h2><p>可直接修改日期、貨櫃號碼、備註、免箱天數。A 欄完整原文保留。</p></div>
+<div class="tools"><input id="search" type="text" placeholder="搜尋箱號 / 原文 / 備註"><select id="filter"><option value="all">全部</option><option value="selected">已勾選</option><option value="problems">異常／衝突</option><option value="duplicate">重複</option></select><button id="safe" type="button">重選安全資料</button><button id="clear" type="button">取消全選</button></div></div>
+<div class="scroll"><table><colgroup>
+<col style="width:50px"><col style="width:130px"><col style="width:235px"><col style="width:140px"><col style="width:200px"><col style="width:90px"><col style="width:160px"><col style="width:130px"><col style="width:55px"></colgroup>
+<thead><tr><th>選</th><th>裝櫃日期</th><th>A 原始文字</th><th>C 箱號</th><th>F 備註</th><th>H 天數</th><th>狀態</th><th>工作表</th><th>列</th></tr></thead><tbody id="tbody"><tr><td colspan="9" style="padding:40px;text-align:center">請先選 Excel</td></tr></tbody></table></div>
+<div class="row between pager"><span id="pageInfo">尚無資料</span><div class="tools"><button id="prev" disabled>上一頁</button><button id="next" disabled>下一頁</button></div></div>
+</section>
+<section class="card row between"><div><h2>④ 確認匯入 TiDB</h2><p id="selectionInfo">先掃描 Excel，檢查資料。按下儲存才會送出所選紀錄。</p></div>
+<div class="tools"><button id="json" disabled>下載 JSON</button><button id="csv" disabled>下載 CSV</button><button id="commit" class="primary" disabled>確認寫入 TiDB</button></div></section>
+<p class="footer-note">原始 Excel 始終留在此裝置；無效天數不寫入。匯入不會呼叫 ITI／Aduana／ZOFRI，也不會刪除舊貨櫃。</p>
+</main>
+<div id="toast" role="status"></div>
+<script src="{{ url_for('static',filename='js/xlsx.full.min.js') }}"></script>
+<script src="{{ url_for('static',filename='js/monitor_excel_import.js') }}"></script>
+</body></html>
