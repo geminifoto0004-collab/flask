@@ -107,7 +107,7 @@ class MonitorBadgesTests(unittest.TestCase):
         cols = ["folio", "fecha", "estado", "remaining"]
         sizes = []
         for col in cols:
-            match = re.search(r"\\.web-days \\.v-card\\.matched \\.col-" + col + r"\\{width:(\\d+)px\\}", source)
+            match = re.search(r"\.web-days \.v-card\.matched \.col-" + col + r"\{width:(\d+)px\}", source)
             self.assertIsNotNone(match, col)
             sizes.append(int(match.group(1)))
         # Leave meaningful room for 11-digit container code + total-days SVG.
