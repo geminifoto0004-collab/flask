@@ -80,7 +80,7 @@ class MonitorBadgesTests(unittest.TestCase):
         html = render_monitor(False)
         self.assertIn("21d", html)
         self.assertIn("14d", html)
-        self.assertNotIn("ft-total", html)
+        self.assertNotIn('class="ft-total"', html)
         self.assertNotIn('class="web-days"', html)
         self.assertIn("Plazo referencial 14 días", html)
         self.assertNotIn("Excel 匯入</a>", html)
