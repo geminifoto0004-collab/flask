@@ -567,6 +567,8 @@ def monitor_report_page():
     if not context:
         return f"Invalid report token: {error}", 404
 
+    # Web report receives SVG time badges; Telegram PNG uses the original markup.
+    context['web_report_only'] = True
     return render_template('reports/iti_telegram_report.html', **context)
 
 
