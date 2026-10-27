@@ -206,7 +206,7 @@
       {% for c in g.contenedores %}
       <tr class="matched {{ 'row-odd' if loop.index is odd else 'row-even' }}">
         <td class="t-folio">{{ c.folio }}</td>
-        <td class="t-container">{{ c.contenedor }}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% endif %}</td>
+        <td class="t-container">{{ c.contenedor }}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% elif c.get('excel_days') is not none %}<span class="custom-days" title="Excel 匯入的免箱天數">{{ c.excel_days }}d</span>{% endif %}</td>
         <td class="t-fecha"><span class="delivery-inline">{{ c.fecha_entrega }}{% if c.delivery_risk is not none %}<span class="timer-mini timer-red" title="Días disponibles en la fecha ENTREGA; plazo referencial"><svg class="timer-svg" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M12 3 22 21H2L12 3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5m0 3v.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{% if c.delivery_risk < 0 %}逾{{ -c.delivery_risk }}{% else %}{{ c.delivery_risk }}{% endif %}</span>{% endif %}</span></td>
         <td class="t-estado">{{ c.estado }}</td>
       </tr>
@@ -233,7 +233,7 @@
   <div class="um-grid">
     {% for c in g.contenedores %}
     <div class="um-item">
-      <span class="um-container">{{ c.contenedor }}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% endif %}</span>
+      <span class="um-container">{{ c.contenedor }}{% if c.manual_days is not none %}<span class="custom-days">{{ c.manual_days }}d</span>{% elif c.get('excel_days') is not none %}<span class="custom-days" title="Excel 匯入的免箱天數">{{ c.excel_days }}d</span>{% endif %}</span>
       <span class="um-estado">{{ c.estado }}</span>
     </div>
     {% endfor %}
