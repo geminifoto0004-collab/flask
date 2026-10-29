@@ -1,0 +1,33 @@
+name: ORDER fast restore checks
+on:
+  pull_request:
+    paths:
+      - "services/order_cloud_asset_service.py"
+      - "blueprints/b2_test_bp.py"
+      - ".github/workflows/order-fast-restore-ci.yml"
+  workflow_dispatch:
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python syntax and route registration checks
+        run: |
+          python -m py_compile services/order_cloud_asset_service.py blueprints/b2_test_bp.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          src = Path("services/order_cloud_asset_service.py").read_text()
+          mod = ast.parse(src)
+          names = {n.name for n in mod.body if isinstance(n,ast.FunctionDef)}
+          assert "ensure_order_owners_batch" in names
+          assert "ensure_order_owners_fast_batch" in names
+          assert "fast_refresh_shared_customers" in names
+          routes = Path("blueprints/b2_test_bp.py").read_text()
+          assert "/api/order-cloud/sync/orders-fast-batch" in routes
+          assert "/api/order-cloud/sync/orders-fast-finish" in routes
+          print("Fast endpoints and fallback syntax passed.")
+          PY

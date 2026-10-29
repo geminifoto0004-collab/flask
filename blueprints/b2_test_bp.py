@@ -453,3 +453,42 @@ def order_cloud_public_asset(token, asset_key):
         return Response("Archivo no encontrado.", status=404, mimetype="text/plain")
     except Exception:
         return Response("Servicio temporalmente no disponible.", status=503, mimetype="text/plain")
+
+
+@b2_test_bp.route("/api/order-cloud/sync/orders-fast-batch", methods=["POST"])
+def order_cloud_sync_orders_fast_batch():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import ensure_order_owners_fast_batch
+        payload = request.get_json(silent=True) or {}
+        result = ensure_order_owners_fast_batch(payload.get("orders"), source_site=source_site)
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        print("[ORDER Fast Restore] batch failure: " + type(exc).__name__ + ": " + str(exc), flush=True)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@b2_test_bp.route("/api/order-cloud/sync/orders-fast-finish", methods=["POST"])
+def order_cloud_sync_orders_fast_finish():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import fast_refresh_shared_customers
+        payload = request.get_json(silent=True) or {}
+        customers = payload.get("customer_keys") or []
+        if not isinstance(customers, list) or len(customers) > 5000:
+            raise ValueError("customer_keys must be a list of at most 5000")
+        result = fast_refresh_shared_customers(customers)
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        print("[ORDER Fast Restore] finalization failure: " + type(exc).__name__ + ": " + str(exc), flush=True)
+        return jsonify({"ok": False, "error": str(exc)}), 500
