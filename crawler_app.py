@@ -15,10 +15,12 @@ import hmac
 import os
 import secrets
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from jinja2 import ChoiceLoader, FileSystemLoader
 
 _SETUP_MODE = os.environ.get("CRAWLER_SETUP_MODE", "1").strip().lower() not in {
     "0", "false", "no", "off",
@@ -87,6 +89,14 @@ if not _SETUP_MODE and not _credentials_ready:
     )
 
 app = Flask(__name__)
+# This is the original Automation Hub template folder used on Render 0004.
+# In setup mode its Blueprint is not registered (no TiDB connection), so
+# explicitly expose the *same* templates to the Flask loader.
+app.jinja_loader = ChoiceLoader([
+    app.jinja_loader,
+    FileSystemLoader(str(Path(__file__).resolve().parent /
+                         "blueprints" / "automation_hub" / "templates")),
+])
 app.secret_key = _secret_key
 app.config.update(
     PERMANENT_SESSION_LIFETIME=3600,
