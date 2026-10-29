@@ -77,3 +77,44 @@ For now, the user can set them via their Render dashboard.
 
 Nothing in this branch changes Render 0004, TiDB data, webhook URLs or cron jobs
 until an explicit production cutover is performed.
+
+
+## 2026-10-29: Original 0004 crawler management port
+
+The branch now uses the **original XINGWANG login** template and **original
+Automation Hub** page, original styles/sidebar, and registers the original
+crawler-related blueprints in production mode (Aduana, Telegram Automation Hub,
+containers, container Excel and monitor). It is *not* the standalone minimalist
+setup UI. The old `/admin/setup` path redirects to `/admin/automation`.
+
+The isolated server deliberately excludes ORDER share, ORDER tracking,
+B2 order sync, Telegram ORDER links and unrelated public account registration.
+The separate admin login accepts the same `SUPER_ADMIN_EMAIL` and
+`SUPER_ADMIN_PASSWORD`; on the dedicated database it resolves the new
+administrator's TiDB `user_id` for monitoring permissions.
+
+Setup-mode `1` shows the original Automation Hub UI **read only** and avoids
+all database connections. To use original functional administration on 0005:
+
+1. Verify `CRAWLER_TIDB_URL` points to the **new 0005 TiDB instance** and
+   database `xingwang_crawler`, not any 0004 ORDER database.
+2. On **Render 0005 only**, set `CRAWLER_SETUP_MODE=0` and Save/Deploy.
+   This mounts the real Automation Hub, Aduana, ITI/container and monitor routes.
+3. Verify `/ping`, `/ready`, `/login` and `/admin/automation` using the
+   existing login credentials, then check Aduana/containers and actual DB schema.
+4. The new TiDB3 has fresh tables. It does **not** automatically contain the
+   previous Aduana users, permissions, history, container data or Bot records.
+   Recover those from the old database or re-register crawler Bot tokens after
+   checking the actual source data. Never copy the complete ORDER database.
+5. **Do not click Reconnect Webhook for a Bot on 0005 until cutover**.
+   Telegram permits one webhook per Bot: switching would steal updates from 0004.
+   During cutover, first verify new service and permissions, then reconnect the
+   intended *crawler-only* Bot webhook, and redirect its cron-job.org schedules.
+6. Do not change customer share links or `@XingwangOrderLinkBot`: those remain
+   exclusively under 0004.
+
+GitHub Actions CI installs real requirements and checks both setup mode and
+the real crawler Blueprint route map (without contacting a real TiDB). Live TiDB
+connection, row migration, original token data and Telegram delivery still need
+a real end-to-end validation. The 0005 Render account must be connected separately
+before ChatGPT can manage its environment variables directly.
