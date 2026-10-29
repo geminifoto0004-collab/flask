@@ -15,6 +15,7 @@ import hmac
 import os
 import secrets
 import threading
+from types import SimpleNamespace
 from urllib.parse import urlparse
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -99,6 +100,12 @@ _db_init_lock = threading.Lock()
 _db_initialized = False
 
 
+@app.context_processor
+def crawler_template_context():
+    # Reuse the original XINGWANG Admin UI while showing only crawler modules.
+    return {"crawler_only": True, "crawler_setup_mode": _SETUP_MODE}
+
+
 def _login_marker():
     """Invalidate sessions when login credentials change."""
     data = (_admin_email + "\0" + _admin_password).encode("utf-8")
@@ -145,7 +152,8 @@ def crawler_guard():
         return jsonify(ok=False, error="not_on_crawler_service"), 404
     if _SETUP_MODE:
         allowed = {"/", "/ping", "/health", "/ready", "/login",
-                   "/logout", "/admin", "/admin/dashboard", "/admin/setup"}
+                   "/logout", "/admin", "/admin/dashboard", "/admin/setup",
+                   "/admin/automation"}
         if path not in allowed and not path.startswith("/static/"):
             return jsonify(ok=False, error="crawler_not_configured"), 503
         return None
@@ -188,11 +196,11 @@ def crawler_ready():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
-        return render_template("crawler/login.html",
+        return render_template("user/login.html",
                                login_enabled=_credentials_ready,
                                login_setup_problems=_login_setup_problems)
     if not _credentials_ready:
-        return render_template("crawler/login.html", login_enabled=False,
+        return render_template("user/login.html", login_enabled=False,
                                login_setup_problems=_login_setup_problems,
                                error="請先完成下列 Render Environment 設定"), 503
     # Prevent cross-origin login requests; do not rely solely on SameSite.
@@ -203,13 +211,13 @@ def login():
     password = str(request.form.get("password") or "")
     if not (hmac.compare_digest(email, _admin_email)
             and hmac.compare_digest(password, _admin_password)):
-        return render_template("crawler/login.html", login_enabled=True,
+        return render_template("user/login.html", login_enabled=True,
                                error="Correo electrónico o contraseña incorrectos"), 401
     session.clear()
     session.update(crawler_admin=True, logged_in=True,
                    role="super_admin", username="super_admin",
                    email=email, credential_marker=_login_marker())
-    return redirect("/admin/setup" if _SETUP_MODE else "/admin/automation")
+    return redirect("/admin/automation")
 
 
 @app.get("/logout")
@@ -220,8 +228,7 @@ def logout():
 
 @app.get("/")
 def index():
-    return redirect("/admin/setup" if _SETUP_MODE and _logged_in()
-                    else ("/admin/automation" if _logged_in() else "/login"))
+    return redirect("/admin/automation" if _logged_in() else "/login")
 
 
 @app.get("/admin")
@@ -229,15 +236,34 @@ def index():
 def admin_dashboard():
     if not _logged_in():
         return redirect(url_for("login"))
-    return redirect("/admin/setup" if _SETUP_MODE else "/admin/automation")
+    return redirect("/admin/automation")
+
+
+if _SETUP_MODE:
+    # When TiDB3 is not yet active, render the actual 0004 Automation Hub
+    # template read-only. After activation the registered Blueprint owns the
+    # exact same route and template.
+    @app.get("/admin/automation")
+    def setup_automation_dashboard():
+        if not _logged_in():
+            return redirect(url_for("login", next=request.path))
+        return render_template(
+            "automation_hub/dashboard.html",
+            bots=[],
+            plugins=[{"key": "ADUANA", "label": "Aduana Monitor",
+                      "admin_path": "/admin/automation/aduana"}],
+            settings=SimpleNamespace(
+                MASTER_KEY=(os.environ.get("AUTOMATION_MASTER_KEY") or "").strip(),
+                PUBLIC_BASE_URL=(os.environ.get("AUTOMATION_PUBLIC_BASE_URL")
+                                 or os.environ.get("RENDER_EXTERNAL_URL") or "").strip(),
+            ),
+            message="",
+            database_configured=bool((os.environ.get("CRAWLER_TIDB_URL") or "").strip()),
+        )
 
 
 @app.get("/admin/setup")
 def setup_dashboard():
     if not _logged_in():
         return redirect(url_for("login"))
-    return render_template(
-        "crawler/setup.html", setup_mode=_SETUP_MODE,
-        database_configured=bool((os.environ.get("CRAWLER_TIDB_URL") or "").strip()),
-        automation_key_configured=bool((os.environ.get("AUTOMATION_MASTER_KEY") or "").strip()),
-    )
+    return redirect("/admin/automation")
