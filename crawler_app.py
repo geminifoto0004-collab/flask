@@ -53,12 +53,22 @@ if not _SETUP_MODE:
 
 # Existing names are supported so there is no second admin password to learn.
 # With no configured credentials, setup page is public but login is disabled.
-_secret_key = (
-    os.environ.get("CRAWLER_SECRET_KEY") or os.environ.get("SECRET_KEY") or ""
-).strip()
+_key_candidates = [
+    (os.environ.get("CRAWLER_SECRET_KEY") or "").strip(),
+    (os.environ.get("SECRET_KEY") or "").strip(),
+]
+# A short crawler key must not shadow a valid existing SECRET_KEY.
+_secret_key = next((key for key in _key_candidates if len(key) >= 32), "")
 _admin_email = (os.environ.get("SUPER_ADMIN_EMAIL") or "").strip()
 _admin_password = os.environ.get("SUPER_ADMIN_PASSWORD") or ""
-_credentials_ready = bool(len(_secret_key) >= 32 and _admin_email and _admin_password)
+_login_setup_problems = []
+if not _secret_key:
+    _login_setup_problems.append("SECRET_KEY 或 CRAWLER_SECRET_KEY 必須至少 32 字元")
+if not _admin_email:
+    _login_setup_problems.append("未設定 SUPER_ADMIN_EMAIL")
+if not _admin_password:
+    _login_setup_problems.append("未設定 SUPER_ADMIN_PASSWORD")
+_credentials_ready = not _login_setup_problems
 if not _SETUP_MODE and not _credentials_ready:
     raise RuntimeError(
         "Configure SECRET_KEY (32+ chars), SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD"
@@ -170,10 +180,12 @@ def crawler_ready():
 def login():
     if request.method == "GET":
         return render_template("crawler/login.html",
-                               login_enabled=_credentials_ready)
+                               login_enabled=_credentials_ready,
+                               login_setup_problems=_login_setup_problems)
     if not _credentials_ready:
         return render_template("crawler/login.html", login_enabled=False,
-                               error="請先在 Render 設定 SECRET_KEY、管理員帳號及密碼"), 503
+                               login_setup_problems=_login_setup_problems,
+                               error="請先完成下列 Render Environment 設定"), 503
     # Prevent cross-origin login requests; do not rely solely on SameSite.
     origin = request.headers.get("Origin")
     if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
