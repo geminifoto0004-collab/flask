@@ -16,7 +16,7 @@ class CrawlerProductionRoutingTest(unittest.TestCase):
         env.update({
             "CRAWLER_SETUP_MODE": "0",
             "CRAWLER_TIDB_URL":
-                "mysql://fake_username:fake_password@127.0.0.1:4000/xingwang_crawler",
+                "mysql://fake_username:fake%40password%23@127.0.0.1:4000/xingwang_crawler",
             "SUPER_ADMIN_EMAIL": "owner@example.test",
             "SUPER_ADMIN_PASSWORD": "test-admin-pass",
         })
@@ -25,7 +25,10 @@ class CrawlerProductionRoutingTest(unittest.TestCase):
             env.pop(name, None)
         code = textwrap.dedent("""
             import crawler_app
+            from tidb_targets import target_settings
             from blueprints.automation_hub import registry
+            assert target_settings("TIDB1")["password"] == "fake@password#"
+            assert target_settings("TIDB1")["database"] == "xingwang_crawler"
             app = crawler_app.app
             paths = {r.rule for r in app.url_map.iter_rules()}
             for path in (
