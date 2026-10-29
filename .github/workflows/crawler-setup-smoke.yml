@@ -18,8 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install lightweight setup dependencies
-        run: pip install Flask==2.3.3 Werkzeug==2.3.7 gunicorn==21.2.0
+      - name: Install production dependencies
+        run: pip install -r requirements.txt
       - name: Compile crawler entrypoint
         run: python -m py_compile crawler_app.py
       - name: Test database-free login and ORDER isolation
