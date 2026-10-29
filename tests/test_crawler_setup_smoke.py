@@ -94,7 +94,15 @@ class CrawlerSetupSmokeTest(unittest.TestCase):
                 "email":"owner@example.test", "password":"unit-test-only-password"
             })
             assert r.status_code == 302
-            assert c.get("/admin/setup", base_url=base).status_code == 200
+            page = c.get("/admin/automation", base_url=base)
+            assert page.status_code == 200
+            assert "自動化中心".encode("utf-8") in page.data
+            assert "管理控制台".encode("utf-8") in page.data
+            assert b"css/admin.css" in page.data
+            assert "中國同事".encode("utf-8") not in page.data
+            assert "BotFather Token".encode("utf-8") not in page.data
+            assert b"/api/order-cloud" not in page.data
+            assert c.get("/admin/setup", base_url=base).status_code == 302
             assert c.get("/ready", base_url=base).status_code == 503
             assert "database" not in sys.modules
         """, with_credentials=True, with_secret=False)
@@ -110,9 +118,16 @@ class CrawlerSetupSmokeTest(unittest.TestCase):
             assert c.post("/login", base_url=base, headers={"Origin":base},
                           data={"email":"owner@example.test",
                                 "password":"unit-test-only-password"}).status_code == 302
-            result = c.get("/admin/setup", base_url=base)
+            result = c.get("/admin/automation", base_url=base)
             assert result.status_code == 200
-            assert "獨立爬蟲服務".encode() in result.data
+            assert "自動化中心".encode() in result.data
+            assert "安全設定模式".encode() in result.data
+            assert "未讀取".encode() in result.data
+            assert "中國同事".encode() not in result.data
+            assert b"css/admin.css" in result.data
+            assert c.get("/admin/setup", base_url=base).status_code == 302
+            assert c.post("/admin/automation/bots", base_url=base,
+                          data={"token":"should-not-be-sent"}).status_code == 503
             assert c.get("/ready", base_url=base).status_code == 503
             assert c.get("/share/abc", base_url=base).status_code == 404
             assert c.post("/api/order-cloud/sync/orders-fast-batch",
