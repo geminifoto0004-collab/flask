@@ -11,7 +11,7 @@
     <div class="login-container">
         <div class="logo">
             <h1>🔐 Inicio de Sesión del Sistema</h1>
-            <p>Sistema de Gestión de Autorización Xingwang</p>
+            <p>{% if crawler_only %}XINGWANG · 爬蟲管理中心{% else %}Sistema de Gestión de Autorización Xingwang{% endif %}</p>
         </div>
 
         {% if error %}
@@ -20,6 +20,12 @@
         </div>
         {% endif %}
 
+        {% if crawler_only and not login_enabled %}
+        <div class="error-message">
+            管理員登入尚未啟用。
+            {% for issue in login_setup_problems or [] %}<div>{{ issue }}</div>{% endfor %}
+        </div>
+        {% endif %}
         <form method="POST" action="/login">
             <div class="form-group">
                 <label for="email">Dirección de Correo Electrónico</label>
@@ -49,17 +55,19 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn-login">
+            <button type="submit" class="btn-login" {% if crawler_only and not login_enabled %}disabled{% endif %}>
                 Iniciar Sesión
             </button>
         </form>
 
+        {% if not crawler_only %}
         <div class="auth-links">
             <a href="/user/forgot-password">¿Olvidó su contraseña?</a>
             <span>|</span>
             <a href="/user/register">Registrar Cuenta de Usuario</a>
         </div>
 
+        {% endif %}
         <div class="footer">
             © 2025 Xingwang Textiles - Sistema de Gestión de Autorización
         </div>
