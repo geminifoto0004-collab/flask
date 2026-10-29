@@ -1,97 +1,141 @@
-"""Dedicated XINGWANG crawler/containers/aduana service.
+"""Dedicated XINGWANG crawler service with safe setup mode.
 
-Run with: gunicorn crawler_app:app --workers 1 --threads 2 --timeout 120
-No ORDER blueprints, B2 asset modules, ORDER background jobs, or ORDER DB credentials.
-The caller MUST supply a separate TiDB Cloud instance using CRAWLER_TIDB_URL.
+Start on Render: gunicorn crawler_app:app --workers 1 --threads 2 --timeout 120
+
+Setup mode (default) runs login/setup pages without a database or crawler.
+After provisioning an independent TiDB, set CRAWLER_TIDB_URL and
+CRAWLER_SETUP_MODE=0 to enable the crawler and container blueprints.
+
+The service never mounts ORDER sharing, tracking or B2 ORDER endpoints.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
+import secrets
 import threading
 from urllib.parse import urlparse
 
-# Set the crawler-only database identity before importing any application modules.
-_database_url = (os.environ.get("CRAWLER_TIDB_URL") or "").strip()
-if not _database_url:
-    raise RuntimeError("CRAWLER_TIDB_URL is required (a separate physical TiDB instance)")
-_parsed = urlparse(_database_url)
-if _parsed.scheme not in {"mysql", "mysql+pymysql"} or not (
-    _parsed.hostname and _parsed.username and _parsed.path.strip("/")
-):
-    raise RuntimeError("CRAWLER_TIDB_URL must identify a TiDB MySQL database")
-if _parsed.path.strip("/") == "order_tracking":
-    raise RuntimeError("Crawler service must not use ORDER's order_tracking database")
-for key in ("CRAWLER_SECRET_KEY", "SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD"):
-    if not (os.environ.get(key) or "").strip():
-        raise RuntimeError(key + " must be configured for crawler service")
-if len(os.environ["CRAWLER_SECRET_KEY"]) < 32:
-    raise RuntimeError("CRAWLER_SECRET_KEY must have at least 32 characters")
-
-os.environ["XINGWANG_SERVICE_ROLE"] = "CRAWLER"
-os.environ["DATABASE_TYPE"] = "tidb"
-os.environ["DB_TARGET"] = "TIDB1"  # compatibility alias; points to CRAWLER_TIDB_URL, NOT ORDER TiDB1.
-os.environ["TIDB1_URL"] = _database_url
-os.environ["DATABASE_URL"] = _database_url
-os.environ["TIDB_MIRROR_ENABLED"] = "false"
-os.environ["TIDB_FAILOVER_ENABLED"] = "false"
-# Do not let inherited ORDER standby credentials enable a second database path.
-for key in ("TIDB2_URL", "TIDB2_HOST", "TIDB2_USER", "TIDB2_PASSWORD", "TIDB2_NAME"):
-    os.environ.pop(key, None)
-
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
-from config import config, admin_config
-from database import init_database, get_db_connection, get_cursor, get_lastrowid
-from utils.time_utils import get_chile_time_naive
+
+_SETUP_MODE = os.environ.get("CRAWLER_SETUP_MODE", "1").strip().lower() not in {
+    "0", "false", "no", "off",
+}
+os.environ["XINGWANG_SERVICE_ROLE"] = "CRAWLER"
+
+# Configure a crawler-only DB before importing database/config. A copy of
+# ORDER's DATABASE_URL or TIDB1_* must never be used as a fallback.
+if not _SETUP_MODE:
+    _database_url = (os.environ.get("CRAWLER_TIDB_URL") or "").strip()
+    if not _database_url:
+        raise RuntimeError("CRAWLER_TIDB_URL is required when CRAWLER_SETUP_MODE=0")
+    parsed = urlparse(_database_url)
+    if parsed.scheme not in {"mysql", "mysql+pymysql"} or not (
+        parsed.hostname and parsed.username and parsed.path.strip("/")
+    ):
+        raise RuntimeError("CRAWLER_TIDB_URL must be a MySQL URL with host/user/database")
+    if parsed.path.strip("/") == "order_tracking":
+        raise RuntimeError("Crawler service cannot use ORDER's order_tracking database")
+    if any(_database_url == (os.environ.get(key) or "").strip() for key in (
+        "ORDER_DATABASE_URL", "ORDER_TIDB1_URL", "ORDER_TIDB2_URL"
+    )):
+        raise RuntimeError("Crawler database URL must be separate from ORDER")
+    os.environ["DATABASE_TYPE"] = "tidb"
+    os.environ["DB_TARGET"] = "TIDB1"  # compatibility alias, maps to crawler TiDB
+    os.environ["TIDB1_URL"] = _database_url
+    os.environ["DATABASE_URL"] = _database_url
+    os.environ["TIDB_MIRROR_ENABLED"] = "false"
+    os.environ["TIDB_FAILOVER_ENABLED"] = "false"
+    for key in ("TIDB2_URL", "TIDB2_HOST", "TIDB2_USER",
+                "TIDB2_PASSWORD", "TIDB2_NAME"):
+        os.environ.pop(key, None)
+
+# Existing names are supported so there is no second admin password to learn.
+# With no configured credentials, setup page is public but login is disabled.
+_secret_key = (
+    os.environ.get("CRAWLER_SECRET_KEY") or os.environ.get("SECRET_KEY") or ""
+).strip()
+_admin_email = (os.environ.get("SUPER_ADMIN_EMAIL") or "").strip()
+_admin_password = os.environ.get("SUPER_ADMIN_PASSWORD") or ""
+_credentials_ready = bool(len(_secret_key) >= 32 and _admin_email and _admin_password)
+if not _SETUP_MODE and not _credentials_ready:
+    raise RuntimeError(
+        "Configure SECRET_KEY (32+ chars), SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD"
+    )
 
 app = Flask(__name__)
-app.secret_key = os.environ["CRAWLER_SECRET_KEY"]
+# Ephemeral secret makes public setup page render safely, but no login is
+# accepted until a stable environment secret is configured.
+app.secret_key = _secret_key if len(_secret_key) >= 32 else secrets.token_hex(32)
 app.config.update(
-    PERMANENT_SESSION_LIFETIME=config.PERMANENT_SESSION_LIFETIME,
+    PERMANENT_SESSION_LIFETIME=3600,
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_NAME="XW_CRAWLER_SESSION",
+    MAX_CONTENT_LENGTH=16 * 1024,
 )
-
-# Only crawler and container blueprints. Do not import app:app, ORDER, /tracking,
-# /share or the B2 ORDER metadata writers.
-from blueprints.user_auth_bp import user_auth_bp
-from blueprints.api_auth_bp import api_auth_bp
-from blueprints.monitor_bp import monitor_bp
-from blueprints.container_bp import container_bp
-from blueprints.container_excel_bp import container_excel_bp
-from blueprints.aduana_monitor import aduana_bp
-from blueprints.automation_hub import automation_hub_bp
-
-for blueprint in (
-    user_auth_bp, api_auth_bp, monitor_bp, container_bp,
-    container_excel_bp, aduana_bp, automation_hub_bp,
-):
-    app.register_blueprint(blueprint)
-
 _db_init_lock = threading.Lock()
 _db_initialized = False
+
+
+def _login_marker():
+    """Invalidate sessions when login credentials change."""
+    data = (_admin_email + "\0" + _admin_password).encode("utf-8")
+    return hmac.new(app.secret_key.encode("utf-8"), data, hashlib.sha256).hexdigest()
+
+
+def _logged_in():
+    return bool(
+        _credentials_ready
+        and session.get("crawler_admin") is True
+        and hmac.compare_digest(str(session.get("credential_marker") or ""),
+                                _login_marker())
+    )
+
+
+if not _SETUP_MODE:
+    from config import config, admin_config
+    from database import init_database, get_db_connection, get_cursor, get_lastrowid
+    from utils.time_utils import get_chile_time_naive
+
+    app.config["PERMANENT_SESSION_LIFETIME"] = config.PERMANENT_SESSION_LIFETIME
+    from blueprints.user_auth_bp import user_auth_bp
+    from blueprints.api_auth_bp import api_auth_bp
+    from blueprints.monitor_bp import monitor_bp
+    from blueprints.container_bp import container_bp
+    from blueprints.container_excel_bp import container_excel_bp
+    from blueprints.aduana_monitor import aduana_bp
+    from blueprints.automation_hub import automation_hub_bp
+    for blueprint in (user_auth_bp, api_auth_bp, monitor_bp, container_bp,
+                      container_excel_bp, aduana_bp, automation_hub_bp):
+        app.register_blueprint(blueprint)
 
 
 @app.before_request
 def crawler_guard():
     global _db_initialized
     path = request.path
+    # Never serve the ORDER site or order sync on this process.
     if (path.startswith("/share/") or path.startswith("/tracking")
             or path.startswith("/api/order-cloud/")
             or path.startswith("/api/telegram/order-shares/")
             or path.startswith("/telegram/order-shares")
             or path.startswith("/cn/order-links")):
         return jsonify(ok=False, error="not_on_crawler_service"), 404
+    if _SETUP_MODE:
+        allowed = {"/", "/ping", "/health", "/ready", "/login",
+                   "/logout", "/admin", "/admin/dashboard", "/admin/setup"}
+        if path not in allowed and not path.startswith("/static/"):
+            return jsonify(ok=False, error="crawler_not_configured"), 503
+        return None
     if path in ("/ping", "/health") or path.startswith("/static/"):
         return None
     if not _db_initialized:
         with _db_init_lock:
             if not _db_initialized:
-                # Unlike the legacy main app, do not silently mark a failed init
-                # as complete. A subsequent authorized call can retry.
-                init_database()
+                init_database()  # Do not mark failed migrations as completed.
                 _db_initialized = True
     return None
 
@@ -99,13 +143,16 @@ def crawler_guard():
 @app.get("/health")
 @app.get("/ping")
 def crawler_ping():
-    resp = app.response_class("OK", 200, mimetype="text/plain")
-    resp.headers["Cache-Control"] = "no-store"
-    return resp
+    response = app.response_class("OK", 200, mimetype="text/plain")
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/ready")
 def crawler_ready():
+    if _SETUP_MODE:
+        return jsonify(ok=False, service="crawler", setup_mode=True,
+                       database="not_configured"), 503
     try:
         conn = get_db_connection()
         try:
@@ -122,42 +169,26 @@ def crawler_ready():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
-        next_path = str(request.args.get("next") or "").strip()
-        if next_path.startswith("/") and not next_path.startswith("//"):
-            session["post_login_next"] = next_path
-        return render_template("user/login.html")
+        return render_template("crawler/login.html",
+                               login_enabled=_credentials_ready)
+    if not _credentials_ready:
+        return render_template("crawler/login.html", login_enabled=False,
+                               error="請先在 Render 設定 SECRET_KEY、管理員帳號及密碼"), 503
+    # Prevent cross-origin login requests; do not rely solely on SameSite.
+    origin = request.headers.get("Origin")
+    if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
+        return jsonify(ok=False, error="invalid_origin"), 403
     email = str(request.form.get("email") or "").strip()
     password = str(request.form.get("password") or "")
-    allowed = (hmac.compare_digest(email, os.environ["SUPER_ADMIN_EMAIL"])
-               and hmac.compare_digest(password, os.environ["SUPER_ADMIN_PASSWORD"]))
-    if not allowed:
-        return render_template("user/login.html", error="Correo electrónico o contraseña incorrectos"), 401
-    conn = get_db_connection()
-    try:
-        cur = get_cursor(conn)
-        cur.execute("SELECT id FROM users WHERE email=?", (email,))
-        row = cur.fetchone()
-        user_id = (row.get("id") if isinstance(row, dict) else row[0]) if row else None
-        if user_id is None:
-            from services.user_service import hash_password
-            cur.execute(
-                "INSERT INTO users (username,email,password_hash,role,created_at) VALUES (?,?,?,?,?)",
-                (admin_config.SUPER_ADMIN_USERNAME, email, hash_password(password),
-                 admin_config.SUPER_ADMIN_ROLE,
-                 get_chile_time_naive().strftime("%Y-%m-%d %H:%M:%S")),
-            )
-            user_id = get_lastrowid(cur, conn)
-            conn.commit()
-    finally:
-        conn.close()
+    if not (hmac.compare_digest(email, _admin_email)
+            and hmac.compare_digest(password, _admin_password)):
+        return render_template("crawler/login.html", login_enabled=True,
+                               error="Correo electrónico o contraseña incorrectos"), 401
     session.clear()
-    session.update(
-        logged_in=True, user_id=user_id, email=email,
-        username=admin_config.SUPER_ADMIN_USERNAME,
-        role=admin_config.SUPER_ADMIN_ROLE,
-    )
-    # Limit login redirection to local paths.
-    return redirect("/admin/automation")
+    session.update(crawler_admin=True, logged_in=True,
+                   role="super_admin", username="super_admin",
+                   email=email, credential_marker=_login_marker())
+    return redirect("/admin/setup" if _SETUP_MODE else "/admin/automation")
 
 
 @app.get("/logout")
@@ -168,12 +199,24 @@ def logout():
 
 @app.get("/")
 def index():
-    return redirect("/admin/automation" if session.get("logged_in") else "/login")
+    return redirect("/admin/setup" if _SETUP_MODE and _logged_in()
+                    else ("/admin/automation" if _logged_in() else "/login"))
 
 
 @app.get("/admin")
 @app.get("/admin/dashboard")
 def admin_dashboard():
-    if not session.get("logged_in"):
+    if not _logged_in():
         return redirect(url_for("login"))
-    return redirect("/admin/automation")
+    return redirect("/admin/setup" if _SETUP_MODE else "/admin/automation")
+
+
+@app.get("/admin/setup")
+def setup_dashboard():
+    if not _logged_in():
+        return redirect(url_for("login"))
+    return render_template(
+        "crawler/setup.html", setup_mode=_SETUP_MODE,
+        database_configured=bool((os.environ.get("CRAWLER_TIDB_URL") or "").strip()),
+        automation_key_configured=bool((os.environ.get("AUTOMATION_MASTER_KEY") or "").strip()),
+    )
