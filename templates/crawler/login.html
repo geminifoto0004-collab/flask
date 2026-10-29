@@ -18,7 +18,15 @@
  </div>
  {% if error %}<div class="error-message">{{ error }}</div>{% endif %}
  {% if not login_enabled %}
- <div class="crawler-warn">尚未設定管理員帳號與安全密鑰。請先在 Render Environment 設定 SECRET_KEY、SUPER_ADMIN_EMAIL、SUPER_ADMIN_PASSWORD。這個畫面不需要 TiDB。</div>
+ <div class="crawler-warn">
+  <strong>管理員登入尚未啟用。</strong>
+  {% if login_setup_problems %}
+  <ul style="margin:8px 0;padding-left:21px">
+  {% for issue in login_setup_problems %}<li>{{ issue }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  請在 Render 0005 的 Environment 修正以上項目並儲存部署。暫時不需要 TiDB。
+ </div>
  {% endif %}
  <form method="POST" action="/login">
   <div class="form-group">
