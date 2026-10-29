@@ -1,0 +1,72 @@
+"""Crawler setup smoke tests: no TiDB, no Bot token, no ORDER imports."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+import textwrap
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+TEST_ORIGIN = "https://crawler.example.test"
+
+
+def run_isolated(code, *, with_credentials):
+    env = os.environ.copy()
+    env["CRAWLER_SETUP_MODE"] = "1"
+    env["TIDB1_URL"] = "mysql://must-never-connect:bad@127.0.0.1:4000/order"
+    env["DATABASE_URL"] = "mysql://must-never-connect:bad@127.0.0.1:4000/order"
+    for name in ("CRAWLER_TIDB_URL", "CRAWLER_SECRET_KEY", "SECRET_KEY",
+                 "SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD"):
+        env.pop(name, None)
+    if with_credentials:
+        env["SECRET_KEY"] = "unit-test-only-secret-key-with-64-chars-required-1234567890abcdef"
+        env["SUPER_ADMIN_EMAIL"] = "owner@example.test"
+        env["SUPER_ADMIN_PASSWORD"] = "unit-test-only-password"
+    return subprocess.run(
+        [sys.executable, "-c", textwrap.dedent(code)],
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=30,
+    )
+
+
+class CrawlerSetupSmokeTest(unittest.TestCase):
+    def test_can_boot_without_database_and_credentials(self):
+        r = run_isolated("""
+            import sys
+            import crawler_app
+            c = crawler_app.app.test_client()
+            base = "https://crawler.example.test"
+            assert c.get("/ping", base_url=base).status_code == 200
+            assert c.get("/ready", base_url=base).status_code == 503
+            assert c.get("/login", base_url=base).status_code == 200
+            assert c.post("/login", base_url=base, data={
+                "email":"owner@example.test", "password":"test"
+            }).status_code == 503
+            assert "database" not in sys.modules
+        """, with_credentials=False)
+        self.assertEqual(r.returncode, 0, msg=r.stderr or r.stdout)
+
+    def test_setup_login_without_touching_order_db(self):
+        r = run_isolated("""
+            import sys
+            import crawler_app
+            c = crawler_app.app.test_client()
+            base = "https://crawler.example.test"
+            assert c.get("/admin/setup", base_url=base).status_code == 302
+            assert c.post("/login", base_url=base, headers={"Origin":base},
+                          data={"email":"owner@example.test",
+                                "password":"unit-test-only-password"}).status_code == 302
+            result = c.get("/admin/setup", base_url=base)
+            assert result.status_code == 200
+            assert "獨立爬蟲服務".encode() in result.data
+            assert c.get("/ready", base_url=base).status_code == 503
+            assert c.get("/share/abc", base_url=base).status_code == 404
+            assert c.post("/api/order-cloud/sync/orders-fast-batch",
+                          base_url=base).status_code == 404
+            assert c.get("/api/aduana/health", base_url=base).status_code == 503
+            assert "database" not in sys.modules
+        """, with_credentials=True)
+        self.assertEqual(r.returncode, 0, msg=r.stderr or r.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
