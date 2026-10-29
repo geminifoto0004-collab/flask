@@ -51,19 +51,30 @@ if not _SETUP_MODE:
                 "TIDB2_PASSWORD", "TIDB2_NAME"):
         os.environ.pop(key, None)
 
-# Existing names are supported so there is no second admin password to learn.
-# With no configured credentials, setup page is public but login is disabled.
+# Keep the same administrator email/password as ORDER, with no new
+# credential to memorize. Never use short/guessable strings as Flask signing keys.
+# Prefer existing long secrets; if absent, use a cryptographically random
+# process-local key. The latter safely invalidates sessions on redeploy/restart.
 _key_candidates = [
     (os.environ.get("CRAWLER_SECRET_KEY") or "").strip(),
     (os.environ.get("SECRET_KEY") or "").strip(),
+    (os.environ.get("AUTOMATION_MASTER_KEY") or "").strip(),
 ]
-# A short crawler key must not shadow a valid existing SECRET_KEY.
-_secret_key = next((key for key in _key_candidates if len(key) >= 32), "")
+_existing_long_key = next((key for key in _key_candidates if len(key) >= 32), "")
+if _existing_long_key:
+    # Domain separation: a key also used to encrypt Telegram tokens is never
+    # directly repurposed as Flask's cookie signing key.
+    _secret_key = hashlib.sha256(
+        ("xingwang-crawler-session:v1:" + _existing_long_key).encode("utf-8")
+    ).hexdigest()
+    _session_key_mode = "stable"
+else:
+    _secret_key = secrets.token_hex(32)
+    _session_key_mode = "temporary"
+
 _admin_email = (os.environ.get("SUPER_ADMIN_EMAIL") or "").strip()
 _admin_password = os.environ.get("SUPER_ADMIN_PASSWORD") or ""
 _login_setup_problems = []
-if not _secret_key:
-    _login_setup_problems.append("SECRET_KEY 或 CRAWLER_SECRET_KEY 必須至少 32 字元")
 if not _admin_email:
     _login_setup_problems.append("未設定 SUPER_ADMIN_EMAIL")
 if not _admin_password:
@@ -71,13 +82,11 @@ if not _admin_password:
 _credentials_ready = not _login_setup_problems
 if not _SETUP_MODE and not _credentials_ready:
     raise RuntimeError(
-        "Configure SECRET_KEY (32+ chars), SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD"
+        "SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD must be configured"
     )
 
 app = Flask(__name__)
-# Ephemeral secret makes public setup page render safely, but no login is
-# accepted until a stable environment secret is configured.
-app.secret_key = _secret_key if len(_secret_key) >= 32 else secrets.token_hex(32)
+app.secret_key = _secret_key
 app.config.update(
     PERMANENT_SESSION_LIFETIME=3600,
     SESSION_COOKIE_SECURE=True,
