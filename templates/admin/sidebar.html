@@ -6,6 +6,26 @@
     </div>
     
     <nav class="sidebar-nav">
+        {% if crawler_only %}
+        <a href="/admin/automation" class="nav-item {% if request.path.startswith('/admin/automation') %}active{% endif %}">
+            <i class="fas fa-robot"></i>
+            <span>自動化中心</span>
+        </a>
+        {% if not crawler_setup_mode %}
+        <a href="/admin/automation/aduana" class="nav-item {% if request.path.startswith('/admin/automation/aduana') %}active{% endif %}">
+            <i class="fas fa-search"></i>
+            <span>Aduana 監控</span>
+        </a>
+        <a href="/admin/container-excel" class="nav-item {% if request.path == '/admin/container-excel' %}active{% endif %}">
+            <i class="fas fa-file-excel"></i>
+            <span>貨櫃 Excel 匯入</span>
+        </a>
+        <a href="/admin/monitor-free-time" class="nav-item {% if request.path == '/admin/monitor-free-time' %}active{% endif %}">
+            <i class="fas fa-shipping-fast"></i>
+            <span>貨櫃監控</span>
+        </a>
+        {% endif %}
+        {% else %}
         <a href="/admin" class="nav-item {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
             <i class="fas fa-tachometer-alt"></i>
             <span>儀表板</span>
@@ -42,6 +62,7 @@
             <i class="fas fa-database"></i>
             <span>資料庫瀏覽</span>
         </a>
+        {% endif %}
     </nav>
     
     <div class="sidebar-footer">
