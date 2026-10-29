@@ -45,6 +45,41 @@ class CrawlerSetupSmokeTest(unittest.TestCase):
         """, with_credentials=False)
         self.assertEqual(r.returncode, 0, msg=r.stderr or r.stdout)
 
+    def test_short_crawler_key_does_not_shadow_valid_secret_key(self):
+        env = os.environ.copy()
+        env["CRAWLER_SETUP_MODE"] = "1"
+        env["CRAWLER_SECRET_KEY"] = "short"
+        env["SECRET_KEY"] = "a-secure-existing-secret-key-at-least-thirty-two-chars"
+        env["SUPER_ADMIN_EMAIL"] = "owner@example.test"
+        env["SUPER_ADMIN_PASSWORD"] = "unit-test-password"
+        result = subprocess.run(
+            [sys.executable, "-c", textwrap.dedent("""
+                import crawler_app
+                assert crawler_app._credentials_ready
+                assert crawler_app.app.secret_key.startswith("a-secure")
+                c = crawler_app.app.test_client()
+                response = c.post("/login", base_url="https://crawler.example.test",
+                                  headers={"Origin":"https://crawler.example.test"},
+                                  data={"email":"owner@example.test",
+                                        "password":"unit-test-password"})
+                assert response.status_code == 302
+            """)],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+
+    def test_login_shows_precise_missing_settings(self):
+        r = run_isolated("""
+            import crawler_app
+            c = crawler_app.app.test_client()
+            response = c.get("/login", base_url="https://crawler.example.test")
+            assert response.status_code == 200
+            assert b"SUPER_ADMIN_EMAIL" in response.data
+            assert b"SUPER_ADMIN_PASSWORD" in response.data
+            assert b"CRAWLER_SECRET_KEY" in response.data
+        """, with_credentials=False)
+        self.assertEqual(r.returncode, 0, msg=r.stderr or r.stdout)
+
     def test_setup_login_without_touching_order_db(self):
         r = run_isolated("""
             import sys
