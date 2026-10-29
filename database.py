@@ -1310,7 +1310,7 @@ def init_super_admin(cursor):
         print("Super admin user created:")
 
         print(f"   ?µç®±: {admin_config.SUPER_ADMIN_EMAIL}")
-        print(f"   å¯ç¢¼: {admin_config.SUPER_ADMIN_PASSWORD}")
+        print("   Admin password: [REDACTED]")
         print(f"   ?¨æ¶?? {admin_config.SUPER_ADMIN_USERNAME}")
         print(f"   è§è²: {admin_config.SUPER_ADMIN_ROLE}")
         
