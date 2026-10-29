@@ -6939,7 +6939,7 @@ def _get_setting(key, default=None):
     """从 system_settings 表读取一个设置值"""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT value FROM system_settings WHERE key = ?', (key,))
+    cursor.execute('SELECT value FROM system_settings WHERE `key` = ?', (key,))
     row = cursor.fetchone()
     conn.close()
     return row['value'] if row else default
@@ -12168,7 +12168,7 @@ def api_admin_get_settings():
     """获取所有系统设置"""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT key, value, description, updated_at FROM system_settings ORDER BY key')
+    cursor.execute('SELECT `key`, value, description, updated_at FROM system_settings ORDER BY `key`')
     settings = {}
     for row in cursor.fetchall():
         settings[row['key']] = {
@@ -12204,7 +12204,7 @@ def api_admin_update_settings():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO system_settings (key, value, updated_at)
+        INSERT INTO system_settings (`key`, value, updated_at)
         VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
     ''', (key, value))
