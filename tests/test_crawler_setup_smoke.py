@@ -10,16 +10,17 @@ ROOT = Path(__file__).resolve().parents[1]
 TEST_ORIGIN = "https://crawler.example.test"
 
 
-def run_isolated(code, *, with_credentials):
+def run_isolated(code, *, with_credentials, with_secret=True):
     env = os.environ.copy()
     env["CRAWLER_SETUP_MODE"] = "1"
     env["TIDB1_URL"] = "mysql://must-never-connect:bad@127.0.0.1:4000/order"
     env["DATABASE_URL"] = "mysql://must-never-connect:bad@127.0.0.1:4000/order"
     for name in ("CRAWLER_TIDB_URL", "CRAWLER_SECRET_KEY", "SECRET_KEY",
-                 "SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD"):
+                 "SUPER_ADMIN_EMAIL", "SUPER_ADMIN_PASSWORD", "AUTOMATION_MASTER_KEY"):
         env.pop(name, None)
     if with_credentials:
-        env["SECRET_KEY"] = "unit-test-only-secret-key-with-64-chars-required-1234567890abcdef"
+        if with_secret:
+            env["SECRET_KEY"] = "unit-test-only-secret-key-with-64-chars-required-1234567890abcdef"
         env["SUPER_ADMIN_EMAIL"] = "owner@example.test"
         env["SUPER_ADMIN_PASSWORD"] = "unit-test-only-password"
     return subprocess.run(
@@ -56,7 +57,7 @@ class CrawlerSetupSmokeTest(unittest.TestCase):
             [sys.executable, "-c", textwrap.dedent("""
                 import crawler_app
                 assert crawler_app._credentials_ready
-                assert crawler_app.app.secret_key.startswith("a-secure")
+                assert crawler_app._session_key_mode == "stable"\n                assert len(crawler_app.app.secret_key) == 64
                 c = crawler_app.app.test_client()
                 response = c.post("/login", base_url="https://crawler.example.test",
                                   headers={"Origin":"https://crawler.example.test"},
@@ -76,8 +77,27 @@ class CrawlerSetupSmokeTest(unittest.TestCase):
             assert response.status_code == 200
             assert b"SUPER_ADMIN_EMAIL" in response.data
             assert b"SUPER_ADMIN_PASSWORD" in response.data
-            assert b"CRAWLER_SECRET_KEY" in response.data
         """, with_credentials=False)
+        self.assertEqual(r.returncode, 0, msg=r.stderr or r.stdout)
+
+    def test_existing_admin_credentials_no_long_secret_can_log_in(self):
+        r = run_isolated("""
+            import sys
+            import crawler_app
+            assert crawler_app._session_key_mode == "temporary"
+            assert crawler_app._credentials_ready
+            assert len(crawler_app.app.secret_key) == 64
+            c = crawler_app.app.test_client()
+            base = "https://crawler.example.test"
+            assert c.get("/login", base_url=base).status_code == 200
+            r = c.post("/login", base_url=base, headers={"Origin":base}, data={
+                "email":"owner@example.test", "password":"unit-test-only-password"
+            })
+            assert r.status_code == 302
+            assert c.get("/admin/setup", base_url=base).status_code == 200
+            assert c.get("/ready", base_url=base).status_code == 503
+            assert "database" not in sys.modules
+        """, with_credentials=True, with_secret=False)
         self.assertEqual(r.returncode, 0, msg=r.stderr or r.stdout)
 
     def test_setup_login_without_touching_order_db(self):
