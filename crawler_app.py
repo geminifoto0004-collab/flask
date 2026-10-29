@@ -137,14 +137,12 @@ if not _SETUP_MODE:
     from utils.time_utils import get_chile_time_naive
 
     app.config["PERMANENT_SESSION_LIFETIME"] = config.PERMANENT_SESSION_LIFETIME
-    from blueprints.user_auth_bp import user_auth_bp
-    from blueprints.api_auth_bp import api_auth_bp
     from blueprints.monitor_bp import monitor_bp
     from blueprints.container_bp import container_bp
     from blueprints.container_excel_bp import container_excel_bp
     from blueprints.aduana_monitor import aduana_bp
     from blueprints.automation_hub import automation_hub_bp
-    for blueprint in (user_auth_bp, api_auth_bp, monitor_bp, container_bp,
+    for blueprint in (monitor_bp, container_bp,
                       container_excel_bp, aduana_bp, automation_hub_bp):
         app.register_blueprint(blueprint)
 
@@ -167,7 +165,10 @@ def crawler_guard():
         if path not in allowed and not path.startswith("/static/"):
             return jsonify(ok=False, error="crawler_not_configured"), 503
         return None
-    if path in ("/ping", "/health") or path.startswith("/static/"):
+    # The original login page must remain available if TiDB3 is temporarily down.
+    # DB initialization runs only when entering an actual crawler/monitor route.
+    if path in ("/", "/ping", "/health", "/ready", "/login",
+                "/logout", "/admin", "/admin/dashboard", "/admin/setup") or path.startswith("/static/"):
         return None
     if not _db_initialized:
         with _db_init_lock:
@@ -223,10 +224,36 @@ def login():
             and hmac.compare_digest(password, _admin_password)):
         return render_template("user/login.html", login_enabled=True,
                                error="Correo electrónico o contraseña incorrectos"), 401
+    # In active mode keep the original admin's actual TiDB user_id in the
+    # session: monitoring and container management require it.
+    user_id = None
+    if not _SETUP_MODE:
+        try:
+            global _db_initialized
+            if not _db_initialized:
+                with _db_init_lock:
+                    if not _db_initialized:
+                        init_database()
+                        _db_initialized = True
+            conn = get_db_connection()
+            try:
+                cur = get_cursor(conn)
+                cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+                row = cur.fetchone()
+                if row:
+                    user_id = row.get("id") if isinstance(row, dict) else row[0]
+            finally:
+                conn.close()
+            if user_id is None:
+                raise RuntimeError("Crawler administrator record unavailable")
+        except Exception:
+            app.logger.exception("Crawler administrator login cannot access dedicated TiDB")
+            return render_template("user/login.html", login_enabled=True,
+                                   error="獨立 TiDB 尚未就緒，請先檢查連線"), 503
     session.clear()
     session.update(crawler_admin=True, logged_in=True,
                    role="super_admin", username="super_admin",
-                   email=email, credential_marker=_login_marker())
+                   user_id=user_id, email=email, credential_marker=_login_marker())
     return redirect("/admin/automation")
 
 
