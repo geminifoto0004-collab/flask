@@ -9,6 +9,7 @@ from datetime import datetime
 import json
 import hashlib
 import hmac
+import os
 from database import get_db_connection
 from services.monitor_service import (
     create_monitor_task, get_user_monitor_tasks, get_monitor_task,
@@ -77,6 +78,8 @@ def _parse_bool(value, default: bool = False) -> bool:
 
 def _get_active_holiday_effect():
     """Return the active TiDB-configured holiday effect for Chile today."""
+    if str(os.environ.get('HOLIDAY_EFFECTS_ENABLED', '1')).strip() in {'0', 'false', 'False', 'off', 'OFF'}:
+        return None
     conn = None
     try:
         today = get_chile_time_naive()
