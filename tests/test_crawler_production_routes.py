@@ -42,6 +42,25 @@ class CrawlerProductionRoutingTest(unittest.TestCase):
                 "/api/monitor/check-all",
             ):
                 assert path in paths, (path, sorted(paths))
+            # Original 0004 management routes must be present and functional,
+            # not just sidebar decorations.
+            for path in (
+                "/admin",
+                "/admin/dashboard",
+                "/admin/users",
+                "/admin/services",
+                "/admin/user-services",
+                "/admin/monitor-tasks",
+                "/admin/user-sessions",
+                "/admin/database",
+            ):
+                assert path in paths, ("missing original admin route", path)
+            admin_endpoints = {r.endpoint for r in app.url_map.iter_rules()
+                               if r.rule.startswith("/admin")}
+            assert "admin_dashboard" in admin_endpoints
+            assert "admin_users" in admin_endpoints
+            assert "admin_services" in admin_endpoints
+            assert "admin_database" in admin_endpoints
             assert "/share/<token>" not in paths
             assert "/tracking" not in paths
             assert "/api/order-cloud/sync/order" not in paths
