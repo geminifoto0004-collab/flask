@@ -661,7 +661,25 @@ def monitor_report_page():
 
     # Web report receives SVG time badges; Telegram PNG uses the original markup.
     context['web_report_only'] = True
-    response = current_app.make_response(render_template('reports/iti_telegram_report.html', **context))
+    html = render_template('reports/iti_telegram_report.html', **context)
+    manual_ui = """
+<style>
+.manual-tools{display:flex;justify-content:flex-end;gap:8px;margin:8px 0}
+.manual-tools button{width:32px;height:32px;border:1px solid #d7dde5;border-radius:9px;background:#fff;font-size:20px;line-height:1;cursor:pointer}
+.manual-tools button.active{background:#eef2f7}
+.manual-line{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid #edf0f4}
+.manual-line strong{flex:1}.manual-line span{font-size:11px}
+.manual-line button{border:0;border-radius:7px;background:#fee2e2;color:#991b1b;padding:4px 9px;cursor:pointer}
+</style>
+<div id="manualControls" class="manual-tools" data-api-key="__APIKEY__">
+  <button type="button" id="manualAdd" title="Agregar">＋</button>
+  <button type="button" id="manualMinus" title="Eliminar">−</button>
+</div>
+<div id="manualBox"></div>
+<script src="/static/js/manual_monitor.js"></script>
+""".replace("__APIKEY__", api_key)
+    html = html.replace('<div class="footer">', manual_ui + '<div class="footer">', 1)
+    response = current_app.make_response(html)
     response.set_cookie('XW_MANUAL', _manual_action_token(api_key), secure=True, httponly=True, samesite='Strict', path='/api/monitor/report/manual')
     return response
 
