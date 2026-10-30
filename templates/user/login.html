@@ -20,7 +20,7 @@
         </div>
         {% endif %}
 
-        {% if crawler_only and not login_enabled %}
+        {% if crawler_only and request.path == '/login' and not login_enabled %}
         <div class="error-message">
             管理員登入尚未啟用。
             {% for issue in login_setup_problems or [] %}<div>{{ issue }}</div>{% endfor %}
@@ -55,7 +55,7 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn-login" {% if crawler_only and not login_enabled %}disabled{% endif %}>
+            <button type="submit" class="btn-login" {% if crawler_only and request.path == '/login' and not login_enabled %}disabled{% endif %}>
                 Iniciar Sesión
             </button>
         </form>
