@@ -6,7 +6,7 @@
     </div>
     
     <nav class="sidebar-nav">
-        {% if crawler_only %}
+        {% if crawler_only and crawler_setup_mode %}
         <a href="/admin/automation" class="nav-item {% if request.path.startswith('/admin/automation') %}active{% endif %}">
             <i class="fas fa-robot"></i>
             <span>自動化中心</span>
