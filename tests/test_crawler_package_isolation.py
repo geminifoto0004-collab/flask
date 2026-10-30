@@ -51,6 +51,8 @@ required = (
     '/user/login',
     '/user/forgot-password',
     '/user/portal',
+    '/user/services',
+    '/user/services/api',
 )
 assert all(path in routes for path in required), routes
 assert not any(name.startswith('services.order_') for name in sys.modules)
