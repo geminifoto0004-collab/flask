@@ -157,6 +157,57 @@ if not _SETUP_MODE:
     from crawler_legacy_admin import install_crawler_admin
     install_crawler_admin(app)
 
+    # These two pages originally lived in app.py (0004). The dedicated
+    # crawler process does not import app.py, so expose them here as well.
+    @app.get("/user/services")
+    def crawler_user_services():
+        if not session.get("logged_in") or not session.get("user_id"):
+            return redirect(url_for("user_auth.login_page"))
+        return render_template("user/services.html")
+
+    @app.get("/user/services/api")
+    def crawler_user_services_api():
+        if not session.get("logged_in") or not session.get("user_id"):
+            return jsonify(success=False, error="請先登入"), 401
+
+        conn = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT us.id, us.service_id, us.status, us.start_date,
+                       us.end_date, us.created_at,
+                       s.name AS service_name, s.description
+                FROM user_services us
+                JOIN services s ON us.service_id = s.id
+                WHERE us.user_id = ?
+                ORDER BY us.created_at DESC
+                """,
+                (session["user_id"],),
+            )
+            rows = cursor.fetchall()
+            today = get_chile_time_naive().strftime("%Y-%m-%d")
+            result = []
+            for row in rows:
+                item = dict(row)
+                for field in ("start_date", "end_date", "created_at"):
+                    value = item.get(field)
+                    if value is not None:
+                        item[field] = str(value)
+                end_date = (item.get("end_date") or "")[:10]
+                if item.get("status") == "active" and end_date and end_date < today:
+                    item["status"] = "inactive"
+                    item["is_expired"] = True
+                result.append(item)
+            return jsonify(success=True, services=result)
+        except Exception:
+            app.logger.exception("Crawler user services query failed")
+            return jsonify(success=False, error="Error al cargar servicios"), 500
+        finally:
+            if conn is not None:
+                conn.close()
+
 
 @app.before_request
 def crawler_guard():
