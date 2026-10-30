@@ -800,10 +800,11 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                 return False, {}, "無法取得有效 ZOFRI 文件資料（保留上次結果）"
         
         if df_zofri is None or df_zofri.empty:
+            all_containers = _merge_manual_monitor_containers(task_config.get('id'), [])
             return True, {
-                'containers': [],
-                'matched_count': 0,
-                'unmatched_count': 0
+                'containers': all_containers,
+                'matched_count': sum(1 for c in all_containers if c.get('matched')),
+                'unmatched_count': sum(1 for c in all_containers if not c.get('matched'))
             }, ""
         
         # 4. 獲取 ITI 數據並匹配
@@ -934,10 +935,11 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         else:
             print(f"[監控檢查-{execution_id}] ✅ 所有容器都已匹配，沒有未匹配的容器")
         
+        all_containers = _merge_manual_monitor_containers(task_config.get('id'), all_containers)
         result = {
             'containers': all_containers,
-            'matched_count': len(matched_data),
-            'unmatched_count': len(unmatched_data)
+            'matched_count': sum(1 for c in all_containers if c.get('matched')),
+            'unmatched_count': sum(1 for c in all_containers if not c.get('matched'))
         }
         
         print(f"[監控檢查-{execution_id}] 監控檢查完成")
@@ -953,6 +955,42 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         import traceback
         traceback.print_exc()
         return False, {}, f"檢查失敗: {str(e)}"
+
+
+def _merge_manual_monitor_containers(task_id, containers):
+    """Merge manual container exceptions into the normal monitor result."""
+    if not task_id:
+        return containers
+    try:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT container_no FROM monitor_manual_containers WHERE task_id = ? ORDER BY container_no",(task_id,))
+            codes=[(r.get('container_no') if isinstance(r,dict) else r[0]) for r in (cur.fetchall() or [])]
+        finally:
+            conn.close()
+    except Exception:
+        return containers
+    if not codes:
+        return containers
+    existing={_get_container_identity(c) for c in containers}
+    try:
+        from services.unified_iti_service import get_unified_iti_index, normalize_container
+        index=get_unified_iti_index(allow_stale=True)
+    except Exception:
+        index={}
+        from services.container_iti_service import normalize_container
+    for raw in codes:
+        code=normalize_container(raw)
+        if not code or code in existing:
+            continue
+        rec=index.get(code)
+        item={'codigo':code,'glosa_codigo':code,'glosa_descripcion':'人工補入','estado':'人工補入','matched':bool(rec),'source_manual':True}
+        if rec:
+            item.update({'vessel_name':'','fecha':rec.fecha_entrega,'iti_folio':rec.folio,'iti_sigla':rec.sigla,'iti_numero':rec.numero,'iti_digito':rec.digito,'iti_pies':rec.pies})
+        containers.append(item)
+        existing.add(code)
+    return containers
 
 
 # ========== 對比上次結果，判斷是否有變化 ==========
@@ -1453,10 +1491,12 @@ def _prepare_telegram_row(container: Dict) -> Dict:
     code = _safe_text(container.get('glosa_codigo') or container.get('codigo'))
     sigla_auto, numero_auto, digito_auto = _split_container_code(code)
 
+    is_manual = bool(container.get('source_manual'))
     row = {
         'matched': is_matched,
+        'manual': is_manual,
         'codigo': code,
-        'buque': _safe_text(container.get('vessel_name') if is_matched else container.get('glosa_descripcion')),
+        'buque': '人工補入' if is_manual else _safe_text(container.get('vessel_name') if is_matched else container.get('glosa_descripcion')),
         'estado': _safe_text(container.get('estado')),
         'descripcion': _safe_text(container.get('glosa_descripcion')),
         'folio': _safe_text(container.get('iti_folio'), '-') if is_matched else '-',
