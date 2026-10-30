@@ -125,6 +125,12 @@ def _login_marker():
 
 
 def _logged_in():
+    if not session.get("logged_in"):
+        return False
+    if (session.get("role") == "super_admin"
+            and session.get("user_id") is not None
+            and not session.get("crawler_admin")):
+        return True
     return bool(
         _credentials_ready
         and session.get("crawler_admin") is True
@@ -213,6 +219,12 @@ if not _SETUP_MODE:
 def crawler_guard():
     global _db_initialized
     path = request.path
+    # A single login entry for all accounts, including older bookmarked URLs.
+    if path == "/user/login":
+        if request.method == "GET":
+            return redirect("/login")
+        if request.method == "POST":
+            return login()
     # Never serve the ORDER site or order sync on this process.
     if (path.startswith("/share/") or path.startswith("/tracking")
             or path.startswith("/api/order-cloud/")
@@ -278,22 +290,26 @@ def crawler_ready():
 def login():
     if request.method == "GET":
         return render_template("user/login.html",
-                               login_enabled=_credentials_ready,
-                               login_setup_problems=_login_setup_problems)
-    if not _credentials_ready:
-        return render_template("user/login.html", login_enabled=False,
-                               login_setup_problems=_login_setup_problems,
-                               error="請先完成下列 Render Environment 設定"), 503
+                               login_enabled=True,
+                               login_setup_problems=[])
     # Prevent cross-origin login requests; do not rely solely on SameSite.
     origin = request.headers.get("Origin")
     if origin and origin.rstrip("/") != request.host_url.rstrip("/"):
         return jsonify(ok=False, error="invalid_origin"), 403
     email = str(request.form.get("email") or "").strip()
     password = str(request.form.get("password") or "")
-    if not (hmac.compare_digest(email, _admin_email)
-            and hmac.compare_digest(password, _admin_password)):
-        return render_template("user/login.html", login_enabled=True,
-                               error="Correo electrónico o contraseña incorrectos"), 401
+    # Emergency administrator credentials are accepted here as before.
+    # All other accounts use the existing TiDB password verifier and roles.
+    is_emergency_admin = bool(
+        _credentials_ready
+        and hmac.compare_digest(email, _admin_email)
+        and hmac.compare_digest(password, _admin_password)
+    )
+    if not is_emergency_admin:
+        if _SETUP_MODE:
+            return render_template("user/login.html", login_enabled=True,
+                                   error="Correo electrónico o contraseña incorrectos"), 401
+        return app.view_functions["user_auth.login_submit"]()
     # In active mode keep the original admin's actual TiDB user_id in the
     # session: monitoring and container management require it.
     user_id = None
@@ -337,7 +353,11 @@ def logout():
 
 @app.get("/")
 def index():
-    return redirect(("/admin/automation" if _SETUP_MODE else "/admin") if _logged_in() else "/login")
+    if not session.get("logged_in"):
+        return redirect("/login")
+    if session.get("role") in ("admin", "super_admin"):
+        return redirect("/admin/automation" if _SETUP_MODE else "/admin")
+    return redirect("/user/portal")
 
 
 if _SETUP_MODE:
