@@ -2166,7 +2166,18 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
     )
     if html_png:
         return [html_png], ""
-    return [], f"html render failed: {html_err}"
+    # Render's Python build may not include Playwright Chromium.  Keep
+    # Telegram images working with the existing Pillow renderer instead.
+    pillow_pages, pillow_err = _render_telegram_table_image_pillow(
+        containers=containers,
+        company_name=company_name,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched,
+        max_rows=max_rows,
+    )
+    if pillow_pages:
+        return pillow_pages, ""
+    return [], f"html render failed: {html_err}; pillow render failed: {pillow_err}"
 
 
 def send_notification_telegram(
@@ -2235,11 +2246,22 @@ def send_notification_telegram(
             trimmed = trimmed[:max(0, allowed - 3)] + "..."
         return trimmed + suffix
 
-    if telegram_mode == "text" and report_url:
+    # In BOTH mode the report URL must also appear in the text message,
+    # even when the image renderer or Telegram photo upload fails.
+    if telegram_mode in ("text", "both") and report_url:
         text_message = f"{text_message}\n\n🔗 Ver reporte web:\n{report_url}"
     if telegram_mode in ("text", "both"):
-        text_message = (text_message[:max(0, 4096 - len(free_days_hint) - 3)] + "..."
-                        if len(text_message) + len(free_days_hint) > 4096 else text_message) + free_days_hint
+        # Keep both links intact when trimming long container reports.
+        suffix = (f"\n\n🔗 Ver reporte web:\n{report_url}" if report_url else "") + free_days_hint
+        if len(text_message) + len(free_days_hint) > 4096:
+            main_message = _build_telegram_text_message(
+                company_name=company_name, containers=containers,
+                include_matched=include_matched, include_unmatched=include_unmatched,
+                max_rows=max_rows
+            )
+            text_message = main_message[:max(0, 4096 - len(suffix) - 3)] + "..." + suffix
+        else:
+            text_message += free_days_hint
 
     if telegram_mode in ("text", "both"):
         text_ok, text_err = send_telegram_message(bot_token, chat_id, text_message)
