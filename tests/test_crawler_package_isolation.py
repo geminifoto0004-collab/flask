@@ -39,5 +39,44 @@ assert 'services.container_iti_service' in loaded
         )
 
 
+    def test_crawler_registers_user_auth_without_order(self):
+        code = """
+import sys
+from crawler_app import app
+routes = {rule.rule: rule.endpoint for rule in app.url_map.iter_rules()}
+required = (
+    '/user/register',
+    '/user/register/send-code',
+    '/user/register/submit',
+    '/user/login',
+    '/user/forgot-password',
+    '/user/portal',
+)
+assert all(path in routes for path in required), routes
+assert not any(name.startswith('services.order_') for name in sys.modules)
+assert not any(name.startswith('blueprints.b2_test_bp') for name in sys.modules)
+"""
+        env = os.environ.copy()
+        env.update({
+            "XINGWANG_SERVICE_ROLE": "CRAWLER",
+            "CRAWLER_SETUP_MODE": "0",
+            "CRAWLER_SECRET_KEY": "unit-test-secret",
+            "SUPER_ADMIN_EMAIL": "admin@example.test",
+            "SUPER_ADMIN_PASSWORD": "unit-test-password",
+            "CRAWLER_TIDB_URL": "mysql://crawler:test@localhost:4000/crawler_test",
+        })
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            "Crawler user auth route isolation failed:\\n" + result.stdout + result.stderr,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
