@@ -136,7 +136,7 @@ def _logged_in():
 if not _SETUP_MODE:
     from config import config, admin_config
     from database import init_database, get_db_connection, get_cursor, get_lastrowid
-    from crawler_db_bootstrap import probe_schema, initialize_schema
+    from crawler_db_bootstrap import probe_schema, initialize_schema, diagnose_connection
     from utils.time_utils import get_chile_time_naive
 
     app.config["PERMANENT_SESSION_LIFETIME"] = config.PERMANENT_SESSION_LIFETIME
@@ -327,12 +327,18 @@ def crawler_system_check():
         return redirect(url_for("login"))
     probe = None
     error = None
+    connection_diagnostic = None
     if not _SETUP_MODE:
-        try:
-            probe = probe_schema()
-        except Exception as exc:
-            app.logger.warning("Crawler TiDB diagnostic failed: %s", type(exc).__name__)
-            error = "TiDB 0005 無法完成資料表檢查（" + type(exc).__name__ + "）。請檢查 CRAWLER_TIDB_URL 的連線、權限與資料庫名稱。"
+        connection_diagnostic = diagnose_connection()
+        if connection_diagnostic["connected"]:
+            try:
+                probe = probe_schema()
+            except Exception as exc:
+                app.logger.warning("Crawler TiDB schema inspection failed: %s", type(exc).__name__)
+                error = (
+                    "TiDB 連線正常，但資料表檢查失敗（" + type(exc).__name__
+                    + "）。請查看 Render 日誌中的 SQL 錯誤代碼。"
+                )
     csrf_token = session.get("crawler_db_csrf")
     if not csrf_token:
         csrf_token = secrets.token_urlsafe(32)
@@ -340,6 +346,7 @@ def crawler_system_check():
     message = session.pop("crawler_db_notice", None)
     return render_template("admin/crawler_system_check.html",
                            setup_mode=_SETUP_MODE, probe=probe, error=error,
+                           connection_diagnostic=connection_diagnostic,
                            csrf_token=csrf_token, message=message)
 
 
