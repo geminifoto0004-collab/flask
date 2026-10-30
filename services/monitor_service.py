@@ -1801,6 +1801,8 @@ def _render_telegram_html_image(
             task_id=task_id
         )
         context['company_name'] = _safe_text(company_name, 'NICO').upper()
+        # Match the public /monitor/report UI, including free-time SVG badges.
+        context['web_report_only'] = True
         html_content = template.render(**context)
     except Exception as exc:
         return None, f"template render failed: {exc}"
