@@ -687,15 +687,16 @@ def monitor_report_page():
     html = render_template('reports/iti_telegram_report.html', **context)
     manual_ui = """
 <style>
-.manual-tools{margin:12px 0 8px;padding:10px 12px;border:1px solid #d8c7ff;border-radius:12px;background:#f6f1ff;display:flex;align-items:center;gap:8px}
-.manual-title{font-size:12px;font-weight:800;color:#6d28d9;margin-right:auto}
-.manual-tools button{border:1px solid #c4b5fd;border-radius:9px;background:#fff;color:#6d28d9;height:30px;min-width:34px;padding:0 10px;font-weight:800;cursor:pointer}
-.manual-tools button.active{background:#ede9fe}
-.manual-tools .reset-btn{font-size:11px;color:#475569;border-color:#cbd5e1}
-.manual-note{font-size:10px;color:#7c3aed;margin-left:2px}
-.manual-group{border-color:#c4b5fd!important;background:#faf7ff!important}
-.manual-group .v-head,.manual-group .um-head{background:#f1eaff!important}
-.manual-group .v-name,.manual-group .um-vessel-name{color:#6d28d9!important}
+.manual-tools{margin:12px 0 8px;padding:10px 12px;border:2px solid #7c3aed;border-radius:12px;background:#ede9fe;display:flex;align-items:center;gap:8px}
+.manual-title{font-size:12px;font-weight:900;color:#5b21b6;margin-right:auto}
+.manual-tools button{border:1px solid #8b5cf6;border-radius:9px;background:#fff;color:#6d28d9;height:30px;min-width:34px;padding:0 10px;font-weight:900;cursor:pointer}
+.manual-tools button.active{background:#c4b5fd}
+.manual-tools .reset-btn{font-size:11px;color:#5b21b6;border-color:#8b5cf6}
+.manual-note{font-size:10px;font-weight:700;color:#6d28d9;margin-left:2px}
+.manual-group{border:2px solid #8b5cf6!important;background:#f5f3ff!important;box-shadow:0 0 0 1px rgba(124,58,237,.08)!important}
+.manual-group .v-head,.manual-group .um-head{background:#7c3aed!important}
+.manual-group .v-name,.manual-group .um-vessel-name,.manual-group .v-badge,.manual-group .um-vessel-count{color:#fff!important}
+.manual-group .v-icon{display:none!important}
 </style>
 <div id="manualControls" class="manual-tools" data-api-key="__APIKEY__">
   <span class="manual-title">人工補入</span>
