@@ -77,7 +77,7 @@ def _safe_error_category(exc):
         return "quota", "TiDB 已觸及資源或使用額度限制", code
     if "ssl" in msg or "tls" in msg or "certificate" in msg:
         return "tls", "TiDB SSL/TLS 連線設定有問題", code
-    if "not configured" in msg:
+    if "not configured" in msg or "no tidb target is configured" in msg or "not configured:" in msg:
         return "config", "程式未取得完整的獨立 TiDB 連線設定", code
     if "schema incomplete" in msg:
         return "schema", "已連接 TiDB，但部分必要表格或欄位仍未建立", code
