@@ -2167,7 +2167,9 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
         task_id=task_id
     )
     if html_png:
+        print("[Telegram Image] renderer=playwright_html; matches web report", flush=True)
         return [html_png], ""
+    print(f"[Telegram Image] renderer=playwright_html failed; reason={html_err}", flush=True)
     # Render's Python build may not include Playwright Chromium.  Keep
     # Telegram images working with the existing Pillow renderer instead.
     pillow_pages, pillow_err = _render_telegram_table_image_pillow(
@@ -2178,6 +2180,7 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
         max_rows=max_rows,
     )
     if pillow_pages:
+        print("[Telegram Image] renderer=pillow_fallback; NOT the web report UI", flush=True)
         return pillow_pages, ""
     return [], f"html render failed: {html_err}; pillow render failed: {pillow_err}"
 
