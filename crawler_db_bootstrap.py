@@ -48,6 +48,82 @@ EXPECTED_COLUMNS = {
 _LOCK = threading.Lock()
 
 
+def _safe_error_category(exc):
+    """Classify TiDB errors without exposing credentials or connection URL."""
+    seen = set()
+    current = exc
+    code = None
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        args = getattr(current, "args", ()) or ()
+        if args:
+            try:
+                code = int(args[0])
+                break
+            except (ValueError, TypeError, IndexError):
+                pass
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+
+    msg = str(exc).lower()
+    if code in {1045, 1044, 1698}:
+        return "auth", "TiDB 拒絕登入（資料庫帳號或密碼不正確、權限不足）", code
+    if code == 1049:
+        return "database_missing", "TiDB 連線成功，但指定的資料庫不存在", code
+    if code in {2002, 2003, 2005, 2006, 2013, 1159}:
+        return "network", "Render 無法連到 TiDB，請檢查區域、Host、Port、端點與網路", code
+    if code in {1040, 1203, 1226}:
+        return "connection_limit", "TiDB 連線數額度不足或連線受限制", code
+    if "quota" in msg or "resource unit" in msg or "ru limit" in msg:
+        return "quota", "TiDB 已觸及資源或使用額度限制", code
+    if "ssl" in msg or "tls" in msg or "certificate" in msg:
+        return "tls", "TiDB SSL/TLS 連線設定有問題", code
+    if "not configured" in msg:
+        return "config", "程式未取得完整的獨立 TiDB 連線設定", code
+    if "schema incomplete" in msg:
+        return "schema", "已連接 TiDB，但部分必要表格或欄位仍未建立", code
+    return "unknown", "TiDB 發生未分類錯誤；請查看 Render Logs 的錯誤代碼", code
+
+
+def diagnose_connection():
+    """Bounded TiDB SELECT 1 health check, never logs or returns passwords."""
+    from database import get_db_connection_for_target, get_cursor
+    from tidb_targets import target_settings
+    cfg = target_settings("TIDB1")
+    diagnostic = {
+        "host": cfg["host"], "database": cfg["database"],
+        "user_hint": ((cfg["user"][:4] + "…") if cfg["user"] else ""),
+        "configured": bool(cfg["configured"]),
+        "password_set": bool(cfg["password"]),
+        "connected": False, "error_type": None, "error_message": None,
+        "error_code": None,
+    }
+    if not cfg["configured"] or not cfg["password"]:
+        diagnostic["error_type"] = "config"
+        diagnostic["error_message"] = (
+            "CRAWLER_TIDB_URL 缺少帳號、資料庫名稱或密碼；請在 Render Environment 修正"
+        )
+        return diagnostic
+    conn = None
+    try:
+        # Avoid reusing stale pools when diagnosing first deployment.
+        conn = get_db_connection_for_target("TIDB1", pooled=False)
+        cur = get_cursor(conn)
+        cur.execute("SELECT DATABASE() AS db_name")
+        row = cur.fetchone()
+        db = row.get("db_name") if isinstance(row, dict) else row[0]
+        diagnostic["actual_database"] = db
+        diagnostic["connected"] = True
+    except Exception as exc:
+        category, detail, code = _safe_error_category(exc)
+        diagnostic["error_type"] = category
+        diagnostic["error_message"] = detail
+        diagnostic["error_code"] = code
+    finally:
+        if conn is not None:
+            conn.close()
+    return diagnostic
+
+
 def probe_schema():
     """Non-destructive diagnostic. No full table scans or secrets."""
     from database import get_db_connection, get_cursor, get_table_names
