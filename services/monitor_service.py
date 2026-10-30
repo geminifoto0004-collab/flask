@@ -2213,7 +2213,8 @@ def send_notification_telegram(
     caption = _build_telegram_image_caption(company_name, containers)
     report_url = (report_url or "").strip()
     # Fixed PIN-protected free-time importer. Do not put the PIN in Telegram.
-    free_days_url = "https://flask-393d.onrender.com/admin/container-excel"
+    free_days_base = (os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("CRAWLER_PUBLIC_BASE_URL") or "https://xingwang-crawler.onrender.com").strip().rstrip("/")
+    free_days_url = f"{free_days_base}/admin/container-excel"
     free_days_hint = "\n設定／匯入免箱天數（需輸入密碼）：\n" + free_days_url
 
     text_ok = None
