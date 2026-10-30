@@ -122,12 +122,27 @@ def _holiday_overlay_html(effect):
 <script src="https://cdn.jsdelivr.net/npm/halloween.js@1.0.3/dist/halloween.iife.js" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  document.body.classList.add(
+  const holidayClasses = [
     'halloween','halloween-screen-left-top','halloween-screen-right-top',
     'halloween-screen-left-bottom','halloween-screen-right-bottom',
     'halloween-eyes','halloween-witches','halloween-spider-drop',
     'halloween-tombstones','halloween-party'
-  );
+  ];
+  document.body.classList.add(...holidayClasses);
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    const fx = Array.from(document.querySelectorAll('body [class*="halloween"]'));
+    fx.forEach(el => {
+      try {
+        el.style.transition = 'opacity .35s ease';
+        el.style.opacity = '0';
+      } catch (_) {}
+    });
+    setTimeout(() => document.body.classList.remove(...holidayClasses), 360);
+  };
+  document.addEventListener('pointerdown', dismiss, { once: true, capture: true });
 });
 </script>
 """
@@ -137,6 +152,19 @@ document.addEventListener('DOMContentLoaded', function () {
 <script>
 window.addEventListener('load', function () {
   try { if (window.Festive) Festive.init({forceTheme:'snowfall'}); } catch (_) {}
+  let dismissed = false;
+  document.addEventListener('pointerdown', function dismissChristmas() {
+    if (dismissed) return;
+    dismissed = true;
+    const fx = Array.from(document.querySelectorAll('body [class*="festive"], body [id*="festive"]'));
+    fx.forEach(el => {
+      try {
+        el.style.transition = 'opacity .35s ease';
+        el.style.opacity = '0';
+      } catch (_) {}
+    });
+    setTimeout(() => { try { window.Festive?.destroy?.(); } catch (_) {} }, 360);
+  }, { once: true, capture: true });
 });
 </script>
 """
@@ -147,11 +175,21 @@ window.addEventListener('load', function () {
 window.addEventListener('load', function () {
   if (!window.confetti) return;
   const end = Date.now() + 8000;
+  let dismissed = false;
   const timer = setInterval(function () {
+    if (dismissed || Date.now() > end) {
+      clearInterval(timer);
+      return;
+    }
     confetti({particleCount:7, angle:60, spread:70, origin:{x:0}});
     confetti({particleCount:7, angle:120, spread:70, origin:{x:1}});
-    if (Date.now() > end) clearInterval(timer);
   }, 260);
+  document.addEventListener('pointerdown', function () {
+    if (dismissed) return;
+    dismissed = true;
+    clearInterval(timer);
+    try { confetti.reset?.(); } catch (_) {}
+  }, { once: true, capture: true });
 });
 </script>
 """
