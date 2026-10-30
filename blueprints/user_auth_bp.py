@@ -199,6 +199,8 @@ def login_submit():
     success, result = verify_password(email, password)
     
     if success:
+        # Clear any previous administrator session before assigning this identity.
+        session.clear()
         # 設置 session
         session['logged_in'] = True
         session['user_id'] = result['id']
