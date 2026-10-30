@@ -829,7 +829,7 @@ def install_crawler_admin(app):
                 try:
                     # Avoid full-table scans on TiDB Starter: display only first 100 rows.
                     # The original table browser UI remains unchanged.
-                    cursor.execute(f"SELECT * FROM \`{table_name}\` LIMIT 100")
+                    cursor.execute(f"SELECT * FROM `{table_name}` LIMIT 100")
                     rows = cursor.fetchall()
                     # 處理不同數據庫返回格式
                     if rows and isinstance(rows[0], dict):
