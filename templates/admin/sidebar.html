@@ -6,6 +6,12 @@
     </div>
     
     <nav class="sidebar-nav">
+        {% if crawler_only %}
+        <a href="/admin/system-check" class="nav-item {% if request.path.startswith('/admin/system-check') %}active{% endif %}">
+            <i class="fas fa-stethoscope"></i>
+            <span>系統檢查 / TiDB</span>
+        </a>
+        {% endif %}
         {% if crawler_only and crawler_setup_mode %}
         <a href="/admin/automation" class="nav-item {% if request.path.startswith('/admin/automation') %}active{% endif %}">
             <i class="fas fa-robot"></i>
