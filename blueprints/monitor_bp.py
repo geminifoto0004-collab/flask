@@ -75,6 +75,89 @@ def _parse_bool(value, default: bool = False) -> bool:
         return value.strip().lower() in ('1', 'true', 'yes', 'on')
     return bool(value)
 
+def _get_active_holiday_effect():
+    """Return the active TiDB-configured holiday effect for Chile today."""
+    conn = None
+    try:
+        today = get_chile_time_naive()
+        md = today.month * 100 + today.day
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT effect_key, display_name, start_month, start_day,
+                   end_month, end_day, config_json
+            FROM holiday_effects
+            WHERE enabled = 1
+            ORDER BY id ASC
+        """)
+        rows = cursor.fetchall() or []
+        for raw in rows:
+            row = dict(raw)
+            start = int(row['start_month']) * 100 + int(row['start_day'])
+            end = int(row['end_month']) * 100 + int(row['end_day'])
+            active = (start <= md <= end) if start <= end else (md >= start or md <= end)
+            if active:
+                config = {}
+                try:
+                    config = json.loads(row.get('config_json') or '{}')
+                except Exception:
+                    config = {}
+                row['config'] = config
+                return row
+    except Exception as exc:
+        current_app.logger.warning("Holiday effect lookup skipped: %s", type(exc).__name__)
+    finally:
+        if conn is not None:
+            conn.close()
+    return None
+
+
+def _holiday_overlay_html(effect):
+    """Small loader only; animation rendering remains in external libraries."""
+    if not effect:
+        return ""
+    key = str(effect.get('effect_key') or '').strip().lower()
+    if key == 'halloween':
+        return """
+<script src="https://cdn.jsdelivr.net/npm/halloween.js@1.0.3/dist/halloween.iife.js" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.body.classList.add(
+    'halloween','halloween-screen-left-top','halloween-screen-right-top',
+    'halloween-screen-left-bottom','halloween-screen-right-bottom',
+    'halloween-eyes','halloween-witches','halloween-spider-drop',
+    'halloween-tombstones','halloween-party'
+  );
+});
+</script>
+"""
+    if key == 'christmas':
+        return """
+<script src="https://cdn.jsdelivr.net/npm/festive-js@0.1.0/core.min.js" defer></script>
+<script>
+window.addEventListener('load', function () {
+  try { if (window.Festive) Festive.init({forceTheme:'snowfall'}); } catch (_) {}
+});
+</script>
+"""
+    if key == 'new_year':
+        return """
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" defer></script>
+<script>
+window.addEventListener('load', function () {
+  if (!window.confetti) return;
+  const end = Date.now() + 8000;
+  const timer = setInterval(function () {
+    confetti({particleCount:7, angle:60, spread:70, origin:{x:0}});
+    confetti({particleCount:7, angle:120, spread:70, origin:{x:1}});
+    if (Date.now() > end) clearInterval(timer);
+  }, 260);
+});
+</script>
+"""
+    return ""
+
+
 
 def _require_cron_key():
     """
@@ -685,6 +768,10 @@ def monitor_report_page():
     # Web report receives SVG time badges; Telegram PNG uses the original markup.
     context['web_report_only'] = True
     html = render_template('reports/iti_telegram_report.html', **context)
+    holiday_effect = _get_active_holiday_effect()
+    holiday_html = _holiday_overlay_html(holiday_effect)
+    if holiday_html:
+        html = html.replace('</body>', holiday_html + '</body>', 1)
     manual_ui = """
 <style>
 .manual-tools{margin:12px 0 8px;padding:10px 12px;border:2px solid #7c3aed;border-radius:12px;background:#ede9fe;display:flex;align-items:center;gap:8px}
