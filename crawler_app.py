@@ -104,7 +104,9 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_NAME="XW_CRAWLER_SESSION",
-    MAX_CONTENT_LENGTH=16 * 1024,
+    # The original container Excel/API bulk imports can exceed a login form.
+    # Keep setup mode small, but allow bounded operational payloads when active.
+    MAX_CONTENT_LENGTH=(16 * 1024 if _SETUP_MODE else 10 * 1024 * 1024),
 )
 _db_init_lock = threading.Lock()
 _db_initialized = False
