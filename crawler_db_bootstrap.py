@@ -62,14 +62,14 @@ def probe_schema():
         missing_columns = {}
         # A single metadata query is cheaper than querying each table.
         cur.execute("""
-            SELECT table_name, column_name
+            SELECT table_name AS tbl_name, column_name AS col_name
             FROM information_schema.columns
             WHERE table_schema = DATABASE()
         """)
         column_names = {}
         for item in (cur.fetchall() or []):
             if isinstance(item, dict):
-                t, c = item["table_name"], item["column_name"]
+                t, c = item["tbl_name"], item["col_name"]
             else:
                 t, c = item[0], item[1]
             column_names.setdefault(str(t), set()).add(str(c).lower())
