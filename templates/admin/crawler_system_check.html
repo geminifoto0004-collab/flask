@@ -19,7 +19,14 @@
  <div style="display:flex;flex-wrap:wrap;gap:6px">
  {% for name in probe.missing %}<code style="background:#fff7ed;color:#9a3412;padding:3px 8px;border-radius:6px">{{ name }}</code>{% endfor %}
  </div>
- {% else %}<div style="color:#15803d">必要資料表皆已建立。原本 Bot 資料和歷史紀錄仍需另行遷移。</div>{% endif %}
+ {% endif %}
+ {% if probe.missing_columns %}
+ <div style="margin-top:12px"><strong>尚缺欄位：</strong></div>
+ {% for table, columns in probe.missing_columns.items() %}
+ <div style="margin:4px 0"><code>{{ table }}</code>：{% for name in columns %}<code style="background:#fff7ed;color:#9a3412;padding:3px 6px;border-radius:5px;margin-right:4px">{{ name }}</code>{% endfor %}</div>
+ {% endfor %}
+ {% endif %}
+ {% if probe.complete %}<div style="color:#15803d">必要資料表及欄位皆已建立。原本 Bot 資料和歷史紀錄仍需另行遷移。</div>{% endif %}
  {% else %}
  <div>尚未完成 TiDB 診斷。{% if setup_mode %}請先確認 CRAWLER_TIDB_URL 是 TiDB 0005 的網址，再將 CRAWLER_SETUP_MODE 設為 0。{% endif %}</div>
  {% endif %}
