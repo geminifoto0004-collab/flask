@@ -137,12 +137,13 @@ if not _SETUP_MODE:
     from utils.time_utils import get_chile_time_naive
 
     app.config["PERMANENT_SESSION_LIFETIME"] = config.PERMANENT_SESSION_LIFETIME
+    from blueprints.api_auth_bp import api_auth_bp
     from blueprints.monitor_bp import monitor_bp
     from blueprints.container_bp import container_bp
     from blueprints.container_excel_bp import container_excel_bp
     from blueprints.aduana_monitor import aduana_bp
     from blueprints.automation_hub import automation_hub_bp
-    for blueprint in (monitor_bp, container_bp,
+    for blueprint in (api_auth_bp, monitor_bp, container_bp,
                       container_excel_bp, aduana_bp, automation_hub_bp):
         app.register_blueprint(blueprint)
 
