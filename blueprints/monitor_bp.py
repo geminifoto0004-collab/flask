@@ -588,7 +588,7 @@ def monitor_report_manual_api():
         origin = (request.headers.get('Origin') or '').rstrip('/')
         if origin != request.host_url.rstrip('/'):
             return jsonify({'success': False, 'error': 'Invalid origin'}), 403
-        supplied = request.headers.get('X-Manual-Token') or ''
+        supplied = request.cookies.get('XW_MANUAL') or ''
         expected = _manual_action_token(api_key)
         if not hmac.compare_digest(supplied, expected):
             return jsonify({'success': False, 'error': 'Invalid action token'}), 403
@@ -661,8 +661,9 @@ def monitor_report_page():
 
     # Web report receives SVG time badges; Telegram PNG uses the original markup.
     context['web_report_only'] = True
-    context['manual_action_token'] = _manual_action_token(api_key)
-    return render_template('reports/iti_telegram_report.html', **context)
+    response = current_app.make_response(render_template('reports/iti_telegram_report.html', **context))
+    response.set_cookie('XW_MANUAL', _manual_action_token(api_key), secure=True, httponly=True, samesite='Strict', path='/api/monitor/report/manual')
+    return response
 
 
 @monitor_bp.route('/api/monitor/report/status', methods=['GET'])
