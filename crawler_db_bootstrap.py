@@ -22,6 +22,29 @@ ADUANA_TABLES = (
 EXCEL_TABLES = ("monitor_excel_container_days",)
 REQUIRED_TABLES = CORE_TABLES + AUTOMATION_TABLES + ADUANA_TABLES + EXCEL_TABLES
 
+# Check a representative set of columns required by the original pages.
+# Do not scan any customer/monitor records to diagnose the schema.
+EXPECTED_COLUMNS = {
+    "users": ("id", "username", "email", "password_hash", "role", "company_name"),
+    "services": ("id", "name", "version", "config_json"),
+    "user_services": ("id", "user_id", "service_id", "status", "config_json"),
+    "user_sessions": ("id", "user_id", "session_token", "device_info"),
+    "user_monitor_configs": (
+        "id", "user_id", "telegram_bot_token", "telegram_chat_id",
+        "telegram_mode", "last_telegram_result_hash",
+    ),
+    "automation_telegram_bots": (
+        "id", "bot_key", "plugin_key", "token_encrypted", "webhook_secret",
+        "enabled", "is_default",
+    ),
+    "aduana_users": ("id", "telegram_user_id", "role", "status", "permission_level"),
+    "aduana_monitors": ("id", "user_id", "rut", "aduana", "enabled"),
+    "aduana_runs": ("id", "started_at", "status", "targets_checked"),
+    "container_items": ("id", "access_token", "save_id", "saved_at"),
+    "monitor_excel_container_days": (
+        "container_no", "loading_date", "free_days", "imported_at",
+    ),
+}
 _LOCK = threading.Lock()
 
 
@@ -36,13 +59,35 @@ def probe_schema():
         db_name = (row.get("db_name") if isinstance(row, dict) else row[0]) if row else None
         table_names = set(get_table_names(cur))
         missing = [name for name in REQUIRED_TABLES if name not in table_names]
+        missing_columns = {}
+        # A single metadata query is cheaper than querying each table.
+        cur.execute("""
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+        """)
+        column_names = {}
+        for item in (cur.fetchall() or []):
+            if isinstance(item, dict):
+                t, c = item["table_name"], item["column_name"]
+            else:
+                t, c = item[0], item[1]
+            column_names.setdefault(str(t), set()).add(str(c).lower())
+        for table, columns in EXPECTED_COLUMNS.items():
+            if table not in table_names:
+                continue
+            absent = [column for column in columns
+                      if column.lower() not in column_names.get(table, set())]
+            if absent:
+                missing_columns[table] = absent
         return {
             "connected": True,
             "db_name": db_name,
             "expected": len(REQUIRED_TABLES),
             "found": len(REQUIRED_TABLES) - len(missing),
             "missing": missing,
-            "complete": not missing,
+            "missing_columns": missing_columns,
+            "complete": not missing and not missing_columns,
         }
     finally:
         conn.close()
@@ -76,7 +121,9 @@ def initialize_schema():
         result = probe_schema()
         if not result["complete"]:
             raise RuntimeError(
-                "Crawler database missing required tables: "
+                "Crawler schema incomplete: tables="
                 + ", ".join(result["missing"])
+                + "; columns="
+                + ", ".join(sorted(result["missing_columns"]))
             )
         return result
