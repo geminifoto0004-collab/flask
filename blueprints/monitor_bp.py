@@ -3,10 +3,12 @@
 功能：用戶和管理員的監控任務管理、API 檢查端點
 """
 
-from flask import Blueprint, request, jsonify, session, render_template
+from flask import Blueprint, request, jsonify, session, render_template, current_app
 from functools import wraps
 from datetime import datetime
 import json
+import hashlib
+import hmac
 from database import get_db_connection
 from services.monitor_service import (
     create_monitor_task, get_user_monitor_tasks, get_monitor_task,
@@ -555,6 +557,96 @@ def monitor_free_time_save():
         return jsonify({'success': False, 'error': 'Could not save free time'}), 500
 
 
+
+def _manual_action_token(api_key: str) -> str:
+    secret = current_app.secret_key
+    if isinstance(secret, str):
+        secret = secret.encode('utf-8')
+    return hmac.new(secret, ('manual-container:' + api_key).encode('utf-8'), hashlib.sha256).hexdigest()
+
+
+def _ensure_manual_container_table(cursor):
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS monitor_manual_containers ("
+        "task_id BIGINT NOT NULL, "
+        "container_no VARCHAR(20) NOT NULL, "
+        "PRIMARY KEY (task_id, container_no))"
+    )
+
+
+@monitor_bp.route('/api/monitor/report/manual', methods=['GET', 'POST', 'DELETE'])
+def monitor_report_manual_api():
+    from services.unified_iti_service import get_unified_iti_index, normalize_container
+    import re
+
+    api_key = (request.args.get('api_key') or '').strip()
+    task = get_task_by_api_key(api_key) if api_key else None
+    if not task:
+        return jsonify({'success': False, 'error': 'Invalid report token'}), 401
+
+    if request.method != 'GET':
+        origin = (request.headers.get('Origin') or '').rstrip('/')
+        if origin != request.host_url.rstrip('/'):
+            return jsonify({'success': False, 'error': 'Invalid origin'}), 403
+        supplied = request.headers.get('X-Manual-Token') or ''
+        expected = _manual_action_token(api_key)
+        if not hmac.compare_digest(supplied, expected):
+            return jsonify({'success': False, 'error': 'Invalid action token'}), 403
+
+    task_id = task['id']
+    if request.method in ('POST', 'DELETE'):
+        data = request.get_json(silent=True) or {}
+        code = normalize_container(data.get('container_no') or '')
+        if not re.fullmatch(r'[A-Z]{4}[0-9]{7}', code or ''):
+            return jsonify({'success': False, 'error': 'Invalid container number'}), 400
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            _ensure_manual_container_table(cur)
+            if request.method == 'POST':
+                cur.execute(
+                    "INSERT IGNORE INTO monitor_manual_containers (task_id, container_no) VALUES (?, ?)",
+                    (task_id, code),
+                )
+            else:
+                cur.execute(
+                    "DELETE FROM monitor_manual_containers WHERE task_id = ? AND container_no = ?",
+                    (task_id, code),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        _ensure_manual_container_table(cur)
+        cur.execute(
+            "SELECT container_no FROM monitor_manual_containers WHERE task_id = ? ORDER BY container_no",
+            (task_id,),
+        )
+        codes = [(row.get('container_no') if isinstance(row, dict) else row[0]) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    try:
+        iti_index = get_unified_iti_index(allow_stale=True)
+    except Exception:
+        iti_index = {}
+
+    rows = []
+    for code in codes:
+        record = iti_index.get(normalize_container(code))
+        rows.append({
+            'container_no': code,
+            'matched': bool(record),
+            'fecha_entrega': record.fecha_entrega if record else '',
+            'folio': record.folio if record else '',
+            'vessel': record.vessel if record else '',
+        })
+    return jsonify({'success': True, 'rows': rows})
+
+
 # ========== 公開 API：監控檢查（用於 cron-job） ==========
 @monitor_bp.route('/monitor/report', methods=['GET'])
 def monitor_report_page():
@@ -569,6 +661,7 @@ def monitor_report_page():
 
     # Web report receives SVG time badges; Telegram PNG uses the original markup.
     context['web_report_only'] = True
+    context['manual_action_token'] = _manual_action_token(api_key)
     return render_template('reports/iti_telegram_report.html', **context)
 
 
