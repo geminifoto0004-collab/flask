@@ -118,3 +118,28 @@ the real crawler Blueprint route map (without contacting a real TiDB). Live TiDB
 connection, row migration, original token data and Telegram delivery still need
 a real end-to-end validation. The 0005 Render account must be connected separately
 before ChatGPT can manage its environment variables directly.
+
+## 2026-10-29 original admin routes restored
+
+The complete original 0004 left navigation is now restored **only when**
+`CRAWLER_SETUP_MODE=0`: dashboard, users, services, user-services, monitoring
+tasks, container Excel import, automation center, user sessions, database browser.
+The 31 `/admin*` route handlers from the original 0004 app are reused in
+`crawler_legacy_admin.py`. Public account registration is intentionally not
+exposed; ORDER sharing and ORDER database still stay in 0004.
+
+The browser was bounded to **100 rows per table**, instead of the original
+unbounded `SELECT *`, to protect the 0005 TiDB Starter RU quota.
+
+This change does not import the 0004 application entrypoint. All routes use
+the crawler's separately configured TiDB3. The existing `/api` account
+and session functions needed by the original management UI are mounted.
+
+Until `CRAWLER_SETUP_MODE=0` is set on **Render 0005 only**, the UI remains
+in read-only setup mode, with the single automation menu.
+
+A GitHub Actions pass confirms route registration and startup without
+real database access. **Live TiDB connection, table initialization,
+legacy historical data restoration, Bot token registration, and Telegram
+Webhook delivery remain to be verified in Render 0005**. Do not change any
+live Telegram webhook or original Cron schedule before cutover.
