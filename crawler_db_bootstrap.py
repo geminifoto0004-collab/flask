@@ -225,6 +225,13 @@ def initialize_schema():
                      start_month, start_day, end_month, end_day, config_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, row)
+            # Keep built-in holiday windows in sync even when rows already exist.
+            cur.execute("""
+                UPDATE holiday_effects
+                SET start_month = 10, start_day = 30,
+                    end_month = 11, end_day = 2
+                WHERE effect_key = 'halloween'
+            """)
             conn.commit()
         except Exception:
             conn.rollback()
