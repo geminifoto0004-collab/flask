@@ -146,6 +146,12 @@ if not _SETUP_MODE:
                       container_excel_bp, aduana_bp, automation_hub_bp):
         app.register_blueprint(blueprint)
 
+    # Reuse the 0004 admin functions, actual routes, templates and CRUD.
+    # This is imported only after independent TiDB and the CRAWLER service
+    # role have been set. It does not import or initialize ORDER app:app.
+    from crawler_legacy_admin import install_crawler_admin
+    install_crawler_admin(app)
+
 
 @app.before_request
 def crawler_guard():
@@ -265,15 +271,17 @@ def logout():
 
 @app.get("/")
 def index():
-    return redirect("/admin/automation" if _logged_in() else "/login")
+    return redirect(("/admin/automation" if _SETUP_MODE else "/admin") if _logged_in() else "/login")
 
 
-@app.get("/admin")
-@app.get("/admin/dashboard")
-def admin_dashboard():
-    if not _logged_in():
-        return redirect(url_for("login"))
-    return redirect("/admin/automation")
+if _SETUP_MODE:
+    # Before the new TiDB is activated, no original admin routes are imported.
+    @app.get("/admin")
+    @app.get("/admin/dashboard")
+    def admin_dashboard():
+        if not _logged_in():
+            return redirect(url_for("login"))
+        return redirect("/admin/automation")
 
 
 if _SETUP_MODE:
