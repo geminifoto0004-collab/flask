@@ -211,7 +211,7 @@ def initialize_schema():
                 )
             """)
             defaults = (
-                ("halloween", "Halloween", 1, 10, 24, 11, 7,
+                ("halloween", "Halloween", 1, 10, 30, 11, 2,
                  '{"overlay":"halloween-js"}'),
                 ("christmas", "Christmas", 1, 12, 1, 12, 30,
                  '{"overlay":"christmas-mode"}'),
