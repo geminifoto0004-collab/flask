@@ -10,6 +10,27 @@
  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:13px;padding:22px;margin:18px 0;line-height:2">
  <h2 style="margin-top:0;font-size:19px">資料庫狀態</h2>
  <div>執行模式：<b>{{ "安全設定模式（資料庫操作未啟用）" if setup_mode else "正式模式" }}</b></div>
+ {% if connection_diagnostic %}
+ <div>連線設定：
+  <code style="background:#f1f5f9;padding:3px 6px;border-radius:5px">{{ connection_diagnostic.host or "未設定 Host" }}:4000 / {{ connection_diagnostic.database or "未設定資料庫" }}</code>
+ </div>
+ <div>TiDB 帳號：<code>{{ connection_diagnostic.user_hint or "未設定" }}</code>；
+ 密碼：<b>{{ "有設定（內容不顯示）" if connection_diagnostic.password_set else "沒有設定" }}</b></div>
+ <div>實際連線：
+  {% if connection_diagnostic.connected %}
+   <strong style="color:#15803d">成功</strong>
+  {% else %}
+   <strong style="color:#b91c1c">失敗</strong>
+  {% endif %}
+ </div>
+ {% if connection_diagnostic.error_message %}
+ <div style="background:#fff1f2;color:#9f1239;padding:13px;border-radius:8px;margin:12px 0">
+  <strong>原因：{{ connection_diagnostic.error_message }}</strong>
+  {% if connection_diagnostic.error_code %}（TiDB 錯誤碼 {{ connection_diagnostic.error_code }}）{% endif %}
+  <div style="font-size:13px;margin-top:5px">錯誤分類：{{ connection_diagnostic.error_type }}。請在 Render Environment 修正連線，勿將密碼貼在聊天或截圖中。</div>
+ </div>
+ {% endif %}
+ {% endif %}
  {% if probe %}
  <div>獨立 TiDB 連線：<b style="color:{{ '#15803d' if probe.connected else '#b91c1c' }}">{{ "正常" if probe.connected else "失敗" }}</b></div>
  <div>目前資料庫名稱：<b>{{ probe.db_name or "未取得" }}</b></div>
@@ -37,7 +58,7 @@
  <p style="line-height:1.6;color:#64748b">使用原版 XINGWANG 的資料表定義，自動建立不存在的欄位和資料表，並建立 Telegram、Aduana、貨櫃 Excel 模組需要的資料表。重複執行不會清空既有資料。這不會自動複製舊 Bot 註冊或歷史資料。</p>
  <form method="post" action="/admin/system-check/initialize">
  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
- <button style="background:#4f63bb;border:0;border-radius:9px;padding:12px 18px;color:white;font-weight:700;cursor:pointer" type="submit">檢查並建立缺少的資料表</button>
+ <button style="background:#4f63bb;border:0;border-radius:9px;padding:12px 18px;color:white;font-weight:700;cursor:pointer;opacity:{{ '1' if connection_diagnostic and connection_diagnostic.connected else '.55' }}" type="submit" {% if not connection_diagnostic or not connection_diagnostic.connected %}disabled title="請先修正 TiDB 連線"{% endif %}>檢查並建立缺少的資料表</button>
  </form>
  </div>
  {% endif %}
