@@ -39,6 +39,8 @@ class CrawlerProductionRoutingTest(unittest.TestCase):
                 "/api/aduana/health",
                 "/api/containers/list",
                 "/admin/container-excel",
+                "/admin/system-check",
+                "/admin/system-check/initialize",
                 "/api/monitor/check-all",
             ):
                 assert path in paths, (path, sorted(paths))
@@ -73,6 +75,10 @@ class CrawlerProductionRoutingTest(unittest.TestCase):
             c = app.test_client()
             assert c.get("/ping",base_url="https://crawler.example.test").status_code == 200
             assert c.get("/login",base_url="https://crawler.example.test").status_code == 200
+            assert c.get("/admin/system-check",
+                         base_url="https://crawler.example.test").status_code == 302
+            assert c.post("/admin/system-check/initialize",
+                          base_url="https://crawler.example.test").status_code == 403
             assert c.get("/share/redacted",base_url="https://crawler.example.test").status_code == 404
         """)
         r = subprocess.run(
