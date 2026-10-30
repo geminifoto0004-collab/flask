@@ -616,6 +616,12 @@ def monitor_report_manual_api():
             conn.commit()
         finally:
             conn.close()
+        try:
+            from services.async_task_service import create_async_task
+            task['_request_base_url'] = request.url_root.rstrip('/')
+            create_async_task('monitor_check', task)
+        except Exception as exc:
+            current_app.logger.warning("Manual container refresh enqueue failed: %s", type(exc).__name__)
 
     conn = get_db_connection()
     try:
@@ -647,6 +653,23 @@ def monitor_report_manual_api():
     return jsonify({'success': True, 'rows': rows})
 
 
+
+@monitor_bp.route('/api/monitor/report/reset-notification', methods=['POST'])
+def monitor_report_reset_notification():
+    api_key = (request.args.get('api_key') or '').strip()
+    task = get_task_by_api_key(api_key) if api_key else None
+    if not task:
+        return jsonify({'success': False, 'error': 'Invalid report token'}), 401
+    origin = (request.headers.get('Origin') or '').rstrip('/')
+    if origin != request.host_url.rstrip('/'):
+        return jsonify({'success': False, 'error': 'Invalid origin'}), 403
+    supplied = request.cookies.get('XW_MANUAL') or ''
+    if not hmac.compare_digest(supplied, _manual_action_token(api_key)):
+        return jsonify({'success': False, 'error': 'Invalid action token'}), 403
+    ok, message = clear_check_history(task['id'])
+    return jsonify({'success': bool(ok), 'message': message}), (200 if ok else 500)
+
+
 # ========== 公開 API：監控檢查（用於 cron-job） ==========
 @monitor_bp.route('/monitor/report', methods=['GET'])
 def monitor_report_page():
@@ -664,23 +687,28 @@ def monitor_report_page():
     html = render_template('reports/iti_telegram_report.html', **context)
     manual_ui = """
 <style>
-.manual-tools{display:flex;justify-content:flex-end;gap:8px;margin:8px 0}
-.manual-tools button{width:32px;height:32px;border:1px solid #d7dde5;border-radius:9px;background:#fff;font-size:20px;line-height:1;cursor:pointer}
-.manual-tools button.active{background:#eef2f7}
-.manual-line{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid #edf0f4}
-.manual-line strong{flex:1}.manual-line span{font-size:11px}
-.manual-line button{border:0;border-radius:7px;background:#fee2e2;color:#991b1b;padding:4px 9px;cursor:pointer}
+.manual-tools{margin:12px 0 8px;padding:10px 12px;border:1px solid #d8c7ff;border-radius:12px;background:#f6f1ff;display:flex;align-items:center;gap:8px}
+.manual-title{font-size:12px;font-weight:800;color:#6d28d9;margin-right:auto}
+.manual-tools button{border:1px solid #c4b5fd;border-radius:9px;background:#fff;color:#6d28d9;height:30px;min-width:34px;padding:0 10px;font-weight:800;cursor:pointer}
+.manual-tools button.active{background:#ede9fe}
+.manual-tools .reset-btn{font-size:11px;color:#475569;border-color:#cbd5e1}
+.manual-note{font-size:10px;color:#7c3aed;margin-left:2px}
+.manual-group{border-color:#c4b5fd!important;background:#faf7ff!important}
+.manual-group .v-head,.manual-group .um-head{background:#f1eaff!important}
+.manual-group .v-name,.manual-group .um-vessel-name{color:#6d28d9!important}
 </style>
 <div id="manualControls" class="manual-tools" data-api-key="__APIKEY__">
-  <button type="button" id="manualAdd" title="Agregar">＋</button>
-  <button type="button" id="manualMinus" title="Eliminar">−</button>
+  <span class="manual-title">人工補入</span>
+  <span id="manualNote" class="manual-note"></span>
+  <button type="button" id="manualAdd" title="加入貨櫃">＋</button>
+  <button type="button" id="manualMinus" title="刪除人工補入">−</button>
+  <button type="button" id="manualReset" class="reset-btn" title="清除防噪紀錄，下一次檢查會重新通知">重置通知</button>
 </div>
-<div id="manualBox"></div>
 <script src="/static/js/manual_monitor.js"></script>
 """.replace("__APIKEY__", api_key)
     html = html.replace('<div class="footer">', manual_ui + '<div class="footer">', 1)
     response = current_app.make_response(html)
-    response.set_cookie('XW_MANUAL', _manual_action_token(api_key), secure=True, httponly=True, samesite='Strict', path='/api/monitor/report/manual')
+    response.set_cookie('XW_MANUAL', _manual_action_token(api_key), secure=True, httponly=True, samesite='Strict', path='/api/monitor/report/')
     return response
 
 
