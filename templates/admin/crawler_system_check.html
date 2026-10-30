@@ -1,0 +1,39 @@
+{% extends "admin/base.html" %}
+{% block title %}資料庫與功能檢查{% endblock %}
+{% block breadcrumb %}系統檢查 / TiDB 0005{% endblock %}
+{% block content %}
+<div style="padding:28px;max-width:1150px">
+ <h1 style="font-size:25px;margin:0 0 8px">爬蟲服務 · TiDB 系統檢查</h1>
+ <p style="color:#64748b;line-height:1.6">此頁只檢查 Render 0005 的獨立資料庫，不會讀取或修改 0004 ORDER，也不會轉移 Telegram Webhook。</p>
+ {% if message %}<div style="background:#eff6ff;color:#1e40af;padding:14px;border-radius:9px;margin:14px 0">{{ message }}</div>{% endif %}
+ {% if error %}<div style="background:#fff1f2;color:#9f1239;padding:14px;border-radius:9px;margin:14px 0">{{ error }}</div>{% endif %}
+ <div style="background:#fff;border:1px solid #e2e8f0;border-radius:13px;padding:22px;margin:18px 0;line-height:2">
+ <h2 style="margin-top:0;font-size:19px">資料庫狀態</h2>
+ <div>執行模式：<b>{{ "安全設定模式（資料庫操作未啟用）" if setup_mode else "正式模式" }}</b></div>
+ {% if probe %}
+ <div>獨立 TiDB 連線：<b style="color:{{ '#15803d' if probe.connected else '#b91c1c' }}">{{ "正常" if probe.connected else "失敗" }}</b></div>
+ <div>目前資料庫名稱：<b>{{ probe.db_name or "未取得" }}</b></div>
+ <div>必要資料表：<b>{{ probe.found }} / {{ probe.expected }}</b></div>
+ {% if probe.missing %}
+ <div style="margin-top:8px"><strong>尚缺資料表：</strong></div>
+ <div style="display:flex;flex-wrap:wrap;gap:6px">
+ {% for name in probe.missing %}<code style="background:#fff7ed;color:#9a3412;padding:3px 8px;border-radius:6px">{{ name }}</code>{% endfor %}
+ </div>
+ {% else %}<div style="color:#15803d">必要資料表皆已建立。原本 Bot 資料和歷史紀錄仍需另行遷移。</div>{% endif %}
+ {% else %}
+ <div>尚未完成 TiDB 診斷。{% if setup_mode %}請先確認 CRAWLER_TIDB_URL 是 TiDB 0005 的網址，再將 CRAWLER_SETUP_MODE 設為 0。{% endif %}</div>
+ {% endif %}
+ </div>
+ {% if not setup_mode %}
+ <div style="background:#fff;border:1px solid #e2e8f0;border-radius:13px;padding:22px;margin:18px 0">
+ <h2 style="margin-top:0;font-size:19px">初始化／修復資料表</h2>
+ <p style="line-height:1.6;color:#64748b">使用原版 XINGWANG 的資料表定義，自動建立不存在的欄位和資料表，並建立 Telegram、Aduana、貨櫃 Excel 模組需要的資料表。重複執行不會清空既有資料。這不會自動複製舊 Bot 註冊或歷史資料。</p>
+ <form method="post" action="/admin/system-check/initialize">
+ <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+ <button style="background:#4f63bb;border:0;border-radius:9px;padding:12px 18px;color:white;font-weight:700;cursor:pointer" type="submit">檢查並建立缺少的資料表</button>
+ </form>
+ </div>
+ {% endif %}
+ <p><a href="/admin" style="color:#4f63bb;text-decoration:none;font-weight:700">返回原版管理控制台</a></p>
+</div>
+{% endblock %}
