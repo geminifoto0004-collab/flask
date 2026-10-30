@@ -20,7 +20,8 @@ ADUANA_TABLES = (
     "aduana_records", "aduana_notifications", "aduana_runs",
 )
 EXCEL_TABLES = ("monitor_excel_container_days",)
-REQUIRED_TABLES = CORE_TABLES + AUTOMATION_TABLES + ADUANA_TABLES + EXCEL_TABLES
+HOLIDAY_TABLES = ("holiday_effects",)
+REQUIRED_TABLES = CORE_TABLES + AUTOMATION_TABLES + ADUANA_TABLES + EXCEL_TABLES + HOLIDAY_TABLES
 
 # Check a representative set of columns required by the original pages.
 # Do not scan any customer/monitor records to diagnose the schema.
@@ -43,6 +44,10 @@ EXPECTED_COLUMNS = {
     "container_items": ("id", "access_token", "save_id", "saved_at"),
     "monitor_excel_container_days": (
         "container_no", "loading_date", "free_days", "imported_at",
+    ),
+    "holiday_effects": (
+        "id", "effect_key", "display_name", "enabled",
+        "start_month", "start_day", "end_month", "end_day", "config_json",
     ),
 }
 _LOCK = threading.Lock()
@@ -188,6 +193,38 @@ def initialize_schema():
         try:
             cur = get_cursor(conn)
             cur.execute(CREATE_TABLE)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS holiday_effects (
+                    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                    effect_key VARCHAR(40) NOT NULL UNIQUE,
+                    display_name VARCHAR(100) NOT NULL,
+                    enabled TINYINT(1) NOT NULL DEFAULT 1,
+                    start_month TINYINT NOT NULL,
+                    start_day TINYINT NOT NULL,
+                    end_month TINYINT NOT NULL,
+                    end_day TINYINT NOT NULL,
+                    config_json TEXT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_holiday_enabled (enabled)
+                )
+            """)
+            defaults = (
+                ("halloween", "Halloween", 1, 10, 24, 11, 7,
+                 '{"overlay":"halloween-js"}'),
+                ("christmas", "Christmas", 1, 12, 1, 12, 30,
+                 '{"overlay":"christmas-mode"}'),
+                ("new_year", "New Year", 1, 12, 31, 1, 5,
+                 '{"overlay":"fireworks"}'),
+            )
+            for row in defaults:
+                cur.execute("""
+                    INSERT IGNORE INTO holiday_effects
+                    (effect_key, display_name, enabled,
+                     start_month, start_day, end_month, end_day, config_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, row)
             conn.commit()
         except Exception:
             conn.rollback()
