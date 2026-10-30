@@ -136,6 +136,7 @@ def _logged_in():
 if not _SETUP_MODE:
     from config import config, admin_config
     from database import init_database, get_db_connection, get_cursor, get_lastrowid
+    from crawler_db_bootstrap import probe_schema, initialize_schema
     from utils.time_utils import get_chile_time_naive
 
     app.config["PERMANENT_SESSION_LIFETIME"] = config.PERMANENT_SESSION_LIFETIME
@@ -170,20 +171,28 @@ def crawler_guard():
     if _SETUP_MODE:
         allowed = {"/", "/ping", "/health", "/ready", "/login",
                    "/logout", "/admin", "/admin/dashboard", "/admin/setup",
-                   "/admin/automation"}
+                   "/admin/automation", "/admin/system-check"}
         if path not in allowed and not path.startswith("/static/"):
             return jsonify(ok=False, error="crawler_not_configured"), 503
         return None
-    # The original login page must remain available if TiDB3 is temporarily down.
-    # DB initialization runs only when entering an actual crawler/monitor route.
+    # Login and system-check must remain reachable even if a TiDB migration
+    # fails, so the administrator can see and repair missing tables.
     if path in ("/", "/ping", "/health", "/ready", "/login",
-                "/logout", "/admin", "/admin/dashboard", "/admin/setup") or path.startswith("/static/"):
+                "/logout", "/admin/setup", "/admin/system-check",
+                "/admin/system-check/initialize") or path.startswith("/static/"):
         return None
     if not _db_initialized:
-        with _db_init_lock:
-            if not _db_initialized:
-                init_database()  # Do not mark failed migrations as completed.
-                _db_initialized = True
+        try:
+            with _db_init_lock:
+                if not _db_initialized:
+                    initialize_schema()
+                    _db_initialized = True
+        except Exception as exc:
+            app.logger.warning("Crawler TiDB initialization failed: %s", type(exc).__name__)
+            if request.method == "GET" and not path.startswith("/api/"):
+                return redirect("/admin/system-check")
+            return jsonify(ok=False, error="crawler_tidb_schema_not_ready",
+                           diagnostic="/admin/system-check"), 503
     return None
 
 
@@ -242,7 +251,7 @@ def login():
             if not _db_initialized:
                 with _db_init_lock:
                     if not _db_initialized:
-                        init_database()
+                        initialize_schema()
                         _db_initialized = True
             conn = get_db_connection()
             try:
@@ -255,15 +264,17 @@ def login():
                 conn.close()
             if user_id is None:
                 raise RuntimeError("Crawler administrator record unavailable")
-        except Exception:
-            app.logger.exception("Crawler administrator login cannot access dedicated TiDB")
-            return render_template("user/login.html", login_enabled=True,
-                                   error="獨立 TiDB 尚未就緒，請先檢查連線"), 503
+        except Exception as exc:
+            # Keep the existing environment-variable credentials usable:
+            # only the authenticated admin may open the repair page.
+            app.logger.warning("Crawler admin TiDB not ready: %s", type(exc).__name__)
+            user_id = None
     session.clear()
     session.update(crawler_admin=True, logged_in=True,
                    role="super_admin", username="super_admin",
                    user_id=user_id, email=email, credential_marker=_login_marker())
-    return redirect("/admin/automation")
+    return redirect("/admin/system-check" if not _SETUP_MODE and user_id is None else
+                    ("/admin/automation" if _SETUP_MODE else "/admin"))
 
 
 @app.get("/logout")
@@ -308,6 +319,59 @@ if _SETUP_MODE:
             message="",
             database_configured=bool((os.environ.get("CRAWLER_TIDB_URL") or "").strip()),
         )
+
+
+@app.get("/admin/system-check")
+def crawler_system_check():
+    if not _logged_in():
+        return redirect(url_for("login"))
+    probe = None
+    error = None
+    if not _SETUP_MODE:
+        try:
+            probe = probe_schema()
+        except Exception as exc:
+            app.logger.warning("Crawler TiDB diagnostic failed: %s", type(exc).__name__)
+            error = "TiDB 0005 無法完成資料表檢查（" + type(exc).__name__ + "）。請檢查 CRAWLER_TIDB_URL 的連線、權限與資料庫名稱。"
+    csrf_token = session.get("crawler_db_csrf")
+    if not csrf_token:
+        csrf_token = secrets.token_urlsafe(32)
+        session["crawler_db_csrf"] = csrf_token
+    message = session.pop("crawler_db_notice", None)
+    return render_template("admin/crawler_system_check.html",
+                           setup_mode=_SETUP_MODE, probe=probe, error=error,
+                           csrf_token=csrf_token, message=message)
+
+
+@app.post("/admin/system-check/initialize")
+def crawler_system_initialize():
+    global _db_initialized
+    if not _logged_in() or _SETUP_MODE:
+        return jsonify(ok=False, error="forbidden"), 403
+    origin = (request.headers.get("Origin") or "").rstrip("/")
+    if origin and origin != request.host_url.rstrip("/"):
+        return jsonify(ok=False, error="invalid_origin"), 403
+    expected = str(session.get("crawler_db_csrf") or "")
+    supplied = str(request.form.get("csrf_token") or "")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        return jsonify(ok=False, error="invalid_csrf"), 403
+    try:
+        with _db_init_lock:
+            result = initialize_schema()
+            _db_initialized = True
+        # User id is set during a successful login against TiDB; after initial
+        # provisioning, log in again to refresh that identity.
+        session["crawler_db_notice"] = (
+            f"資料表檢查完成：{result['found']}/{result['expected']}。"
+            "如果剛剛第一次建立資料庫，請登出後再登入一次。"
+        )
+    except Exception as exc:
+        app.logger.warning("Crawler TiDB schema repair failed: %s", type(exc).__name__)
+        session["crawler_db_notice"] = (
+            "初始化失敗（" + type(exc).__name__
+            + "），請檢查 Render Logs 中的 TiDB 初始化錯誤。"
+        )
+    return redirect("/admin/system-check")
 
 
 @app.get("/admin/setup")
