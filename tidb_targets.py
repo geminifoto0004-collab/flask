@@ -90,14 +90,14 @@ def target_settings(target: str, *, database_override=None, require_database=Tru
             or 4000
         )
         user = (
-            (parsed.username if parsed else None)
+            (urllib.parse.unquote(parsed.username) if parsed and parsed.username else None)
             or os.environ.get("TIDB1_USER")
             or os.environ.get("MYSQL_USER")
             or os.environ.get("DB_USER")
             or ""
         )
         password = (
-            (parsed.password if parsed else None)
+            (urllib.parse.unquote(parsed.password) if parsed and parsed.password else None)
             or os.environ.get("TIDB1_PASSWORD")
             or os.environ.get("MYSQL_PASSWORD")
             or os.environ.get("DB_PASSWORD")
@@ -106,7 +106,7 @@ def target_settings(target: str, *, database_override=None, require_database=Tru
         database = (
             database_override
             if database_override is not None
-            else ((parsed.path.lstrip("/") if parsed and parsed.path else None)
+            else ((urllib.parse.unquote(parsed.path.lstrip("/")) if parsed and parsed.path else None)
                   or os.environ.get("TIDB1_NAME")
                   or os.environ.get("MYSQL_DATABASE")
                   or os.environ.get("DB_NAME")
@@ -115,12 +115,12 @@ def target_settings(target: str, *, database_override=None, require_database=Tru
     else:
         host = (parsed.hostname if parsed else None) or os.environ.get("TIDB2_HOST") or ""
         port = (parsed.port if parsed else None) or os.environ.get("TIDB2_PORT") or 4000
-        user = (parsed.username if parsed else None) or os.environ.get("TIDB2_USER") or ""
-        password = (parsed.password if parsed else None) or os.environ.get("TIDB2_PASSWORD") or ""
+        user = (urllib.parse.unquote(parsed.username) if parsed and parsed.username else None) or os.environ.get("TIDB2_USER") or ""
+        password = (urllib.parse.unquote(parsed.password) if parsed and parsed.password else None) or os.environ.get("TIDB2_PASSWORD") or ""
         database = (
             database_override
             if database_override is not None
-            else ((parsed.path.lstrip("/") if parsed and parsed.path else None)
+            else ((urllib.parse.unquote(parsed.path.lstrip("/")) if parsed and parsed.path else None)
                   or os.environ.get("TIDB2_NAME")
                   or "")
         )

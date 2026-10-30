@@ -3,10 +3,13 @@
 功能：用戶和管理員的監控任務管理、API 檢查端點
 """
 
-from flask import Blueprint, request, jsonify, session, render_template
+from flask import Blueprint, request, jsonify, session, render_template, current_app
 from functools import wraps
 from datetime import datetime
 import json
+import hashlib
+import hmac
+import os
 from database import get_db_connection
 from services.monitor_service import (
     create_monitor_task, get_user_monitor_tasks, get_monitor_task,
@@ -72,6 +75,129 @@ def _parse_bool(value, default: bool = False) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in ('1', 'true', 'yes', 'on')
     return bool(value)
+
+def _get_active_holiday_effect():
+    """Return the active TiDB-configured holiday effect for Chile today."""
+    if str(os.environ.get('HOLIDAY_EFFECTS_ENABLED', '1')).strip() in {'0', 'false', 'False', 'off', 'OFF'}:
+        return None
+    conn = None
+    try:
+        today = get_chile_time_naive()
+        md = today.month * 100 + today.day
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT effect_key, display_name, start_month, start_day,
+                   end_month, end_day, config_json
+            FROM holiday_effects
+            WHERE enabled = 1
+            ORDER BY id ASC
+        """)
+        rows = cursor.fetchall() or []
+        for raw in rows:
+            row = dict(raw)
+            start = int(row['start_month']) * 100 + int(row['start_day'])
+            end = int(row['end_month']) * 100 + int(row['end_day'])
+            active = (start <= md <= end) if start <= end else (md >= start or md <= end)
+            if active:
+                config = {}
+                try:
+                    config = json.loads(row.get('config_json') or '{}')
+                except Exception:
+                    config = {}
+                row['config'] = config
+                return row
+    except Exception as exc:
+        current_app.logger.warning("Holiday effect lookup skipped: %s", type(exc).__name__)
+    finally:
+        if conn is not None:
+            conn.close()
+    return None
+
+
+def _holiday_overlay_html(effect):
+    """Small loader only; animation rendering remains in external libraries."""
+    if not effect:
+        return ""
+    key = str(effect.get('effect_key') or '').strip().lower()
+    if key == 'halloween':
+        return """
+<script src="https://cdn.jsdelivr.net/npm/halloween.js@1.0.3/dist/halloween.iife.js" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const holidayClasses = [
+    'halloween','halloween-screen-left-top','halloween-screen-right-top',
+    'halloween-screen-left-bottom','halloween-screen-right-bottom',
+    'halloween-eyes','halloween-witches','halloween-spider-drop',
+    'halloween-tombstones','halloween-party'
+  ];
+  document.body.classList.add(...holidayClasses);
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    const fx = Array.from(document.querySelectorAll('body [class*="halloween"]'));
+    fx.forEach(el => {
+      try {
+        el.style.transition = 'opacity .35s ease';
+        el.style.opacity = '0';
+      } catch (_) {}
+    });
+    setTimeout(() => document.body.classList.remove(...holidayClasses), 360);
+  };
+  document.addEventListener('pointerdown', dismiss, { once: true, capture: true });
+});
+</script>
+"""
+    if key == 'christmas':
+        return """
+<script src="https://cdn.jsdelivr.net/npm/festive-js@0.1.0/core.min.js" defer></script>
+<script>
+window.addEventListener('load', function () {
+  try { if (window.Festive) Festive.init({forceTheme:'snowfall'}); } catch (_) {}
+  let dismissed = false;
+  document.addEventListener('pointerdown', function dismissChristmas() {
+    if (dismissed) return;
+    dismissed = true;
+    const fx = Array.from(document.querySelectorAll('body [class*="festive"], body [id*="festive"]'));
+    fx.forEach(el => {
+      try {
+        el.style.transition = 'opacity .35s ease';
+        el.style.opacity = '0';
+      } catch (_) {}
+    });
+    setTimeout(() => { try { window.Festive?.destroy?.(); } catch (_) {} }, 360);
+  }, { once: true, capture: true });
+});
+</script>
+"""
+    if key == 'new_year':
+        return """
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" defer></script>
+<script>
+window.addEventListener('load', function () {
+  if (!window.confetti) return;
+  const end = Date.now() + 8000;
+  let dismissed = false;
+  const timer = setInterval(function () {
+    if (dismissed || Date.now() > end) {
+      clearInterval(timer);
+      return;
+    }
+    confetti({particleCount:7, angle:60, spread:70, origin:{x:0}});
+    confetti({particleCount:7, angle:120, spread:70, origin:{x:1}});
+  }, 260);
+  document.addEventListener('pointerdown', function () {
+    if (dismissed) return;
+    dismissed = true;
+    clearInterval(timer);
+    try { confetti.reset?.(); } catch (_) {}
+  }, { once: true, capture: true });
+});
+</script>
+"""
+    return ""
+
 
 
 def _require_cron_key():
@@ -555,6 +681,119 @@ def monitor_free_time_save():
         return jsonify({'success': False, 'error': 'Could not save free time'}), 500
 
 
+
+def _manual_action_token(api_key: str) -> str:
+    secret = current_app.secret_key
+    if isinstance(secret, str):
+        secret = secret.encode('utf-8')
+    return hmac.new(secret, ('manual-container:' + api_key).encode('utf-8'), hashlib.sha256).hexdigest()
+
+
+def _ensure_manual_container_table(cursor):
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS monitor_manual_containers ("
+        "task_id BIGINT NOT NULL, "
+        "container_no VARCHAR(20) NOT NULL, "
+        "PRIMARY KEY (task_id, container_no))"
+    )
+
+
+@monitor_bp.route('/api/monitor/report/manual', methods=['GET', 'POST', 'DELETE'])
+def monitor_report_manual_api():
+    from services.unified_iti_service import get_unified_iti_index, normalize_container
+    import re
+
+    api_key = (request.args.get('api_key') or '').strip()
+    task = get_task_by_api_key(api_key) if api_key else None
+    if not task:
+        return jsonify({'success': False, 'error': 'Invalid report token'}), 401
+
+    if request.method != 'GET':
+        origin = (request.headers.get('Origin') or '').rstrip('/')
+        if origin != request.host_url.rstrip('/'):
+            return jsonify({'success': False, 'error': 'Invalid origin'}), 403
+        supplied = request.cookies.get('XW_MANUAL') or ''
+        expected = _manual_action_token(api_key)
+        if not hmac.compare_digest(supplied, expected):
+            return jsonify({'success': False, 'error': 'Invalid action token'}), 403
+
+    task_id = task['id']
+    if request.method in ('POST', 'DELETE'):
+        data = request.get_json(silent=True) or {}
+        code = normalize_container(data.get('container_no') or '')
+        if not re.fullmatch(r'[A-Z]{4}[0-9]{7}', code or ''):
+            return jsonify({'success': False, 'error': 'Invalid container number'}), 400
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            _ensure_manual_container_table(cur)
+            if request.method == 'POST':
+                cur.execute(
+                    "INSERT IGNORE INTO monitor_manual_containers (task_id, container_no) VALUES (?, ?)",
+                    (task_id, code),
+                )
+            else:
+                cur.execute(
+                    "DELETE FROM monitor_manual_containers WHERE task_id = ? AND container_no = ?",
+                    (task_id, code),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        try:
+            from services.async_task_service import create_async_task
+            task['_request_base_url'] = request.url_root.rstrip('/')
+            create_async_task('monitor_check', task)
+        except Exception as exc:
+            current_app.logger.warning("Manual container refresh enqueue failed: %s", type(exc).__name__)
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        _ensure_manual_container_table(cur)
+        cur.execute(
+            "SELECT container_no FROM monitor_manual_containers WHERE task_id = ? ORDER BY container_no",
+            (task_id,),
+        )
+        codes = [(row.get('container_no') if isinstance(row, dict) else row[0]) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    try:
+        iti_index = get_unified_iti_index(allow_stale=True)
+    except Exception:
+        iti_index = {}
+
+    rows = []
+    for code in codes:
+        record = iti_index.get(normalize_container(code))
+        rows.append({
+            'container_no': code,
+            'matched': bool(record),
+            'fecha_entrega': record.fecha_entrega if record else '',
+            'folio': record.folio if record else '',
+            'vessel': record.vessel if record else '',
+        })
+    return jsonify({'success': True, 'rows': rows})
+
+
+
+@monitor_bp.route('/api/monitor/report/reset-notification', methods=['POST'])
+def monitor_report_reset_notification():
+    api_key = (request.args.get('api_key') or '').strip()
+    task = get_task_by_api_key(api_key) if api_key else None
+    if not task:
+        return jsonify({'success': False, 'error': 'Invalid report token'}), 401
+    origin = (request.headers.get('Origin') or '').rstrip('/')
+    if origin != request.host_url.rstrip('/'):
+        return jsonify({'success': False, 'error': 'Invalid origin'}), 403
+    supplied = request.cookies.get('XW_MANUAL') or ''
+    if not hmac.compare_digest(supplied, _manual_action_token(api_key)):
+        return jsonify({'success': False, 'error': 'Invalid action token'}), 403
+    ok, message = clear_check_history(task['id'])
+    return jsonify({'success': bool(ok), 'message': message}), (200 if ok else 500)
+
+
 # ========== 公開 API：監控檢查（用於 cron-job） ==========
 @monitor_bp.route('/monitor/report', methods=['GET'])
 def monitor_report_page():
@@ -569,7 +808,37 @@ def monitor_report_page():
 
     # Web report receives SVG time badges; Telegram PNG uses the original markup.
     context['web_report_only'] = True
-    return render_template('reports/iti_telegram_report.html', **context)
+    html = render_template('reports/iti_telegram_report.html', **context)
+    holiday_effect = _get_active_holiday_effect()
+    holiday_html = _holiday_overlay_html(holiday_effect)
+    if holiday_html:
+        html = html.replace('</body>', holiday_html + '</body>', 1)
+    manual_ui = """
+<style>
+.manual-tools{margin:12px 0 8px;padding:10px 12px;border:2px solid #7c3aed;border-radius:12px;background:#ede9fe;display:flex;align-items:center;gap:8px}
+.manual-title{font-size:12px;font-weight:900;color:#5b21b6;margin-right:auto}
+.manual-tools button{border:1px solid #8b5cf6;border-radius:9px;background:#fff;color:#6d28d9;height:30px;min-width:34px;padding:0 10px;font-weight:900;cursor:pointer}
+.manual-tools button.active{background:#c4b5fd}
+.manual-tools .reset-btn{font-size:11px;color:#5b21b6;border-color:#8b5cf6}
+.manual-note{font-size:10px;font-weight:700;color:#6d28d9;margin-left:2px}
+.manual-group{border:2px solid #8b5cf6!important;background:#f5f3ff!important;box-shadow:0 0 0 1px rgba(124,58,237,.08)!important}
+.manual-group .v-head,.manual-group .um-head{background:#7c3aed!important}
+.manual-group .v-name,.manual-group .um-vessel-name,.manual-group .v-badge,.manual-group .um-vessel-count{color:#fff!important}
+.manual-group .v-icon{display:none!important}
+</style>
+<div id="manualControls" class="manual-tools" data-api-key="__APIKEY__">
+  <span class="manual-title">人工補入</span>
+  <span id="manualNote" class="manual-note"></span>
+  <button type="button" id="manualAdd" title="加入貨櫃">＋</button>
+  <button type="button" id="manualMinus" title="刪除人工補入">−</button>
+  <button type="button" id="manualReset" class="reset-btn" title="清除防噪紀錄，下一次檢查會重新通知">重置通知</button>
+</div>
+<script src="/static/js/manual_monitor.js"></script>
+""".replace("__APIKEY__", api_key)
+    html = html.replace('<div class="footer">', manual_ui + '<div class="footer">', 1)
+    response = current_app.make_response(html)
+    response.set_cookie('XW_MANUAL', _manual_action_token(api_key), secure=True, httponly=True, samesite='Strict', path='/api/monitor/report/')
+    return response
 
 
 @monitor_bp.route('/api/monitor/report/status', methods=['GET'])
