@@ -20,13 +20,13 @@
         </div>
         {% endif %}
 
-        {% if crawler_only and request.path == '/login' and not login_enabled %}
+        {% if crawler_only and crawler_setup_mode and not login_enabled %}
         <div class="error-message">
             管理員登入尚未啟用。
             {% for issue in login_setup_problems or [] %}<div>{{ issue }}</div>{% endfor %}
         </div>
         {% endif %}
-        <form method="POST" action="{% if crawler_only and request.path.startswith('/user/') %}/user/login{% else %}/login{% endif %}">
+        <form method="POST" action="/login">
             <div class="form-group">
                 <label for="email">Dirección de Correo Electrónico</label>
                 <input 
@@ -55,7 +55,7 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn-login" {% if crawler_only and request.path == '/login' and not login_enabled %}disabled{% endif %}>
+            <button type="submit" class="btn-login" {% if crawler_only and crawler_setup_mode and not login_enabled %}disabled{% endif %}>
                 Iniciar Sesión
             </button>
         </form>
@@ -65,13 +65,7 @@
             <a href="/user/forgot-password">¿Olvidó su contraseña?</a>
             <span>|</span>
             <a href="/user/register">Registrar Cuenta de Usuario</a>
-            {% if crawler_only and request.path == '/login' %}
-            <span>|</span>
-            <a href="/user/login">Ingreso de usuario</a>
-            {% elif crawler_only %}
-            <span>|</span>
-            <a href="/login">Administración</a>
-            {% endif %}
+
         </div>
         {% endif %}
         <div class="footer">
