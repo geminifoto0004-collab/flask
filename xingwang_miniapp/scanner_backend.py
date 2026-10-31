@@ -96,6 +96,23 @@ async def session(request: Request):
             "db_configured": scanner_tidb.configured()}
 
 
+@router.post("/scanner/api/db/setup")
+async def scanner_db_setup(request: Request):
+    _check_origin(request)
+    _require(request)
+    if not scanner_tidb.configured():
+        raise HTTPException(503, "請先在 Render Environment 設定 XW_SCANNER_TIDB_URL")
+    try:
+        result = await asyncio.to_thread(scanner_tidb.check_and_initialize)
+        logging.getLogger("uvicorn.error").info(
+            "SCANNER_TIDB_READY tables=%d",len(result["tables"])
+        )
+        return {"ok":True, **result}
+    except Exception:
+        logging.getLogger("uvicorn.error").exception("SCANNER_TIDB_SETUP_FAILED")
+        raise HTTPException(503, "TiDB 連線或建表失敗，請檢查 Render 日誌")
+
+
 @router.post("/scanner/api/login")
 async def login(request: Request):
     _check_origin(request)

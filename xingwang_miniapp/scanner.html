@@ -44,6 +44,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div id="app" class="hidden">
 <section class="panel">
 <div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeStock">查詢庫存</button></div>
+<div class="row" style="margin-top:10px"><button id="dbSetupBtn" class="secondary fill">檢查 TiDB 連線並建立資料表</button></div><div id="dbSetupMsg" class="muted" aria-live="polite"></div>
 <p class="muted" id="modeHelp">掃描系列 QR，查看每個庫存編號，勾選「無樣」。</p>
 <div id="reader"></div>
 <div class="row"><button id="cameraStart" class="fill">開啟相機連續掃描</button><button id="cameraStop" class="secondary hidden">停止相機</button></div>
@@ -91,6 +92,14 @@ async function session(){
 }
 $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await post('/scanner/api/login',{passcode:$('passcode').value});$('passcode').value='';await session()}catch(e){$('loginMessage').textContent=e.message}finally{b.disabled=false}};
 $('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
+$('dbSetupBtn').onclick=async()=>{
+ const b=$('dbSetupBtn');b.disabled=true;$('dbSetupMsg').textContent='正在檢查 TiDB...';
+ try {
+  const data=await post('/scanner/api/db/setup');
+  $('dbSetupMsg').textContent='TiDB 已連線，資料表 '+data.tables.length+' 張。庫存 '+data.stock_count+' 筆；布樣記錄 '+data.sample_count+' 筆。';
+ } catch(e) {$('dbSetupMsg').textContent=e.message}
+ finally {b.disabled=false}
+};
 $('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
 function setMode(m){
  mode=m;

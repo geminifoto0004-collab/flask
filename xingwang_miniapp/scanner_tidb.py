@@ -1,34 +1,69 @@
 # -*- coding: utf-8 -*-
 """Optional isolated TiDB sample-inspection store (never touches Access).
 
-The five XW_SCANNER_TIDB_* settings must all be present. TLS certificate and
-hostname are verified. No external access without a signed-in scanner session.
+Provide one XW_SCANNER_TIDB_URL (mysql+pymysql://user:pass@host:4000/db)
+or the existing XW_SCANNER_TIDB_* variables. TLS certificate and hostname
+are verified. DB setup is callable only with authenticated scanner session.
 """
 import os
 import threading
+from urllib.parse import urlsplit, unquote
 from datetime import datetime, timezone
 
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_DONE = False
 
+def _settings():
+    url = os.environ.get("XW_SCANNER_TIDB_URL", "").strip()
+    if url:
+        try:
+            parts = urlsplit(url)
+            if parts.scheme not in ("mysql", "mysql+pymysql"):
+                return None
+            host = parts.hostname
+            port = parts.port or 4000
+            user = unquote(parts.username or "")
+            password = unquote(parts.password or "")
+            database = unquote(parts.path.lstrip("/")) or os.environ.get(
+                "XW_SCANNER_TIDB_DATABASE", "test"
+            )
+            if (not host or not user or not password or not database or
+                "/" in database or not 0 < port <= 65535):
+                return None
+            return {"host": host, "port":port, "user":user,
+                    "password":password,"database":database}
+        except (ValueError, TypeError):
+            return None
+    fields = ("XW_SCANNER_TIDB_HOST", "XW_SCANNER_TIDB_PORT",
+              "XW_SCANNER_TIDB_USER", "XW_SCANNER_TIDB_PASSWORD",
+              "XW_SCANNER_TIDB_DATABASE")
+    if not all(os.environ.get(x, "").strip() for x in fields):
+        return None
+    try:
+        port = int(os.environ["XW_SCANNER_TIDB_PORT"])
+        if not 0 < port <= 65535:
+            return None
+    except ValueError:
+        return None
+    return {"host":os.environ["XW_SCANNER_TIDB_HOST"].strip(),
+            "port":port,
+            "user":os.environ["XW_SCANNER_TIDB_USER"].strip(),
+            "password":os.environ["XW_SCANNER_TIDB_PASSWORD"],
+            "database":os.environ["XW_SCANNER_TIDB_DATABASE"].strip()}
+
+
 def configured():
-    return all(os.environ.get(k, "").strip() for k in (
-        "XW_SCANNER_TIDB_HOST", "XW_SCANNER_TIDB_PORT",
-        "XW_SCANNER_TIDB_USER", "XW_SCANNER_TIDB_PASSWORD",
-        "XW_SCANNER_TIDB_DATABASE"
-    ))
+    return _settings() is not None
+
 
 def _connect():
-    if not configured():
-        raise RuntimeError("TiDB not configured")
+    cfg = _settings()
+    if cfg is None:
+        raise RuntimeError("TiDB URL or settings not configured")
     import certifi
     import pymysql
     return pymysql.connect(
-        host=os.environ["XW_SCANNER_TIDB_HOST"].strip(),
-        port=int(os.environ["XW_SCANNER_TIDB_PORT"]),
-        user=os.environ["XW_SCANNER_TIDB_USER"].strip(),
-        password=os.environ["XW_SCANNER_TIDB_PASSWORD"],
-        database=os.environ["XW_SCANNER_TIDB_DATABASE"].strip(),
+        **cfg,
         charset="utf8mb4",
         connect_timeout=8,
         read_timeout=15,
@@ -62,6 +97,23 @@ SCHEMA = (
         sku VARCHAR(40) NOT NULL,
         missing TINYINT NOT NULL,
         PRIMARY KEY (scan_id, sku)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS xw_stock_snapshot (
+        sku VARCHAR(40) NOT NULL PRIMARY KEY,
+        stock_rolls DECIMAL(20,3) NULL,
+        stock_meters DECIMAL(20,3) NULL,
+        is_active TINYINT NOT NULL DEFAULT 1,
+        last_seen_sync CHAR(32) NOT NULL,
+        source_updated_at DATETIME(6) NOT NULL,
+        updated_at DATETIME(6) NOT NULL,
+        KEY idx_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS xw_stock_sync_state (
+        source_name VARCHAR(40) NOT NULL PRIMARY KEY,
+        last_sync_id CHAR(32) NOT NULL,
+        last_success_at DATETIME(6) NOT NULL,
+        sku_count INT NOT NULL,
+        changed_count INT NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 )
 
@@ -140,5 +192,30 @@ def save_scan(scan_id, series, skus, missing, device_id):
     except Exception:
         conn.rollback()
         raise
+    finally:
+        conn.close()
+
+
+
+def check_and_initialize():
+    """Verifies live TLS connection and creates only dedicated xw_* tables."""
+    conn = _connect()
+    try:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            if cur.fetchone()[0] != 1:
+                raise RuntimeError("Database health check failed")
+            cur.execute("SELECT COUNT(*) FROM xw_stock_snapshot")
+            stock_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM xw_sample_status")
+            sample_count = cur.fetchone()[0]
+        return {"connected":True, "schema_ready":True,
+                "stock_count":int(stock_count),
+                "sample_count":int(sample_count),
+                "tables":[
+                    "xw_stock_snapshot","xw_stock_sync_state",
+                    "xw_sample_status","xw_sample_scans","xw_sample_scan_items"
+                ]}
     finally:
         conn.close()
