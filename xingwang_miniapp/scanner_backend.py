@@ -37,8 +37,8 @@ def _passcode():
 
 def _key():
     password = _passcode()
-    # A 6-digit operator PIN is supported. Login attempts are rate-limited.
-    if len(password) < 6:
+    # Any non-empty configured password is valid; exact-match login is rate-limited.
+    if not password:
         return None
     return hmac.new(os.environ["BRIDGE_SHARED_SECRET"].encode("utf-8"),
                     ("xw-scanner-cookie-v1:" + password).encode("utf-8"),
