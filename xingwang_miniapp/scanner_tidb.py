@@ -105,21 +105,21 @@ SCHEMA = (
         PRIMARY KEY (scan_id, sku)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS xw_stock_snapshot (
-        sku VARCHAR(40) NOT NULL PRIMARY KEY,
-        stock_rolls DECIMAL(20,3) NULL,
-        stock_meters DECIMAL(20,3) NULL,
+        sku VARCHAR(128) NOT NULL PRIMARY KEY,
+        series VARCHAR(128) NOT NULL,
+        stock_rolls DECIMAL(18,3) NULL,
+        stock_meters DECIMAL(18,3) NULL,
         is_active TINYINT NOT NULL DEFAULT 1,
-        last_seen_sync CHAR(32) NOT NULL,
-        source_updated_at DATETIME(6) NOT NULL,
-        updated_at DATETIME(6) NOT NULL,
-        KEY idx_active (is_active)
+        changed_at DATETIME(6) NOT NULL,
+        KEY idx_series_active (series, is_active)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS xw_stock_sync_state (
-        source_name VARCHAR(40) NOT NULL PRIMARY KEY,
-        last_sync_id CHAR(32) NOT NULL,
-        last_success_at DATETIME(6) NOT NULL,
+        id TINYINT NOT NULL PRIMARY KEY,
+        last_success_utc DATETIME(6) NOT NULL,
         sku_count INT NOT NULL,
-        changed_count INT NOT NULL
+        inserted INT NOT NULL,
+        updated INT NOT NULL,
+        deactivated INT NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 )
 
