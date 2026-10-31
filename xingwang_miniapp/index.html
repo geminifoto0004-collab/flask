@@ -103,6 +103,14 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
 const $=id=>document.getElementById(id);
 const scannerShortLink=location.origin+'/s';
+/* Telegram Mini App: open in the device browser, not an inner WebView frame. */
+document.querySelector('a.scanner-link')?.addEventListener('click',event=>{
+ if(tg?.initData && typeof tg.openLink==='function'){
+  event.preventDefault();
+  tg.openLink(scannerShortLink);
+ }
+});
+
 $('scannerShare').addEventListener('click',async()=>{
  const b=$('scannerShare');
  try{

@@ -30,6 +30,12 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 .metrics{display:flex;flex-wrap:wrap;gap:8px}.metrics span{background:#f1f6fb;border-radius:10px;padding:9px;flex:1;white-space:nowrap}
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .notice{background:#fff8e9;border:1px solid #f0d9a6;border-radius:10px;padding:10px;font-size:12px;color:#835a15}
+.share-entry{display:grid;grid-template-columns:166px minmax(0,1fr);gap:13px;align-items:center}
+.share-qr{display:block;width:166px;height:166px;border:1px solid #d8e1eb;border-radius:11px;background:#fff;padding:9px;object-fit:contain;image-rendering:pixelated}
+.share-copy{min-width:0}.share-copy h2{margin:0 0 6px}.share-copy p{margin:0 0 9px}.share-actions{display:flex;flex-wrap:wrap;gap:7px}
+.share-actions button{padding:10px 12px;min-width:102px}.share-link{color:#175da5;font-size:12px;overflow-wrap:anywhere;text-decoration:none}
+#shareStatus{font-size:12px;color:#147b4e;margin-top:8px;min-height:0}
+@media(max-width:420px){.share-entry{grid-template-columns:132px minmax(0,1fr);gap:10px}.share-qr{width:132px;height:132px;padding:6px}.share-actions button{font-size:12px;min-width:0;padding:9px}.share-copy h2{font-size:14px}}
 .hidden{display:none!important}@media (max-width:420px){.panel{padding:12px}.row input{width:100%}button{padding:11px}}
 </style>
 </head>
@@ -42,6 +48,15 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <button id="loginBtn">登入</button><p id="loginMessage" class="muted"></p>
 </section>
 <div id="app" class="hidden">
+<section class="panel">
+<div class="share-entry">
+<img class="share-qr" id="shareScannerQR" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACUAAAAlAQAAAADt5R2uAAAAz0lEQVR42mP8z8DA8JOJgYGBgQGZZC6UFy+4w/j94S/emUx/Gzk+MTAxfJ/FwMDEwHKVgYGJuU6Tj4Hxg6rDawuG/981/v9g+O62irmC6adyeC0D428/lVeKTH/03iozMPzn6Lb7wfil5H/kDhauZBcpBqa/0UuuMjD8FNq17wfjl+OnbLcx/hUKkvnNxJBWrsnA9PXmplgGFt6l394yMH2UnX2LgYX9zLXPDAxfQjYx/WD8kvrmlyUTA4vzTwbG74+C5PUYPohGyf1gxOELAK1ESjlC+l01AAAAAElFTkSuQmCC" alt="XINGWANG 掃描器入口 QR Code。掃描後會開啟登入頁面。" width="166" height="166">
+<div class="share-copy"><h2>讓同事掃 QR 直接進入</h2>
+<p class="muted">同事用手機相機掃左邊 QR，或從 Telegram 查詢頁點「掃描器」。進入仍需登入碼。</p>
+<div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">複製網址</button></div>
+<a class="share-link" href="/s" target="_blank" rel="noopener">xingwang-stock.onrender.com/s</a>
+<div id="shareStatus" aria-live="polite"></div></div>
+</div></section>
 <section class="panel">
 <div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeStock">查詢庫存</button></div>
 <div class="row" style="margin-top:10px"><button id="dbSetupBtn" class="secondary fill">檢查 TiDB 連線並建立資料表</button></div><div id="dbSetupMsg" class="muted" aria-live="polite"></div>
@@ -77,6 +92,26 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
+const scannerShareURL=location.origin+'/s';
+async function copyScannerURL(){
+ try{
+  await navigator.clipboard.writeText(scannerShareURL);
+  $('shareStatus').textContent='已複製網址，可以貼到 Telegram 或 WhatsApp';
+ }catch(_){
+  window.prompt('複製這個入口網址',scannerShareURL);
+  $('shareStatus').textContent='可把上面的網址傳給同事';
+ }
+}
+$('copyScannerBtn').onclick=copyScannerURL;
+$('shareScannerBtn').onclick=async()=>{
+ if(navigator.share){
+  try{
+   await navigator.share({title:'XINGWANG 掃描器',url:scannerShareURL});
+   $('shareStatus').textContent='已開啟手機分享選單';
+  }catch(e){if(e?.name!=='AbortError')await copyScannerURL()}
+ }else await copyScannerURL();
+};
+
 let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, missing=new Set(), saved=false;
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
 function msg(s,type=''){const n=$('message');n.textContent=s;n.className=type}
