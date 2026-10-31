@@ -28,7 +28,7 @@ _MAX_SKUS = 80000
 _NONCES = {}
 _AUTH_LOCK = asyncio.Lock()
 _WRITE_LOCK = asyncio.Lock()
-_CODE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.()/-]{0,127}$")
+_CODE = re.compile(r"^[^\x00-\x1f\x7f]{1,127}$")
 _AMOUNT = Decimal("999999999999999.999")
 _UNIT = Decimal("0.001")
 
@@ -103,14 +103,17 @@ def _validate(payload):
     if payload.get("expected_count") != len(rows):
         raise ValueError("Inventory row count mismatch")
     values = {}
+    folded_codes = set()
     for item in rows:
         if not isinstance(item, dict):
             raise ValueError("Invalid inventory row")
         code = item.get("sku")
         if not isinstance(code, str) or not _CODE.fullmatch(code) or code != code.strip():
             raise ValueError("Invalid SKU in inventory")
-        if code in values:
+        key = code.casefold()
+        if key in folded_codes:
             raise ValueError("Duplicate SKU in inventory")
+        folded_codes.add(key)
         values[code] = (_series(code), _value(item.get("stock_rolls")),
                          _value(item.get("stock_meters")))
     return values
