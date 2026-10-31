@@ -12,6 +12,7 @@ import logging
 import re
 import secrets
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 from xingwang_miniapp import scanner_tidb
@@ -111,6 +112,128 @@ async def scanner_db_setup(request: Request):
     except Exception:
         logging.getLogger("uvicorn.error").exception("SCANNER_TIDB_SETUP_FAILED")
         raise HTTPException(503, "TiDB 連線或建表失敗，請檢查 Render 日誌")
+
+
+
+# Manual Access -> Render -> TiDB snapshot. Uses the authenticated V33 bridge
+# and the existing Flask /search endpoint; never executes arbitrary SQL.
+_INVENTORY_LOCK = asyncio.Lock()
+_INVENTORY_JOB = {"state": "idle"}
+_INVENTORY_TASK = None
+
+
+async def _inventory_run(job_id):
+    global _INVENTORY_JOB
+    from xingwang_miniapp import miniapp_server as relay
+    from xingwang_miniapp import stock_sync_api
+    import base64
+    import zlib
+    import json
+
+    request_id = uuid4().hex
+    future = asyncio.get_running_loop().create_future()
+    try:
+        async with relay.bridge_lock:
+            if relay.active_bridge is None or relay.active_role is None:
+                raise RuntimeError("V33 is not online; please start the updated V33 bridge")
+            if len(relay.waiting) >= relay.MAX_INFLIGHT:
+                raise RuntimeError("V33 bridge is busy")
+            ws = relay.active_bridge
+            relay.waiting[request_id] = (future, ws)
+            try:
+                await relay.send_peer(relay.active_role, {
+                    "type": "query", "id": request_id, "source": "scanner_admin",
+                    "action": "stock_snapshot", "q": "@"
+                })
+            except Exception:
+                relay.waiting.pop(request_id, None)
+                raise RuntimeError("Failed to send stock sync command to V33")
+        try:
+            response = await asyncio.wait_for(future, timeout=220)
+        finally:
+            relay.waiting.pop(request_id, None)
+
+        if not isinstance(response, dict) or response.get("ok") is not True:
+            code = response.get("code", "UNAVAILABLE") if isinstance(response, dict) else "INVALID"
+            if code == "ACCESS_DENIED":
+                raise RuntimeError("V33 does not support the new sync command; install V33 Sync")
+            raise RuntimeError("V33 inventory query failed (" + str(code)[:30] + ")")
+        data = response.get("data")
+        if not isinstance(data, dict) or data.get("encoding") != "zlib-base64":
+            raise RuntimeError("Invalid inventory transfer format from V33")
+        encoded = data.get("payload")
+        if not isinstance(encoded, str) or len(encoded) > 16 * 1024 * 1024:
+            raise RuntimeError("Compressed inventory exceeds allowed size")
+        compressed = base64.b64decode(encoded, validate=True)
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(compressed, 20 * 1024 * 1024 + 1)
+        if (len(raw) > 20 * 1024 * 1024 or not decoder.eof
+                or decoder.unconsumed_tail or decoder.unused_data
+                or len(raw) != data.get("original_bytes")
+                or hashlib.sha256(raw).hexdigest() != data.get("sha256")):
+            raise RuntimeError("Corrupted or oversized stock snapshot")
+        snapshot = stock_sync_api._validate(json.loads(raw))
+        async with _INVENTORY_LOCK:
+            if _INVENTORY_JOB.get("id") == job_id:
+                _INVENTORY_JOB = {"state":"writing", "id":job_id,
+                                  "started_at":_INVENTORY_JOB["started_at"]}
+        result = await asyncio.to_thread(stock_sync_api._sync_blocking, snapshot)
+        async with _INVENTORY_LOCK:
+            if _INVENTORY_JOB.get("id") == job_id:
+                _INVENTORY_JOB = {"state":"success", "id":job_id, "result":result}
+        logging.getLogger("uvicorn.error").info(
+            "STOCK_SYNC_OK total=%d inserted=%d updated=%d deactivated=%d",
+            result["sku_count"], result["inserted"],
+            result["updated"], result["deactivated"])
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        # Never include host/credential details from arbitrary DB exceptions.
+        if isinstance(exc, RuntimeError):
+            safe = str(exc)[:180]
+        elif isinstance(exc, ValueError):
+            safe = "Inventory validation failed; previous TiDB snapshot retained"
+        else:
+            safe = "Stock sync failed; see Render logs"
+        logging.getLogger("uvicorn.error").error(
+            "STOCK_SYNC_TASK_FAILED kind=%s", type(exc).__name__)
+        async with _INVENTORY_LOCK:
+            if _INVENTORY_JOB.get("id") == job_id:
+                _INVENTORY_JOB = {"state":"failed", "id":job_id, "error":safe}
+
+
+@router.post("/scanner/api/inventory/start")
+async def inventory_start(request: Request):
+    global _INVENTORY_TASK, _INVENTORY_JOB
+    _check_origin(request)
+    _require(request)
+    if not scanner_tidb.configured():
+        raise HTTPException(503, "TiDB is not configured in Render")
+    from xingwang_miniapp import miniapp_server as relay
+    async with _INVENTORY_LOCK:
+        if _INVENTORY_JOB.get("state") in ("reading", "writing"):
+            raise HTTPException(409, "Stock sync already in progress")
+        if relay.active_bridge is None or relay.active_role is None:
+            raise HTTPException(503, "V33 is not online. Open local Flask and the updated V33.")
+        job_id = uuid4().hex
+        _INVENTORY_JOB = {
+            "state":"reading", "id":job_id,
+            "started_at":datetime.now(timezone.utc).isoformat(timespec="seconds")
+        }
+        _INVENTORY_TASK = asyncio.create_task(_inventory_run(job_id),
+                                              name="manual-access-stock-sync")
+    return {"ok":True, "state":"reading", "job_id":job_id}
+
+
+@router.get("/scanner/api/inventory/status")
+async def inventory_status(request: Request):
+    _require(request)
+    from xingwang_miniapp import stock_sync_api
+    try:
+        last = await asyncio.to_thread(stock_sync_api._status_blocking)
+    except Exception:
+        last = {"success":False, "has_synced":False}
+    return {"ok":True, "job":dict(_INVENTORY_JOB), "last_success":last}
 
 
 @router.post("/scanner/api/login")

@@ -52,6 +52,12 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div class="row"><input id="code" class="fill" placeholder="或手動輸入 12-225" autocomplete="off" enterkeyhint="search"><button id="queryBtn">查詢</button></div>
 <div id="message" aria-live="polite">請掃描或輸入商品系列編號。</div>
 </section>
+<section class="panel" id="inventoryPanel">
+<div class="bar"><h2>Access 庫存 → TiDB</h2><span class="tag">手動同步</span></div>
+<p class="muted">由 Render 通知目前連線的 V33，從原本 Flask 取得全部庫存，再更新 TiDB。不需要在 V33 設定資料庫。</p>
+<div class="row"><button id="inventoryStartBtn" class="fill">更新 Access 庫存到 TiDB</button></div>
+<p id="inventoryStatusText" class="muted" aria-live="polite">正在讀取最後成功時間…</p>
+</section>
 <section id="result" class="panel hidden">
 <div class="bar"><div><h2 id="series"></h2><small id="asof"></small></div><span id="source" class="tag"></span></div>
 <div id="totals" class="metrics"></div>
@@ -88,6 +94,7 @@ async function session(){
   $('app').classList.toggle('hidden',!d.signed_in);
   $('logout').classList.toggle('hidden',!d.signed_in);
   if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
+  if(d.signed_in)checkInventoryStatus();else inventoryPolling=false;
  }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
 }
 $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await post('/scanner/api/login',{passcode:$('passcode').value});$('passcode').value='';await session()}catch(e){$('loginMessage').textContent=e.message}finally{b.disabled=false}};
@@ -99,6 +106,42 @@ $('dbSetupBtn').onclick=async()=>{
   $('dbSetupMsg').textContent='TiDB 已連線，資料表 '+data.tables.length+' 張。庫存 '+data.stock_count+' 筆；布樣記錄 '+data.sample_count+' 筆。';
  } catch(e) {$('dbSetupMsg').textContent=e.message}
  finally {b.disabled=false}
+};
+
+let inventoryPolling=false;
+async function inventoryRefresh(){
+ if(!inventoryPolling)return;
+ try {
+  const r=await fetch('/scanner/api/inventory/status',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)throw new Error('Unable to read inventory sync status');
+  const d=await r.json(), j=d.job||{}, last=d.last_success||{};
+  let state='';
+  if(j.state==='reading')state='正在透過 V33 讀取本機 Flask 庫存…';
+  else if(j.state==='writing')state='讀取完成，正在寫入 TiDB…';
+  else if(j.state==='failed')state='同步失敗：'+(j.error||'請檢查 Render 日誌');
+  else if(j.state==='success')state='本次同步成功。';
+  const b=$('inventoryStartBtn');b.disabled=j.state==='reading'||j.state==='writing';
+  let previous='尚無成功紀錄';
+  if(last.has_synced){
+   const time=new Date(last.synced_at_utc);
+   const dt=isNaN(time.getTime())?last.synced_at_utc:
+     time.toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false});
+   previous='最後成功：'+dt+'（智利時間）｜'+last.sku_count+' 筆｜新增 '+last.inserted+
+             '｜更新 '+last.updated+'｜停用 '+last.deactivated;
+  }
+  $('inventoryStatusText').textContent=(state?state+'\n':'')+previous;
+  if(j.state==='reading'||j.state==='writing')setTimeout(inventoryRefresh,3000);
+  else inventoryPolling=false;
+ }catch(e){inventoryPolling=false;$('inventoryStatusText').textContent='無法取得同步狀態：'+e.message}
+}
+function checkInventoryStatus(){
+ inventoryPolling=true;inventoryRefresh();
+}
+$('inventoryStartBtn').onclick=async()=>{
+ const b=$('inventoryStartBtn');b.disabled=true;
+ $('inventoryStatusText').textContent='正在向 V33 發出庫存同步指令…';
+ try{await post('/scanner/api/inventory/start');checkInventoryStatus()}
+ catch(e){b.disabled=false;$('inventoryStatusText').textContent='無法開始：'+e.message}
 };
 $('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
 function setMode(m){
