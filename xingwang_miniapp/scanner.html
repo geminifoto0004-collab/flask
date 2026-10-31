@@ -57,20 +57,20 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>商品編號</th><th class="num">匹數</th><th class="num">米數</th><th id="sampleHeading">無樣</th></tr></thead><tbody id="rows"></tbody></table></div>
 <p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的子商品。請確認 V33 查詢規則。</p>
 <div id="sampleControls">
-<div class="notice">目前尚未連接 TiDB。勾選內容僅供測試，不會寫入正式資料庫。</div>
+<div id="dbNotice" class="notice">尚未確認 TiDB 連線；不會寫入盤點資料。</div>
 <p id="missingCount" class="muted"></p>
-<div class="row"><button id="copyBtn" class="secondary fill">複製缺樣清單（測試）</button><button id="nextBtn" class="fill">下一張</button></div>
+<div class="row"><button id="saveBtn" class="fill hidden">確認完成 · 保存 TiDB</button><button id="copyBtn" class="secondary">複製清單</button><button id="nextBtn" class="secondary">下一張</button></div>
 </div>
 <div id="stockControls" class="hidden"><button id="nextStock" class="fill">掃下一張</button></div>
 </section>
-<footer class="muted">現有 V33 即時查詢 · 不修改 Access · TiDB 將在下一階段接入</footer>
+<footer class="muted">現有 V33 即時庫存 · 布樣檢查資料獨立保存至 TiDB · 不修改 Access</footer>
 </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, missing=new Set();
+let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, missing=new Set(), saved=false;
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
 function msg(s,type=''){const n=$('message');n.textContent=s;n.className=type}
 function fmt(x){return x===null||x===undefined?'—':Number(x).toLocaleString('en-US',{maximumFractionDigits:2})}
@@ -113,16 +113,19 @@ function renderRows(){
    const td=document.createElement('td');td.textContent=val;if(val!==x.code)td.className='num';tr.append(td)
   }
   if(mode==='sample'){
-   const td=document.createElement('td');const cb=document.createElement('input');cb.type='checkbox';cb.checked=missing.has(x.code);cb.setAttribute('aria-label',x.code+' 無樣');
+   const td=document.createElement('td');const cb=document.createElement('input');cb.type='checkbox';cb.checked=missing.has(x.code);cb.disabled=saved;cb.setAttribute('aria-label',x.code+' 無樣');
    cb.onchange=()=>{if(cb.checked)missing.add(x.code);else missing.delete(x.code);updateMissing()};td.append(cb);tr.append(td)
   }
   body.append(tr);
  }
  updateMissing();
 }
-function updateMissing(){$('missingCount').textContent='已標記無樣 '+missing.size+' 個；未勾選並不代表已保存。'}
+function updateMissing(){$('missingCount').textContent='已標記無樣 '+missing.size+' 個；'+(saved?'本次結果已保存。':'其他編號在確認保存後會視為有樣。')}
 function showResult(d){
- current=d;missing=new Set();$('result').classList.remove('hidden');
+ current=d;missing=new Set(Object.entries(d.previous_status||{}).filter(([k,v])=>v.missing).map(([k])=>k));saved=false;
+ $('result').classList.remove('hidden');
+ $('saveBtn').classList.toggle('hidden',!d.db_connected);$('saveBtn').disabled=false;
+ $('dbNotice').textContent=d.db_connected?'已連上 TiDB：可確認保存。曾標記「無樣」的花色會自動勾選；只有按「保存」才會覆蓋狀態。':(d.db_error?'TiDB 連線失敗；可查庫存，但目前不能保存盤點。':'尚未設定 TiDB；可測試掃碼及庫存，但不能保存盤點。');
  $('series').textContent=d.product_code;$('source').textContent=d.source==='company'?'公司電腦':d.source==='home'?'家裡電腦':'V33';
  $('asof').textContent='庫存時間：'+(d.as_of||'即時回應');
  $('totals').replaceChildren();
@@ -162,13 +165,21 @@ async function stopCamera(){
 }
 $('cameraStart').onclick=startCamera;$('cameraStop').onclick=stopCamera;
 function nextScan(){
- current=null;missing.clear();locked=false;$('code').value='';$('result').classList.add('hidden');msg(running?'可以繼續掃下一張，鏡頭不用關閉。':'請掃描下一張或手動輸入編號。'); 
+ current=null;missing.clear();locked=false;saved=false;$('code').value='';$('result').classList.add('hidden');msg(running?'可以繼續掃下一張，鏡頭不用關閉。':'請掃描下一張或手動輸入編號。'); 
 }
 $('nextBtn').onclick=nextScan;$('nextStock').onclick=nextScan;
+$('saveBtn').onclick=async()=>{
+ if(!current?.db_connected||!current?.scan_id||saved)return;
+ const b=$('saveBtn');b.disabled=true;
+ try{const out=await post('/scanner/api/save',{scan_id:current.scan_id,missing:[...missing]});
+ saved=true;renderRows();msg('已保存 TiDB：'+out.sku_count+' 個花色，無樣 '+out.missing_count+' 個。可以掃下一張。','good');
+ b.textContent='已保存';b.classList.add('secondary');
+ }catch(e){b.disabled=false;msg(e.message,'error')}
+};
 $('copyBtn').onclick=async()=>{
  if(!current)return;
- const lines=['布樣 '+current.product_code,'缺樣（尚未保存至 TiDB）：',...(missing.size?[...missing].sort():['無'])];
- try{await navigator.clipboard.writeText(lines.join('\n'));msg('測試清單已複製；尚未寫入 TiDB。','good')}
+ const lines=['布樣 '+current.product_code,'缺樣（'+(saved?'已保存 TiDB':'未保存')+'）：',...(missing.size?[...missing].sort():['無'])];
+ try{await navigator.clipboard.writeText(lines.join('\n'));msg('清單已複製；'+(saved?'已保存 TiDB。':'尚未保存 TiDB。'),'good')}
  catch(_){msg(lines.join('\n'),'good')}
 };
 session();
