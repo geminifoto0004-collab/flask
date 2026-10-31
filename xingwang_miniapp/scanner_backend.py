@@ -158,7 +158,19 @@ async def _inventory_run(job_id):
             code = response.get("code", "UNAVAILABLE") if isinstance(response, dict) else "INVALID"
             if code == "ACCESS_DENIED":
                 raise RuntimeError("V33 does not support the new sync command; install V33 Sync")
-            raise RuntimeError("V33 inventory query failed (" + str(code)[:30] + ")")
+            safe_errors = {
+                "FLASK_TIMEOUT": "本機 Flask /search 查詢逾時，請檢查本機 Flask 的 CMD 日誌",
+                "FLASK_OFFLINE": "本機 Flask 無法連線，請確認 Flask 正在運行",
+                "FLASK_AUTH": "V33 登入本機 Flask 失敗，請檢查原有 Flask 設定",
+                "FLASK_HTTP": "本機 Flask 回傳 HTTP 錯誤，請檢查 Flask 日誌",
+                "FLASK_QUERY": "Flask /search SQL 查詢失敗，請檢查本機 Flask CMD",
+                "INVENTORY_EMPTY": "Flask 回傳空庫存，已取消同步；請檢查 Access 查詢",
+                "INVENTORY_MISSING": "部分庫存數量缺失，已取消同步",
+                "INVENTORY_DUPLICATE": "庫存編號重複，已取消同步",
+                "LOCAL_API": "本機 Flask 庫存資料檢查失敗，請查看 V33 CMD 同步錯誤代碼",
+            }
+            message = safe_errors.get(code, "V33 庫存同步無法完成")
+            raise RuntimeError(message + " [" + str(code)[:30] + "]")
         data = response.get("data")
         if not isinstance(data, dict) or data.get("encoding") != "zlib-base64":
             raise RuntimeError("Invalid inventory transfer format from V33")
