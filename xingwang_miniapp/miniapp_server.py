@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from contextlib import asynccontextmanager
 
 SECRET = os.environ.get("BRIDGE_SHARED_SECRET", "")
@@ -136,6 +136,11 @@ async def nocache(request:Request,call_next):
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return HTMLResponse(PAGE)
+
+@app.get("/s", include_in_schema=False)
+async def scanner_shortcut():
+    # Stable, short, shareable entry; scanner authorization remains unchanged.
+    return RedirectResponse(url="/scanner", status_code=307)
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin():
