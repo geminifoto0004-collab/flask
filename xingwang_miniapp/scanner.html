@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-Hant"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>XINGWANG · QR 布樣掃描</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#192a39;background:#f3f5f9}
+*{box-sizing:border-box}body{margin:0}button,input{font:inherit}
+main{max-width:780px;margin:auto;padding:15px 14px 90px}
+header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:16px}
+h1{font-size:21px;margin:0}h2{font-size:16px;margin:0 0 10px}
+small,.muted{color:#64748b;font-size:12px;line-height:1.5}
+.panel{background:white;border:1px solid #dce4ee;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 6px #0b25400b}
+input{min-width:0;border:1px solid #c9d4e0;background:#fff;color:#172b40;border-radius:10px;padding:12px;font-size:16px}
+button{border:0;background:#1265bb;color:#fff;border-radius:10px;padding:12px 15px;font-weight:700;cursor:pointer}
+button.secondary{background:#eef3f8;color:#213a53}button:disabled{opacity:.55;cursor:wait}
+button.ghost{background:transparent;color:#24517a;padding:8px}
+.row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}.fill{flex:1}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}.modes button{background:#edf2f8;color:#2d4864}
+.modes button.active{background:#145ba4;color:#fff}
+#reader{max-width:460px;margin:10px auto;overflow:hidden;border-radius:10px}
+#reader video{max-width:100%}#reader button{font-size:12px}
+#message{font-size:13px;margin-top:9px;line-height:1.65;white-space:pre-wrap}
+#message.error{color:#ad2a2a}#message.good{color:#147b4e}
+#login{max-width:420px;margin:30px auto}#login input{width:100%;margin:12px 0}
+#login button{width:100%}.info{background:#f5f8fc;border-radius:10px;padding:11px;color:#52677d;font-size:12px;line-height:1.6}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;border-bottom:1px solid #ecf0f4;text-align:left}th{font-size:12px;color:#667b8a}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.stockline{display:flex;align-items:center;gap:7px}input[type="checkbox"]{width:23px;height:23px;accent-color:#c8493a;cursor:pointer}
+.tag{display:inline-block;background:#edf2f8;border-radius:8px;padding:5px 9px;font-size:12px}
+.metrics{display:flex;flex-wrap:wrap;gap:8px}.metrics span{background:#f1f6fb;border-radius:10px;padding:9px;flex:1;white-space:nowrap}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.notice{background:#fff8e9;border:1px solid #f0d9a6;border-radius:10px;padding:10px;font-size:12px;color:#835a15}
+.hidden{display:none!important}@media (max-width:420px){.panel{padding:12px}.row input{width:100%}button{padding:11px}}
+</style>
+</head>
+<body><main>
+<header><div><h1>XINGWANG SCANNER</h1><small>QR Code · 即時庫存 · 布樣檢查</small></div><button id="logout" class="ghost hidden">登出</button></header>
+<section id="login" class="panel hidden">
+<h2>首次登入掃描器</h2>
+<p class="muted">輸入公司登入碼，這台手機將保持登入 30 天。</p>
+<input id="passcode" type="password" placeholder="公司登入碼" autocomplete="current-password">
+<button id="loginBtn">登入</button><p id="loginMessage" class="muted"></p>
+</section>
+<div id="app" class="hidden">
+<section class="panel">
+<div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeStock">查詢庫存</button></div>
+<p class="muted" id="modeHelp">掃描系列 QR，查看每個庫存編號，勾選「無樣」。</p>
+<div id="reader"></div>
+<div class="row"><button id="cameraStart" class="fill">開啟相機連續掃描</button><button id="cameraStop" class="secondary hidden">停止相機</button></div>
+<p id="cameraHint" class="muted">第一次使用請允許相機權限；不必切換到手機原生相機。</p>
+<div class="row"><input id="code" class="fill" placeholder="或手動輸入 12-225" autocomplete="off" enterkeyhint="search"><button id="queryBtn">查詢</button></div>
+<div id="message" aria-live="polite">請掃描或輸入商品系列編號。</div>
+</section>
+<section id="result" class="panel hidden">
+<div class="bar"><div><h2 id="series"></h2><small id="asof"></small></div><span id="source" class="tag"></span></div>
+<div id="totals" class="metrics"></div>
+<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>商品編號</th><th class="num">匹數</th><th class="num">米數</th><th id="sampleHeading">無樣</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的子商品。請確認 V33 查詢規則。</p>
+<div id="sampleControls">
+<div class="notice">目前尚未連接 TiDB。勾選內容僅供測試，不會寫入正式資料庫。</div>
+<p id="missingCount" class="muted"></p>
+<div class="row"><button id="copyBtn" class="secondary fill">複製缺樣清單（測試）</button><button id="nextBtn" class="fill">下一張</button></div>
+</div>
+<div id="stockControls" class="hidden"><button id="nextStock" class="fill">掃下一張</button></div>
+</section>
+<footer class="muted">現有 V33 即時查詢 · 不修改 Access · TiDB 將在下一階段接入</footer>
+</div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, missing=new Set();
+const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
+function msg(s,type=''){const n=$('message');n.textContent=s;n.className=type}
+function fmt(x){return x===null||x===undefined?'—':Number(x).toLocaleString('en-US',{maximumFractionDigits:2})}
+async function post(path,body={}){
+ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body),cache:'no-store'});
+ let data={};try{data=await r.json()}catch(_){}
+ if(!r.ok)throw Object.assign(new Error(data.error||data.detail||'請求失敗 ('+r.status+')'),{status:r.status});
+ return data
+}
+async function session(){
+ try{
+  const d=await (await fetch('/scanner/api/session',{credentials:'same-origin',cache:'no-store'})).json();
+  $('login').classList.toggle('hidden',d.signed_in);
+  $('app').classList.toggle('hidden',!d.signed_in);
+  $('logout').classList.toggle('hidden',!d.signed_in);
+  if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
+ }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
+}
+$('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await post('/scanner/api/login',{passcode:$('passcode').value});$('passcode').value='';await session()}catch(e){$('loginMessage').textContent=e.message}finally{b.disabled=false}};
+$('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
+$('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
+function setMode(m){
+ mode=m;
+ $('modeSample').classList.toggle('active',m==='sample');$('modeStock').classList.toggle('active',m==='stock');
+ $('modeHelp').textContent=m==='sample'?'掃描系列 QR，查看每個庫存編號，勾選「無樣」。':'掃描同一個 QR，查看 V33 即時庫存；不記錄布樣。';
+ $('sampleHeading').classList.toggle('hidden',m!=='sample');
+ $('sampleControls').classList.toggle('hidden',m!=='sample');
+ $('stockControls').classList.toggle('hidden',m==='sample');
+ renderRows();
+}
+$('modeSample').onclick=()=>setMode('sample');$('modeStock').onclick=()=>setMode('stock');
+function renderRows(){
+ const body=$('rows');body.replaceChildren();
+ if(!current)return;
+ const arr=Array.isArray(current.variants)?current.variants:[];
+ $('emptyMsg').classList.toggle('hidden',arr.length!==0);
+ for(const x of arr){
+  const tr=document.createElement('tr');
+  for(const val of [x.code,fmt(x.stock_rolls),fmt(x.stock_meters)]){
+   const td=document.createElement('td');td.textContent=val;if(val!==x.code)td.className='num';tr.append(td)
+  }
+  if(mode==='sample'){
+   const td=document.createElement('td');const cb=document.createElement('input');cb.type='checkbox';cb.checked=missing.has(x.code);cb.setAttribute('aria-label',x.code+' 無樣');
+   cb.onchange=()=>{if(cb.checked)missing.add(x.code);else missing.delete(x.code);updateMissing()};td.append(cb);tr.append(td)
+  }
+  body.append(tr);
+ }
+ updateMissing();
+}
+function updateMissing(){$('missingCount').textContent='已標記無樣 '+missing.size+' 個；未勾選並不代表已保存。'}
+function showResult(d){
+ current=d;missing=new Set();$('result').classList.remove('hidden');
+ $('series').textContent=d.product_code;$('source').textContent=d.source==='company'?'公司電腦':d.source==='home'?'家裡電腦':'V33';
+ $('asof').textContent='庫存時間：'+(d.as_of||'即時回應');
+ $('totals').replaceChildren();
+ for(const [name,val] of [['庫存匹數',d.stock_rolls],['庫存米數',d.stock_meters],['商品明細',(d.variants||[]).length]]){
+  const el=document.createElement('span');el.textContent=name+'：'+fmt(val);$('totals').append(el)
+ }
+ renderRows();
+}
+async function lookup(input){
+ const code=(input||'').trim();if(!valid(code)){msg('QR 內容不是有效商品編號，請檢查後重試','error');return}
+ if(busy)return;
+ busy=true;locked=true;$('code').value=code;$('queryBtn').disabled=true;msg('正在透過 V33 查詢 '+code+' ...');
+ try{
+  const d=await post('/scanner/api/stock',{code});
+  showResult(d);msg('查詢完成：'+code,'good');
+ }catch(e){current=null;$('result').classList.add('hidden');locked=false;
+  msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');
+  if(e.status===401)await session();
+ }finally{busy=false;$('queryBtn').disabled=false}
+}
+$('queryBtn').onclick=()=>lookup($('code').value);
+$('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
+function onScan(raw){if(locked||busy)return;let code=String(raw||'').trim();if(valid(code))lookup(code);else msg('QR 不是商品編號，請掃描純編號 QR','error')}
+async function startCamera(){
+ if(running)return;
+ if(!window.Html5Qrcode){msg('相機元件未載入，請檢查網路並重新整理。','error');return}
+ try{
+  reader=new Html5Qrcode('reader',{verbose:false});
+  await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});
+  running=true;$('cameraStart').classList.add('hidden');$('cameraStop').classList.remove('hidden');msg('相機已開啟，請對準 QR Code。');
+ }catch(e){reader=null;msg('無法開啟相機：請使用 HTTPS、允許相機權限。'+String(e),'error')}
+}
+async function stopCamera(){
+ if(reader&&running){try{await reader.stop()}catch(_){}}
+ if(reader){try{reader.clear()}catch(_){}}
+ reader=null;running=false;$('cameraStart').classList.remove('hidden');$('cameraStop').classList.add('hidden')
+}
+$('cameraStart').onclick=startCamera;$('cameraStop').onclick=stopCamera;
+function nextScan(){
+ current=null;missing.clear();locked=false;$('code').value='';$('result').classList.add('hidden');msg(running?'可以繼續掃下一張，鏡頭不用關閉。':'請掃描下一張或手動輸入編號。'); 
+}
+$('nextBtn').onclick=nextScan;$('nextStock').onclick=nextScan;
+$('copyBtn').onclick=async()=>{
+ if(!current)return;
+ const lines=['布樣 '+current.product_code,'缺樣（尚未保存至 TiDB）：',...(missing.size?[...missing].sort():['無'])];
+ try{await navigator.clipboard.writeText(lines.join('\n'));msg('測試清單已複製；尚未寫入 TiDB。','good')}
+ catch(_){msg(lines.join('\n'),'good')}
+};
+session();
+</script></body></html>

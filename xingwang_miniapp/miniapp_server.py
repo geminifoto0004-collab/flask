@@ -602,6 +602,11 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
         return HTMLResponse(contents, headers=noindex_headers)
     return JSONResponse(clean, headers=noindex_headers)
 
+# QR scanner is a separate, authenticated interface. Keep it before MCP root mount.
+from xingwang_miniapp.scanner_backend import router as scanner_router, attach_stock_lookup
+attach_stock_lookup(relay_stock_mcp)
+app.include_router(scanner_router)
+
 if os.environ.get("XW_STOCK_MCP_PUBLIC", "") == "1":
     from xingwang_miniapp.stock_mcp import create_public_stock_mcp
     stock_mcp_service, stock_mcp_asgi = create_public_stock_mcp(
