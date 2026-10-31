@@ -71,6 +71,8 @@ async def lifespan(app: FastAPI):
             await asyncio.gather(xiaozhi_task, return_exceptions=True)
 
 app = FastAPI(docs_url=None,redoc_url=None,openapi_url=None, lifespan=lifespan)
+from xingwang_miniapp.stock_sync_api import router as stock_sync_router
+app.include_router(stock_sync_router)
 PAGE = Path(__file__).with_name("index.html").read_text(encoding="utf-8")
 active_bridge = None
 active_role = None
