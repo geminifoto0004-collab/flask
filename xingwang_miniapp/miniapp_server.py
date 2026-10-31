@@ -22,10 +22,37 @@ if len(SECRET) < 32:
     raise RuntimeError("BRIDGE_SHARED_SECRET must be at least 32 characters")
 stock_mcp_service = None
 
+async def _scanner_tidb_bootstrap():
+    """Best-effort setup; scanner DB failure must not block Telegram / Xiaozhi."""
+    from xingwang_miniapp import scanner_tidb
+    logger = logging.getLogger("uvicorn.error")
+    if not scanner_tidb.configured():
+        logger.info("SCANNER_TIDB_NOT_CONFIGURED")
+        return
+    logger.info("SCANNER_TIDB_CONNECTING")
+    try:
+        result = await asyncio.to_thread(scanner_tidb.check_and_initialize)
+        logger.info(
+            "SCANNER_TIDB_READY database=xingwang_stock tables=%d stock=%d samples=%d",
+            len(result["tables"]), result["stock_count"], result["sample_count"],
+        )
+    except Exception as exc:
+        # Avoid logging secret URL or connection credentials.
+        errno = (getattr(exc, "args", ()) or (None,))[0]
+        errno = errno if isinstance(errno, int) else "unknown"
+        logger.error(
+            "SCANNER_TIDB_SETUP_FAILED error_type=%s error_code=%s",
+            type(exc).__name__, errno,
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # One additional background client inside this same Render web service.
     # Completely disabled by default; Telegram and ChatGPT MCP stay unchanged.
+    scanner_setup_task = asyncio.create_task(
+        _scanner_tidb_bootstrap(), name="scanner-tidb-bootstrap"
+    )
     xiaozhi_task = None
     if os.environ.get("XW_XIAOZHI_ENABLED", "0") == "1":
         from xingwang_miniapp.xiaozhi_mcp import run_forever
@@ -37,6 +64,8 @@ async def lifespan(app: FastAPI):
             async with stock_mcp_service.session_manager.run():
                 yield
     finally:
+        scanner_setup_task.cancel()
+        await asyncio.gather(scanner_setup_task, return_exceptions=True)
         if xiaozhi_task is not None:
             xiaozhi_task.cancel()
             await asyncio.gather(xiaozhi_task, return_exceptions=True)
