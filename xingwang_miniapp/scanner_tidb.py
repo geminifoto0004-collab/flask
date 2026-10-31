@@ -10,6 +10,9 @@ import threading
 from urllib.parse import urlsplit, unquote
 from datetime import datetime, timezone
 
+# Dedicated DB for this scanner; never write into TiDB Cloud's 'sys'.
+DB_NAME = 'xingwang_stock'
+
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_DONE = False
 
@@ -24,14 +27,13 @@ def _settings():
             port = parts.port or 4000
             user = unquote(parts.username or "")
             password = unquote(parts.password or "")
-            database = unquote(parts.path.lstrip("/")) or os.environ.get(
-                "XW_SCANNER_TIDB_DATABASE", "test"
-            )
-            if (not host or not user or not password or not database or
-                "/" in database or not 0 < port <= 65535):
+            # Ignore the connection dialog's default /sys or /test.
+            # All scanner tables live in one dedicated application database.
+            if (not host or not user or not password or
+                not 0 < port <= 65535):
                 return None
             return {"host": host, "port":port, "user":user,
-                    "password":password,"database":database}
+                    "password":password,"database":DB_NAME}
         except (ValueError, TypeError):
             return None
     fields = ("XW_SCANNER_TIDB_HOST", "XW_SCANNER_TIDB_PORT",
@@ -49,17 +51,21 @@ def _settings():
             "port":port,
             "user":os.environ["XW_SCANNER_TIDB_USER"].strip(),
             "password":os.environ["XW_SCANNER_TIDB_PASSWORD"],
-            "database":os.environ["XW_SCANNER_TIDB_DATABASE"].strip()}
+            "database":DB_NAME}
 
 
 def configured():
     return _settings() is not None
 
 
-def _connect():
+def _connect(*, bootstrap=False):
     cfg = _settings()
     if cfg is None:
         raise RuntimeError("TiDB URL or settings not configured")
+    if bootstrap:
+        # TiDB Starter can start at 'sys' or 'test'. Connect without choosing
+        # a database and create this application's database once.
+        cfg = {k: v for k, v in cfg.items() if k != "database"}
     import certifi
     import pymysql
     return pymysql.connect(
@@ -198,9 +204,16 @@ def save_scan(scan_id, series, skus, missing, device_id):
 
 
 def check_and_initialize():
-    """Verifies live TLS connection and creates only dedicated xw_* tables."""
-    conn = _connect()
+    """Create dedicated DB and tables, preserving all unrelated schemas."""
+    conn = _connect(bootstrap=True)
     try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "CREATE DATABASE IF NOT EXISTS `xingwang_stock` "
+                "DEFAULT CHARACTER SET utf8mb4"
+            )
+        conn.commit()
+        conn.select_db(DB_NAME)
         _ensure(conn)
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
