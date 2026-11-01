@@ -39,7 +39,7 @@ function cartSum(){return cartEffectiveItems().reduce((n,i)=>n+i.qty,0)}
 function cartUpdateHeader(){
  $('cartNavCount').textContent=String(cartSum());
  if(!cartData)return;
- cartText('cartShortCode',cartSearch?.product_code||'#'+cartData.short_code.split('-').slice(-1)[0]);
+ cartText('cartShortCode',(cartData.customer_name||'').trim()||'#'+cartData.short_code.split('-').slice(-1)[0]);
  $('cartShortCode').title=cartData.short_code+' · tap to copy';
  const ready=!(cartPending.size||cartSending.size)&&cartData.state==='ready';
  cartText('cartStateLabel',ready?'就绪':'草稿');
@@ -51,7 +51,7 @@ function cartUpdateHeader(){
  $('cartVersionBtn').textContent='V'+(cartData.confirmed_version||'—');
  cartText('cartSavedAt',cartSaveError?'! 未保存':cartSaveJob?'… 保存中':cartPending.size?'● 待保存':'✓ 已保存');
  $('cartSavedAt').dataset.error=cartSaveError?'true':'false';
- cartText('cartCustomerLabel',(cartData.customer_name||'客户 / Cliente')+' · #'+cartData.short_code.slice(-4));
+ cartText('cartCustomerLabel','#'+cartData.short_code.split('-').slice(-1)[0]+(cartSearch?.product_code?' · '+cartSearch.product_code:''));
  cartText('cartTotal',String(cartSum()));
  $('cartCopy').title='复制 '+cartEffectiveItems().length+' SKU × 2 列 / Excel';
  cartText('cartSkuCount',cartEffectiveItems().length+' SKU');
@@ -318,41 +318,47 @@ function cartRenderList(){
  }
  for(const item of carts){
   const wrapper=document.createElement('div');wrapper.className='cart-history-entry';
-  const del=document.createElement('button');del.type='button';del.className='cart-history-delete';
-  del.innerHTML=CART_TRASH_ICON;del.setAttribute('aria-label','删除购物车 / Eliminar carrito');
-  del.title='删除 / Eliminar';del.onclick=()=>void cartDeleteItem(item);
   const main=document.createElement('div');main.className='cart-history-main';
-  const btn=document.createElement('button');btn.className='cart-history-row secondary';btn.type='button';
-  const left=document.createElement('span');left.className='cart-history-left';
-  const id=document.createElement('strong');id.textContent=item.short_code.replace(/^C-[0-9]{6}-/,'');
-  if(item.confirmed_version){const v=document.createElement('span');v.className='cc-history-version';v.textContent=' V'+item.confirmed_version;id.append(v)}
-  left.append(id);
-  const desc=document.createElement('small');
-  desc.textContent=(item.customer_name||'—')+' · '+cartLocalTime(item.confirmed_at||item.guest_opened_at||item.updated_at);
-  left.append(desc);
-  const right=document.createElement('span');right.className='cc-cart-list-status';
-  const qty=document.createElement('span');qty.className='cc-history-qty';
-  qty.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 6c0 1.7 3.1 3 7 3s7-1.3 7-3-3.1-3-7-3-7 1.3-7 3zM5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>';
-  const val=document.createElement('b');val.textContent=item.qty_total;qty.append(val);
-  right.append(qty);btn.append(left,right);
-  btn.onclick=()=>{if(wrapper.classList.contains('swiped')){wrapper.classList.remove('swiped');return}void cartOpen(item.id)};
-  if(cartData?.id===item.id){btn.classList.add('current');btn.setAttribute('aria-current','true')}
-  const edit=document.createElement('button');edit.type='button';
-  edit.className='cc-history-state cart-history-edit '+(item.state==='ready'?'ready':'draft');
-  edit.innerHTML=CART_PENCIL_ICON+'<span>'+(item.state==='ready'?'就绪':'草稿')+'</span>';
-  edit.title='编辑客户名称 / Editar cliente';edit.setAttribute('aria-label','编辑客户名称 / Editar cliente');
+  const btn=document.createElement('button');btn.type='button';btn.className='cart-history-row';
+  const title=document.createElement('strong');title.className='cart-history-name';
+  title.textContent=(item.customer_name||'').trim()||item.short_code.replace(/^C-[0-9]{6}-/,'');
+  title.title=(item.customer_name||'').trim()||item.short_code;
+  const code=document.createElement('span');code.className='cart-history-code';
+  code.textContent=(item.customer_name?'#':'')+item.short_code.replace(/^C-[0-9]{6}-/,'')+
+      (item.confirmed_version?' · V'+item.confirmed_version:'');
+  const date=document.createElement('small');date.className='cart-history-date';
+  date.textContent=cartLocalTime(item.confirmed_at||item.guest_opened_at||item.updated_at);
+  btn.append(title,code,date);
+  btn.onclick=()=>{
+   if(wrapper.classList.contains('swiped')){wrapper.classList.remove('swiped');return}
+   void cartOpen(item.id);
+  };
+  if(cartData?.id===item.id){wrapper.classList.add('current');btn.setAttribute('aria-current','true')}
+  const foot=document.createElement('div');foot.className='cart-history-footer';
+  const count=document.createElement('span');count.className='cart-history-count';
+  const n=document.createElement('strong');n.textContent=String(item.qty_total);
+  count.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M5 6c0 1.7 3.1 3 7 3s7-1.3 7-3-3.1-3-7-3-7 1.3-7 3zM5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>';
+  count.append(n);
+  const status=document.createElement('span');status.className='cart-history-status '+(item.state==='ready'?'ready':'draft');
+  status.textContent=item.state==='ready'?'已确认':'草稿';
+  const edit=document.createElement('button');edit.type='button';edit.className='cart-history-edit';
+  edit.innerHTML=CART_PENCIL_ICON;edit.title='编辑客户 / Editar cliente';
+  edit.setAttribute('aria-label','编辑客户名称 / Editar cliente');
   edit.onclick=()=>{
    cartEditingId=cartEditingId===item.id?null:item.id;
    cartRenderList();
    if(cartEditingId){const input=host.querySelector('.cart-history-entry.editing input');if(input){input.focus();input.select()}}
   };
-  main.append(btn,edit);
+  foot.append(count,status,edit);
+  main.append(btn,foot);
   if(cartEditingId===item.id){
    wrapper.classList.add('editing');
    const editor=document.createElement('div');editor.className='cart-history-editor';
    const field=document.createElement('input');field.type='text';field.maxLength=80;
-   field.placeholder='客户 / Cliente';field.value=item.customer_name||'';field.setAttribute('aria-label','客户名称 / Nombre cliente');
-   const save=document.createElement('button');save.type='button';save.innerHTML=CART_CHECK_ICON;save.setAttribute('aria-label','保存名称 / Guardar nombre');
+   field.placeholder='客户名称 / Nombre';field.value=item.customer_name||'';
+   field.setAttribute('aria-label','客户名称 / Nombre cliente');
+   const save=document.createElement('button');save.type='button';save.innerHTML=CART_CHECK_ICON;
+   save.setAttribute('aria-label','保存客户名称 / Guardar nombre');
    save.onclick=()=>void cartSaveListName(item,field);
    field.onkeydown=e=>{
     if(e.key==='Enter'){e.preventDefault();save.click()}
@@ -360,6 +366,9 @@ function cartRenderList(){
    };
    editor.append(field,save);main.append(editor);
   }
+  const del=document.createElement('button');del.type='button';del.className='cart-history-delete';
+  del.innerHTML=CART_TRASH_ICON;del.setAttribute('aria-label','删除购物车 / Eliminar carrito');
+  del.title='删除 / Eliminar';del.onclick=()=>void cartDeleteItem(item);
   wrapper.append(del,main);
   let startX=0,startY=0;
   wrapper.addEventListener('click',event=>{
