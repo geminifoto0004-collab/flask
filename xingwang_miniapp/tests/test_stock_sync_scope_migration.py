@@ -37,7 +37,8 @@ class Cursor:
     def executemany(self,sql,rows):
         tbl=sql.split()[2]
         if self.c.fail_inserts: raise RuntimeError("simulated staging insert failure")
-        for sku,series,rolls,meters,stamp in rows:
+        for sku,series,rolls,meters,is_active,stamp in rows:
+            assert is_active == 1
             self.c.tables[tbl][sku]=(series,rolls,meters)
     def fetchone(self):return self.result
 
@@ -90,3 +91,23 @@ def test_reject_shrunken_snapshot_before_staging():
         run(c,sample(10))
     assert len(c.tables)==1
     assert len(c.tables["xw_stock_snapshot"])==200
+
+
+def test_stock_insert_uses_real_pymysql_bulk_sql(monkeypatch):
+    """Guard against a 250x RTT regression: every VALUES arg is a placeholder."""
+    from pymysql.cursors import RE_INSERT_VALUES
+    c=Conn(old=0)
+    import xingwang_miniapp.stock_sync_api as mod
+    observed=[]
+    orig=Cursor.executemany
+    def spy(self, sql, rows):
+        assert RE_INSERT_VALUES.match(sql) is not None, (
+            "PyMySQL executemany would fall back to single-row INSERTs"
+        )
+        assert sql.count("%s") == 6
+        observed.append(len(rows))
+        return orig(self, sql, rows)
+    monkeypatch.setattr(Cursor,"executemany",spy)
+    result=run(c,sample(2300))
+    assert result["sku_count"]==2300
+    assert observed==[1000,1000,300]

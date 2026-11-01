@@ -186,13 +186,18 @@ def _sync_blocking(snapshot, allow_large_deactivation=False, progress=None):
         insert_sql = (
             "INSERT INTO " + stage + " "
             "(sku,series,stock_rolls,stock_meters,is_active,changed_at) "
-            "VALUES (%s,%s,%s,%s,1,%s)"
+            # All six expressions MUST be %s placeholders. PyMySQL only
+            # expands executemany() into a multi-row INSERT for this syntax.
+            # A literal 1 here forced one network INSERT per stock item.
+            "VALUES (%s,%s,%s,%s,%s,%s)"
         )
-        rows = [(sku, *vals, ts) for sku, vals in snapshot.items()]
+        rows = [(sku, *vals, 1, ts) for sku, vals in snapshot.items()]
         total = len(rows)
         report("writing", 0, total)
-        for i in range(0, total, 250):
-            chunk = rows[i:i + 250]
+        # Genuine one-statement bulk inserts: ~1,000 SKUs per batch.
+        batch_size = 1000
+        for i in range(0, total, batch_size):
+            chunk = rows[i:i + batch_size]
             t0 = time.perf_counter()
             with conn.cursor() as cur:
                 cur.executemany(insert_sql, chunk)
