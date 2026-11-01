@@ -165,14 +165,42 @@ def _sync_blocking(snapshot, allow_large_deactivation=False, progress=None):
                     updated.append((sku, *values, now))
             gone = [sku for sku, current in old.items()
                     if current[3] and sku not in snapshot]
-            # Strong protection against accidental truncated Access reads.
+            # Strong protection against accidentally truncated Access reads.
             active_count = sum(1 for item in old.values() if item[3])
-            if (active_count >= 100 and
-                len(gone) > max(25, int(active_count * 0.20)) and
-                not allow_large_deactivation):
-                raise ValueError(
-                    "More than 20% of SKUs disappeared; no inventory changes saved. "
-                    "Confirm the Access query is complete before retrying."
+            large_loss = (
+                active_count >= 100
+                and len(gone) > max(25, int(active_count * 0.20))
+            )
+            if large_loss and not allow_large_deactivation:
+                legacy_pedido = sum(
+                    1 for sku in gone if "(" in sku or ")" in sku
+                )
+                stock_missing = len(gone) - legacy_pedido
+                # The previous /search used query_type=ambos and accidentally
+                # imported PEDIDO alongside STOCK. A complete new STOCK-only
+                # snapshot may retire those old PEDIDO keys automatically, but
+                # NEVER silently deactivate any non-PEDIDO stock code.
+                safe_scope_upgrade = (
+                    stock_missing == 0
+                    and len(snapshot) >= active_count
+                    and all("(" not in sku and ")" not in sku for sku in snapshot)
+                )
+                LOGGER.warning(
+                    "STOCK_SCOPE_CHANGE old_active=%d incoming=%d absent=%d "
+                    "old_pedido=%d absent_stock=%d safe_migration=%s",
+                    active_count, len(snapshot), len(gone),
+                    legacy_pedido, stock_missing, safe_scope_upgrade,
+                )
+                if not safe_scope_upgrade:
+                    raise ValueError(
+                        "STOCK_SCOPE_MISMATCH: old_active=%d incoming=%d "
+                        "absent_stock=%d absent_pedido=%d" %
+                        (active_count, len(snapshot), stock_missing, legacy_pedido)
+                    )
+                LOGGER.info(
+                    "STOCK_SCOPE_MIGRATION auto-retire old PEDIDO keys=%d "
+                    "without changing any stock-only missing key",
+                    legacy_pedido,
                 )
             # Plain multi-row INSERT is substantially cheaper for new SKUs.
             # Existing SKUs still use UPSERT; one transaction covers all rows.

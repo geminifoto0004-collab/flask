@@ -252,11 +252,20 @@ async def _inventory_run(job_id):
                 "Inventory quantity has too many decimal places",
             }
             reason = str(exc)
-            safe = ("資料驗證失敗：" + reason if reason in allowed_reasons
-                    else "Inventory validation failed; previous TiDB snapshot retained")
+            if reason.startswith("STOCK_SCOPE_MISMATCH:"):
+                safe = (
+                    "庫存範圍檢查失敗：有既有 STOCK 編號不在新快照內，"
+                    "已保留 TiDB 原資料；請檢查 Render 的 STOCK_SCOPE_CHANGE 紀錄"
+                )
+                reason_code = "STOCK_SCOPE_MISMATCH"
+            elif reason in allowed_reasons:
+                safe = "資料驗證失敗：" + reason
+                reason_code = reason
+            else:
+                safe = "Inventory validation failed; previous TiDB snapshot retained"
+                reason_code = "UNKNOWN"
             logging.getLogger("uvicorn.error").warning(
-                "STOCK_VALIDATION_REJECTED reason=%s",
-                reason if reason in allowed_reasons else "UNKNOWN",
+                "STOCK_VALIDATION_REJECTED reason=%s", reason_code,
             )
         else:
             safe = "Stock sync failed; see Render logs"
