@@ -14,6 +14,7 @@ import os
 import re
 import secrets
 import time
+import threading
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
@@ -28,6 +29,7 @@ _MAX_SKUS = 80000
 _NONCES = {}
 _AUTH_LOCK = asyncio.Lock()
 _WRITE_LOCK = asyncio.Lock()
+_LOCAL_SYNC_LOCK = threading.Lock()
 _CODE = re.compile(r"^[^\x00-\x1f\x7f]{1,127}$")
 _AMOUNT = Decimal("999999999999999.999")
 _UNIT = Decimal("0.001")
@@ -126,12 +128,18 @@ def _validate(payload):
 
 
 def _sync_blocking(snapshot, allow_large_deactivation=False, progress=None):
-    """Replace ONLY the inventory snapshot atomically; never touch sample records.
+    """Stage a complete stock snapshot, atomically swap tables after validation.
 
-    TiDB/InnoDB DELETE + INSERT within one transaction: a failed batch rolls
-    back the DELETE, inserts, and success marker together. TRUNCATE is forbidden.
+    The original stock table remains online throughout loading. Each staging
+    INSERT batch is committed separately; no giant DELETE+INSERT transaction.
+    All xw_sample_* tables are untouched. No TRUNCATE of a live table.
     """
     started = time.perf_counter()
+    if not snapshot or len(snapshot) > _MAX_SKUS:
+        raise ValueError("Invalid inventory size")
+    if len(set(x.casefold() for x in snapshot)) != len(snapshot):
+        raise ValueError("Duplicate SKU in inventory")
+
     def report(stage, done=0, total=0):
         if progress is not None:
             try:
@@ -139,98 +147,167 @@ def _sync_blocking(snapshot, allow_large_deactivation=False, progress=None):
             except Exception:
                 LOGGER.warning("STOCK_SYNC_PROGRESS_CALLBACK_FAILED")
 
-    if not snapshot or len(snapshot) > _MAX_SKUS:
-        raise ValueError("Invalid inventory size")
-    # Refuse to destroy good data if the snapshot bypasses the API validator.
-    if len({key.casefold() for key in snapshot}) != len(snapshot):
-        raise ValueError("Duplicate SKU in inventory")
-    report("connecting")
-    conn = scanner_tidb._connect(read_timeout=90, write_timeout=90)
+    # One Render worker today; serialize the signed upload and scanner job.
+    if not _LOCAL_SYNC_LOCK.acquire(blocking=False):
+        raise RuntimeError("Stock snapshot synchronization already running")
+    conn = None
+    stage = "xw_stock_stage_" + secrets.token_hex(6)
+    backup = "xw_stock_old_" + secrets.token_hex(6)
+    stage_exists = False
+    swapped = False
+    committed = False
     try:
+        report("connecting")
+        conn = scanner_tidb._connect(read_timeout=90, write_timeout=90)
         scanner_tidb._ensure(conn)
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        ts = datetime.now(timezone.utc).replace(tzinfo=None)
         report("comparing")
         with conn.cursor() as cur:
-            # One serialized writer, including uploads through the signed API.
-            cur.execute(
-                "INSERT IGNORE INTO xw_stock_sync_state "
-                "(id,last_success_utc,sku_count,inserted,updated,deactivated) "
-                "VALUES (1,%s,0,0,0,0)", (now,)
-            )
-            cur.execute("SELECT id FROM xw_stock_sync_state WHERE id=1 FOR UPDATE")
-            cur.fetchone()
             cur.execute("SELECT COUNT(*) FROM xw_stock_snapshot WHERE is_active=1")
             old_active = int(cur.fetchone()[0])
-
-            # The former /search import had only 3,980 positive records.
-            # A verified full Access snapshot can replace it outright.
-            # Future unexpectedly truncated snapshots still need approval.
-            if (old_active >= 100
-                    and len(snapshot) < int(old_active * 0.80)
-                    and not allow_large_deactivation):
-                LOGGER.warning(
-                    "STOCK_REPLACE_REJECTED old_active=%d incoming=%d reason=shrink",
-                    old_active, len(snapshot),
-                )
-                raise ValueError(
-                    "STOCK_SNAPSHOT_TOO_SMALL: previous=%d incoming=%d" %
-                    (old_active, len(snapshot))
-                )
-
-            LOGGER.info(
-                "STOCK_REPLACE_START old_active=%d incoming=%d",
-                old_active, len(snapshot),
-            )
-            report("writing", 0, len(snapshot))
-            # DELETE and every INSERT remain uncommitted until the final
-            # validation and state update are all successful.
-            cur.execute("DELETE FROM xw_stock_snapshot")
-            query = (
-                "INSERT INTO xw_stock_snapshot "
-                "(sku,series,stock_rolls,stock_meters,is_active,changed_at) "
-                "VALUES (%s,%s,%s,%s,1,%s)"
-            )
-            rows = [(sku, *values, now) for sku, values in snapshot.items()]
-            for j in range(0, len(rows), 400):
-                batch = rows[j:j + 400]
-                cur.executemany(query, batch)
-                report("writing", min(j + len(batch), len(rows)), len(rows))
-
-            # Check the table's actual row count BEFORE committing.
-            cur.execute("SELECT COUNT(*) FROM xw_stock_snapshot")
-            actual_count = int(cur.fetchone()[0])
-            if actual_count != len(snapshot):
-                raise ValueError("Inventory row count mismatch")
-
-            # Keep state in the same database transaction.
-            cur.execute(
-                "UPDATE xw_stock_sync_state "
-                "SET last_success_utc=%s,sku_count=%s,inserted=%s,"
-                "updated=0,deactivated=0 WHERE id=1",
-                (now, len(snapshot), len(snapshot))
-            )
-
-        report("committing", len(snapshot), len(snapshot))
         conn.commit()
-        elapsed_ms = round((time.perf_counter() - started) * 1000)
-        LOGGER.info(
-            "STOCK_SYNC_DB_FINISHED mode=replace total=%d old_replaced=%d duration_ms=%d",
-            len(snapshot), old_active, elapsed_ms,
+
+        # Reject a clearly truncated future snapshot, but allow the first
+        # upgrade from the earlier positive-only 3,980 records to full stock.
+        if (old_active >= 100 and len(snapshot) < old_active * 0.8
+                and not allow_large_deactivation):
+            raise ValueError(
+                "STOCK_SNAPSHOT_TOO_SMALL: previous=%d incoming=%d" %
+                (old_active, len(snapshot))
+            )
+
+        LOGGER.info("STOCK_STAGE_BEGIN old_active=%d incoming=%d", old_active, len(snapshot))
+        with conn.cursor() as cur:
+            # TiDB CREATE TABLE LIKE copies schema/indexes, no rows.
+            cur.execute("CREATE TABLE " + stage + " LIKE xw_stock_snapshot")
+        conn.commit()
+        stage_exists = True
+
+        insert_sql = (
+            "INSERT INTO " + stage + " "
+            "(sku,series,stock_rolls,stock_meters,is_active,changed_at) "
+            "VALUES (%s,%s,%s,%s,1,%s)"
         )
-        report("finished", len(snapshot), len(snapshot))
+        rows = [(sku, *vals, ts) for sku, vals in snapshot.items()]
+        total = len(rows)
+        report("writing", 0, total)
+        for i in range(0, total, 250):
+            chunk = rows[i:i + 250]
+            t0 = time.perf_counter()
+            with conn.cursor() as cur:
+                cur.executemany(insert_sql, chunk)
+            # This is safe: no reader uses the staging table before swap.
+            conn.commit()
+            done = i + len(chunk)
+            report("writing", done, total)
+            LOGGER.info(
+                "STOCK_STAGE_BATCH done=%d total=%d batch_ms=%d total_ms=%d",
+                done, total, round((time.perf_counter() - t0) * 1000),
+                round((time.perf_counter() - started) * 1000),
+            )
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM " + stage)
+            persisted = int(cur.fetchone()[0])
+            if persisted != total:
+                raise ValueError("Inventory row count mismatch")
+            cur.execute(
+                "SELECT "
+                "COALESCE(SUM(CASE WHEN stock_rolls>0 THEN 1 ELSE 0 END),0),"
+                "COALESCE(SUM(CASE WHEN stock_rolls=0 THEN 1 ELSE 0 END),0),"
+                "COALESCE(SUM(CASE WHEN stock_rolls<0 THEN 1 ELSE 0 END),0),"
+                "COALESCE(SUM(CASE WHEN stock_rolls IS NULL THEN 1 ELSE 0 END),0) "
+                "FROM " + stage
+            )
+            actual_groups = tuple(int(v) for v in cur.fetchone())
+        expected_groups = (
+            sum(v[1] is not None and v[1] > 0 for v in snapshot.values()),
+            sum(v[1] is not None and v[1] == 0 for v in snapshot.values()),
+            sum(v[1] is not None and v[1] < 0 for v in snapshot.values()),
+            sum(v[1] is None for v in snapshot.values()),
+        )
+        if actual_groups != expected_groups or sum(actual_groups) != total:
+            raise ValueError("Inventory category count mismatch")
+        conn.commit()
+
+        # TiDB supports multi-table atomic RENAME. No moment with no
+        # xw_stock_snapshot; readers see either old or complete new table.
+        report("committing", total, total)
+        LOGGER.info("STOCK_STAGE_VERIFIED total=%d counts=%s", total, actual_groups)
+        with conn.cursor() as cur:
+            cur.execute(
+                "RENAME TABLE xw_stock_snapshot TO " + backup +
+                ", " + stage + " TO xw_stock_snapshot"
+            )
+        swapped = True
+        stage_exists = False
+        # RENAME is DDL, not part of a transaction with this status UPDATE.
+        # If status update fails, best-effort swap back to old stock below.
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO xw_stock_sync_state "
+                "(id,last_success_utc,sku_count,inserted,updated,deactivated) "
+                "VALUES (1,%s,%s,%s,0,0) "
+                "ON DUPLICATE KEY UPDATE last_success_utc=VALUES(last_success_utc),"
+                "sku_count=VALUES(sku_count),inserted=VALUES(inserted),"
+                "updated=0,deactivated=0",
+                (ts, total, total)
+            )
+        conn.commit()
+        committed = True
+        LOGGER.info(
+            "STOCK_SYNC_DB_FINISHED mode=stage_swap total=%d old=%d duration_ms=%d",
+            total, old_active, round((time.perf_counter()-started)*1000),
+        )
+        # Old data is kept until the new table AND status are committed.
+        # A cleanup failure never changes the successful result.
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DROP TABLE " + backup)
+            conn.commit()
+        except Exception:
+            LOGGER.warning("STOCK_OLD_SNAPSHOT_CLEANUP_FAILED")
+        report("finished", total, total)
         return {
-            "success": True,
-            "mode": "replace",
-            "synced_at_utc": now.isoformat(timespec="seconds") + "Z",
-            "sku_count": len(snapshot),
-            "inserted": len(snapshot), "updated": 0, "deactivated": 0,
-            "unchanged": 0, "replaced_old": old_active
+            "success": True, "mode": "replace",
+            "synced_at_utc": ts.isoformat(timespec="seconds") + "Z",
+            "sku_count": total, "inserted": total, "updated": 0,
+            "deactivated": 0, "unchanged": 0, "replaced_old": old_active,
         }
     except Exception:
-        conn.rollback()
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            # If a failure occurred after the atomic swap, restore the
+            # previous snapshot using the still-present backup table.
+            if swapped and not committed:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "RENAME TABLE xw_stock_snapshot TO " + stage +
+                            ", " + backup + " TO xw_stock_snapshot"
+                        )
+                    conn.commit()
+                    stage_exists = True
+                    LOGGER.warning("STOCK_STAGE_SWAP_ROLLED_BACK")
+                except Exception:
+                    LOGGER.critical(
+                        "STOCK_STAGE_SWAP_RECOVERY_REQUIRED prior_table=%s", backup
+                    )
+            if stage_exists:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("DROP TABLE IF EXISTS " + stage)
+                    conn.commit()
+                except Exception:
+                    LOGGER.warning("STOCK_STAGE_CLEANUP_FAILED")
         raise
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
+        _LOCAL_SYNC_LOCK.release()
 
 
 def _status_blocking():

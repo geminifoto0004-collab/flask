@@ -250,6 +250,7 @@ async def _inventory_run(job_id):
                 "Invalid inventory quantity",
                 "Out-of-range inventory quantity",
                 "Inventory quantity has too many decimal places",
+                "Inventory category count mismatch",
             }
             reason = str(exc)
             if reason.startswith("STOCK_SNAPSHOT_TOO_SMALL:"):

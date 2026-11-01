@@ -159,7 +159,7 @@ async function inventoryRefresh(){
       connecting:'正在連接 TiDB',
       comparing:'正在比較既有庫存',
       writing:'正在批次寫入 TiDB',
-      committing:'資料已送出，等待 TiDB 提交（尚未完成）',
+      committing:'新庫存已全部驗證，正在切換正式資料表',
       finished:'寫入完成'
     };
     state=(phaseText[phase]||'正在同步')+
