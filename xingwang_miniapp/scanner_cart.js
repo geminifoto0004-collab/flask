@@ -1,7 +1,7 @@
 'use strict';
 // Cart controller for the existing /scanner page. Guest can access cart endpoints
 // only; staff-only DOM is also removed from the guest presentation.
-let cartRole='none', cartData=null, cartSearch=null, cartGuestCode='',cartBusy=false;
+let cartRole='none', cartData=null, cartSearch=null,cartBusy=false;
 let cartFilterMode='all',cartRecent=[],cartLookupPending=false;
 let cartView='pick',cartSkuSearch='',cartCameraOpen=false,cartSummaryOpen=false;
 let cartDesktopAutoOpenDone=false,cartToastTimer=null;
@@ -55,9 +55,9 @@ function cartUpdateHeader(){
  cartText('cartTotal',String(cartSum()));
  cartText('cartSkuCount',cartEffectiveItems().length+' SKU');
  cartText('cartDockSkuCount',cartEffectiveItems().length+' SKU');
- cartText('cartGuestCode',cartGuestCode||'········');
- $('cartGuestCode').classList.toggle('cart-code-empty',!cartGuestCode);
- $('cartShareRow').classList.toggle('hidden',cartRole!=='staff');
+ const customerInput=$('cartCustomerName');
+ if(document.activeElement!==customerInput)customerInput.value=cartData.customer_name||'';
+ customerInput.disabled=cartRole!=='staff';
  $('cartEditName').classList.toggle('hidden',cartRole!=='staff');
  $('cartBack').classList.toggle('hidden',cartRole!=='staff');
  const reopening=cartData.state==='ready'&&cartData.confirmed_version>0&&!cartPending.size&&!cartSending.size;
@@ -206,7 +206,7 @@ function cartApplyRole(){
 async function cartBootstrap(role,guestId){
  const changed=role!==cartRole;
  cartRole=role;
- if(changed){cartClearTimer();cartPending.clear();cartSending.clear();cartSaveError=false;cartData=null;cartSearch=null;cartGuestCode='';cartRecent=[];lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;cartDesktopAutoOpenDone=false;}
+ if(changed){cartClearTimer();cartPending.clear();cartSending.clear();cartSaveError=false;cartData=null;cartSearch=null;cartRecent=[];lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;cartDesktopAutoOpenDone=false;}
  cartApplyRole();
  if(role==='guest'){
   // Drop staff-only query results when a company phone becomes a guest device.
@@ -225,7 +225,7 @@ async function cartBootstrap(role,guestId){
    if(cartData)cartRender();else await cartLoadList();
   }
  }else if(role==='none'){
-  cartData=null;cartSearch=null;cartGuestCode='';cartRender();
+  cartData=null;cartSearch=null;cartRender();
  }
 }
 async function cartLoadList(){
@@ -292,7 +292,7 @@ async function cartOpen(id){
  $('cartConfirmedBox').classList.add('hidden');$('cartConfirmedBox').replaceChildren();
  try{const d=await post('/scanner/api/cart/open',{cart_id:id});
   cartView='pick';cartCameraOpen=false;cartSummaryOpen=false;cartSkuSearch='';$('cartSkuFilter').value='';
-  cartGuestCode='';cartSearch=null;cartSetData(d.cart);cartRenderList();cartMsgClean();
+  cartSearch=null;cartSetData(d.cart);cartRenderList();cartMsgClean();
   if(cartRole==='staff')history.replaceState(null,'',location.pathname+'?cart='+id);}
  catch(e){cartNotice(e.message,true)}
  finally{cartBusy=false;cartRender()}
@@ -304,7 +304,7 @@ async function cartCreate(){
  $('cartConfirmedBox').classList.add('hidden');$('cartConfirmedBox').replaceChildren();
  try{
   const d=await post('/scanner/api/cart/create',{name:$('cartNewName').value.trim()});
-  cartGuestCode=d.guest_code;cartView='pick';cartCameraOpen=false;cartSummaryOpen=false;cartSkuSearch='';$('cartSkuFilter').value='';cartSearch=null;cartSetData(d.cart);
+  cartView='pick';cartCameraOpen=false;cartSummaryOpen=false;cartSkuSearch='';$('cartSkuFilter').value='';cartSearch=null;cartSetData(d.cart);
   $('cartNewName').value='';cartMsgClean();
   history.replaceState(null,'',location.pathname+'?cart='+d.cart.id);
   void cartLoadList();
@@ -411,29 +411,6 @@ async function cartSetState(){
  }finally{cartBusy=false;cartRender()}
 }
 
-async function cartShare(){
- if(cartRole!=='staff'||!cartData||cartBusy)return;
- if(cartPending.size&&!(await cartFlush()))return;
- cartBusy=true;
- try{
-  const d=await post('/scanner/api/cart/share',{cart_id:cartData.id});
-  cartGuestCode=d.guest_code;cartSetData(d.cart);
-  cartNotice('新访客码已生成，旧码失效 / Nuevo código, el anterior ya no sirve');
- }catch(e){cartNotice(e.message,true)}finally{cartBusy=false;cartRender()}
-}
-async function cartGuestHandoff(){
- if(!cartData||cartRole!=='staff')return;
- if(cartPending.size&&!(await cartFlush()))return;
- if(!cartGuestCode)await cartShare();
- if(!cartGuestCode)return;
- if(!(await xwConfirm('将退出员工账号，访客只能操作当前购物车。返回员工功能需要重新登录。 / Se cerrará la sesión del personal.','访客模式 / Modo visita')))return;
- try{
-  await stopCamera();
-  await post('/scanner/api/cart/guest-login',{code:cartGuestCode});
-  cartGuestCode='';cartRole='none';
-  await session();
- }catch(e){cartNotice(e.message,true)}
-}
 async function cartLookup(input){
  if(mode!=='cart'||!cartData||cartLookupPending)return;
  const code=normalizeProductCode(input);
@@ -442,6 +419,7 @@ async function cartLookup(input){
  $('code').value=code;syncSearchClear();
  try{
   const d=await post('/scanner/api/cart/lookup',{cart_id:cartData.id,code});
+  if(cartCameraOpen&&running)await stopCamera();
   cartCameraOpen=false;cartView='pick';cartSearch=d;cartFilterMode='all';cartSkuSearch='';$('cartSkuFilter').value='';
   cartRender();cartMsgClean();
   $('cartWorkspace').scrollIntoView({behavior:'smooth',block:'start'});
@@ -497,10 +475,12 @@ async function cartScanNow(){
  cartRender();
  if(!running)await startCamera();
  if(!running){cartCameraOpen=false;cartRender();return}
- $('scanPanel').scrollIntoView({behavior:'smooth',block:'start'});
+ $('ccCartCameraClose').focus();
 }
-function cartCloseCamera(){
- cartCameraOpen=false;cartRender();
+async function cartCloseCamera(){
+ cartCameraOpen=false;
+ if(running)await stopCamera();
+ cartRender();
 }
 window.cartCloseCamera=cartCloseCamera;
 $('cartScanNow').onclick=cartScanNow;
@@ -511,18 +491,10 @@ $('ccSummaryClose').onclick=()=>{cartSummaryOpen=false;cartRender()};
 
 $('cartBack').onclick=async()=>{
  if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
- cartClearTimer();cartPending.clear();cartData=null;cartSearch=null;cartGuestCode='';lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;
+ cartClearTimer();cartPending.clear();cartData=null;cartSearch=null;lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;
  cartDesktopAutoOpenDone=true;
  history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()
 };
-$('cartShareBtn').onclick=cartShare;
-$('cartGuestCode').title='Tap to copy the temporary code';
-$('cartGuestCode').onclick=async()=>{
- if(!cartGuestCode)return;
- try{await navigator.clipboard.writeText(cartGuestCode);cartNotice('已复制 / Copiado')}
- catch(_){void xwCopyFallback('访客码 / Código visita',cartGuestCode)}
-};
-$('cartGuestHandoff').onclick=cartGuestHandoff;
 $('cartStateButton').onclick=cartSetState;
 $('cartReload').onclick=cartRefresh;
 $('cartVersionBtn').onclick=async()=>{
@@ -546,15 +518,24 @@ $('cartVersionBtn').onclick=async()=>{
 };
 $('cartEditName').onclick=async()=>{
  if(!cartData||cartRole!=='staff'||cartBusy)return;
- if(cartPending.size&&!(await cartFlush()))return;
- const name=await xwPrompt('客户 / Cliente',cartData.customer_name||'');
- if(name===null)return;
+ const input=$('cartCustomerName');
+ const name=input.value.trim();
+ if(name===(cartData.customer_name||''))return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
  cartBusy=true;
  try{
-  const d=await post('/scanner/api/cart/name',{cart_id:cartData.id,revision:cartData.revision,name:name.trim()});
-  cartSetData(d.cart);cartNotice('✓ SAVED');
- }catch(e){cartNotice(e.message,true);if(e.status===409)await cartRefresh()}finally{cartBusy=false}
+  const d=await post('/scanner/api/cart/name',{cart_id:cartData.id,revision:cartData.revision,name});
+  cartSetData(d.cart);cartNotice('客户已保存 / Nombre guardado');
+  void cartLoadList();
+ }catch(e){
+  cartNotice(e.message,true);
+  if(e.status===409)await cartRefresh();
+ }finally{cartBusy=false}
 };
+$('cartCustomerName').addEventListener('keydown',e=>{
+ if(e.key==='Enter'){e.preventDefault();$('cartEditName').click()}
+ if(e.key==='Escape'&&cartData){$('cartCustomerName').value=cartData.customer_name||'';$('cartCustomerName').blur()}
+});
 $('cartCopy').onclick=async()=>{
  if(!cartData)return;
  if(cartPending.size&&!(await cartFlush()))return;
