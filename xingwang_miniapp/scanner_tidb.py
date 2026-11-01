@@ -193,6 +193,54 @@ def stock_freshness():
         conn.close()
 
 
+
+def read_fast_stock(code):
+    """Read current TiDB stock snapshot without requiring a recent refresh.
+
+    Only SKU + quantities are in this table; customers, ETA, and history are
+    explicitly unavailable here. Readers see one complete table after swap.
+    """
+    if not isinstance(code, str) or not 1 <= len(code) <= 40:
+        raise ValueError("INVALID_PRODUCT_CODE")
+    conn = _connect()
+    try:
+        _ensure(conn)
+        state = _freshness_on_connection(conn)
+        # Literal prefix, including the regex's permitted underscore.
+        pattern = code.replace("!", "!!").replace("_", "!_").replace("%", "!%") + "%"
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT sku,stock_rolls,stock_meters "
+                "FROM xw_stock_snapshot WHERE is_active=1 AND "
+                "(sku=%s OR series=%s OR sku LIKE %s ESCAPE '!') "
+                "ORDER BY sku LIMIT 501",
+                (code, code, pattern)
+            )
+            rows = cur.fetchall()
+        if len(rows) > 500:
+            raise ValueError("TOO_MANY_STOCK_SKUS")
+        def total(index):
+            values = [row[index] for row in rows]
+            # NULL is unknown, not zero.
+            return None if not values or any(x is None for x in values) else str(sum(values, 0))
+        return {
+            "product_code": code,
+            "stock_rolls": total(1), "stock_meters": total(2),
+            "incoming_boxes": None,
+            "variants": [
+                {"code": sku, "stock_rolls": None if rolls is None else str(rolls),
+                 "stock_meters": None if meters is None else str(meters),
+                 "incoming_boxes": None, "stock_rows": 1}
+                for sku, rolls, meters in rows
+            ],
+            "freshness": state,
+            "as_of": state["synced_at_utc"],
+            "source": "tidb",
+        }
+    finally:
+        conn.close()
+
+
 def read_sample_from_snapshot(code):
     """Read a single product family from the last verified TiDB snapshot.
 

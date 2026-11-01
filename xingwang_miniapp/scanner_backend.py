@@ -18,7 +18,7 @@ from uuid import uuid4
 from xingwang_miniapp import scanner_tidb
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 router = APIRouter()
 COOKIE = "xw_scanner_session"
@@ -29,7 +29,6 @@ REQUEST_TIMES = []
 LOCK = asyncio.Lock()
 PENDING_SCANS = {}  # random scan_id => (time, signed-in device, series, real SKUs)
 PAGE = Path(__file__).with_name("scanner.html").read_text(encoding="utf-8")
-ADMIN_PAGE = Path(__file__).with_name("scanner_admin.html").read_text(encoding="utf-8")
 
 
 def _passcode():
@@ -92,13 +91,10 @@ async def scanner_page():
     })
 
 
-@router.get("/scanner/admin", response_class=HTMLResponse)
+@router.get("/scanner/admin", include_in_schema=False)
 async def scanner_admin_page():
-    return HTMLResponse(ADMIN_PAGE, headers={
-        "X-Robots-Tag": "noindex, nofollow, noarchive",
-        "X-Frame-Options": "DENY",
-        "Content-Security-Policy": "frame-ancestors 'none'",
-    })
+    # Previous bookmarks now switch to a tab within the same /scanner HTML.
+    return RedirectResponse(url="/scanner#admin",status_code=307)
 
 
 @router.get("/scanner/api/session")
@@ -374,6 +370,45 @@ async def logout(request: Request):
     resp.delete_cookie(COOKIE, path="/scanner", secure=True, httponly=True, samesite="lax")
     return resp
 
+
+
+
+@router.post("/scanner/api/quick")
+async def scanner_quick_stock(request: Request):
+    """Fast stock-only lookup; never returns a customer's business records."""
+    _check_origin(request)
+    _require(request)
+    if not scanner_tidb.configured():
+        raise HTTPException(503, "TiDB 庫存尚未設定")
+    if int(request.headers.get("content-length","0") or 0) > 512:
+        raise HTTPException(413, "Request too large")
+    try:
+        payload = await request.json()
+    except (ValueError,UnicodeError):
+        raise HTTPException(400, "Invalid JSON")
+    code = payload.get("code") if isinstance(payload,dict) else None
+    if not isinstance(code,str) or not CODE.fullmatch(code.strip()):
+        raise HTTPException(400, "商品編號格式不正確")
+    async with LOCK:
+        now = time.monotonic()
+        REQUEST_TIMES[:] = [v for v in REQUEST_TIMES if now-v < 60]
+        if len(REQUEST_TIMES) >= 35:
+            raise HTTPException(429, "查詢太頻繁，請稍後重試")
+        REQUEST_TIMES.append(now)
+    start = time.perf_counter()
+    try:
+        data = await asyncio.to_thread(scanner_tidb.read_fast_stock, code.strip())
+    except ValueError:
+        raise HTTPException(422, "商品編號範圍太大，請輸入更完整編號")
+    except Exception:
+        logging.getLogger("uvicorn.error").exception("SCANNER_QUICK_STOCK_FAILED")
+        raise HTTPException(503, "快速庫存查詢失敗")
+    if not data["variants"]:
+        raise HTTPException(404, "快照中沒有符合的商品編號")
+    return JSONResponse({"ok": True, **data,
+                         "elapsed_ms":round((time.perf_counter()-start)*1000,1),
+                         "db_connected":False,"scan_id":None,
+                         "previous_status":{}})
 
 
 @router.get("/scanner/api/stock-freshness")
