@@ -2,7 +2,7 @@
 """Access stock snapshot upload, authenticated by the EXISTING V33 bridge secret.
 
 V33 sends one *complete* read-only Access aggregate on user request.
-Render performs a transactional TiDB delta update and timestamps success.
+Render atomically replaces ONLY the TiDB stock table and timestamps success.
 No stock payload, passwords or bridge secrets are stored in application logs.
 """
 import asyncio
@@ -126,7 +126,11 @@ def _validate(payload):
 
 
 def _sync_blocking(snapshot, allow_large_deactivation=False, progress=None):
-    """Single atomic TiDB stock delta, with optional progress(stage,done,total)."""
+    """Replace ONLY the inventory snapshot atomically; never touch sample records.
+
+    TiDB/InnoDB DELETE + INSERT within one transaction: a failed batch rolls
+    back the DELETE, inserts, and success marker together. TRUNCATE is forbidden.
+    """
     started = time.perf_counter()
     def report(stage, done=0, total=0):
         if progress is not None:
@@ -134,6 +138,12 @@ def _sync_blocking(snapshot, allow_large_deactivation=False, progress=None):
                 progress(stage, done, total)
             except Exception:
                 LOGGER.warning("STOCK_SYNC_PROGRESS_CALLBACK_FAILED")
+
+    if not snapshot or len(snapshot) > _MAX_SKUS:
+        raise ValueError("Invalid inventory size")
+    # Refuse to destroy good data if the snapshot bypasses the API validator.
+    if len({key.casefold() for key in snapshot}) != len(snapshot):
+        raise ValueError("Duplicate SKU in inventory")
     report("connecting")
     conn = scanner_tidb._connect(read_timeout=90, write_timeout=90)
     try:
@@ -141,117 +151,80 @@ def _sync_blocking(snapshot, allow_large_deactivation=False, progress=None):
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         report("comparing")
         with conn.cursor() as cur:
-            # Serialize across Render processes and concurrent local senders.
-            cur.execute("INSERT IGNORE INTO xw_stock_sync_state "
-                        "(id,last_success_utc,sku_count,inserted,updated,deactivated)"
-                        " VALUES (1,%s,0,0,0,0)", (now,))
+            # One serialized writer, including uploads through the signed API.
+            cur.execute(
+                "INSERT IGNORE INTO xw_stock_sync_state "
+                "(id,last_success_utc,sku_count,inserted,updated,deactivated) "
+                "VALUES (1,%s,0,0,0,0)", (now,)
+            )
             cur.execute("SELECT id FROM xw_stock_sync_state WHERE id=1 FOR UPDATE")
             cur.fetchone()
-            cur.execute("SELECT sku, series, stock_rolls, stock_meters, is_active "
-                        "FROM xw_stock_snapshot")
-            old = {
-                sku: (series, rolls, meters, int(active))
-                for sku, series, rolls, meters, active in cur.fetchall()
-            }
-            inserted = []
-            updated = []
-            for sku, values in snapshot.items():
-                current = old.get(sku)
-                if current is None:
-                    inserted.append((sku, *values, now))
-                elif (current[0] != values[0] or
-                      current[1] != values[1] or
-                      current[2] != values[2] or current[3] != 1):
-                    updated.append((sku, *values, now))
-            gone = [sku for sku, current in old.items()
-                    if current[3] and sku not in snapshot]
-            # Strong protection against accidentally truncated Access reads.
-            active_count = sum(1 for item in old.values() if item[3])
-            large_loss = (
-                active_count >= 100
-                and len(gone) > max(25, int(active_count * 0.20))
-            )
-            if large_loss and not allow_large_deactivation:
-                legacy_pedido = sum(
-                    1 for sku in gone if "(" in sku or ")" in sku
-                )
-                stock_missing = len(gone) - legacy_pedido
-                # The previous /search used query_type=ambos and accidentally
-                # imported PEDIDO alongside STOCK. A complete new STOCK-only
-                # snapshot may retire those old PEDIDO keys automatically, but
-                # NEVER silently deactivate any non-PEDIDO stock code.
-                safe_scope_upgrade = (
-                    stock_missing == 0
-                    and len(snapshot) >= active_count
-                    and all("(" not in sku and ")" not in sku for sku in snapshot)
-                )
+            cur.execute("SELECT COUNT(*) FROM xw_stock_snapshot WHERE is_active=1")
+            old_active = int(cur.fetchone()[0])
+
+            # The former /search import had only 3,980 positive records.
+            # A verified full Access snapshot can replace it outright.
+            # Future unexpectedly truncated snapshots still need approval.
+            if (old_active >= 100
+                    and len(snapshot) < int(old_active * 0.80)
+                    and not allow_large_deactivation):
                 LOGGER.warning(
-                    "STOCK_SCOPE_CHANGE old_active=%d incoming=%d absent=%d "
-                    "old_pedido=%d absent_stock=%d safe_migration=%s",
-                    active_count, len(snapshot), len(gone),
-                    legacy_pedido, stock_missing, safe_scope_upgrade,
+                    "STOCK_REPLACE_REJECTED old_active=%d incoming=%d reason=shrink",
+                    old_active, len(snapshot),
                 )
-                if not safe_scope_upgrade:
-                    raise ValueError(
-                        "STOCK_SCOPE_MISMATCH: old_active=%d incoming=%d "
-                        "absent_stock=%d absent_pedido=%d" %
-                        (active_count, len(snapshot), stock_missing, legacy_pedido)
-                    )
-                LOGGER.info(
-                    "STOCK_SCOPE_MIGRATION auto-retire old PEDIDO keys=%d "
-                    "without changing any stock-only missing key",
-                    legacy_pedido,
+                raise ValueError(
+                    "STOCK_SNAPSHOT_TOO_SMALL: previous=%d incoming=%d" %
+                    (old_active, len(snapshot))
                 )
-            # Plain multi-row INSERT is substantially cheaper for new SKUs.
-            # Existing SKUs still use UPSERT; one transaction covers all rows.
-            insert_sql = (
+
+            LOGGER.info(
+                "STOCK_REPLACE_START old_active=%d incoming=%d",
+                old_active, len(snapshot),
+            )
+            report("writing", 0, len(snapshot))
+            # DELETE and every INSERT remain uncommitted until the final
+            # validation and state update are all successful.
+            cur.execute("DELETE FROM xw_stock_snapshot")
+            query = (
                 "INSERT INTO xw_stock_snapshot "
                 "(sku,series,stock_rolls,stock_meters,is_active,changed_at) "
                 "VALUES (%s,%s,%s,%s,1,%s)"
             )
-            update_sql = (
-                insert_sql
-                + " ON DUPLICATE KEY UPDATE series=VALUES(series),"
-                "stock_rolls=VALUES(stock_rolls),stock_meters=VALUES(stock_meters),"
-                "is_active=1,changed_at=VALUES(changed_at)"
-            )
-            total_changes = len(inserted) + len(updated) + len(gone)
-            processed = 0
-            report("writing", 0, total_changes)
-            for rows, sql in ((inserted, insert_sql), (updated, update_sql)):
-                for j in range(0, len(rows), 200):
-                    batch = rows[j:j + 200]
-                    cur.executemany(sql, batch)
-                    processed += len(batch)
-                    report("writing", processed, total_changes)
-            for j in range(0, len(gone), 200):
-                batch = gone[j:j + 200]
-                placeholders = ",".join(["%s"] * len(batch))
-                cur.execute(
-                    "UPDATE xw_stock_snapshot SET is_active=0,changed_at=%s "
-                    "WHERE sku IN (" + placeholders + ")",
-                    [now, *batch]
-                )
-                processed += len(batch)
-                report("writing", processed, total_changes)
+            rows = [(sku, *values, now) for sku, values in snapshot.items()]
+            for j in range(0, len(rows), 400):
+                batch = rows[j:j + 400]
+                cur.executemany(query, batch)
+                report("writing", min(j + len(batch), len(rows)), len(rows))
+
+            # Check the table's actual row count BEFORE committing.
+            cur.execute("SELECT COUNT(*) FROM xw_stock_snapshot")
+            actual_count = int(cur.fetchone()[0])
+            if actual_count != len(snapshot):
+                raise ValueError("Inventory row count mismatch")
+
+            # Keep state in the same database transaction.
             cur.execute(
                 "UPDATE xw_stock_sync_state "
-                "SET last_success_utc=%s,sku_count=%s,inserted=%s,updated=%s,deactivated=%s WHERE id=1",
-                (now, len(snapshot), len(inserted), len(updated), len(gone))
+                "SET last_success_utc=%s,sku_count=%s,inserted=%s,"
+                "updated=0,deactivated=0 WHERE id=1",
+                (now, len(snapshot), len(snapshot))
             )
-        report("committing", total_changes, total_changes)
+
+        report("committing", len(snapshot), len(snapshot))
         conn.commit()
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
         LOGGER.info(
-            "STOCK_SYNC_DB_FINISHED total=%d new=%d updated=%d inactive=%d duration_ms=%d",
-            len(snapshot), len(inserted), len(updated), len(gone),
-            round((time.perf_counter() - started) * 1000),
+            "STOCK_SYNC_DB_FINISHED mode=replace total=%d old_replaced=%d duration_ms=%d",
+            len(snapshot), old_active, elapsed_ms,
         )
-        report("finished", total_changes, total_changes)
+        report("finished", len(snapshot), len(snapshot))
         return {
-            "success": True, "synced_at_utc": now.isoformat(timespec="seconds") + "Z",
-            "sku_count": len(snapshot), "inserted": len(inserted),
-            "updated": len(updated), "deactivated": len(gone),
-            "unchanged": len(snapshot) - len(inserted) - len(updated)
+            "success": True,
+            "mode": "replace",
+            "synced_at_utc": now.isoformat(timespec="seconds") + "Z",
+            "sku_count": len(snapshot),
+            "inserted": len(snapshot), "updated": 0, "deactivated": 0,
+            "unchanged": 0, "replaced_old": old_active
         }
     except Exception:
         conn.rollback()

@@ -1,65 +1,92 @@
-"""Only a proven legacy PEDIDO scope migration may bypass the 20% protection."""
+"""Transactional full stock replacement: snapshot only, never sample tables."""
 from decimal import Decimal
 from unittest.mock import patch
 import pytest
 from xingwang_miniapp import stock_sync_api as mod
 
-class FakeCursor:
-    def __init__(self, old):
-        self.old=old
-        self.statements=[]
-        self.rows=[]
+class Cursor:
+    def __init__(self, conn):
+        self.conn = conn
+        self.result = None
     def __enter__(self): return self
-    def __exit__(self,*args): return False
+    def __exit__(self, *args): return False
     def execute(self, sql, params=None):
-        self.statements.append(sql)
-        if sql.startswith("SELECT sku, series"):
-            self.rows=[(x, x, Decimal(1), Decimal(2), 1) for x in self.old]
-        elif "SELECT id FROM" in sql:
-            self.rows=[(1,)]
-        else: self.rows=[]
-    def executemany(self, sql, params):
-        self.statements.append(sql)
-    def fetchall(self): return self.rows
-    def fetchone(self): return self.rows[0] if self.rows else None
+        self.conn.statements.append(sql)
+        if "SELECT id FROM xw_stock_sync_state" in sql:
+            self.result = (1,)
+        elif "SELECT COUNT(*) FROM xw_stock_snapshot WHERE is_active=1" in sql:
+            self.result = (len(self.conn.old),)
+        elif sql.startswith("DELETE FROM xw_stock_snapshot"):
+            self.conn.pending = {}
+        elif sql.startswith("SELECT COUNT(*) FROM xw_stock_snapshot"):
+            self.result = (len(self.conn.pending),)
+    def executemany(self, sql, rows):
+        if self.conn.fail_insert:
+            raise RuntimeError("simulated_insert_failure")
+        assert sql.startswith("INSERT INTO xw_stock_snapshot")
+        for sku, series, rolls, meters, ts in rows:
+            self.conn.pending[sku] = (series, rolls, meters)
+    def fetchone(self): return self.result
 
-class FakeConnection:
-    def __init__(self, old):
-        self.c=FakeCursor(old)
-        self.committed=False
-        self.rolled_back=False
-    def cursor(self): return self.c
-    def commit(self): self.committed=True
-    def rollback(self): self.rolled_back=True
+class Connection:
+    def __init__(self, old=None, fail_insert=False):
+        self.old = dict(old or {})
+        self.pending = dict(self.old)
+        self.samples = {"SKU1": "missing"}
+        self.fail_insert = fail_insert
+        self.statements = []
+        self.commits = 0
+        self.rollbacks = 0
+    def cursor(self): return Cursor(self)
+    def commit(self):
+        self.old = dict(self.pending)
+        self.commits += 1
+    def rollback(self):
+        self.pending = dict(self.old)
+        self.rollbacks += 1
     def close(self): pass
 
-def test_only_old_pedido_keys_are_auto_deactivated():
-    old=[f"STOCK-{i}" for i in range(100)]+[f"PEDIDO-{i}(1)" for i in range(80)]
-    new={f"STOCK-{i}":("STOCK",Decimal(1),Decimal(2)) for i in range(100)}
-    new.update({f"NEW-{i}":("NEW",Decimal(0),Decimal(0)) for i in range(100)})
-    conn=FakeConnection(old)
-    with patch.object(mod.scanner_tidb,"_connect",return_value=conn), patch.object(mod.scanner_tidb,"_ensure"):
-        result=mod._sync_blocking(new)
-    assert conn.committed
-    assert result["deactivated"]==80
-    assert result["sku_count"]==200
+def sync(conn, snapshot, **kwargs):
+    with patch.object(mod.scanner_tidb, "_connect", return_value=conn), \\
+         patch.object(mod.scanner_tidb, "_ensure"):
+        return mod._sync_blocking(snapshot, **kwargs)
 
-def test_missing_genuine_stock_prevents_migration():
-    old=[f"STOCK-{i}" for i in range(100)]+[f"PEDIDO-{i}(1)" for i in range(80)]
-    new={f"STOCK-{i}":("STOCK",Decimal(1),Decimal(2)) for i in range(99)}
-    new.update({f"NEW-{i}":("NEW",Decimal(0),Decimal(0)) for i in range(101)})
-    conn=FakeConnection(old)
-    with patch.object(mod.scanner_tidb,"_connect",return_value=conn), patch.object(mod.scanner_tidb,"_ensure"):
-        with pytest.raises(ValueError,match="STOCK_SCOPE_MISMATCH"):
-            mod._sync_blocking(new)
-    assert not conn.committed
-    assert conn.rolled_back
+def test_full_snapshot_replaces_old_scope_without_upsert():
+    conn = Connection({f"OLD-{i}": ("OLD", Decimal(1), Decimal(0)) for i in range(200)})
+    data = {f"SKU{i}": ("S", Decimal(0) if i%2==0 else Decimal(-1), None)
+            for i in range(520)}
+    result = sync(conn, data)
+    assert result["mode"] == "replace"
+    assert result["sku_count"] == 520
+    assert result["replaced_old"] == 200
+    assert len(conn.old) == 520
+    assert len([s for s in conn.statements if s.startswith("DELETE FROM")]) == 1
+    assert conn.samples["SKU1"] == "missing"
+    assert not any("ON DUPLICATE KEY" in sql for sql in conn.statements)
+    assert conn.commits == 1
 
-def test_short_snapshot_is_never_migrated():
-    old=[f"STOCK-{i}" for i in range(100)]+[f"PEDIDO-{i}(1)" for i in range(80)]
-    new={f"STOCK-{i}":("STOCK",Decimal(1),Decimal(2)) for i in range(100)}
-    conn=FakeConnection(old)
-    with patch.object(mod.scanner_tidb,"_connect",return_value=conn), patch.object(mod.scanner_tidb,"_ensure"):
-        with pytest.raises(ValueError,match="STOCK_SCOPE_MISMATCH"):
-            mod._sync_blocking(new)
-    assert not conn.committed
+def test_insert_failure_rolls_back_delete_and_state():
+    conn = Connection({"SKU1": ("S", Decimal(2), Decimal(0))}, fail_insert=True)
+    with pytest.raises(RuntimeError, match="simulated_insert_failure"):
+        sync(conn, {"SKU2": ("S", Decimal(0), None)})
+    assert "SKU1" in conn.old
+    assert conn.rollbacks == 1
+    assert conn.commits == 0
+    assert conn.samples == {"SKU1": "missing"}
+
+def test_large_unexpected_shrink_rejected_before_delete():
+    conn = Connection({f"SKU{i}": ("S", Decimal(2), Decimal(0)) for i in range(200)})
+    with pytest.raises(ValueError, match="STOCK_SNAPSHOT_TOO_SMALL"):
+        sync(conn, {f"SKU{i}": ("S", Decimal(0), Decimal(0)) for i in range(10)})
+    assert not any(x.startswith("DELETE FROM") for x in conn.statements)
+    assert conn.rollbacks == 1
+
+def test_zero_negative_null_survive():
+    conn = Connection()
+    result = sync(conn, {"A":("A", Decimal(0), None),
+                         "B":("B", Decimal(-2), Decimal(-22)),
+                         "C":("C", None, None)})
+    assert result["sku_count"] == 3
+    assert conn.old["A"][1] == Decimal(0)
+    assert conn.old["B"][1] == Decimal(-2)
+    assert conn.old["C"][1] is None

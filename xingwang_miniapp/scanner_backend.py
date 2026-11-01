@@ -252,11 +252,14 @@ async def _inventory_run(job_id):
                 "Inventory quantity has too many decimal places",
             }
             reason = str(exc)
-            if reason.startswith("STOCK_SCOPE_MISMATCH:"):
+            if reason.startswith("STOCK_SNAPSHOT_TOO_SMALL:"):
                 safe = (
-                    "庫存範圍檢查失敗：有既有 STOCK 編號不在新快照內，"
-                    "已保留 TiDB 原資料；請檢查 Render 的 STOCK_SCOPE_CHANGE 紀錄"
+                    "完整庫存筆數比目前 TiDB 少超過 20%，已保留舊庫存；"
+                    "請檢查 Access 是否完整回傳"
                 )
+                reason_code = "STOCK_SNAPSHOT_TOO_SMALL"
+            elif reason.startswith("STOCK_SCOPE_MISMATCH:"):
+                safe = "庫存範圍不一致，已保留 TiDB 原資料"
                 reason_code = "STOCK_SCOPE_MISMATCH"
             elif reason in allowed_reasons:
                 safe = "資料驗證失敗：" + reason

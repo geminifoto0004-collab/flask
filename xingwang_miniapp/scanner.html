@@ -168,8 +168,11 @@ async function inventoryRefresh(){
   }
   else if(j.state==='failed')state='同步失敗：'+(j.error||'請檢查 Render 日誌');
   else if(j.state==='success'){
-    state='本次同步成功。';
-    const t=j.result&&j.result.timings_ms;
+    const result=j.result||{};
+    state=result.mode==='replace'
+      ?'本次完整庫存已成功替換：'+result.sku_count+' 筆（舊快照 '+result.replaced_old+' 筆）'
+      :'本次同步成功。';
+    const t=result.timings_ms;
     if(t)state+='\n耗時：本機讀取與傳送 '+(t.bridge/1000).toFixed(1)+
       ' 秒｜TiDB 寫入 '+(t.database/1000).toFixed(1)+
       ' 秒｜總計 '+(t.total/1000).toFixed(1)+' 秒';
