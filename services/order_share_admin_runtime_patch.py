@@ -318,6 +318,11 @@ def _valid_token_hash(value):
 
 
 def _share_settings_detail(token_hash):
+    import re
+    request_id = str(request.headers.get('X-Order-Request-ID') or '')
+    request_id = request_id if re.fullmatch(r'[0-9a-f]{32}', request_id) else '-'
+    client = str(request.headers.get('X-Order-Client-Version') or '')
+    client = client if re.fullmatch(r'V[0-9]{1,6}', client) else '-'
     started = time.perf_counter()
     phases, outcome = {}, 'failed'
     try:
@@ -326,7 +331,7 @@ def _share_settings_detail(token_hash):
         return result
     finally:
         elapsed = round((time.perf_counter() - started) * 1000, 1)
-        print(f'[ORDER Share Detail] share={str(token_hash)[:12]} outcome={outcome} '
+        print(f'[ORDER Share Detail] share={str(token_hash)[:12]} request_id={request_id} client={client} outcome={outcome} '
               f'total_ms={elapsed} phases={phases}', flush=True)
 
 
