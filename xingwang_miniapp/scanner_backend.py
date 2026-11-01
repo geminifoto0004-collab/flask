@@ -541,18 +541,26 @@ def attach_stock_lookup(stock_lookup):
             raise HTTPException(400, "Invalid request")
         scan_id = data.get("scan_id")
         missed = data.get("missing")
+        present = data.get("present")
+        # Explicitly confirmed states only: never write hidden, unchecked or
+        # unreviewed SKUs. An empty or overlapping selection is invalid.
         if (not isinstance(scan_id,str) or
             not re.fullmatch(r"[a-f0-9]{32}",scan_id) or
-            not isinstance(missed,list) or len(missed)>500 or
-            any(not isinstance(s,str) for s in missed) or
-            len(set(missed)) != len(missed)):
-            raise HTTPException(400, "Invalid scan submission")
+            not isinstance(missed,list) or not isinstance(present,list) or
+            len(missed)+len(present)>500 or
+            any(not isinstance(v,str) for v in missed+present) or
+            len(set(missed)) != len(missed) or
+            len(set(present)) != len(present) or
+            set(missed).intersection(present) or
+            not (missed or present)):
+            raise HTTPException(400, "請至少確認一個有樣或無樣的商品")
         session = PENDING_SCANS.get(scan_id)
         if not session or time.monotonic()-session[0]>1800 or len(session)!=5:
             raise HTTPException(409, "這次掃描已過期，請重新查詢")
         started, owner, series, skus, snapshot_version = session
         device_id = hashlib.sha256(request.cookies.get(COOKIE,"").encode()).hexdigest()[:16]
-        if not hmac.compare_digest(owner,device_id) or not set(missed).issubset(skus):
+        confirmed = set(missed) | set(present)
+        if not hmac.compare_digest(owner,device_id) or not confirmed.issubset(skus):
             raise HTTPException(403, "Invalid scan authorization")
         try:
             fresh = await asyncio.to_thread(scanner_tidb.stock_freshness)
@@ -561,7 +569,8 @@ def attach_stock_lookup(stock_lookup):
                     409, "庫存已超過 1 小時或已重新同步；請更新庫存並重新查詢布樣"
                 )
             result=await asyncio.to_thread(
-                scanner_tidb.save_scan, scan_id, series, skus, missed, device_id
+                scanner_tidb.save_scan, scan_id, series,
+                tuple(v for v in skus if v in confirmed), missed, device_id
             )
         except HTTPException:
             raise
