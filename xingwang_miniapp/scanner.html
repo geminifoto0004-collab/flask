@@ -363,18 +363,315 @@ small,.muted{color:var(--muted)}
  .cart-dock-switch,.cart-dock-confirm{font-size:12px;min-width:0;padding-inline:10px}
 }
 
+
+/* CC DESIGN SYSTEM — sourced from all eleven pages of the supplied ZIP.
+   Overrides earlier layout (not the real API, SKU or access logic). */
+:root{--wine:#6A1B36;--wine-deep:#4E1127;--ink:#241017;--paper:#F8F4F5;
+ --muted:#6E5A62;--stroke:#D9CDD2;--hair:#EBE2E5;--rose:#F6E8EC;--success:#1F9D6B;
+ background:var(--paper)}
+html,body{background:var(--paper);color:var(--ink)}
+button,input,textarea{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+main{padding:12px 14px calc(100px + env(safe-area-inset-bottom,0px));max-width:1140px}
+header{margin-bottom:12px}
+header h1{font-size:20px;color:var(--ink);font-weight:800}
+header .header-actions{gap:8px}
+#adminLink,#cartNav,#logout{background:#fff;border:1px solid var(--stroke);border-radius:12px;width:44px;height:44px;color:var(--ink);padding:0}
+#cartNav .cart-nav-count{background:var(--wine);color:#fff}
+button{background:var(--wine);color:white;border-radius:12px}
+button.secondary{color:var(--ink);background:#fff;border:1px solid var(--stroke)}
+button:disabled{opacity:.45}
+input{color:var(--ink);background:#fff;border-color:var(--stroke)}
+.panel{border-color:var(--hair);box-shadow:none}
+#workModes{gap:8px}
+#workModes button{min-height:48px;background:#F1E8EB;color:#241017;display:flex;align-items:center;justify-content:center}
+#workModes button.active{background:var(--wine);color:#fff}
+#workModes button svg{width:20px;height:20px}
+#scanPanel{background:transparent;border:0;box-shadow:none;padding:0;margin:4px 0}
+#scanPanel .scanner-search-row{gap:8px;margin:11px 0}
+#scanPanel .search-input-wrap input{min-height:48px;border-radius:12px}
+#scanPanel #cameraToggle{width:48px;height:48px;flex:0 0 48px;background:var(--rose);color:var(--wine);border-color:var(--stroke);border-radius:12px}
+#scanPanel #cameraToggle[aria-pressed="true"]{background:var(--wine);color:#fff}
+#scanPanel #queryBtn{height:48px;width:48px;flex:0 0 48px;border-radius:12px;background:var(--wine)}
+#reader{background:#241017;min-height:0;border-radius:14px;margin:12px auto;max-width:480px}
+#reader:not(:empty){min-height:230px}
+#reader:has(video){border-radius:14px;overflow:hidden}
+#scanPanel #message{font-size:13px;color:var(--wine)}
+#fullKindControls button.active,#fullTabs button.active{background:var(--wine);color:#fff}
+#freshnessPanel{border-radius:12px;background:#FFF3D6;border-color:#F0D9A6;color:#6B4200;padding:10px 12px}
+#freshnessPanel #freshnessDismissBtn{flex:0 0 34px;color:#6B4200}
+#freshnessPanel .freshness-head{align-items:center}
+#freshnessPanel .row{margin-top:6px!important}
+#freshnessPanel .row button{min-height:40px;font-size:12px;border-radius:10px}
+#freshnessPanel #freshnessContinueBtn{background:#fff;color:#6B4200;border:1px solid #D9B25F}
+#freshnessPanel #freshnessAdminBtn{background:var(--wine);color:#fff;border-color:var(--wine);min-width:40px}
+#freshnessPanel #freshnessCheckBtn{width:40px;min-width:40px;padding:0;background:var(--wine);color:#fff}
+#login.cc-login{position:relative;min-height:82dvh;display:flex;flex-direction:column;justify-content:center;gap:13px;margin:0;border:0;box-shadow:none;background:transparent;padding:28px 14px 65px}
+#login.cc-login.hidden{display:none!important}
+body:has(#login:not(.hidden)) header,body:has(#login:not(.hidden)) footer{display:none!important}
+#login.cc-login h1{text-align:center;font-size:27px;letter-spacing:.6px;margin:0 0 18px;font-weight:850}
+.cc-login-types{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cc-login-types button{height:48px;min-height:48px;display:flex;gap:6px;align-items:center;justify-content:center;background:#F1E8EB;color:#241017;font-size:14px;font-weight:700}
+.cc-login-types button.active{background:var(--wine);color:#fff}
+.cc-login-types button span{display:flex;flex-direction:column;line-height:1.12}
+.cc-login-types button small{color:inherit;font-size:11px;opacity:.8}
+.cc-login-entry{display:flex;flex-direction:column;gap:12px}
+.cc-login-entry.hidden{display:none!important}
+.cc-login-field{display:flex;align-items:center;gap:8px;padding:0 11px;height:48px;background:#fff;border:1px solid var(--stroke);border-radius:12px}
+.cc-login-field svg{flex:none;color:var(--muted)}
+.cc-login-field input{flex:1;min-width:0;border:0!important;border-radius:0;box-shadow:none!important;height:46px;padding:4px 0}
+.cc-login-entry>button{height:56px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:var(--wine)}
+.cc-login-entry>button svg{transform:rotate(0deg)}
+#loginMessage:empty{display:none}
+body:has(#cartWorkspace:not(.hidden)) header,body:has(#cartWorkspace:not(.hidden)) footer{display:none!important}
+body:has(#cartWorkspace:not(.hidden)) main{padding:0 0 calc(93px + env(safe-area-inset-bottom,0px));max-width:none}
+#app:has(#cartWorkspace:not(.hidden)){max-width:100%;margin:0 auto}
+#cartWorkspace{margin:0;border:0;background:transparent;box-shadow:none;padding:0!important;border-radius:0!important}
+#cartWorkspace #cartStart,#cartWorkspace #cartStaffList{padding:0 16px}
+#cartWorkspace #cartStart{padding-top:12px}
+.cc-carts-head{height:46px;display:flex;gap:8px;align-items:center;justify-content:space-between;color:var(--wine-deep)}
+.cc-carts-head span{display:inline-flex;align-items:center;gap:5px;border-radius:9px;background:#F1DDE4;font-size:12px;font-weight:700;padding:7px}
+.cc-carts-head span small{font-size:10px;font-weight:600}
+.cc-cart-create{background:#fff;border-radius:14px;padding:14px;margin:11px 0 16px}
+.cc-cart-create-input,.cc-cart-filter{display:flex;align-items:center;gap:7px;padding:0 12px;height:48px;border-radius:12px;background:#fff;border:1px solid var(--stroke)}
+.cc-cart-create-input input,.cc-cart-filter input{padding:0;border:0;background:transparent;flex:1;height:44px;min-width:0;box-shadow:none}
+.cc-cart-create-input svg,.cc-cart-filter svg{color:var(--muted);flex:none}
+#cartWorkspace #cartCreateBtn{height:52px;margin:10px 0 0!important;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:12px}
+#cartStaffList{padding-top:5px!important}
+#cartStaffList #cartRecent{margin-top:13px!important}
+#cartStaffList .cart-history-row{min-height:68px;margin:0 0 10px;padding:12px;background:#fff;border:0;border-radius:14px;display:flex;align-items:center;justify-content:space-between;text-align:left;gap:10px}
+#cartStaffList .cart-history-left strong{font-size:15px;color:var(--ink);font-weight:800}
+#cartStaffList .cart-history-left small{font-size:11px;color:var(--muted)}
+#cartStaffList .cc-cart-list-status{display:flex;align-items:center;gap:9px;white-space:nowrap}
+#cartStaffList .cc-history-qty{display:inline-flex;align-items:center;gap:5px;color:var(--ink);font-size:14px}
+#cartStaffList .cc-history-state{border-radius:8px;padding:6px 7px;font-size:11px;font-weight:700}
+#cartStaffList .cc-history-state.ready{color:#0B5B3A;background:#D8F1E4}
+#cartStaffList .cc-history-state.draft{color:#7A4B00;background:#FFEBC2}
+#cartWorkspace .cart-compact-head{padding:12px 14px 7px;min-height:69px;display:flex;gap:8px;align-items:center}
+#cartWorkspace .cart-back,#cartWorkspace .cart-details-btn{min-width:44px;width:44px;height:44px;padding:0!important;color:var(--ink);background:#fff;border:0;border-radius:12px}
+#cartWorkspace .cart-compact-title strong{font-size:17px;color:var(--ink);font-weight:800;white-space:nowrap}
+#cartWorkspace .cart-compact-title span{font-size:12px;color:var(--muted)}
+#cartWorkspace #cartStateLabel{display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:28px;background:#FFEBC2;color:#7A4B00;font-size:12px;font-weight:700;border-radius:8px;padding:0 7px}
+#cartWorkspace #cartStateLabel[data-state="ready"]{background:#D8F1E4;color:#0B5B3A}
+#cartWorkspace #cartScanAction{padding:3px 14px 10px}
+#cartWorkspace #cartScanNow{height:52px;min-height:52px;background:var(--wine);display:flex;align-items:center;justify-content:center;border-radius:14px;width:100%;padding:0;color:#fff}
+#cartWorkspace #cartScanNow>span{display:none}
+#cartWorkspace #cartProductToolbar{margin:0 14px 8px}
+.cc-search{width:100%;height:48px;display:flex;align-items:center;gap:8px;border:1px solid var(--stroke);border-radius:12px;padding:0 13px;background:#fff}
+.cc-search svg{flex:none;color:var(--muted)}
+#cartSkuFilter{height:45px;width:100%;min-width:0;border:0!important;background:transparent;padding:0;font-size:16px;box-shadow:none}
+#cartWorkspace .cart-filter{margin:0;padding:0 14px 9px;display:flex;gap:8px}
+#cartWorkspace .cart-filter button{display:flex;align-items:center;gap:7px;min-height:36px!important;height:36px;background:#fff;color:#4A3840;border-radius:18px;padding:0 12px;border:1px solid var(--stroke);font-weight:700;font-size:12px}
+#cartWorkspace .cart-filter button.active{background:#241017;color:#fff;border-color:#241017}
+#cartWorkspace .cart-filter button strong{order:3;font-size:12px}
+#cartWorkspace #cartProducts{background:#fff;margin:0;border-top:1px solid var(--hair)}
+#cartWorkspace .cart-line{height:68px;min-height:68px;padding:0 14px;margin:0;border-bottom:1px solid var(--hair);display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:0}
+#cartWorkspace .cart-line.selected{background:#F6E8EC;margin:0;padding:0 14px}
+#cartWorkspace .cart-line-title{min-width:0;gap:3px}
+#cartWorkspace .cart-line-title strong{font-size:18px;line-height:1.2;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#cartWorkspace .cart-line-title .cc-stock-line{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:14px}
+#cartWorkspace .cart-line-title .cc-stock-line.cart-out{color:#A33A2E}
+#cartWorkspace .cart-qty-controls{flex:none;display:flex;gap:6px;align-items:center}
+#cartWorkspace .cart-qty-controls button{height:44px;width:44px;min-width:44px;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--ink);border:1px solid var(--stroke);border-radius:12px;padding:0;font-size:18px}
+#cartWorkspace .cart-qty-controls button:disabled{background:var(--paper);color:#A8979E;opacity:1}
+#cartWorkspace .cart-qty-controls input.cart-qty{width:46px;min-width:46px;height:44px;text-align:center;padding:0 3px;border-radius:12px;border:1px solid var(--stroke);background:#fff;color:var(--ink);font-weight:700;font-size:18px}
+#cartWorkspace .cart-line.selected .cart-qty-controls input.cart-qty{color:var(--wine-deep);border-color:var(--wine)}
+#cartWorkspace .cart-pick-empty{color:var(--muted);padding:36px 16px;background:transparent}
+#cartWorkspace .cart-meta{background:#fff;border:1px solid var(--hair);border-radius:12px;margin:4px 14px 9px;padding:10px}
+#cartWorkspace .cart-times>div{background:var(--paper)}
+#cartWorkspace #cartItemView.cc-cart-summary-sheet{position:fixed;z-index:90;inset:0;display:flex;align-items:flex-end;justify-content:center;background:transparent}
+#cartWorkspace #cartItemView.cc-cart-summary-sheet.hidden{display:none!important}
+.cc-summary-shade{position:absolute;inset:0;background:#24101790}
+.cc-summary-content{position:relative;background:#fff;width:100%;max-width:540px;max-height:83dvh;display:flex;flex-direction:column;border-radius:22px 22px 0 0;padding:10px 12px calc(18px + env(safe-area-inset-bottom,0px));overflow:hidden}
+.cc-sheet-grip{height:5px;width:44px;border-radius:5px;background:#D9CDD2;align-self:center;margin-bottom:10px;flex:none}
+.cc-summary-content .cart-item-heading{padding:10px 4px}
+#cartWorkspace .cc-summary-content #cartItems{overflow-y:auto;flex:1}
+#cartWorkspace .cc-summary-content .cart-line{height:60px;padding:0 4px}
+#ccSummaryClose{width:100%;height:48px;margin:10px 0 0;flex:none}
+#cartWorkspace .cart-dock{position:fixed;z-index:30;bottom:0;left:0;right:0;transform:none;width:100%;max-width:none;height:84px;min-height:84px;border:0;border-top:1px solid #E0D5DA;border-radius:0;box-shadow:none;background:#fff;padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:12px}
+.cc-cart-total{flex:1;min-width:0;background:transparent;color:var(--ink);display:flex;align-items:center;gap:12px;padding:0;border:0;border-radius:0;height:54px}
+.cc-roll-info,.cc-sku-info{display:inline-flex;align-items:center;gap:5px}
+.cc-roll-info strong{font-size:30px;font-weight:800}
+.cc-roll-info small{font-size:12px;color:var(--muted);font-weight:700}
+.cc-roll-info small span{font-size:10px}
+.cc-sku-info{font-size:16px;color:var(--muted);font-weight:700}
+.cc-cart-total .cart-save-status{color:var(--success);font-size:11px;font-weight:700}
+#cartWorkspace #cartStateButton{width:130px;min-width:110px;height:56px;min-height:56px;background:var(--wine);border:0;border-radius:14px;display:flex;align-items:center;justify-content:center;color:#fff;padding:0}
+#cartWorkspace #cartStateButton:disabled{opacity:.5}
+#cartSwitchView{display:none!important}
+#cartWorkspace #cartMessage:not(:empty){position:fixed;left:14px;right:14px;top:12px;bottom:auto;z-index:95;background:#fff;border:1px solid var(--stroke);border-radius:12px;padding:10px;color:var(--wine-deep);transform:none;width:auto}
+#cartWorkspace #cartMessage.error{background:#fff3f1;color:#A33A2E}
+#scanPanel.cc-cart-camera-active{position:fixed;z-index:70;inset:0;display:flex!important;flex-direction:column;align-items:stretch;background:var(--paper);padding:60px 16px 16px;margin:0;max-width:none}
+#scanPanel.cc-cart-camera-active #workModes,#scanPanel.cc-cart-camera-active #fullKindControls,#scanPanel.cc-cart-camera-active #freshnessPanel{display:none!important}
+#scanPanel.cc-cart-camera-active #reader{width:100%;max-width:480px;flex:1;min-height:280px}
+#scanPanel.cc-cart-camera-active .scanner-search-row{width:100%;max-width:480px;align-self:center}
+body:has(#cartWorkspace:not(.hidden)) #scanPanel:not(.cc-cart-camera-active){display:none!important}
+/* CC sheet/confirm variants */
+.xw-dialog-sheet{background:#fff;border-radius:22px 22px 0 0}
+#xwDialog[data-kind="confirm"]{align-items:center;padding:24px}
+#xwDialog[data-kind="confirm"] .xw-dialog-sheet{max-width:420px;padding:24px 16px 16px;border-radius:20px}
+#xwDialog[data-kind="confirm"] .xw-dialog-grip{display:none}
+#xwDialog[data-kind="confirm"] .xw-dialog-actions button{min-height:50px}
+/* Desktop: matched Web.html three panes */
+@media(min-width:950px){
+ body:has(#cartWorkspace:not(.hidden)) main{max-width:none}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"]{display:grid;grid-template-columns:260px minmax(380px,1fr) 285px;column-gap:0;background:#fff!important;min-height:100dvh}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartStart{display:none!important}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartStaffList{display:block!important;grid-column:1;grid-row:1;max-height:100vh;overflow:auto;position:sticky;top:0;border-right:1px solid var(--hair);padding:14px!important}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartActive{display:contents!important}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] .cart-compact-head{grid-column:2;grid-row:1;padding:14px;align-self:start}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartScanAction{grid-column:2;grid-row:1;margin-top:70px;padding:0 16px;align-self:start}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartPickView{grid-column:2;grid-row:1;margin-top:137px;padding:0;max-height:calc(100vh - 225px);overflow:auto}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartMeta{grid-column:3;grid-row:1;display:block!important;position:sticky;top:0;border-radius:0;border-left:1px solid var(--hair);margin:0;padding:20px 12px;align-self:start;height:100vh}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartDetailsBtn{visibility:hidden}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartDock{grid-column:2;grid-row:1;left:260px;right:285px;width:auto;max-width:none}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartMessage{grid-column:2}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] .cart-filter{padding-top:0}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartScanNow{background:#fff;color:var(--wine);border:1.5px solid var(--wine)}
+}
+@media(max-width:700px){#cartWorkspace .cart-line-title strong{font-size:16px}#cartWorkspace .cart-qty-controls{gap:4px}}
+@media(max-width:390px){
+ #cartWorkspace .cart-line{padding:0 10px}
+ #cartWorkspace .cart-line.selected{padding:0 10px}
+ #cartWorkspace .cart-qty-controls button{width:40px;min-width:40px}
+ #cartWorkspace .cart-qty-controls input.cart-qty{width:43px;min-width:43px}
+ #cartWorkspace .cart-line-title strong{font-size:15px}
+ .cc-cart-total{gap:6px}.cc-roll-info strong{font-size:25px}
+ #cartWorkspace #cartStateButton{width:106px;min-width:106px}
+}
+
+
+/* CC Sample / Stock / Admin snapshots from ZIP */
+.cc-detail-back{width:44px;height:44px;min-width:44px;padding:0;background:#fff!important;color:var(--ink)!important;border:0!important;border-radius:12px;display:flex;align-items:center;justify-content:center}
+#ccCartCameraClose{position:absolute;top:10px;left:12px;z-index:75;background:#fff;border:1px solid var(--stroke);border-radius:12px;color:var(--ink);width:44px;height:44px;padding:0;align-items:center;justify-content:center}
+#scanPanel.cc-cart-camera-active #ccCartCameraClose{display:flex!important}
+body.cc-sample-detail header,body.cc-stock-detail header{display:none!important}
+body.cc-sample-detail #scanPanel,body.cc-stock-detail #scanPanel{display:none!important}
+body.cc-sample-detail main,body.cc-stock-detail main{max-width:none;padding:0 0 calc(90px + env(safe-area-inset-bottom,0px))}
+body.cc-sample-detail #result,body.cc-stock-detail #fullResult{display:block!important;background:var(--paper);border:0;border-radius:0;margin:0;padding:0;box-shadow:none;min-height:100dvh}
+#result .cc-sample-top{position:absolute;top:12px;left:14px;z-index:5}
+body.cc-sample-detail #result{position:relative}
+#result .sample-series-header{min-height:64px;margin:0;padding:14px 14px 8px 70px;align-items:center;gap:8px;border:0;background:var(--paper)}
+#result .sample-series-header h2{font-size:18px;font-weight:800;color:var(--ink);margin:0}
+#result .sample-series-header .sample-sync{margin-left:auto;color:#7A4B00;font-size:12px}
+#result .sample-series-header .sample-sync small{color:#7A4B00;font-size:12px}
+#result .sample-series-header #source{max-width:52px;font-size:10px;min-height:24px;padding:3px}
+#result .stock-visibility,#fullResult .stock-visibility{display:flex!important;gap:8px;border:0;padding:0 14px 8px;background:transparent}
+#result .stock-visibility button,#fullResult .stock-visibility button{height:36px!important;min-height:36px!important;min-width:0!important;flex:0 0 auto!important;display:inline-flex;align-items:center;gap:6px;border-radius:18px;border:1px solid var(--stroke);background:#fff;color:#4A3840;font-size:12px;padding:0 11px!important;line-height:1}
+#result .stock-visibility button.active,#fullResult .stock-visibility button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+#result .stock-visibility .filter-count,#fullResult .stock-visibility .filter-count{font-size:12px;font-weight:800}
+#result .stock-visibility .filter-label,#fullResult .stock-visibility .filter-label{font-size:11px}
+#result .sample-stats{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:7px;margin:0 14px 8px}
+#result .sample-stat{min-width:0;padding:8px 6px;border:0;background:#fff;border-radius:10px}
+#result .sample-stat-label{display:block;font-size:10px;color:var(--muted);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#result .sample-stat-value{display:block;margin-top:4px;font-size:20px;color:var(--ink);font-weight:800}
+#result .sample-stat.cc-stat-yes{background:#D8F1E4}
+#result .sample-stat.cc-stat-no{background:#F6DEDA}
+#result .sample-stat.cc-stat-yes .sample-stat-value{color:#0B5B3A}
+#result .sample-stat.cc-stat-no .sample-stat-value{color:#A33A2E}
+#result .sample-stats+div{margin:0!important;background:#fff;overflow-x:auto}
+#result table{width:100%;min-width:0;border-collapse:collapse;table-layout:fixed;font-variant-numeric:tabular-nums}
+#result table th:first-child,#result table td:first-child{width:auto;text-align:left}
+#result table th:nth-child(2),#result table td:nth-child(2){width:56px}
+#result table th:nth-child(3),#result table td:nth-child(3){width:71px}
+#result table th:nth-child(4),#result table td:nth-child(4){width:51px}
+#result table thead th{height:36px;padding:7px 5px;color:var(--muted);background:#F4E9EC;border-bottom:1px solid var(--hair);font-size:12px}
+#result table thead th:first-child{padding-left:14px}
+#result table tbody tr{height:58px;border-bottom:1px solid var(--hair);background:#fff}
+#result table tbody td{height:58px;padding:7px 5px;border-bottom:1px solid var(--hair);font-size:12px;color:var(--ink)}
+#result table tbody td:first-child{font-size:15px;font-weight:750;padding-left:14px}
+#result table tbody td.num{text-align:right}
+#result .sample-headcheck{font-size:10px}
+#result .sample-check,#result #sampleHeaderCheck{appearance:none;-webkit-appearance:none;width:26px;height:26px;min-width:26px;border-radius:8px;border:0;margin:0;display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;background:#F6DEDA;cursor:pointer;position:relative}
+#result .sample-check:checked,#result #sampleHeaderCheck:checked{background:#1F9D6B}
+#result .sample-check:after,#result #sampleHeaderCheck:after{content:'×';font-size:20px;font-weight:700;color:#A33A2E;position:absolute;left:0;right:0;top:0;bottom:0;text-align:center;line-height:25px}
+#result .sample-check:checked:after,#result #sampleHeaderCheck:checked:after{content:'✓';color:#fff;line-height:26px}
+#result .sample-check:disabled{opacity:.6}
+#result .sample-check-cell{text-align:center}
+#result #sampleControls{margin:0}
+#result #dbNotice{margin:10px 14px}
+#result #missingCount{display:none}
+#result #sampleControls .row{position:fixed;bottom:0;left:0;right:0;height:84px;background:#fff;border-top:1px solid #E0D5DA;z-index:24;padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px))}
+#result #saveBtn{width:100%;height:56px;background:var(--wine);color:#fff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:15px}
+#result #saveBtn svg{width:20px;height:20px}
+#result #saveScopeCount{font-size:12px;font-weight:700;opacity:.85}
+/* Stock: CC one-line stock list with user-authorized detailed tabs preserved below */
+#fullResult{position:relative}
+#ccStockBack{position:absolute;top:9px;left:12px}
+#fullResult .bar{height:62px;padding:12px 14px 7px 70px;margin:0;display:flex;align-items:center;justify-content:space-between}
+#fullResult .bar h2{font-size:18px;color:var(--ink);font-weight:800;margin:0}
+#fullResult .bar small{font-size:12px;color:var(--muted)}
+#fullResult .bar .tag{display:none}
+#fullResult[data-full-tab="stock"] #fullStats{display:none!important}
+#fullResult[data-full-tab="stock"] #fullFilterRow{display:none}
+#fullResult #fullTabs{display:flex;gap:8px;padding:8px 14px;background:var(--paper);flex-wrap:wrap}
+#fullResult #fullTabs button{min-height:34px;padding:7px 10px;font-size:12px;border-radius:18px;background:#fff;color:#4A3840;border:1px solid var(--stroke)}
+#fullResult #fullTabs button.active{background:var(--wine);color:#fff}
+#fullResult[data-full-tab="stock"] #fullTabs{display:none}
+#fullResult[data-full-tab="stock"] #fullDetails{background:#fff}
+.cc-stock-list{background:#fff}
+.cc-stock-row{height:56px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--hair);padding:0 16px;background:#fff}
+.cc-stock-row strong{font-size:15px;color:var(--ink);font-weight:700}
+.cc-stock-row .cc-stock-count{display:inline-flex;align-items:center;gap:4px}
+.cc-stock-row .cc-stock-count.low{color:#A33A2E}
+#fullResult #fullNext{margin:9px 14px;background:#fff;color:var(--wine);border:1px solid var(--stroke)}
+#fullResult #fullDetails:not(:has(.cc-stock-list)){padding:12px}
+#fullResult .stock-note{margin:8px 14px;color:var(--muted);font-size:11px}
+/* Admin: three white cards and CC header, keep original maintenance tools */
+body:has(#adminTab:not(.hidden)) header,body:has(#adminTab:not(.hidden)) footer{display:none!important}
+body:has(#adminTab:not(.hidden)) main{max-width:none;padding:0 0 30px}
+.cc-admin-header{height:66px;padding:12px 14px 8px;display:flex;align-items:center;gap:10px;color:var(--wine-deep)}
+#adminApp{padding:0 14px}
+#adminApp .panel{margin:0 0 12px;border:0;border-radius:14px;background:#fff;padding:14px}
+#adminApp .panel h2{font-size:15px;color:var(--ink);margin:0}
+#adminApp .panel .headerbar{display:flex;align-items:center;justify-content:space-between;gap:7px}
+#adminApp .panel .headerbar .pill{background:var(--rose);color:var(--wine);font-size:10px}
+#adminApp .panel .muted{color:var(--muted);font-size:12px}
+#inventoryStatusText{font-size:15px;font-weight:700;color:var(--ink);margin:12px 0 4px}
+#inventoryStartBtn{min-height:52px;background:var(--wine);border-radius:12px;display:flex;gap:7px;align-items:center;justify-content:center}
+#inventoryStartBtn small{color:#fff;font-size:10px}
+#dbSetupBtn{min-height:44px;color:#0B5B3A!important;border-color:#D8F1E4!important}
+#adminApp .share-layout{display:flex;flex-direction:row-reverse;gap:10px;align-items:center}
+#adminApp .share-layout>img{width:106px;height:106px;flex:none;image-rendering:pixelated}
+#adminApp .share-copy{flex:1;min-width:0}
+#adminApp .share-copy p{overflow-wrap:anywhere}
+#adminApp .share-actions{display:flex;gap:7px}
+#adminApp .share-actions button{flex:1;min-height:44px;font-size:12px;padding:8px}
+#adminApp .share-actions #shareScannerBtn{display:none}
+
+
+#ccStockOptions{position:absolute;top:9px;right:12px;width:44px;height:44px;min-height:44px;padding:0;border:0;background:#fff;color:var(--ink);border-radius:12px;font-size:20px}
+#ccStockWarn{margin:0 14px 10px;background:#FFF3D6;color:#6B4200;border-radius:12px;padding:9px 12px;display:flex;align-items:center;gap:8px;min-height:52px}
+#ccStockWarn.hidden{display:none!important}
+#ccStockWarnText{flex:1;font-weight:800;font-size:14px}
+#ccStockWarnContinue{height:40px;min-height:40px;white-space:nowrap;background:#fff;border:1px solid #D9B25F;border-radius:10px;color:#6B4200;font-size:12px;padding:0 12px}
+#ccStockWarnDismiss{height:38px;min-height:38px;width:38px;flex:none;padding:0;background:transparent;color:#6B4200;font-size:23px}
+#fullResult[data-full-tab="stock"] #fullTabs{display:none}
+body.cc-show-stock-options #fullResult[data-full-tab="stock"] #fullTabs{display:flex!important}
+
 </style>
 </head>
 <body><main>
 <header><div><h1>XINGWANG</h1></div><div class="header-actions"><button class="admin-icon cart-nav hidden" id="cartNav" type="button" title="CART" aria-label="開啟購物車"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 2h2l3 13h13l2-9H5"/></svg><span id="cartNavCount" class="cart-nav-count">0</span></button><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden" aria-label="退出 / Salir" title="退出 / Salir"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></svg></button></div></header>
-<section id="login" class="panel hidden">
-<h2>登录 <small>Acceso</small></h2>
-<p class="muted">輸入公司登入碼，這台手機將保持登入 30 天。</p>
-<input id="passcode" type="password" placeholder="公司登入碼" autocomplete="current-password">
-<button id="loginBtn">登入</button><div class="guest-divider">访客 · Visita</div><p class="muted">客人選貨 · 8 位臨時碼，只有自己的購物車</p><input id="guestCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="8-digit code" autocomplete="one-time-code"><button id="guestLoginBtn" class="secondary" type="button">进入 / Entrar</button><p id="loginMessage" class="muted"></p>
+<section id="login" class="panel hidden cc-login">
+ <h1>XINGWANG</h1>
+ <div class="cc-login-types" role="group" aria-label="登录模式 / Tipo de acceso">
+  <button id="ccLoginStaff" class="active" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20v-2a7.5 7.5 0 0 1 15 0v2"/></svg><span>员工 <small>Personal</small></span></button>
+  <button id="ccLoginGuest" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9m-4 0 4 4m-6-2 3 3"/></svg><span>访客 <small>Visita</small></span></button>
+ </div>
+ <div class="cc-login-fields">
+  <div id="ccStaffFields" class="cc-login-entry">
+   <div class="cc-login-field"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9m-4 0 4 4m-6-2 3 3"/></svg><input id="passcode" type="password" placeholder="登录码 / Clave" autocomplete="current-password"></div>
+   <button id="loginBtn" type="button" aria-label="员工登录 / Entrar"><svg viewBox="0 0 24 24" width="29" height="29" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m5 12 14 0m-6-6 6 6-6 6"/></svg></button>
+  </div>
+  <div id="ccGuestFields" class="cc-login-entry hidden">
+   <div class="cc-login-field"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9m-4 0 4 4m-6-2 3 3"/></svg><input id="guestCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="8 位临时码 / Código" autocomplete="one-time-code"></div>
+   <button id="guestLoginBtn" type="button" aria-label="访客进入 / Entrar"><svg viewBox="0 0 24 24" width="29" height="29" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m5 12 14 0m-6-6 6 6-6 6"/></svg></button>
+  </div>
+ </div>
+ <p id="loginMessage" class="muted" role="alert"></p>
 </section>
 <div id="app" class="hidden">
-<section class="panel" id="scanPanel">
+<section class="panel" id="scanPanel"><button id="ccCartCameraClose" class="hidden" type="button" aria-label="返回购物车 / Volver al carrito"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button>
 <div id="workModes" class="modes"><button id="modeSample" class="active" type="button" title="布樣盤點 / Muestras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M4 12h16"/></svg><span>样布 <small>Muestras</small></span></button><button id="modeFull" type="button" title="完整查詢 / Consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg><span>库存 <small>Stock</small></span></button></div>
 <div id="fullKindControls" class="full-kind hidden"><button id="fullProduct" class="active" type="button">商品查詢</button><button id="fullNota" type="button">Nota 查詢</button></div>
 <div id="freshnessPanel" class="notice hidden" role="status" aria-live="polite">
@@ -395,53 +692,69 @@ small,.muted{color:var(--muted)}
 <div id="message" aria-live="polite"></div>
 </section>
 <section id="cartWorkspace" class="panel hidden" aria-label="購物車">
- <div id="cartStart">
-  <div class="cart-header"><h2>新建购物车 <small>Nuevo carrito</small></h2><span class="tag">TiDB</span></div>
-  <p class="muted">每次選貨建立獨立 ID，之後可以重新打開繼續追加。</p>
-  <input id="cartNewName" type="text" maxlength="80" placeholder="Customer / Cliente (optional)" autocomplete="off">
-  <button id="cartCreateBtn" type="button" style="width:100%;margin:8px 0">＋ 新建 / Nuevo</button>
- </div>
- <div id="cartStaffList"><h3>购物车 <small>Carritos</small></h3><input id="cartFilter" type="search" placeholder="ID / Customer" autocomplete="off"><div id="cartRecent" style="margin-top:9px"></div></div>
- <div id="cartActive" class="hidden">
-  <div class="cart-compact-head">
-   <button id="cartBack" class="cart-back secondary" type="button" aria-label="返回所有購物車">←</button>
-   <div class="cart-compact-title"><strong id="cartShortCode" title="點選複製 Cart ID"></strong><span id="cartCustomerLabel" class="muted"></span></div>
-   <span id="cartStateLabel" class="tag">草稿</span>
-   <button id="cartDetailsBtn" class="cart-details-btn secondary" type="button" aria-expanded="false" aria-controls="cartMeta" aria-label="详情 / Detalles"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button>
-  </div>
-  <div id="cartMeta" class="cart-meta hidden">
-   <div class="cart-times"><div><span>OPENED</span><strong id="cartOpenedAt">—</strong></div><div><span>CONFIRMED</span><strong id="cartConfirmedAt">—</strong></div></div>
-   <div class="cart-spread"><span class="muted">LAST VERSION <strong id="cartVersionLabel">—</strong></span><button type="button" id="cartVersionBtn" class="secondary hidden" title="查看最後已確認清單">V1</button></div>
-   <div id="cartConfirmedBox" class="cart-confirmed-box hidden" aria-label="已確認版本商品清單"></div>
-   <button id="cartEditName" class="secondary" type="button">✎ 客户 / Cliente</button>
-   <div id="cartShareRow" class="cart-hint">
-    <div class="cart-spread"><span>GUEST CODE · 8H</span><span id="cartGuestCode" class="cart-code-number"></span></div>
-    <div class="cart-stack" style="margin-top:8px"><button id="cartShareBtn" type="button" class="secondary">↻ 换码 / Cambiar</button><button id="cartGuestHandoff" type="button" class="secondary">访客模式 / Visita</button></div>
-   </div>
-   <div class="cart-meta-actions"><button id="cartReload" class="secondary" type="button">↻ 更新 / Actualizar</button><button id="cartCopy" class="secondary" type="button">复制 / Copiar</button></div>
-  </div>
-  <div id="cartScanAction"><button id="cartScanNow" type="button" aria-label="扫码 / Escanear" title="扫码 / Escanear"><svg viewBox="0 0 24 24" width="27" height="27" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M4 12h16"/></svg><span>扫码 / Escanear</span></button></div>
-  <div id="cartPickView">
-   <div id="cartProductToolbar" class="cart-product-toolbar hidden"><input id="cartSkuFilter" type="search" placeholder="搜索色号 / Buscar SKU" autocomplete="off" aria-label="搜尋此系列商品"/></div>
-   <div id="cartProducts"></div>
-   <div id="cartStockNote" class="cart-hint hidden"></div>
-   <div id="cartPickEmpty" class="cart-pick-empty"><div class="cart-pick-empty-icon">▣</div><strong>扫码 / Escanear</strong><span>扫描或输入系列编号，选择匹数</span></div>
-  </div>
-  <div id="cartItemView" class="hidden">
-   <div class="cart-item-heading"><strong>已选商品 <small>Elegidos</small></strong><span id="cartSkuCount"></span></div>
-   <div id="cartItems"></div>
-   <p class="cart-inventory-disclaimer">選貨清單 ≠ RESERVAR，正式開單前需要確認庫存</p>
-  </div>
-  <div id="cartDock" class="cart-dock">
-   <div class="cart-dock-count"><strong><span id="cartTotal">0</span> <small>ROLL</small></strong><span id="cartSavedAt" class="cart-save-status">✓ SAVED</span></div>
-   <button id="cartSwitchView" class="cart-dock-switch" type="button" aria-label="购物车 / Carrito">购物车 <span id="cartDockSkuCount"></span></button>
-   <button id="cartStateButton" class="cart-dock-confirm" type="button" aria-label="确认选货 / Confirmar">✓ 确认</button>
+ <div id="cartStart" class="cc-cart-new">
+  <div class="cc-carts-head"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 2h2l3 13h13l2-9H5"/></svg><span>员工 <small>Personal</small></span></div>
+  <div class="cc-cart-create">
+   <div class="cc-cart-create-input"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20v-2a7.5 7.5 0 0 1 15 0v2"/></svg><input id="cartNewName" type="text" maxlength="80" placeholder="客户 / Cliente (可选)" autocomplete="off"></div>
+   <button id="cartCreateBtn" type="button" aria-label="新建购物车 / Nuevo carrito"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 2h2l3 13h13l2-9H5"/></svg></button>
   </div>
  </div>
+ <div id="cartStaffList" class="cc-cart-list">
+   <div class="cc-cart-filter"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="cartFilter" type="search" placeholder="搜索 / Buscar" autocomplete="off"></div>
+   <div id="cartRecent"></div>
+ </div>
+<div id="cartActive" class="hidden">
+ <div class="cart-compact-head">
+  <button id="cartBack" class="cart-back secondary" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button>
+  <div class="cart-compact-title"><strong id="cartShortCode"></strong><span id="cartCustomerLabel" class="muted"></span></div>
+  <span id="cartStateLabel" class="tag" aria-label="草稿 / Borrador">草稿</span>
+  <button id="cartDetailsBtn" class="cart-details-btn secondary" type="button" aria-expanded="false" aria-controls="cartMeta" aria-label="详情 / Detalles"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button>
+ </div>
+ <div id="cartMeta" class="cart-meta hidden">
+  <div class="cart-times"><div><span>打开 / Abierto</span><strong id="cartOpenedAt">—</strong></div><div><span>确认 / Confirmado</span><strong id="cartConfirmedAt">—</strong></div></div>
+  <div class="cart-spread"><span class="muted">版本 / Versión <strong id="cartVersionLabel">—</strong></span><button type="button" id="cartVersionBtn" class="secondary hidden">V1</button></div>
+  <div id="cartConfirmedBox" class="cart-confirmed-box hidden"></div>
+  <button id="cartEditName" class="secondary" type="button">客户 / Cliente</button>
+  <div id="cartShareRow" class="cart-hint"><div class="cart-spread"><span>访客码 / Código · 8H</span><span id="cartGuestCode" class="cart-code-number"></span></div>
+   <div class="cart-stack"><button id="cartShareBtn" type="button" class="secondary">↻ 换码 / Cambiar</button><button id="cartGuestHandoff" type="button" class="secondary">访客 / Visita</button></div></div>
+  <div class="cart-meta-actions"><button id="cartReload" class="secondary" type="button">↻ 更新 / Actualizar</button><button id="cartCopy" class="secondary" type="button">复制 / Copiar</button></div>
+  <div id="cartStockNote" class="cart-hint hidden"></div>
+ </div>
+ <div id="cartScanAction"><button id="cartScanNow" type="button" aria-label="继续扫码 / Seguir escaneando"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M4 12h16"/></svg></button></div>
+ <div id="cartPickView">
+  <div id="cartProductToolbar" class="cart-product-toolbar hidden"><div class="cc-search"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="cartSkuFilter" type="search" placeholder="搜索 / Buscar" autocomplete="off"></div></div>
+  <div id="cartProducts"></div>
+  <div id="cartPickEmpty" class="cart-pick-empty"><strong>扫码 / Escanear</strong><span>扫描系列编号 / Escanear código</span></div>
+ </div>
+ <div id="cartItemView" class="cc-cart-summary-sheet hidden">
+  <div id="ccSummaryShade" class="cc-summary-shade"></div>
+  <div class="cc-summary-content">
+   <div class="cc-sheet-grip"></div><div class="cart-item-heading"><strong>已选商品 <small>Elegidos</small></strong><span id="cartSkuCount"></span></div>
+   <div id="cartItems"></div><p class="cart-inventory-disclaimer">库存仅供参考，正式开单前须核对 RESERVAR</p>
+   <button id="ccSummaryClose" type="button" class="secondary">关闭 / Cerrar</button>
+  </div>
+ </div>
+ <div id="cartDock" class="cart-dock">
+  <button id="ccCartTotalInfo" class="cc-cart-total" type="button" aria-label="查看已选商品 / Ver elegidos">
+   <span class="cc-roll-info"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 6c0 1.7 3.1 3 7 3s7-1.3 7-3-3.1-3-7-3-7 1.3-7 3zM5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg><strong id="cartTotal">0</strong><small>匹 <span>Rollos</span></small></span>
+   <span class="cc-sku-info"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><strong id="cartDockSkuCount">0</strong></span>
+   <span id="cartSavedAt" class="cart-save-status">✓ 已保存</span>
+  </button>
+  <button id="cartSwitchView" class="hidden" type="button" aria-label="购物车"></button>
+  <button id="cartStateButton" class="cart-dock-confirm" type="button" aria-label="确认选货 / Confirmar selección"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="m5 12 4.5 4.5L19 7"/></svg></button>
+ </div>
+</div>
  <div id="cartMessage" aria-live="polite"></div>
 </section>
 <section id="fullResult" class="panel hidden" aria-label="完整查詢結果">
+<button id="ccStockBack" class="cc-detail-back" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button>
 <div class="bar"><div><h2 id="fullTitle">完整查詢</h2><small id="fullTime" class="muted"></small></div><span class="tag">公司查詢</span></div>
+<button id="ccStockOptions" type="button" aria-label="其他查询 / Más consultas" aria-expanded="false">•••</button>
+<div id="ccStockWarn" class="hidden">
+ <span id="ccStockWarnText">⚠ 库存未更新</span>
+ <button id="ccStockWarnContinue" type="button">继续 / Seguir</button>
+ <button id="ccStockWarnDismiss" type="button" aria-label="关闭提醒 / Cerrar">×</button>
+</div>
 <div id="fullStats" class="stock-stat-grid"></div>
 <div id="fullTabs" class="full-tabs">
 <button data-fulltab="stock" class="active">庫存</button><button data-fulltab="camino">待到貨</button><button data-fulltab="history">歷史購買</button><button data-fulltab="reservar">預定</button>
@@ -456,6 +769,7 @@ small,.muted{color:var(--muted)}
 <div class="row"><button id="fullHistoryMore" class="secondary fill hidden">載入更多購買紀錄</button><button type="button" id="fullNext" class="secondary">查下一筆</button></div>
 </section>
 <section id="result" class="panel hidden">
+<div class="cc-sample-top"><button id="ccSampleBack" class="cc-detail-back" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button></div>
 <div class="sample-series-header"><h2 id="series"></h2><span class="sample-sync" title="庫存更新 / Stock updated"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><small id="asof"></small></span><span id="source" class="tag"></span></div>
 <div class="stock-visibility" role="group" aria-label="布樣盤點顯示範圍">
 <button id="samplePositiveBtn" type="button" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="samplePositiveCount" class="filter-count">0</strong><span class="filter-label">&gt;0</span></button>
@@ -469,14 +783,14 @@ small,.muted{color:var(--muted)}
 <div class="row"><button id="saveBtn" type="button" class="fill hidden save-action" title="僅儲存目前顯示的商品 / Solo visibles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h14l3 3v15H3V3h1Z"/><path d="M7 3v7h10V3M7 21v-7h10v7"/></svg><span id="saveBtnText">SAVE</span><span id="saveScopeCount">0</span></button></div>
 </div>
 </section>
-<section id="adminTab" class="hidden" aria-label="管理分頁"><div id="adminApp">
+<section id="adminTab" class="hidden" aria-label="管理分頁"><div class="cc-admin-header"><button id="ccAdminBack" class="cc-detail-back" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3"/><circle cx="16" cy="17" r="2.3"/></svg></div><div id="adminApp">
 <section class="panel"><div class="headerbar"><h2>Access 庫存同步</h2><span class="pill">手動</span></div><p class="muted">雲端通知本機系統 從本機 Flask 取得完整庫存，再更新 TiDB；布樣盤點資料不會被覆蓋。</p>
-<button id="inventoryStartBtn" class="full">更新 Access 庫存到 TiDB</button><p id="inventoryStatusText" aria-live="polite">正在讀取最後成功時間…</p></section>
+<p id="inventoryStatusText" aria-live="polite">正在讀取最後成功時間…</p><button id="inventoryStartBtn" class="full">↻ 更新库存 <small>Actualizar stock</small></button></section>
 <section class="panel"><div class="headerbar"><h2>資料庫維護</h2><span class="pill">管理工具</span></div><p class="muted">首次部署或連線異常時才需要使用。</p>
-<button id="dbSetupBtn" class="secondary full">檢查 TiDB 連線並建立資料表</button><div id="dbSetupMsg" aria-live="polite"></div></section>
+<button id="dbSetupBtn" class="secondary full">检查数据库 / Base de datos</button><div id="dbSetupMsg" aria-live="polite"></div></section>
 <section class="panel"><h2>分享掃描器入口</h2><div class="share-layout">
 <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACUAAAAlAQAAAADt5R2uAAAAz0lEQVR42mP8z8DA8JOJgYGBgQGZZC6UFy+4w/j94S/emUx/Gzk+MTAxfJ/FwMDEwHKVgYGJuU6Tj4Hxg6rDawuG/981/v9g+O62irmC6adyeC0D428/lVeKTH/03iozMPzn6Lb7wfil5H/kDhauZBcpBqa/0UuuMjD8FNq17wfjl+OnbLcx/hUKkvnNxJBWrsnA9PXmplgGFt6l394yMH2UnX2LgYX9zLXPDAxfQjYx/WD8kvrmlyUTA4vzTwbG74+C5PUYPohGyf1gxOELAK1ESjlC+l01AAAAAElFTkSuQmCC" alt="掃描器 QR Code" width="130" height="130">
-<div class="share-copy"><p class="muted">同事開啟後仍需要公司登入碼。</p><div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">複製網址</button></div>
+<div class="share-copy"><p class="muted">同事開啟後仍需要公司登入碼。</p><div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">复制 <small>Copiar</small></button></div>
 <p class="muted"><a href="/s" target="_blank" rel="noopener noreferrer">xingwang-stock.onrender.com/s</a></p><div id="shareStatus" aria-live="polite"></div></div></div></section>
 </div></section>
 <footer class="muted">XINGWANG</footer>
@@ -500,6 +814,16 @@ small,.muted{color:var(--muted)}
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
+const ccLoginMode=which=>{
+ const guest=which==='guest';
+ $('ccLoginStaff').classList.toggle('active',!guest);
+ $('ccLoginGuest').classList.toggle('active',guest);
+ $('ccStaffFields').classList.toggle('hidden',guest);
+ $('ccGuestFields').classList.toggle('hidden',!guest);
+ $('loginMessage').textContent='';
+};
+$('ccLoginStaff').onclick=()=>ccLoginMode('staff');
+$('ccLoginGuest').onclick=()=>ccLoginMode('guest');
 
 // Accessible in-page sheet. No native Safari prompt/confirm dialogs.
 let xwDialogActive=false;
@@ -518,6 +842,7 @@ function xwAsk({title='确认 / Confirmar',description='',value=null,ok='确定 
   input.classList.toggle('hidden',!hasInput||readOnly);
   if(hasInput){input.value=String(value);input.placeholder=placeholder;input.readOnly=readOnly;
    if(readOnly)copy.value=String(value);}
+  root.dataset.kind=hasInput?'sheet':'confirm';
   root.classList.remove('hidden');document.body.classList.add('xw-dialog-open');
   function finish(v){
    root.classList.add('hidden');document.body.classList.remove('xw-dialog-open');
@@ -550,6 +875,14 @@ async function xwCopyFallback(title,value){
 }
 
 let mode='sample', reader=null, running=false, busy=false, current=null, saved=false, lastQrCode='';
+let ccResultView=null;
+function ccReturnToScan(){
+ ccResultView=null;
+ document.body.classList.remove('cc-sample-detail','cc-stock-detail');
+ $('result').classList.add('hidden');$('fullResult').classList.add('hidden');
+ $('scanPanel').classList.remove('hidden');
+ $('scanPanel').scrollIntoView({behavior:'smooth',block:'start'});
+}
 let sampleStates=new Map(),samplePositiveOnly=true,sampleSortField='code',sampleDescending=false,sampleDirty=false,savedScope=new Set(),sharedProductCode='',notaInput='',lastWorkMode='sample';
 let fullKind='product',fullTab='stock',fullData=null,fullDataKind='product',fullSort='',fullDesc=false,fullCode='',fullSession='';
 try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
@@ -602,6 +935,10 @@ function showFreshnessWarning(){
   ?('⚠ 庫存未更新 · '+stockSyncLabel(data.synced_at_utc)+
     (acknowledged?' · 已選擇繼續使用舊庫存':' · 超過 60 分鐘，可自行選擇繼續'))
   :'⚠ '+(data?'尚無有效庫存，請先更新。':'無法確認庫存同步時間，請檢查連線。');
+ $('ccStockWarn').classList.toggle('hidden',!stale||dismissed);
+ $('ccStockWarnText').textContent=data?.has_synced
+  ?'⚠ '+Math.max(60,Math.round((Date.now()-Date.parse(data.synced_at_utc))/60000))+'′'
+  :'⚠ 库存同步状态未知';
 }
 function setFreshness(data){
  if(!data?.has_synced||data.synced_at_utc!==staleAcceptedVersion&&staleAcceptedVersion){
@@ -692,6 +1029,7 @@ function setMode(m){
  else if(valid($('code').value.trim()))sharedProductCode=normalizeProductCode($('code').value);
  const wasMode=mode;
  mode=m;
+ if(m!==wasMode){ccResultView=null;document.body.classList.remove('cc-sample-detail','cc-stock-detail')}
  if(m==='cart'&&wasMode!=='cart')lastQrCode='';
  const managing=m==='admin';
  if(!managing)lastWorkMode=m;
@@ -723,6 +1061,25 @@ function setMode(m){
  if(fullMatch)renderFullResult(fullData);
  history.replaceState(null,'',location.pathname+(managing?'#admin':''));
 }
+$('ccSampleBack').onclick=()=>ccReturnToScan();
+$('ccStockBack').onclick=()=>ccReturnToScan();
+$('ccStockOptions').onclick=()=>{
+ const opened=document.body.classList.toggle('cc-show-stock-options');
+ $('ccStockOptions').setAttribute('aria-expanded',String(opened));
+};
+$('ccStockWarnDismiss').onclick=()=>{
+ freshnessDismissedKey=freshnessKey(lastFreshness);
+ showFreshnessWarning();
+};
+$('ccStockWarnContinue').onclick=()=>{
+ if(lastFreshness?.has_synced&&!lastFreshness.fresh){
+  staleAcceptedVersion=lastFreshness.synced_at_utc;
+ }
+ freshnessDismissedKey=freshnessKey(lastFreshness);
+ showFreshnessWarning();
+};
+$('ccAdminBack').onclick=()=>setMode(lastWorkMode==='admin'?'sample':lastWorkMode);
+$('ccCartCameraClose').onclick=()=>window.cartCloseCamera?.();
 $('modeSample').onclick=()=>setMode('sample');
 $('modeFull').onclick=()=>setMode('full');
 $('adminLink').onclick=()=>setMode(mode==='admin'?lastWorkMode:'admin');
@@ -857,6 +1214,24 @@ function fullTable(rows,columns){
  }
  table.append(tbody);outer.append(table);return outer;
 }
+function ccFullStockRows(rows){
+ const list=document.createElement('div');list.className='cc-stock-list';
+ for(const item of rows){
+  const row=document.createElement('div');row.className='cc-stock-row';
+  const sku=document.createElement('strong');sku.textContent=item.code||'—';
+  const qty=document.createElement('strong');qty.className='cc-stock-count';
+  const n=Number(item.pieces);
+  const low=Number.isFinite(n)&&n<=2;
+  qty.classList.toggle('low',low);
+  if(low&&n>0){
+   qty.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 9 17H3L12 3zM12 9v5M12 17v.5"/></svg>';
+  }
+  const number=document.createElement('span');number.textContent=item.pieces==null?'—':fmt(item.pieces);
+  qty.append(number);row.append(sku,qty);list.append(row);
+ }
+ if(!rows.length){const p=document.createElement('p');p.className='muted';p.textContent='没有符合的商品 / Sin resultados';list.append(p)}
+ return list;
+}
 function fullRenderProduct(data){
  const stock=Array.isArray(data.rows)?data.rows:[];
  const visibleStock=fullPositiveOnly?stock.filter(row=>hasPositivePieces(row.pieces)):stock;
@@ -871,6 +1246,7 @@ function fullRenderProduct(data){
  if(fullTab==='history')cards.push(['近365天',data.history_recent_count],['最近交易',data.history_last_date]);
  fullAddCards(cards);
  let rows=all.filter(row=>Object.values(row).some(value=>String(value??'').toLowerCase().includes($('fullFilter').value.trim().toLowerCase())));
+ if(fullTab==='stock')rows=rows.slice().sort((a,b)=>compareSkus(a.code,b.code));
  if(fullSort)rows=rows.slice().sort((x,y)=>{
   const a=x[fullSort],b=y[fullSort],num=(typeof a==='number'&&typeof b==='number');
   const diff=num?a-b:String(a??'').localeCompare(String(b??''),undefined,{numeric:true});
@@ -878,7 +1254,7 @@ function fullRenderProduct(data){
  });
  $('fullCount').textContent=rows.length+' / '+(fullTab==='stock'?stock.length:all.length)+' 筆';
  const cols=fullTab==='history'&&data.price_allowed?[...fullFields.history,['price','成交單價']]:fullFields[fullTab];
- $('fullDetails').replaceChildren(fullTable(rows,cols));
+ $('fullDetails').replaceChildren(fullTab==='stock'?ccFullStockRows(rows):fullTable(rows,cols));
  $('fullHistoryMore').classList.toggle('hidden',fullTab!=='history'||!Number.isInteger(data.history_next_cursor)||data.history_next_cursor >= Number(data.history_retrievable_count??data.history_total_count??0));
  $('fullNote').textContent=fullTab==='history'?'本頁為公司唯讀查詢，不提供成交單價。':''; 
 }
@@ -923,7 +1299,13 @@ function fullRenderNota(data){
 function renderFullResult(data){
  if(!data)return;
  $('fullResult').classList.remove('hidden');
- $('fullTitle').textContent=(fullKind==='nota'?'Nota / 客戶查詢：':'商品查詢：')+fullCode;
+ ccResultView='stock';
+ document.body.classList.add('cc-stock-detail');
+ document.body.classList.remove('cc-sample-detail');
+ $('fullResult').dataset.fullTab=fullTab;
+ if(fullKind==='product'&&fullTab==='stock'&&!lastFreshness&&!checkingFreshness)void checkFreshness();
+ showFreshnessWarning();
+ $('fullTitle').textContent=fullKind==='nota'?'Nota / 客户：'+fullCode:fullCode;
  $('fullTabs').classList.toggle('hidden',fullKind==='nota');
  $('fullFilterRow').classList.toggle('hidden',fullKind==='nota');
  $('fullStockVisibility').classList.toggle('hidden',fullKind==='nota'||fullTab!=='stock');
@@ -1022,6 +1404,19 @@ function updateMissing(){
  header.indeterminate=yes>0&&yes<visible.length;
  const no=visible.length-yes;
  $('missingCount').textContent=saved?('✓ '+fmt(savedScope.size)):('☑ '+fmt(yes)+'   ☐ '+fmt(no));
+ const stats=$('totals');
+ for(const [className,label,val] of [
+  ['cc-stat-yes','有样 / Con',yes],
+  ['cc-stat-no','无样 / Sin',no]]){
+  let card=stats.querySelector('.'+className);
+  if(!card){
+   card=document.createElement('div');card.className='sample-stat '+className;
+   const head=document.createElement('span');head.className='sample-stat-label';head.textContent=label;
+   const num=document.createElement('strong');num.className='sample-stat-value';
+   card.append(head,num);stats.append(card);
+  }
+  card.querySelector('.sample-stat-value').textContent=fmt(val);
+ }
  $('saveScopeCount').textContent=saved?'✓':fmt(visible.length);
  $('saveBtn').disabled=saved||visible.length===0;
 }
@@ -1065,8 +1460,11 @@ function showResult(d){
   sampleStates.set(row.code,prior?prior.missing===false:true);
  }
  $('result').classList.remove('hidden');
+ ccResultView='sample';
+ document.body.classList.add('cc-sample-detail');
+ document.body.classList.remove('cc-stock-detail');
  $('saveBtn').classList.toggle('hidden',!d.db_connected);
- $('saveBtnText').textContent='SAVE';$('saveScopeCount').textContent='0';$('saveBtn').classList.remove('secondary');
+ $('saveBtnText').textContent='保存 / Guardar';$('saveScopeCount').textContent='0';$('saveBtn').classList.remove('secondary');
  $('dbNotice').classList.toggle('hidden',Boolean(d.db_connected));
  $('dbNotice').textContent=d.db_connected?'':'TiDB 不可用，暫時不能保存。';
  $('series').textContent=d.product_code;renderLastChecked();
@@ -1129,7 +1527,7 @@ $('codeClearBtn').onclick=()=>{
 $('queryBtn').onclick=()=>lookup($('code').value);
 $('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
 function onScan(raw){
- if(busy||mode==='admin')return;
+ if(busy||mode==='admin'||(ccResultView&&mode!=='cart'))return;
  const code=normalizeProductCode(raw);
  if(!valid(code)){msg('QR 不是商品編號，請掃描純編號 QR','error');return}
  if(mode==='cart'){
@@ -1193,7 +1591,7 @@ $('saveBtn').onclick=async()=>{
   for(const sku of present)current.previous_status[sku]={missing:false};
   for(const sku of missing)current.previous_status[sku]={missing:true};
   renderRows();msg('已保存 '+out.sku_count+' 個確認：有樣 '+present.length+'，無樣 '+missing.length+'。','good');
-  $('saveBtnText').textContent='SAVED';$('saveScopeCount').textContent='✓';b.classList.add('secondary');
+  $('saveBtnText').textContent='已保存 / Guardado';$('saveScopeCount').textContent='✓';b.classList.add('secondary');
  }catch(e){b.disabled=false;msg(e.message,'error');if(e.status===409)void checkFreshness()}
 };
 const scannerShareURL=location.origin+'/s';

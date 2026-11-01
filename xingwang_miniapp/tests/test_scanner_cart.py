@@ -201,17 +201,17 @@ def test_cart_mobile_pick_review_ux_is_compact_and_role_safe():
     assert 'id="cartSwitchView"' in ui
     assert 'id="cartDock"' in ui
     assert 'id="cartPickView"' in ui
-    assert 'id="cartItemView" class="hidden"' in ui
+    assert 'id="cartItemView" class="cc-cart-summary-sheet hidden"' in ui
     assert 'id="cartSkuFilter"' in ui
     assert 'id="cartShareRow"' in ui  # employee code still available
     assert 'cart-scanner-parked' in ui  # do not close camera on review
     assert 'if(window.cartIsReviewing?.())return;' in ui
-    assert "window.cartIsReviewing=()=>cartView==='cart'" in js
-    assert "value.type='number'" in js
+    assert "window.cartIsReviewing=()=>!cartCameraOpen" in js
+    assert "value.type='text'" in js
     assert "value.inputMode='numeric'" in js
-    assert "cartChange(sku,n)" in js
+    assert "cartChange(sku,number)" in js
     assert "cartView='pick'" in js
-    assert "cartView=d.cart.items?.length?'cart':'pick'" in js
+    assert "cartSummaryOpen=false" in js
     assert "'cartDetailsBtn').onclick" in js
     assert "'cartSwitchView').onclick" in js
     assert "window.cartLookup=cartLookup" in js
@@ -240,7 +240,7 @@ def test_cc_ui_redesign_keeps_real_apis_and_camera():
     assert "if(!running)" in js
     assert "compareSkus(a.code,b.code)" in js
     assert "compareSkus(a.sku,b.sku)" in js
-    assert "selectedSkus" in js
+    assert "const selected=all.filter(v=>cartItemQty(v.code)>0)" in js
     assert "cartPending=new Map()" in js
     assert "post('/scanner/api/cart/confirm'" in js
     assert 'id="modeSample"' in html
@@ -254,3 +254,31 @@ def test_cc_ui_no_duplicate_dom_ids():
     html=(ROOT/"scanner.html").read_text("utf-8")
     ids=re.findall(r'\bid="([^"]+)"',html)
     assert len(ids)==len(set(ids)), sorted({i for i in ids if ids.count(i)>1})
+
+
+def test_cc_zip_11_page_workflows_and_staff_guest_separation():
+    html=(ROOT/"scanner.html").read_text(encoding="utf-8")
+    js=(ROOT/"scanner_cart.js").read_text(encoding="utf-8")
+    for id_ in (
+        "ccLoginStaff", "ccLoginGuest", "ccStaffFields", "ccGuestFields",
+        "ccCartTotalInfo", "ccSummaryShade", "ccSummaryClose",
+        "ccCartCameraClose", "ccSampleBack", "ccStockBack", "ccAdminBack",
+        "ccStockOptions", "ccStockWarnDismiss", "ccStockWarnContinue",
+        "cartNewName", "cartCreateBtn", "cartRecent", "cartSavedAt",
+        "sampleHeaderCheck", "samplePositiveBtn", "saveBtn", "fullPositiveBtn"
+    ):
+        assert f'id="{id_}"' in html
+    assert "const ccLoginMode=which=>" in html
+    assert "window.cartCloseCamera=cartCloseCamera;" in js
+    assert "cartCameraOpen=true" in js
+    assert "cartSummaryOpen=true" in js
+    assert "cartEffectiveItems()" in js
+    assert "ccFullStockRows(rows)" in html
+    assert "ccResultView='sample'" in html
+    assert "ccResultView='stock'" in html
+    assert "if(mode==='cart')" in html
+    assert "if(role==='guest')" in js
+    assert "current=null;fullData=null" in js
+    assert "const selected=all.filter(v=>cartItemQty(v.code)>0)" in js
+    assert "cart_id:cartData.id,revision,items" in js
+    assert "CART_SAVE_DELAY=1200" in js
