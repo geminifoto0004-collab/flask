@@ -447,6 +447,9 @@ async def sample_from_tidb(request: Request):
     code = body.get("code") if isinstance(body, dict) else None
     if not isinstance(code, str) or not CODE.fullmatch(code.strip()):
         raise HTTPException(400, "商品編號格式不正確")
+    if "allow_stale" in body and type(body["allow_stale"]) is not bool:
+        raise HTTPException(400, "Invalid stale snapshot choice")
+    allow_stale = body.get("allow_stale") is True
     code = code.strip().upper()
     async with LOCK:
         now = time.monotonic()
@@ -455,7 +458,7 @@ async def sample_from_tidb(request: Request):
             raise HTTPException(429, "查詢太頻繁，請稍後再試")
         REQUEST_TIMES.append(now)
     try:
-        data = await asyncio.to_thread(scanner_tidb.read_sample_from_snapshot, code)
+        data = await asyncio.to_thread(scanner_tidb.read_sample_from_snapshot, code, allow_stale)
     except ValueError as exc:
         if str(exc) == "TOO_MANY_SAMPLE_SKUS":
             raise HTTPException(422, "這個系列超過 500 個編號，請輸入更完整的商品編號")
@@ -464,8 +467,14 @@ async def sample_from_tidb(request: Request):
         logging.getLogger("uvicorn.error").exception("SAMPLE_SNAPSHOT_READ_FAILED")
         raise HTTPException(503, "TiDB 庫存查詢失敗，請稍後再試")
     fresh = data["freshness"]
+    if not fresh["has_synced"]:
+        raise HTTPException(409, "尚無有效庫存快照，請先更新庫存")
+    if not fresh["fresh"] and not allow_stale:
+        raise HTTPException(409, "庫存超過 60 分鐘，請選擇繼續使用舊庫存或先更新")
     if not fresh["fresh"]:
-        raise HTTPException(409, "庫存最後成功同步已超過 1 小時（或尚未同步），請先前往管理頁更新")
+        logging.getLogger("uvicorn.error").info(
+            "SAMPLE_STALE_SNAPSHOT_ACK series=%r snapshot=%s",
+            code, fresh["synced_at_utc"])
     variants = data["variants"]
     if not variants:
         raise HTTPException(404, "TiDB 庫存快照找不到這個商品編號")
@@ -554,6 +563,9 @@ def attach_stock_lookup(stock_lookup):
         scan_id = data.get("scan_id")
         missed = data.get("missing")
         present = data.get("present")
+        if "allow_stale" in data and type(data["allow_stale"]) is not bool:
+            raise HTTPException(400, "Invalid stale snapshot choice")
+        allow_stale = data.get("allow_stale") is True
         # Explicitly confirmed states only: never write hidden, unchecked or
         # unreviewed SKUs. An empty or overlapping selection is invalid.
         if (not isinstance(scan_id,str) or
@@ -576,9 +588,13 @@ def attach_stock_lookup(stock_lookup):
             raise HTTPException(403, "Invalid scan authorization")
         try:
             fresh = await asyncio.to_thread(scanner_tidb.stock_freshness)
-            if not fresh["fresh"] or fresh["synced_at_utc"] != snapshot_version:
+            if not fresh["has_synced"] or fresh["synced_at_utc"] != snapshot_version:
                 raise HTTPException(
-                    409, "庫存已超過 1 小時或已重新同步；請更新庫存並重新查詢布樣"
+                    409, "庫存快照已重新同步或無效；請重新查詢布樣"
+                )
+            if not fresh["fresh"] and not allow_stale:
+                raise HTTPException(
+                    409, "庫存已超過 60 分鐘；請選擇繼續使用舊庫存後再儲存"
                 )
             result=await asyncio.to_thread(
                 scanner_tidb.save_scan, scan_id, series,

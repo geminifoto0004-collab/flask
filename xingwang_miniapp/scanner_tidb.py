@@ -245,7 +245,7 @@ def read_fast_stock(code):
         conn.close()
 
 
-def read_sample_from_snapshot(code):
+def read_sample_from_snapshot(code, allow_stale=False):
     """Read a single product family from the last verified TiDB snapshot.
 
     Preserve zero, negative and NULL quantities.  Return no partial family:
@@ -258,7 +258,7 @@ def read_sample_from_snapshot(code):
     try:
         _ensure(conn)
         freshness = _freshness_on_connection(conn)
-        if not freshness["fresh"]:
+        if not freshness["has_synced"] or (not freshness["fresh"] and not allow_stale):
             return {"freshness": freshness, "variants": []}
         # ESCAPE ! is explicit: an underscore in an SKU is a literal
         # underscore, never an accidental SQL LIKE wildcard.

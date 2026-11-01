@@ -38,6 +38,10 @@ button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
 #freshnessPanel.fresh{background:#f1f9f4;border-color:#b5ddc0;color:#17673b}
 .freshnessAdmin{display:inline-flex;padding:10px 11px;border-radius:10px;background:#fff;color:#145ba4;border:1px solid #cbd7e4;text-decoration:none;font-size:12px;font-weight:700}
 #freshnessCheckBtn{font-size:12px;padding:10px 12px}
+#freshnessContinueBtn{font-size:12px;padding:10px 11px}
+#freshnessPanel.acknowledged{padding:9px 11px;background:#fff9ec;border-color:#efd9a5}
+#freshnessPanel.acknowledged .freshness-head{font-size:11px}
+#freshnessPanel.acknowledged #freshnessContinueBtn{display:none}
 .freshness-head{display:flex;align-items:flex-start;gap:10px;justify-content:space-between}
 #freshnessText{flex:1;min-width:0}
 #freshnessDismissBtn{flex:0 0 30px;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;background:transparent;color:inherit;opacity:.8;font-size:24px;font-weight:400;line-height:1;border-radius:8px;padding:0;margin:-6px -6px 0 0}
@@ -180,10 +184,11 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div id="workModes" class="modes"><button id="modeSample" class="active" type="button" title="布樣盤點 / Muestras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M4 12h16"/></svg><span>SAMPLE</span></button><button id="modeFull" type="button" title="完整查詢 / Consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg><span>DATA</span></button></div>
 <div id="fullKindControls" class="full-kind hidden"><button id="fullProduct" class="active" type="button">商品查詢</button><button id="fullNota" type="button">Nota 查詢</button></div>
 <div id="freshnessPanel" class="notice hidden" role="status" aria-live="polite">
-<div class="freshness-head"><span id="freshnessText">庫存快照已超過 60 分鐘，請先更新。</span><button type="button" id="freshnessDismissBtn" class="freshness-close" aria-label="關閉庫存更新提醒" title="關閉提醒">×</button></div>
+<div class="freshness-head"><span id="freshnessText">庫存已超過 60 分鐘，請確認是否使用舊資料。</span></div>
 <div class="row" style="margin-top:8px;flex-wrap:wrap">
-<button type="button" id="freshnessAdminBtn" class="freshnessAdmin">前往更新庫存</button>
-<button type="button" id="freshnessCheckBtn" class="secondary">重新檢查</button>
+<button type="button" id="freshnessContinueBtn" class="secondary hidden">繼續使用舊庫存</button>
+<button type="button" id="freshnessAdminBtn" class="freshnessAdmin">更新庫存</button>
+<button type="button" id="freshnessCheckBtn" class="secondary" aria-label="重新檢查同步時間" title="重新檢查同步時間">↻</button>
 </div></div>
 
 <div id="reader"></div>
@@ -286,27 +291,42 @@ for(const [id,field] of [['sampleSkuSort','code'],['sampleRollsSort','stock_roll
 
 
 let lastFreshness=null, checkingFreshness=null;
-let freshnessDismissed=false;
+// Per-page explicit choice. Never turn a stale snapshot into "fresh", and
+// never reuse the choice after a different stock snapshot is published.
+let staleAcceptedVersion=null;
+function staleAccepted(data=lastFreshness){
+ return !!(data?.has_synced&&!data.fresh&&data.synced_at_utc&&
+   staleAcceptedVersion===data.synced_at_utc);
+}
+function stockSyncLabel(iso){
+ if(!iso)return '—';
+ const d=new Date(iso);
+ return Number.isFinite(d.getTime())?d.toLocaleString('zh-TW',{
+  timeZone:'America/Santiago',hour12:false,month:'2-digit',day:'2-digit',
+  hour:'2-digit',minute:'2-digit'
+ }):'—';
+}
 function showFreshnessWarning(){
- const stale=lastFreshness?.fresh!==true;
- $('freshnessPanel').classList.toggle(
-  'hidden',mode!=='sample'||!stale||freshnessDismissed
- );
+ const data=lastFreshness;
+ const stale=data?.fresh!==true;
+ const acknowledged=staleAccepted(data);
+ const panel=$('freshnessPanel');
+ panel.classList.toggle('hidden',mode!=='sample'||!stale);
+ panel.classList.toggle('acknowledged',acknowledged);
+ $('freshnessContinueBtn').classList.toggle('hidden',!data?.has_synced||acknowledged);
+ $('freshnessContinueBtn').disabled=!data?.has_synced||acknowledged;
+ $('freshnessText').textContent=data?.has_synced
+  ?('⚠ 庫存未更新 · '+stockSyncLabel(data.synced_at_utc)+
+    (acknowledged?' · 已選擇繼續使用舊庫存':' · 超過 60 分鐘，可自行選擇繼續'))
+  :'⚠ '+(data?'尚無有效庫存，請先更新。':'無法確認庫存同步時間，請檢查連線。');
 }
 function setFreshness(data){
- lastFreshness=data;
- const panel=$('freshnessPanel'),label=$('freshnessText');
- panel.classList.remove('fresh','stale');
- if(data?.fresh){
-  // Normal use: never show a green banner. Reset X dismissal so a
-  // later expired snapshot can generate a new reminder.
-  freshnessDismissed=false;
- }else{
-  panel.classList.add('stale');
-  label.textContent=data?.has_synced
-    ?'上次成功同步已超過 60 分鐘，建議先前往管理分頁更新庫存，再進行布樣盤點。'
-    :'尚無有效的庫存同步紀錄，請先前往管理分頁同步庫存。';
+ if(!data?.has_synced||data.synced_at_utc!==staleAcceptedVersion&&staleAcceptedVersion){
+  staleAcceptedVersion=null;
  }
+ lastFreshness=data;
+ const panel=$('freshnessPanel');
+ panel.classList.toggle('stale',!data?.fresh);
  showFreshnessWarning();
 }
 async function checkFreshness(){
@@ -320,17 +340,18 @@ async function checkFreshness(){
    return data;
   }catch(e){
    setFreshness(null);
-   $('freshnessText').textContent='無法確認 TiDB 同步時間：'+e.message+'。請檢查資料庫後再盤點。';
-   showFreshnessWarning();
+   $('freshnessText').textContent='⚠ 無法確認 TiDB 同步時間：'+e.message;
    return null;
   }finally{checkingFreshness=null}
  })();
  return checkingFreshness;
 }
 $('freshnessCheckBtn').onclick=checkFreshness;
-$('freshnessDismissBtn').onclick=()=>{
- freshnessDismissed=true;
+$('freshnessContinueBtn').onclick=()=>{
+ if(!lastFreshness?.has_synced||lastFreshness.fresh)return;
+ staleAcceptedVersion=lastFreshness.synced_at_utc;
  showFreshnessWarning();
+ msg('使用上次同步的庫存資料（'+stockSyncLabel(staleAcceptedVersion)+'）；實際數量可能已變動。','good');
 };
 window.addEventListener('focus',()=>{if(mode==='sample' && !$('app').classList.contains('hidden'))void checkFreshness()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden && mode==='sample' && !$('app').classList.contains('hidden'))void checkFreshness()});
@@ -776,9 +797,11 @@ async function lookup(input){
     sharedProductCode=code;renderRows();$('result').classList.remove('hidden');msg('原本的盤點選擇仍保留','good');
    }else{
     const fresh=await checkFreshness();
-    if(!fresh?.fresh)throw Object.assign(new Error('庫存快照已超過 60 分鐘，請先在管理分頁更新'),{status:409});
+    if(!fresh?.has_synced)throw Object.assign(new Error('尚無有效庫存快照，請先更新庫存'),{status:409});
+    if(!fresh.fresh&&!staleAccepted(fresh))
+     throw Object.assign(new Error('⚠ 庫存超過 60 分鐘；請先按「繼續使用舊庫存」，或更新庫存'),{status:409});
     msg('正在查詢布樣：'+code);
-    const d=await post('/scanner/api/sample',{code});
+    const d=await post('/scanner/api/sample',{code,allow_stale:staleAccepted(fresh)});
     sharedProductCode=code;showResult(d);msg('');
    }
   }
@@ -864,7 +887,7 @@ $('saveBtn').onclick=async()=>{
  const present=visible.filter(row=>sampleStates.get(row.code)===true).map(row=>row.code);
  const missing=visible.filter(row=>sampleStates.get(row.code)!==true).map(row=>row.code);
  try{
-  const out=await post('/scanner/api/save',{scan_id:current.scan_id,present,missing});
+  const out=await post('/scanner/api/save',{scan_id:current.scan_id,present,missing,allow_stale:staleAccepted()});
   saved=true;sampleDirty=false;savedScope=new Set(visible.map(row=>row.code));
   current.last_checked_at=out.checked_at?out.checked_at+'Z':new Date().toISOString();
   current.last_checked_count=out.sku_count;
