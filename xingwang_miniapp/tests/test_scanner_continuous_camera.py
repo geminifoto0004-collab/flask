@@ -8,9 +8,11 @@ def test_scanning_does_not_hide_camera_when_sample_result_arrives():
     ui=(ROOT/"scanner.html").read_text(encoding="utf-8")
     assert "body.cc-sample-detail #scanPanel,body.cc-stock-detail #scanPanel{display:block!important}" in ui
     assert "body.cc-sample-detail header,body.cc-stock-detail header{display:flex!important}" in ui
-    assert "if(busy||mode==='admin')return;" in ui
+    assert "if(mode==='admin')return;" in ui
+    assert "scanQueuedCode=code;" in ui
     assert "ccResultView&&mode!=='cart'" not in ui
-    assert "reader.start({facingMode:'environment'}" in ui
+    assert "await reader.start(" in ui
+    assert "{facingMode:'environment'}" in ui
     assert "function showResult(d){" in ui
     assert "function renderRows(){" in ui
     # Only explicit camera controls and logout may stop the actual stream.

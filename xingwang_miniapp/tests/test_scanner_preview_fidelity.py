@@ -44,7 +44,8 @@ def test_preview_scan_order_camera_stays_same_screen():
     assert section.index('id="code"') < section.index('id="reader"')
     assert "body.cc-sample-detail #scanPanel" in h
     assert "display:block!important;visibility:visible!important" in h
-    assert "reader.start({facingMode:'environment'}" in h
+    assert "await reader.start(" in h
+    assert "{facingMode:'environment'}" in h
     assert "function onScan(raw){" in h
     assert "ccResultView&&mode!=='cart'" not in h
     assert "sampleDirty&&!saved" in h

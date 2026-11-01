@@ -19,7 +19,8 @@ def test_camera_start_stop_and_failure_toggle_visibility():
     stop = ui.split("async function stopCamera(){")[1].split("function syncCameraButton(){")[0]
     assert "$('reader').classList.add('camera-active');" in start
     assert start.index("classList.add('camera-active')") < start.index("reader.start(")
-    assert "await reader.start({facingMode:'environment'}" in start
+    assert "await reader.start(" in start
+    assert "{facingMode:'environment'}" in start
     assert "$('reader').classList.remove('camera-active');" in start  # startup failure
     assert "$('reader').classList.remove('camera-active');" in stop  # camera off
     assert "$('cameraToggle').onclick=async()=>{if(running)await stopCamera();else await startCamera()};" in ui

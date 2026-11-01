@@ -921,6 +921,62 @@ body.cc-stock-detail #scanPanel #reader:not(.camera-active),
 }
 #scanPanel #reader:not(.camera-active):before,
 #scanPanel #reader:not(.camera-active):after{content:none!important;display:none!important}
+
+/* LIVE QR camera: one constant full-size 320px preview on Scan, Sample,
+   and Stock. Don't force a 145px camera or crop the video after result load.
+   A dynamic scan box fits inside the available decoded-video dimensions. */
+#scanPanel #reader.camera-active,
+body.cc-sample-detail #scanPanel #reader.camera-active,
+body.cc-stock-detail #scanPanel #reader.camera-active{
+ box-sizing:border-box!important;
+ height:320px!important;min-height:320px!important;max-height:320px!important;
+ width:calc(100% - 28px)!important;max-width:720px!important;
+ margin:0 auto 12px!important;overflow:hidden!important;
+}
+#scanPanel #reader.camera-active video,
+body.cc-sample-detail #scanPanel #reader.camera-active video,
+body.cc-stock-detail #scanPanel #reader.camera-active video{
+ max-height:320px!important;object-fit:contain!important;
+}
+#scanPanel #reader:not(.camera-active){
+ display:none!important;height:0!important;min-height:0!important;
+ margin:0!important;padding:0!important;border:0!important;
+}
+
+/* Preview comparison fixes: Sample labels, SAVE layout, Stock action,
+   Web.html 280 / main / 340 desktop grid. */
+#result .cc-save-label{display:flex;flex-direction:column;align-items:flex-start;
+ line-height:1.15;font-size:17px;font-weight:800}
+#result .cc-save-label small{font-size:11px;color:#fff;font-weight:600}
+#result #saveBtn{gap:12px!important}
+#result .sample-stats .sample-stat-label{font-size:12px!important}
+#ccStockWarnRefresh{width:40px;min-width:40px;height:40px;min-height:40px;
+ padding:0;display:flex;align-items:center;justify-content:center;
+ border:0;border-radius:11px;background:#6A1B36;color:#fff}
+#ccStockWarnRefresh:hover{background:#4E1127}
+@media(min-width:950px){
+ #cartWorkspace.cart-has-active[data-cart-role="staff"]{
+  grid-template-columns:280px minmax(380px,1fr) 340px!important;
+ }
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartDock{
+  left:280px!important;right:340px!important;
+ }
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartStaffList{
+  padding:20px 16px!important;
+ }
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartMeta{
+  padding:24px 20px!important;
+ }
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] .cart-line{
+  height:60px!important;min-height:60px!important;
+ }
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] .cart-qty-controls button{
+  width:40px!important;min-width:40px!important;height:40px!important;
+ }
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] .cart-qty-controls input.cart-qty{
+  height:40px!important;
+ }
+}
 </style>
 </head>
 <body><main>
@@ -1026,6 +1082,7 @@ body.cc-stock-detail #scanPanel #reader:not(.camera-active),
 <div id="ccStockWarn" class="hidden">
  <span id="ccStockWarnText">⚠ 库存未更新</span>
  <button id="ccStockWarnContinue" type="button">继续 / Seguir</button>
+ <button id="ccStockWarnRefresh" type="button" aria-label="更新库存 / Actualizar" title="更新库存 / Actualizar"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2 6M20 5v6h-6"/></svg></button>
  <button id="ccStockWarnDismiss" type="button" aria-label="关闭提醒 / Cerrar">×</button>
 </div>
 <div id="fullStats" class="stock-stat-grid"></div>
@@ -1053,7 +1110,7 @@ body.cc-stock-detail #scanPanel #reader:not(.camera-active),
 <div id="sampleControls">
 <div id="dbNotice" class="notice">尚未確認 TiDB 連線；不會寫入盤點資料。</div>
 <p id="missingCount" class="muted"></p>
-<div class="row"><button id="saveBtn" type="button" class="fill hidden save-action" title="僅儲存目前顯示的商品 / Solo visibles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h14l3 3v15H3V3h1Z"/><path d="M7 3v7h10V3M7 21v-7h10v7"/></svg><span id="saveBtnText">SAVE</span><span id="saveScopeCount">0</span></button></div>
+<div class="row"><button id="saveBtn" type="button" class="fill hidden save-action" title="僅儲存目前顯示的商品 / Solo visibles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h14l3 3v15H3V3h1Z"/><path d="M7 3v7h10V3M7 21v-7h10v7"/></svg><span class="cc-save-label"><span><span id="saveBtnText">保存</span> · <span id="saveScopeCount">0</span></span><small>Guardar visibles</small></span></button></div>
 </div>
 </section>
 <section id="adminTab" class="hidden" aria-label="管理分頁"><div class="cc-admin-header"><button id="ccAdminBack" class="cc-detail-back" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3"/><circle cx="16" cy="17" r="2.3"/></svg></div><div id="adminApp">
@@ -1160,6 +1217,8 @@ async function xwCopyFallback(title,value){
 
 let mode='sample', reader=null, running=false, busy=false, current=null, saved=false, lastQrCode='';
 let ccResultView=null,scanBlockedCode='',scanBlockedAt=0;
+let scanQueuedCode='',scanQueuedAt=0,scanInvalidWarningAt=0;
+let scanRetryCode='',scanRetryAt=0;
 function ccReturnToScan(){
  ccResultView=null;
  document.body.classList.remove('cc-sample-detail','cc-stock-detail');
@@ -1236,6 +1295,7 @@ function setFreshness(data){
  panel.classList.toggle('stale',!data?.fresh);
  showFreshnessWarning();
 }
+let freshnessCheckedAt=0;
 async function checkFreshness(){
  if(checkingFreshness)return checkingFreshness;
  checkingFreshness=(async()=>{
@@ -1244,8 +1304,10 @@ async function checkFreshness(){
    const data=await res.json();
    if(!res.ok)throw new Error(data.detail||'TiDB 同步時間查詢失敗');
    setFreshness(data);
+   freshnessCheckedAt=Date.now();
    return data;
   }catch(e){
+   freshnessCheckedAt=0;
    setFreshness(null);
    $('freshnessText').textContent='⚠ 無法確認 TiDB 同步時間：'+e.message;
    return null;
@@ -1355,6 +1417,7 @@ $('ccStockWarnDismiss').onclick=()=>{
  freshnessDismissedKey=freshnessKey(lastFreshness);
  showFreshnessWarning();
 };
+$('ccStockWarnRefresh').onclick=()=>setMode('admin');
 $('ccStockWarnContinue').onclick=()=>{
  if(lastFreshness?.has_synced&&!lastFreshness.fresh){
   staleAcceptedVersion=lastFreshness.synced_at_utc;
@@ -1639,7 +1702,7 @@ function renderRows(){
   const diff=an?0:Number(av)-Number(bv);
   return diff?diff*dir:compareSkus(a.code,b.code);
  });
- for(const [field,id,label] of [['code','sampleSkuSort','SKU'],['stock_rolls','sampleRollsSort','ROLL'],['stock_meters','sampleMetersSort','M']]){
+ for(const [field,id,label] of [['code','sampleSkuSort','SKU'],['stock_rolls','sampleRollsSort','匹 Roll'],['stock_meters','sampleMetersSort','米 m']]){
   const th=$(id),active=field===sampleSortField;
   th.textContent=label+(active?(sampleDescending?' ▼':' ▲'):'');
   if(active)th.setAttribute('aria-sort',sampleDescending?'descending':'ascending');
@@ -1656,13 +1719,13 @@ function renderRows(){
  $('emptyMsg').textContent=all.length?'沒有正庫存商品，請點 ALL 查看。':'沒有符合商品。';
  $('totals').replaceChildren();
  for(const [label,value] of [
-  ['ROLL',totalsForShownRows(visible,'stock_rolls')],
-  ['M',totalsForShownRows(visible,'stock_meters')]
+  ['匹 Rollos',totalsForShownRows(visible,'stock_rolls')],
+  ['米 Metros',totalsForShownRows(visible,'stock_meters')]
  ]){
   const card=document.createElement('div');card.className='sample-stat';
   const title=document.createElement('span');title.className='sample-stat-label';title.textContent=label;
   const number=document.createElement('strong');number.className='sample-stat-value';
-  number.textContent=value==null?'—':label==='M'?fmtMeters(value):fmt(value);
+  number.textContent=value==null?'—':label.startsWith('米 ')?fmtMeters(value):fmt(value);
   card.append(title,number);$('totals').append(card);
  }
  for(const row of visible){
@@ -1748,7 +1811,7 @@ function showResult(d){
  document.body.classList.add('cc-sample-detail');
  document.body.classList.remove('cc-stock-detail');
  $('saveBtn').classList.toggle('hidden',!d.db_connected);
- $('saveBtnText').textContent='保存 / Guardar';$('saveScopeCount').textContent='0';$('saveBtn').classList.remove('secondary');
+ $('saveBtnText').textContent='保存';$('saveScopeCount').textContent='0';$('saveBtn').classList.remove('secondary');
  $('dbNotice').classList.toggle('hidden',Boolean(d.db_connected));
  $('dbNotice').textContent=d.db_connected?'':'TiDB 不可用，暫時不能保存。';
  $('series').textContent=d.product_code;renderLastChecked();
@@ -1774,7 +1837,10 @@ async function lookup(input){
    if(current?.product_code===code&&!saved&&current.scan_id){
     sharedProductCode=code;renderRows();$('result').classList.remove('hidden');msg('原本的盤點選擇仍保留','good');
    }else{
-    const fresh=await checkFreshness();
+    // Reuse the last verified snapshot briefly instead of making a second
+    // network request for every QR scan. The server still enforces freshness.
+    const fresh=lastFreshness&&freshnessCheckedAt&&Date.now()-freshnessCheckedAt<20000
+      ?lastFreshness:await checkFreshness();
     if(!fresh?.has_synced)throw Object.assign(new Error('尚無有效庫存快照，請先更新庫存'),{status:409});
     if(!fresh.fresh&&!staleAccepted(fresh))
      throw Object.assign(new Error('⚠ 庫存超過 60 分鐘；請先按「繼續使用舊庫存」，或更新庫存'),{status:409});
@@ -1783,8 +1849,26 @@ async function lookup(input){
     sharedProductCode=code;showResult(d);msg('');
    }
   }
- }catch(e){if(mode==='sample'&&e.status===409)void checkFreshness();msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');if(e.status===401)await session()}
- finally{busy=false;$('queryBtn').disabled=false}
+ }catch(e){
+  if(mode==='sample'&&e.status===409)void checkFreshness();
+  // Failed lookup may be retried with the SAME printed QR.
+  if(lastQrCode===code){
+   lastQrCode='';
+   scanRetryCode=code;scanRetryAt=Date.now()+2500;
+  }
+  msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');
+  if(e.status===401)await session();
+ }finally{
+  busy=false;$('queryBtn').disabled=false;
+  const queued=scanQueuedCode,at=scanQueuedAt;
+  scanQueuedCode='';scanQueuedAt=0;
+  if(running&&mode!=='admin'&&mode!=='cart'&&queued&&queued!==code
+     &&Date.now()-at<4000&&queued!==(mode==='sample'?current?.product_code:fullCode)){
+   // A second code scanned while the first API request was pending must
+   // not disappear. Execute after the current request has released busy.
+   queueMicrotask(()=>{if(running&&!busy)onScan(queued)});
+  }
+ }
 }
 function syncSearchClear(){
  $('codeClearBtn').classList.toggle('hidden',!$('code').value);
@@ -1811,9 +1895,22 @@ $('codeClearBtn').onclick=()=>{
 $('queryBtn').onclick=()=>lookup($('code').value);
 $('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
 function onScan(raw){
- if(busy||mode==='admin')return;
+ if(mode==='admin')return;
  const code=normalizeProductCode(raw);
- if(!valid(code)){msg('QR 不是商品編號，請掃描純編號 QR','error');return}
+ if(code===scanRetryCode&&Date.now()<scanRetryAt)return;
+ if(!valid(code)){
+  if(Date.now()-scanInvalidWarningAt>3000){
+   scanInvalidWarningAt=Date.now();
+   msg('QR 不是商品編號，請掃描純編號 QR','error');
+  }
+  return;
+ }
+ if(busy){
+  if(mode!=='cart'&&code!==lastQrCode&&code!==(mode==='sample'?current?.product_code:fullCode)){
+   scanQueuedCode=code;scanQueuedAt=Date.now();
+  }
+  return;
+ }
  if(mode==='cart'){
   if(window.cartIsReviewing?.())return;
   if(code===lastQrCode||cartSearch?.product_code===code)return;
@@ -1845,8 +1942,15 @@ async function startCamera(){
  $('reader').classList.add('camera-active');
  try{
   reader=new Html5Qrcode('reader',{verbose:false});
-  await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});
-  running=true;lastQrCode='';syncCameraButton();msg('相機已開啟，可連續掃描商品編號。');
+  await reader.start(
+   {facingMode:'environment'},
+   {fps:12,qrbox:(width,height)=>{
+    const side=Math.max(64,Math.min(240,Math.floor(Math.min(width,height)*0.78)));
+    return {width:side,height:side};
+   }},
+   onScan,()=>{}
+  );
+  running=true;lastQrCode='';scanQueuedCode='';scanRetryCode='';syncCameraButton();msg('相機已開啟，可連續掃描商品編號。');
  }catch(e){
   if(reader){try{reader.clear()}catch(_){}}
   reader=null;running=false;
@@ -1857,7 +1961,7 @@ async function startCamera(){
 async function stopCamera(){
  if(reader&&running){try{await reader.stop()}catch(_){}}
  if(reader){try{reader.clear()}catch(_){}}
- reader=null;running=false;
+ reader=null;running=false;scanQueuedCode='';scanQueuedAt=0;
  $('reader').classList.remove('camera-active');
  syncCameraButton();
 }
@@ -1893,7 +1997,7 @@ $('saveBtn').onclick=async()=>{
   for(const sku of present)current.previous_status[sku]={missing:false};
   for(const sku of missing)current.previous_status[sku]={missing:true};
   renderRows();msg('已保存 '+out.sku_count+' 個確認：有樣 '+present.length+'，無樣 '+missing.length+'。','good');
-  $('saveBtnText').textContent='已保存 / Guardado';$('saveScopeCount').textContent='✓';b.classList.add('secondary');
+  $('saveBtnText').textContent='已保存';$('saveScopeCount').textContent='✓';b.classList.add('secondary');
  }catch(e){b.disabled=false;msg(e.message,'error');if(e.status===409)void checkFreshness()}
 };
 const scannerShareURL=location.origin+'/s';
