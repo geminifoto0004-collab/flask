@@ -203,6 +203,24 @@ def save_scan(scan_id, series, skus, missing, device_id):
 
 
 
+def stock_breakdown(conn):
+    """One read-only aggregate; all active SKUs, incl. zero/negative/NULL."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT COUNT(*),
+                   COALESCE(SUM(CASE WHEN stock_rolls > 0 THEN 1 ELSE 0 END),0),
+                   COALESCE(SUM(CASE WHEN stock_rolls = 0 THEN 1 ELSE 0 END),0),
+                   COALESCE(SUM(CASE WHEN stock_rolls < 0 THEN 1 ELSE 0 END),0),
+                   COALESCE(SUM(CASE WHEN stock_rolls IS NULL THEN 1 ELSE 0 END),0)
+            FROM xw_stock_snapshot
+            WHERE is_active=1
+        """)
+        total,positive,zero,negative,unknown=cur.fetchone()
+    return {"active":int(total), "positive":int(positive),
+            "zero":int(zero), "negative":int(negative),
+            "null":int(unknown)}
+
+
 def check_and_initialize():
     """Create dedicated DB and tables, preserving all unrelated schemas."""
     conn = _connect(bootstrap=True)
@@ -223,8 +241,10 @@ def check_and_initialize():
             stock_count = cur.fetchone()[0]
             cur.execute("SELECT COUNT(*) FROM xw_sample_status")
             sample_count = cur.fetchone()[0]
+        breakdown = stock_breakdown(conn)
         return {"connected":True, "schema_ready":True,
                 "stock_count":int(stock_count),
+                "stock_breakdown":breakdown,
                 "sample_count":int(sample_count),
                 "tables":[
                     "xw_stock_snapshot","xw_stock_sync_state",

@@ -242,8 +242,10 @@ def _status_blocking():
             row = cur.fetchone()
         if not row:
             return {"success": True, "has_synced": False}
+        breakdown = scanner_tidb.stock_breakdown(conn)
         return {
             "success": True, "has_synced": True,
+            "stock_breakdown":breakdown,
             "synced_at_utc": row[0].isoformat(timespec="seconds") + "Z",
             "sku_count": row[1], "inserted": row[2], "updated": row[3],
             "deactivated": row[4],

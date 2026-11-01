@@ -177,6 +177,14 @@ async function inventoryRefresh(){
    previous='最後成功：'+dt+'（智利時間）｜'+last.sku_count+' 筆｜新增 '+last.inserted+
              '｜更新 '+last.updated+'｜停用 '+last.deactivated;
   }
+  const breakdown=last.stock_breakdown;
+  if(last.has_synced && breakdown && Number.isFinite(breakdown.active)){
+    previous+='\n實際庫存分類（依 SUM(STOCK)）：正數 '+breakdown.positive+
+      '｜零庫存 '+breakdown.zero+
+      '｜負庫存 '+breakdown.negative+
+      '｜NULL '+breakdown.null+
+      '｜有效總筆數 '+breakdown.active;
+  }
   $('inventoryStatusText').textContent=(state?state+'\n':'')+previous;
   if(j.state==='reading'||j.state==='writing')setTimeout(inventoryRefresh,3000);
   else inventoryPolling=false;

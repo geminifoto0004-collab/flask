@@ -36,6 +36,12 @@ async def _scanner_tidb_bootstrap():
             "SCANNER_TIDB_READY database=xingwang_stock tables=%d stock=%d samples=%d",
             len(result["tables"]), result["stock_count"], result["sample_count"],
         )
+        counts = result["stock_breakdown"]
+        logger.info(
+            "STOCK_AUDIT active=%d positive=%d zero=%d negative=%d null=%d",
+            counts["active"], counts["positive"], counts["zero"],
+            counts["negative"], counts["null"],
+        )
     except Exception as exc:
         # Avoid logging secret URL or connection credentials.
         errno = (getattr(exc, "args", ()) or (None,))[0]
