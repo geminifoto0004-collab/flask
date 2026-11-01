@@ -378,8 +378,9 @@ function cartRenderList(){
   title.textContent=(item.customer_name||'').trim()||item.short_code.replace(/^C-[0-9]{6}-/,'');
   title.title=(item.customer_name||'').trim()||item.short_code;
   const code=document.createElement('span');code.className='cart-history-code';
-  code.textContent=(item.customer_name?'#':'')+item.short_code.replace(/^C-[0-9]{6}-/,'')+
-      (item.confirmed_version?' · V'+item.confirmed_version:'');
+  code.textContent=item.customer_name
+   ? '#'+item.short_code.replace(/^C-[0-9]{6}-/,'')+(item.confirmed_version?' · V'+item.confirmed_version:'')
+   : (item.confirmed_version?'V'+item.confirmed_version:'—');
   const date=document.createElement('small');date.className='cart-history-date';
   date.textContent=cartLocalTime(item.confirmed_at||item.guest_opened_at||item.updated_at);
   btn.append(title,code,date);
