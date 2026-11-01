@@ -3,6 +3,15 @@
 // only; staff-only DOM is also removed from the guest presentation.
 let cartRole='none', cartData=null, cartSearch=null, cartGuestCode='',cartBusy=false;
 let cartAll=false,cartRecent=[],cartLookupPending=false;
+const CART_SAVE_DELAY=1200;
+let cartPending=new Map(),cartSending=new Map(),cartSaveTimer=null,cartSaveJob=null,cartSaveError=false;
+function cartClearTimer(){if(cartSaveTimer){clearTimeout(cartSaveTimer);cartSaveTimer=null;}}
+function cartEffectiveItems(){
+ const items=new Map((cartData?.items||[]).map(i=>[i.sku,i.qty]));
+ for(const [sku,qty] of cartSending){if(qty>0)items.set(sku,qty);else items.delete(sku);}
+ for(const [sku,qty] of cartPending){if(qty>0)items.set(sku,qty);else items.delete(sku);}
+ return Array.from(items,([sku,qty])=>({sku,qty})).sort((a,b)=>compareSkus(a.sku,b.sku));
+}
 const cartText=(id,text)=>{const el=document.getElementById(id);if(el)el.textContent=text};
 function cartNotice(text,bad=false){
  const n=$('cartMessage');n.textContent=text||'';n.className=bad?'error':'';
@@ -15,23 +24,33 @@ function cartLocalTime(value){
 function cartMsgClean(){
  cartNotice('');msg('');
 }
-function cartItemQty(sku){return Number(cartData?.items?.find(i=>i.sku===sku)?.qty||0)}
-function cartSum(){return (cartData?.items||[]).reduce((n,i)=>n+i.qty,0)}
+function cartItemQty(sku){
+ if(cartPending.has(sku))return cartPending.get(sku);
+ if(cartSending.has(sku))return cartSending.get(sku);
+ return Number(cartData?.items?.find(i=>i.sku===sku)?.qty||0);
+}
+function cartSum(){return cartEffectiveItems().reduce((n,i)=>n+i.qty,0)}
 function cartUpdateHeader(){
  $('cartNavCount').textContent=String(cartSum());
  if(!cartData)return;
  cartText('cartShortCode',cartData.short_code);
- cartText('cartStateLabel',cartData.state==='ready'?'READY':'OPEN');
+ cartText('cartStateLabel',cartPending.size||cartSending.size?'DRAFT':cartData.state==='ready'?'READY':'DRAFT');
+ cartText('cartOpenedAt',cartLocalTime(cartData.guest_opened_at));
+ cartText('cartConfirmedAt',cartLocalTime(cartData.confirmed_at));
+ cartText('cartVersionLabel',cartData.confirmed_version?'V'+cartData.confirmed_version:'—');
+ $('cartVersionBtn').classList.toggle('hidden',cartRole!=='staff'||!cartData.confirmed_version);
+ $('cartVersionBtn').textContent='V'+(cartData.confirmed_version||'—');
+ cartText('cartSavedAt',cartSaveError?'! UNSAVED':cartSaveJob?'… SAVING':cartPending.size?'● PENDING':'✓ SAVED');
  cartText('cartCustomerLabel',cartData.customer_name||'CUSTOMER');
  cartText('cartTotal',String(cartSum()));
- cartText('cartSavedAt',cartLocalTime(cartData.updated_at));
  cartText('cartGuestCode',cartGuestCode||'········');
  $('cartGuestCode').classList.toggle('cart-code-empty',!cartGuestCode);
  $('cartShareRow').classList.toggle('hidden',cartRole!=='staff');
  $('cartEditName').classList.toggle('hidden',cartRole!=='staff');
  $('cartBack').classList.toggle('hidden',cartRole!=='staff');
- $('cartStateButton').textContent=cartData.state==='ready'?'REOPEN':'✓ READY';
- $('cartStateButton').title=cartData.state==='ready'?'繼續選貨':'完成選貨（不等於正式預定）';
+ $('cartStateButton').textContent=cartData.state==='ready'&&cartData.confirmed_version>0&&!cartPending.size&&!cartSending.size?'REOPEN':'✓ CONFIRM';
+ $('cartStateButton').title=cartData.state==='ready'&&cartData.confirmed_version>0&&!cartPending.size&&!cartSending.size?'繼續選貨':'確認本次選貨，保留不可覆蓋的版本';
+ $('cartStateButton').disabled=cartBusy||Boolean(cartSaveJob);
 }
 function cartSetData(data){
  cartData=data;
@@ -67,7 +86,7 @@ function cartRender(){
  if(!hasCart)return;
  cartUpdateHeader();
  const host=$('cartItems');host.replaceChildren();
- const rows=cartData.items||[];
+ const rows=cartEffectiveItems();
  if(!rows.length){
   const empty=document.createElement('p');empty.className='muted';empty.textContent='0 ROLL · Scan QR';host.append(empty);
  }
@@ -116,7 +135,7 @@ function cartApplyRole(){
 async function cartBootstrap(role,guestId){
  const changed=role!==cartRole;
  cartRole=role;
- if(changed){cartData=null;cartSearch=null;cartGuestCode='';cartRecent=[];lastQrCode='';}
+ if(changed){cartClearTimer();cartPending.clear();cartSending.clear();cartSaveError=false;cartData=null;cartSearch=null;cartGuestCode='';cartRecent=[];lastQrCode='';}
  cartApplyRole();
  if(role==='guest'){
   // Drop staff-only query results when a company phone becomes a guest device.
@@ -158,22 +177,29 @@ function cartRenderList(){
   const btn=document.createElement('button');btn.className='cart-history-row secondary';btn.type='button';
   const left=document.createElement('span');left.className='cart-history-left';
   const id=document.createElement('strong');id.textContent=item.short_code;
-  const desc=document.createElement('small');desc.textContent=(item.customer_name||'CUSTOMER')+' · '+cartLocalTime(item.updated_at);
-  left.append(id,desc);
+  const desc=document.createElement('small');desc.textContent=(item.customer_name||'CUSTOMER')+' · '+(item.confirmed_version?'V'+item.confirmed_version+' · ':'')+cartLocalTime(item.confirmed_at||item.guest_opened_at||item.updated_at);
+  const state=document.createElement('small');state.textContent=item.state==='ready'?'READY':'DRAFT';
+  left.append(id,desc,state);
   const right=document.createElement('span');right.textContent=item.qty_total+' ROLL';
   btn.append(left,right);btn.onclick=()=>cartOpen(item.id);
   host.append(btn);
  }
 }
 async function cartOpen(id){
- if(cartBusy)return;cartBusy=true;lastQrCode='';
+ if(cartBusy)return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ cartBusy=true;lastQrCode='';
+ $('cartConfirmedBox').classList.add('hidden');$('cartConfirmedBox').replaceChildren();
  try{const d=await post('/scanner/api/cart/open',{cart_id:id});cartGuestCode='';cartSearch=null;cartSetData(d.cart);cartMsgClean();
   if(cartRole==='staff')history.replaceState(null,'',location.pathname+'?cart='+id);}
  catch(e){cartNotice(e.message,true)}
  finally{cartBusy=false;cartRender()}
 }
 async function cartCreate(){
- if(cartBusy)return;cartBusy=true;lastQrCode='';$('cartCreateBtn').disabled=true;
+ if(cartBusy)return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ cartBusy=true;lastQrCode='';$('cartCreateBtn').disabled=true;
+ $('cartConfirmedBox').classList.add('hidden');$('cartConfirmedBox').replaceChildren();
  try{
   const d=await post('/scanner/api/cart/create',{name:$('cartNewName').value.trim()});
   cartGuestCode=d.guest_code;cartSearch=null;cartSetData(d.cart);
@@ -182,35 +208,109 @@ async function cartCreate(){
  }catch(e){cartNotice(e.message,true)}
  finally{cartBusy=false;$('cartCreateBtn').disabled=false;cartRender()}
 }
-async function cartRefresh(){
+async function cartRefresh(discardPending=false){
  if(!cartData)return;
- try{const d=await post('/scanner/api/cart/open',{cart_id:cartData.id});cartSetData(d.cart)}
- catch(e){cartNotice(e.message,true)}
-}
-async function cartChange(sku,qty){
- if(!cartData||cartBusy||!Number.isInteger(qty))return;
- cartBusy=true;
+ if((cartPending.size||cartSending.size)&&!discardPending&&!confirm('Discard unsaved changes and reload from TiDB?'))return;
+ if(cartSaveJob)await cartSaveJob;
+ if(discardPending||cartPending.size){cartPending.clear();cartSending.clear();cartClearTimer();cartSaveError=false;}
  try{
-  const d=await post('/scanner/api/cart/item',{cart_id:cartData.id,revision:cartData.revision,sku,qty});
-  cartSetData(d.cart);cartNotice('✓ SAVED','');
- }catch(e){
-  cartNotice(e.message,true);
-  if(e.status===409)await cartRefresh();
- }finally{cartBusy=false;cartRender()}
+  const d=await post('/scanner/api/cart/open',{cart_id:cartData.id});
+  cartSetData(d.cart);cartNotice('✓ RELOADED');
+ }catch(e){cartNotice(e.message,true)}
 }
+async function cartPostBatch(items,revision){
+ const response=await fetch('/scanner/api/cart/batch',{
+  method:'POST',credentials:'same-origin',cache:'no-store',keepalive:true,
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({cart_id:cartData.id,revision,items})
+ });
+ let data={};try{data=await response.json()}catch(_){}
+ if(!response.ok)throw Object.assign(new Error(data.detail||data.error||'SAVE FAILED'),{status:response.status});
+ return data;
+}
+async function cartFlush(){
+ cartClearTimer();
+ if(cartSaveJob){
+  const ok=await cartSaveJob;
+  return ok&&cartPending.size?cartFlush():ok;
+ }
+ if(!cartPending.size)return true;
+ if(!cartData)return false;
+ const submission=new Map(cartPending);
+ cartPending.clear();
+ cartSending=new Map(submission);
+ const cartId=cartData.id;
+ const revision=cartData.revision;
+ const task=(async()=>{
+  try{
+   const data=await cartPostBatch(Array.from(submission,([sku,qty])=>({sku,qty})),revision);
+   if(cartData?.id===cartId){
+    cartData=data.cart;
+    cartSaveError=false;
+    cartNotice('✓ SAVED');
+   }
+   return true;
+  }catch(e){
+   if(cartData?.id===cartId){
+    for(const [sku,qty] of submission)if(!cartPending.has(sku))cartPending.set(sku,qty);
+    cartSaveError=true;
+    cartNotice(e.status===409?'資料已變更或庫存不足，請檢查數量；可重新載入。':e.message,true);
+   }
+   return false;
+  }finally{
+   cartSending.clear();cartSaveJob=null;cartRender();
+  }
+ })();
+ cartSaveJob=task;
+ cartRender();
+ const ok=await task;
+ if(ok&&cartPending.size)return cartFlush();
+ return ok;
+}
+function cartPlanSave(){
+ cartSaveError=false;
+ cartClearTimer();
+ cartSaveTimer=setTimeout(()=>{void cartFlush()},CART_SAVE_DELAY);
+}
+function cartChange(sku,qty){
+ if(!cartData||cartBusy||!Number.isInteger(qty)||qty<0||qty>9999)return;
+ const existing=cartSending.has(sku)?cartSending.get(sku):
+  Number(cartData.items.find(i=>i.sku===sku)?.qty||0);
+ if(qty===existing)cartPending.delete(sku);
+ else cartPending.set(sku,qty);
+ cartPlanSave();
+ cartRender();
+}
+
 async function cartSetState(){
  if(!cartData||cartBusy)return;
  cartBusy=true;
  try{
-  const state=cartData.state==='ready'?'open':'ready';
-  const d=await post('/scanner/api/cart/state',{cart_id:cartData.id,revision:cartData.revision,state});
-  cartSetData(d.cart);
-  cartNotice(state==='ready'?'✓ READY · 非正式 RESERVAR':'✓ OPEN');
- }catch(e){cartNotice(e.message,true);if(e.status===409)await cartRefresh()}
- finally{cartBusy=false}
+  if(cartPending.size||cartSaveJob){
+   if(!(await cartFlush()))return;
+  }
+  if(cartData.state==='ready'&&cartData.confirmed_version>0){
+   const d=await post('/scanner/api/cart/state',{
+    cart_id:cartData.id,revision:cartData.revision,state:'open'
+   });
+   cartSetData(d.cart);cartNotice('DRAFT · previous confirmation retained');
+  }else{
+   const d=await post('/scanner/api/cart/confirm',{
+    cart_id:cartData.id,revision:cartData.revision
+   });
+   cartSetData(d.cart);
+   cartNotice('✓ CONFIRMED V'+d.cart.confirmed_version+' · NOT RESERVAR');
+   if(cartRole==='staff')void cartLoadList();
+  }
+ }catch(e){
+  cartNotice(e.message,true);
+  if(e.status===409)cartNotice('Cart changed. Please reload and check before confirming.',true);
+ }finally{cartBusy=false;cartRender()}
 }
+
 async function cartShare(){
  if(cartRole!=='staff'||!cartData||cartBusy)return;
+ if(cartPending.size&&!(await cartFlush()))return;
  cartBusy=true;
  try{
   const d=await post('/scanner/api/cart/share',{cart_id:cartData.id});
@@ -220,6 +320,7 @@ async function cartShare(){
 }
 async function cartGuestHandoff(){
  if(!cartData||cartRole!=='staff')return;
+ if(cartPending.size&&!(await cartFlush()))return;
  if(!cartGuestCode)await cartShare();
  if(!cartGuestCode)return;
  if(!confirm('交給客人後會登出公司員工帳號，返回員工功能需要重新登入。確定？'))return;
@@ -247,15 +348,19 @@ window.cartLookup=cartLookup;
 window.cartBootstrap=cartBootstrap;
 window.cartApplyRole=cartApplyRole;
 window.cartLoadList=cartLoadList;
-$('cartNav').onclick=()=>{
- if(cartRole==='staff'){
-  setMode(mode==='cart'?'sample':'cart');
-  if(mode==='cart'){if(cartData)cartRender();else void cartLoadList()}
- }
+$('cartNav').onclick=async()=>{
+ if(cartRole!=='staff')return;
+ if(mode==='cart'&&(cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ setMode(mode==='cart'?'sample':'cart');
+ if(mode==='cart'){if(cartData)cartRender();else void cartLoadList()}
 };
 $('cartCreateBtn').onclick=cartCreate;
 $('cartFilter').oninput=cartRenderList;
-$('cartBack').onclick=()=>{cartData=null;cartSearch=null;cartGuestCode='';lastQrCode='';history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()};
+$('cartBack').onclick=async()=>{
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ cartClearTimer();cartPending.clear();cartData=null;cartSearch=null;cartGuestCode='';lastQrCode='';
+ history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()
+};
 $('cartShareBtn').onclick=cartShare;
 $('cartGuestCode').title='Tap to copy the temporary code';
 $('cartGuestCode').onclick=async()=>{
@@ -266,8 +371,28 @@ $('cartGuestCode').onclick=async()=>{
 $('cartGuestHandoff').onclick=cartGuestHandoff;
 $('cartStateButton').onclick=cartSetState;
 $('cartReload').onclick=cartRefresh;
+$('cartVersionBtn').onclick=async()=>{
+ if(cartRole!=='staff'||!cartData?.confirmed_version)return;
+ const host=$('cartConfirmedBox');
+ if(!host.classList.contains('hidden')){host.classList.add('hidden');return}
+ try{
+  const d=await post('/scanner/api/cart/confirmed',{cart_id:cartData.id});
+  host.replaceChildren();
+  const title=document.createElement('strong');
+  title.textContent='V'+d.confirmed.version+' · '+cartLocalTime(d.confirmed.confirmed_at)+' · '+d.confirmed.qty_total+' ROLL';
+  host.append(title);
+  for(const item of d.confirmed.items){
+   const row=document.createElement('div');row.className='cart-spread';
+   const sku=document.createElement('span');sku.textContent=item.sku;
+   const qty=document.createElement('strong');qty.textContent=item.qty+' ROLL';
+   row.append(sku,qty);host.append(row);
+  }
+  host.classList.remove('hidden');
+ }catch(e){cartNotice(e.message,true)}
+};
 $('cartEditName').onclick=async()=>{
  if(!cartData||cartRole!=='staff'||cartBusy)return;
+ if(cartPending.size&&!(await cartFlush()))return;
  const name=prompt('Customer / Cliente',cartData.customer_name||'');
  if(name===null)return;
  cartBusy=true;
@@ -278,8 +403,9 @@ $('cartEditName').onclick=async()=>{
 };
 $('cartCopy').onclick=async()=>{
  if(!cartData)return;
+ if(cartPending.size&&!(await cartFlush()))return;
  const text=[cartData.short_code,cartData.customer_name,
-  ...(cartData.items||[]).map(i=>i.sku+'\t'+i.qty)].filter(Boolean).join('\n');
+  ...cartEffectiveItems().map(i=>i.sku+'\t'+i.qty)].filter(Boolean).join('\n');
  try{await navigator.clipboard.writeText(text);cartNotice('✓ COPIED')}
  catch(_){window.prompt('Copy cart',text)}
 };
@@ -291,3 +417,7 @@ $('guestLoginBtn').onclick=async()=>{
  }catch(e){$('loginMessage').textContent=e.message}finally{button.disabled=false}
 };
 $('guestCode').addEventListener('keydown',e=>{if(e.key==='Enter')$('guestLoginBtn').click()});
+
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&cartPending.size)void cartFlush()});
+window.addEventListener('pagehide',()=>{if(cartPending.size&&!cartSaveJob)void cartFlush()});
+window.cartEnsureSaved=cartFlush;

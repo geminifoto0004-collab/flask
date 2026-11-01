@@ -156,6 +156,13 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 .cart-stack{display:flex;flex-wrap:wrap;gap:7px}.cart-stack button{flex:1;font-size:12px;padding:11px 8px}
 .cart-hint{background:#f4f7fa;border-radius:9px;padding:8px;margin:9px 0;font-size:11px;color:#63768a;line-height:1.6}
 #cartNewName{width:100%}#cartFilter{width:100%}
+.cart-times{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.cart-times>div{min-width:0;background:#f3f7fb;border-radius:9px;padding:10px 8px;display:flex;flex-direction:column;gap:4px}
+.cart-times span{font-size:10px;font-weight:650;color:#64788a;letter-spacing:.3px}
+.cart-times strong{font-size:13px;color:#173a59;font-variant-numeric:tabular-nums}
+.cart-confirmed-box{margin:10px 0;padding:10px;background:#f6f9fd;border:1px solid #dce7f3;border-radius:10px;max-height:270px;overflow-y:auto}
+.cart-confirmed-box .cart-spread{font-size:12px;border-top:1px solid #e1e9f2;margin-top:5px;padding-top:6px}
+#cartVersionBtn{font-size:12px;padding:7px 11px}
 #login .guest-divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:#8693a2;font-size:12px}.guest-divider:before,.guest-divider:after{content:"";height:1px;background:#e0e8f1;flex:1}
 @media(max-width:350px){.cart-qty-controls{gap:3px}.cart-qty-controls button{width:35px;height:35px}.cart-line-title strong{font-size:12px}.cart-qty-controls strong{width:23px}}
 </style>
@@ -197,7 +204,10 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
  </div>
  <div id="cartStaffList"><h3>RECENT</h3><input id="cartFilter" type="search" placeholder="ID / Customer" autocomplete="off"><div id="cartRecent" style="margin-top:9px"></div></div>
  <div id="cartActive" class="hidden">
-  <div class="cart-header"><button id="cartBack" class="secondary" type="button" aria-label="所有購物車">←</button><h2 id="cartShortCode"></h2><span id="cartStateLabel" class="tag">OPEN</span></div>
+  <div class="cart-header"><button id="cartBack" class="secondary" type="button" aria-label="所有購物車">←</button><h2 id="cartShortCode"></h2><span id="cartStateLabel" class="tag">DRAFT</span></div>
+  <div class="cart-times"><div><span>OPENED</span><strong id="cartOpenedAt">—</strong></div><div><span>CONFIRMED</span><strong id="cartConfirmedAt">—</strong></div></div>
+  <div class="cart-spread"><small class="muted">LAST VERSION <strong id="cartVersionLabel">—</strong></small><button type="button" id="cartVersionBtn" class="secondary hidden" title="查看最後已確認清單">V1</button></div>
+  <div id="cartConfirmedBox" class="cart-confirmed-box hidden" aria-label="已確認版本商品清單"></div>
   <div class="cart-spread" style="margin:10px 0"><span id="cartCustomerLabel" class="muted">CUSTOMER</span><button id="cartEditName" class="ghost" type="button" title="編輯客戶名稱" aria-label="編輯客戶名稱">✎</button></div>
   <div id="cartShareRow" class="cart-hint"><div class="cart-spread"><span>GUEST CODE · 8H</span><span id="cartGuestCode" class="cart-code-number"></span></div><div class="cart-stack" style="margin-top:8px"><button id="cartShareBtn" type="button" class="secondary">↻ CODE</button><button id="cartGuestHandoff" type="button" class="secondary">GUEST MODE</button></div></div>
   <div id="cartStockNote" class="cart-hint hidden"></div>
@@ -205,7 +215,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
   <div class="cart-spread" style="margin-top:14px"><h3 style="margin:0">CART ITEMS</h3><strong><span id="cartTotal">0</span> ROLL</strong></div>
   <div id="cartItems"></div>
   <div class="cart-spread" style="margin:10px 0"><small id="cartSavedAt" class="muted"></small><button id="cartReload" class="ghost" type="button" title="重新載入購物車">↻</button></div>
-  <div class="cart-stack"><button id="cartStateButton" type="button">✓ READY</button><button id="cartCopy" type="button" class="secondary" aria-label="複製選貨清單">COPY</button></div>
+  <div class="cart-stack"><button id="cartStateButton" type="button">✓ CONFIRM</button><button id="cartCopy" type="button" class="secondary" aria-label="複製選貨清單">COPY</button></div>
   <p class="muted" style="margin:8px 0 0">READY ≠ RESERVAR · 正式開單前需確認庫存</p>
  </div>
  <div id="cartMessage" aria-live="polite"></div>
@@ -358,7 +368,7 @@ async function session(){
 }
 $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await post('/scanner/api/login',{passcode:$('passcode').value});$('passcode').value='';await session()}catch(e){$('loginMessage').textContent=e.message}finally{b.disabled=false}};
 $('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
-$('logout').onclick=async()=>{await stopCamera();if(cartRole==='guest')await post('/scanner/api/cart/guest-logout');else await post('/scanner/api/logout');mode='sample';await session()};
+$('logout').onclick=async()=>{if(window.cartEnsureSaved&&!(await window.cartEnsureSaved()))return;await stopCamera();if(cartRole==='guest')await post('/scanner/api/cart/guest-logout');else await post('/scanner/api/logout');mode='sample';await session()};
 function setMode(m){
  if(!['sample','full','admin','cart'].includes(m))m='sample';
  if(cartRole==='guest'&&m!=='cart')m='cart';

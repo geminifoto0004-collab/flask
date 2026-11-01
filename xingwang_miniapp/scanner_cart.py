@@ -7,6 +7,7 @@ or writes Access.  Snapshot quantities are reference figures, not a promise
 that RESERVAR has already been reconciled.
 """
 import asyncio
+import json
 import hashlib
 import hmac
 import logging
@@ -66,7 +67,32 @@ CART_SCHEMA = (
         changed_at DATETIME(6) NOT NULL,
         KEY idx_cart_revision (cart_id, revision)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS xw_cart_confirmations (
+        cart_id CHAR(32) NOT NULL,
+        version INT NOT NULL,
+        revision INT NOT NULL,
+        confirmed_at DATETIME(6) NOT NULL,
+        customer_name VARCHAR(80) NOT NULL DEFAULT '',
+        sku_count INT NOT NULL,
+        qty_total INT NOT NULL,
+        PRIMARY KEY (cart_id, version)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS xw_cart_confirmation_items (
+        cart_id CHAR(32) NOT NULL,
+        version INT NOT NULL,
+        sku VARCHAR(128) NOT NULL,
+        qty INT NOT NULL,
+        PRIMARY KEY (cart_id, version, sku)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 )
+
+# Re-runnable upgrades. Existing stock and sample tables remain untouched.
+_CART_COLUMNS = {
+    "guest_opened_at": "DATETIME(6) NULL",
+    "confirmed_at": "DATETIME(6) NULL",
+    "confirmed_revision": "INT NOT NULL DEFAULT 0",
+    "confirmed_version": "INT NOT NULL DEFAULT 0",
+}
 
 
 def utcnow():
@@ -84,6 +110,16 @@ def _db():
                     with conn.cursor() as cur:
                         for ddl in CART_SCHEMA:
                             cur.execute(ddl)
+                        cur.execute("SHOW COLUMNS FROM xw_carts")
+                        existing = {row[0] for row in cur.fetchall()}
+                        for column, spec in _CART_COLUMNS.items():
+                            if column not in existing:
+                                try:
+                                    cur.execute("ALTER TABLE xw_carts ADD COLUMN " + column + " " + spec)
+                                except Exception as exc:
+                                    # Another Render process might have finished the same upgrade.
+                                    if not (getattr(exc, "args", ()) and exc.args[0] == 1060):
+                                        raise
                     conn.commit()
                     _CART_SCHEMA_READY = True
         return conn
@@ -129,7 +165,9 @@ def _row_dict(row):
     if not row:
         return None
     fields = ("id", "short_code", "customer_name", "state", "revision",
-              "guest_expires", "guest_generation", "created_at", "updated_at")
+              "guest_expires", "guest_generation", "created_at", "updated_at",
+              "guest_opened_at", "confirmed_at", "confirmed_revision",
+              "confirmed_version")
     return dict(zip(fields, row))
 
 
@@ -137,7 +175,8 @@ def _load(conn, cart_id):
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id,short_code,customer_name,state,revision,guest_expires,"
-            "guest_generation,created_at,updated_at FROM xw_carts WHERE id=%s",
+            "guest_generation,created_at,updated_at,guest_opened_at,confirmed_at,"
+            "confirmed_revision,confirmed_version FROM xw_carts WHERE id=%s",
             (cart_id,),
         )
         cart = _row_dict(cur.fetchone())
@@ -150,6 +189,9 @@ def _load(conn, cart_id):
     cart["guest_expires"] = cart["guest_expires"].isoformat() + "Z" if cart["guest_expires"] else None
     cart["created_at"] = cart["created_at"].isoformat() + "Z"
     cart["updated_at"] = cart["updated_at"].isoformat() + "Z"
+    for field in ("guest_opened_at", "confirmed_at"):
+        value = cart[field]
+        cart[field] = value.isoformat() + "Z" if value else None
     return cart
 
 
@@ -183,11 +225,14 @@ def _authorize(conn, request, cart_id=None, *, staff_only=False):
     return allowed_id, "guest"
 
 
-async def _body(request):
-    if int(request.headers.get("content-length", "0") or "0") > 2048:
+async def _body(request, *, limit=2048):
+    if int(request.headers.get("content-length", "0") or "0") > limit:
+        raise HTTPException(413, "Request too large")
+    raw = await request.body()
+    if len(raw) > limit:
         raise HTTPException(413, "Request too large")
     try:
-        payload = await request.json()
+        payload = json.loads(raw)
     except (ValueError, UnicodeError):
         raise HTTPException(400, "Invalid JSON")
     if not isinstance(payload, dict):
@@ -243,16 +288,21 @@ def _list_carts():
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT c.id,c.short_code,c.customer_name,c.state,c.revision,c.updated_at,"
-                "COUNT(i.sku),COALESCE(SUM(i.qty),0) "
+                "COUNT(i.sku),COALESCE(SUM(i.qty),0),c.guest_opened_at,c.confirmed_at,"
+                "c.confirmed_version "
                 "FROM xw_carts c LEFT JOIN xw_cart_items i ON i.cart_id=c.id "
-                "GROUP BY c.id,c.short_code,c.customer_name,c.state,c.revision,c.updated_at "
+                "GROUP BY c.id,c.short_code,c.customer_name,c.state,c.revision,"
+                "c.updated_at,c.guest_opened_at,c.confirmed_at,c.confirmed_version "
                 "ORDER BY c.updated_at DESC LIMIT 60"
             )
             rows = cur.fetchall()
         return [{"id": row[0], "short_code": row[1], "customer_name": row[2],
                  "state": row[3], "revision": int(row[4]),
                  "updated_at": row[5].isoformat() + "Z",
-                 "sku_count": int(row[6]), "qty_total": int(row[7])}
+                 "sku_count": int(row[6]), "qty_total": int(row[7]),
+                 "guest_opened_at": row[8].isoformat()+"Z" if row[8] else None,
+                 "confirmed_at": row[9].isoformat()+"Z" if row[9] else None,
+                 "confirmed_version": int(row[10])}
                 for row in rows]
     finally:
         conn.close()
@@ -342,6 +392,175 @@ def _mutate(cart_id, revision, *, sku=None, qty=None, name=None, state=None, act
         conn.close()
 
 
+
+def _mutate_batch(cart_id, revision, items, actor):
+    """Merge explicit SKU quantities in one TiDB transaction/revision.
+
+    'items' is a dict of SKU -> absolute quantity, not increments.
+    This prevents retries from double-counting rolls.
+    """
+    if not isinstance(items, dict) or not 1 <= len(items) <= 100:
+        raise HTTPException(400, "Batch must contain 1–100 items")
+    for sku, qty in items.items():
+        if (not isinstance(sku, str) or not staff.CODE.fullmatch(sku) or
+            type(qty) is not int or not 0 <= qty <= MAX_QTY):
+            raise HTTPException(400, "Invalid SKU or quantity")
+    conn = _db()
+    try:
+        now = utcnow()
+        with conn.cursor() as cur:
+            cur.execute("SELECT revision,state FROM xw_carts WHERE id=%s FOR UPDATE", (cart_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Cart not found")
+            old_revision, state = int(row[0]), row[1]
+            if old_revision != revision:
+                raise HTTPException(409, "Cart changed on another device. Reload before editing.")
+            if state == "cancelled":
+                raise HTTPException(409, "Cart is cancelled")
+            cur.execute("SELECT sku,qty FROM xw_cart_items WHERE cart_id=%s", (cart_id,))
+            existing = dict(cur.fetchall())
+            delta = [(sku, int(existing.get(sku, 0)), qty)
+                     for sku, qty in items.items() if int(existing.get(sku, 0)) != qty]
+            if not delta:
+                return _load(conn, cart_id)
+            wanted = [sku for sku, _old, qty in delta if qty > 0]
+            if wanted:
+                marks = ",".join(["%s"] * len(wanted))
+                cur.execute(
+                    "SELECT sku,stock_rolls FROM xw_stock_snapshot "
+                    "WHERE is_active=1 AND sku IN (" + marks + ")", tuple(wanted)
+                )
+                available = {sku: max(0, int(n)) if n is not None else 0
+                             for sku, n in cur.fetchall()}
+                for sku, _old, qty in delta:
+                    if qty > 0 and qty > available.get(sku, 0):
+                        raise HTTPException(409, "Quantity exceeds stock reference for " + sku)
+            updates = [(cart_id, sku, qty, now) for sku, _old, qty in delta if qty]
+            deletes = [(cart_id, sku) for sku, _old, qty in delta if not qty]
+            if updates:
+                cur.executemany(
+                    "INSERT INTO xw_cart_items(cart_id,sku,qty,updated_at) "
+                    "VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+                    "qty=VALUES(qty),updated_at=VALUES(updated_at)", updates
+                )
+            if deletes:
+                cur.executemany(
+                    "DELETE FROM xw_cart_items WHERE cart_id=%s AND sku=%s", deletes
+                )
+            # One event per changed SKU, not one event per '+' tap.
+            cur.executemany(
+                "INSERT INTO xw_cart_events(cart_id,revision,sku,old_qty,new_qty,actor,changed_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                [(cart_id, old_revision+1, sku, old, qty, actor, now)
+                 for sku, old, qty in delta],
+            )
+            cur.execute(
+                "UPDATE xw_carts SET revision=revision+1,updated_at=%s,"
+                "state='open' WHERE id=%s",
+                (now, cart_id),
+            )
+        conn.commit()
+        return _load(conn, cart_id)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _confirm_cart(cart_id, revision):
+    """Freeze an immutable copy of the selected items at each confirmation."""
+    conn = _db()
+    try:
+        now = utcnow()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT revision,state,confirmed_revision,confirmed_version,customer_name "
+                "FROM xw_carts WHERE id=%s FOR UPDATE", (cart_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Cart not found")
+            current_revision, state, prev_confirmed_revision, version, name = row
+            if int(current_revision) != revision:
+                raise HTTPException(409, "Cart changed. Reload before confirming.")
+            if state == "cancelled":
+                raise HTTPException(409, "Cart is cancelled")
+            if state == "ready" and int(version) > 0 and int(prev_confirmed_revision) == revision:
+                return _load(conn, cart_id)
+            cur.execute("SELECT sku,qty FROM xw_cart_items WHERE cart_id=%s ORDER BY sku",
+                        (cart_id,))
+            rows = cur.fetchall()
+            if not rows:
+                raise HTTPException(409, "Cannot confirm an empty cart")
+            # Reopening a READY cart alone does not create a duplicate snapshot.
+            if int(version) and int(prev_confirmed_revision) == revision:
+                cur.execute("UPDATE xw_carts SET state='ready' WHERE id=%s", (cart_id,))
+                conn.commit()
+                return _load(conn, cart_id)
+            new_version = int(version) + 1
+            new_revision = revision + 1
+            cur.execute(
+                "INSERT INTO xw_cart_confirmations "
+                "(cart_id,version,revision,confirmed_at,customer_name,sku_count,qty_total) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (cart_id, new_version, new_revision, now, name, len(rows),
+                 sum(int(qty) for _sku, qty in rows)),
+            )
+            cur.executemany(
+                "INSERT INTO xw_cart_confirmation_items(cart_id,version,sku,qty) "
+                "VALUES (%s,%s,%s,%s)",
+                [(cart_id, new_version, sku, int(qty)) for sku, qty in rows],
+            )
+            cur.execute(
+                "UPDATE xw_carts SET state='ready',revision=%s,confirmed_version=%s,"
+                "confirmed_revision=%s,confirmed_at=%s,updated_at=%s WHERE id=%s",
+                (new_revision, new_version, new_revision, now, now, cart_id),
+            )
+        conn.commit()
+        return _load(conn, cart_id)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _read_confirmed(cart_id, version=None):
+    conn = _db()
+    try:
+        with conn.cursor() as cur:
+            if version is None:
+                cur.execute(
+                    "SELECT version,revision,confirmed_at,customer_name,sku_count,qty_total "
+                    "FROM xw_cart_confirmations WHERE cart_id=%s "
+                    "ORDER BY version DESC LIMIT 1", (cart_id,)
+                )
+            else:
+                cur.execute(
+                    "SELECT version,revision,confirmed_at,customer_name,sku_count,qty_total "
+                    "FROM xw_cart_confirmations WHERE cart_id=%s AND version=%s",
+                    (cart_id, version),
+                )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "No confirmed version")
+            ver, revision, confirmed_at, name, count, total = row
+            cur.execute(
+                "SELECT sku,qty FROM xw_cart_confirmation_items "
+                "WHERE cart_id=%s AND version=%s ORDER BY sku", (cart_id, ver)
+            )
+            return {"version": int(ver), "revision": int(revision),
+                    "confirmed_at": confirmed_at.isoformat()+"Z",
+                    "customer_name": name, "sku_count": int(count),
+                    "qty_total": int(total),
+                    "items": [{"sku": sku, "qty": int(qty)}
+                              for sku, qty in cur.fetchall()]}
+    finally:
+        conn.close()
+
+
 def _renew(cart_id):
     conn = _db()
     try:
@@ -373,6 +592,14 @@ def _login_guest(code):
             row = cur.fetchone()
         if not row or not row[2] or row[2] <= utcnow():
             raise HTTPException(401, "Temporary code invalid or expired")
+        # First actual guest entry only. Never rewrite on refresh or each scan.
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE xw_carts SET guest_opened_at=%s "
+                "WHERE id=%s AND guest_opened_at IS NULL",
+                (utcnow(), row[0]),
+            )
+        conn.commit()
         return row[0], int(row[1]), row[2]
     finally:
         conn.close()
@@ -532,6 +759,80 @@ async def cart_lookup(request: Request):
             conn.close()
 
 
+
+@router.post("/scanner/api/cart/batch")
+async def cart_batch(request: Request):
+    staff._check_origin(request)
+    body = await _body(request, limit=16000)
+    changes = body.get("items")
+    revision = body.get("revision")
+    if (type(revision) is not int or revision < 0 or
+        not isinstance(changes, list) or not 1 <= len(changes) <= 100):
+        raise HTTPException(400, "Invalid cart batch")
+    updates = {}
+    for item in changes:
+        if not isinstance(item, dict):
+            raise HTTPException(400, "Invalid cart item")
+        sku, qty = item.get("sku"), item.get("qty")
+        if (not isinstance(sku, str) or not staff.CODE.fullmatch(sku) or
+            type(qty) is not int or not 0 <= qty <= MAX_QTY or
+            sku in updates):
+            raise HTTPException(400, "Invalid or duplicate SKU")
+        updates[sku] = qty
+    conn = None
+    try:
+        conn = await asyncio.to_thread(_db)
+        cart_id = _id(body) if staff._authorized(request) else body.get("cart_id")
+        cart_id, actor = await asyncio.to_thread(_authorize, conn, request, cart_id)
+        conn.close()
+        conn = None
+        cart = await asyncio.to_thread(_mutate_batch, cart_id, revision, updates, actor)
+        return {"ok": True, "cart": cart}
+    except Exception as exc:
+        _error_safe(exc, "BATCH")
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/scanner/api/cart/confirm")
+async def cart_confirm(request: Request):
+    staff._check_origin(request)
+    body = await _body(request)
+    revision = body.get("revision")
+    if type(revision) is not int or revision < 0:
+        raise HTTPException(400, "Invalid revision")
+    conn = None
+    try:
+        conn = await asyncio.to_thread(_db)
+        cart_id = _id(body) if staff._authorized(request) else body.get("cart_id")
+        cart_id, _actor = await asyncio.to_thread(_authorize, conn, request, cart_id)
+        conn.close()
+        conn = None
+        cart = await asyncio.to_thread(_confirm_cart, cart_id, revision)
+        return {"ok": True, "cart": cart}
+    except Exception as exc:
+        _error_safe(exc, "CONFIRM")
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/scanner/api/cart/confirmed")
+async def cart_confirmed(request: Request):
+    staff._check_origin(request)
+    staff._require(request)
+    body = await _body(request)
+    version = body.get("version")
+    if version is not None and (type(version) is not int or version < 1):
+        raise HTTPException(400, "Invalid confirmation version")
+    try:
+        data = await asyncio.to_thread(_read_confirmed, _id(body), version)
+        return {"ok": True, "confirmed": data}
+    except Exception as exc:
+        _error_safe(exc, "CONFIRMED")
+
+
 @router.post("/scanner/api/cart/item")
 async def cart_item(request: Request):
     staff._check_origin(request)
@@ -588,7 +889,10 @@ async def cart_state(request: Request):
         cart_id, role = await asyncio.to_thread(_authorize, conn, request, target)
         conn.close()
         conn = None
-        cart = await asyncio.to_thread(_mutate, cart_id, rev, state=state, actor=role)
+        cart = await asyncio.to_thread(
+            _confirm_cart if state == "ready" else _mutate,
+            cart_id, rev, **({} if state == "ready" else {"state": state, "actor": role})
+        )
         return {"ok": True, "cart": cart}
     except Exception as exc:
         _error_safe(exc, "STATE")

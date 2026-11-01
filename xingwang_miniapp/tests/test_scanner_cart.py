@@ -67,8 +67,127 @@ def test_same_page_has_staff_and_guest_cart_with_continuous_scan():
     assert "if(mode==='cart')" in html
     assert "lastQrCode=code;" in html
     assert "window.cartLookup=cartLookup" in js
-    assert "cart_id:cartData.id,revision:cartData.revision,sku,qty" in js
+    assert "cart_id:cartData.id,revision,items" in js
+    assert "CART_SAVE_DELAY=1200" in js
+    assert "keepalive:true" in js
+    assert "/scanner/api/cart/confirm" in js
+    assert "cartPending=new Map()" in js
     assert "if(role==='guest')" in js
     assert "current=null;fullData=null;" in js
     assert "history.replaceState" in js
     assert "window.cartBootstrap=cartBootstrap" in js
+
+
+def test_cart_schema_safe_migration_and_two_confirmed_times():
+    code = (ROOT / "scanner_cart.py").read_text(encoding="utf-8")
+    assert "SHOW COLUMNS FROM xw_carts" in code
+    assert "guest_opened_at" in cart._CART_COLUMNS
+    assert "confirmed_at" in cart._CART_COLUMNS
+    assert "confirmed_revision" in cart._CART_COLUMNS
+    assert "confirmed_version" in cart._CART_COLUMNS
+    assert "CREATE TABLE IF NOT EXISTS xw_cart_confirmations" in code
+    assert "CREATE TABLE IF NOT EXISTS xw_cart_confirmation_items" in code
+    assert "guest_opened_at IS NULL" in code  # first visit, not per SKU tap
+    assert "confirmed_at=%s,updated_at=%s" in code
+    assert "state='open' WHERE id=%s" in code
+    assert "cur.executemany(" in code  # batch changes, immutable version items
+
+
+def test_guest_no_qr_and_time_is_only_cart_level():
+    html = (ROOT / "scanner.html").read_text(encoding="utf-8")
+    js = (ROOT / "scanner_cart.js").read_text(encoding="utf-8")
+    assert 'id="cartOpenedAt"' in html
+    assert 'id="cartConfirmedAt"' in html
+    assert 'id="cartVersionBtn"' in html
+    assert 'id="cartConfirmedBox"' in html
+    assert 'id="cartStateButton"' in html
+    assert 'id="cartGuestCode"' in html
+    assert "cartEffectiveItems()" in js
+    assert "async function cartFlush()" in js
+    assert "cartSaveJob" in js
+    assert "/scanner/api/cart/confirmed" in js
+    assert "cartShareBtn" in js
+    assert 'id="cartGuestQr"' not in html
+
+
+class _FakeCursor:
+    def __init__(self, connection):
+        self.connection = connection
+        self.result = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, sql, args=None):
+        self.connection.sql.append((sql, args))
+        if "SELECT revision,state,confirmed_revision,confirmed_version,customer_name" in sql:
+            self.result = [(3, "open", 0, 0, "TEST")]
+        elif "SELECT revision,state FROM xw_carts" in sql:
+            self.result = [(3, "ready")]
+        elif "SELECT sku,qty FROM xw_cart_items" in sql:
+            self.result = [("12-225D-5", 2), ("12-225D-53", 3)]
+        elif "SELECT sku,stock_rolls FROM xw_stock_snapshot" in sql:
+            self.result = [("12-225D-5", 10)]
+        else:
+            self.result = []
+
+    def executemany(self, sql, params):
+        self.connection.sql.append((sql, list(params)))
+
+    def fetchone(self):
+        return self.result[0] if self.result else None
+
+    def fetchall(self):
+        return self.result
+
+
+class _FakeConnection:
+    def __init__(self):
+        self.sql = []
+        self.committed = 0
+        self.rolled_back = 0
+
+    def cursor(self):
+        return _FakeCursor(self)
+
+    def commit(self):
+        self.committed += 1
+
+    def rollback(self):
+        self.rolled_back += 1
+
+    def close(self):
+        pass
+
+
+def test_confirm_writes_full_snapshot_atomically_without_per_tap_time():
+    fake = _FakeConnection()
+    with patch.object(cart, "_db", return_value=fake), patch.object(cart, "_load", return_value={"confirmed_version": 1}):
+        outcome = cart._confirm_cart("a" * 32, 3)
+    assert outcome["confirmed_version"] == 1
+    assert fake.committed == 1 and fake.rolled_back == 0
+    sql = "\n".join(statement for statement, _ in fake.sql)
+    assert "INSERT INTO xw_cart_confirmations" in sql
+    assert "INSERT INTO xw_cart_confirmation_items" in sql
+    assert "confirmed_version=%s" in sql
+    item_statement = next(params for statement, params in fake.sql
+                          if "INSERT INTO xw_cart_confirmation_items" in statement)
+    assert len(item_statement) == 2
+    assert item_statement[0][-1] == 2
+    assert item_statement[1][-1] == 3
+
+
+def test_batch_saves_multiple_skus_with_one_cart_revision():
+    fake = _FakeConnection()
+    with patch.object(cart, "_db", return_value=fake), patch.object(cart, "_load", return_value={"revision": 4}):
+        outcome = cart._mutate_batch("a" * 32, 3, {"12-225D-5": 4, "12-225D-53": 0}, "guest")
+    assert outcome["revision"] == 4
+    assert fake.committed == 1 and fake.rolled_back == 0
+    sql = "\n".join(statement for statement, _ in fake.sql)
+    assert "INSERT INTO xw_cart_items" in sql
+    assert "DELETE FROM xw_cart_items" in sql
+    assert "INSERT INTO xw_cart_events" in sql
+    assert sql.count("UPDATE xw_carts SET revision=revision+1") == 1
