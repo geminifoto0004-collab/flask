@@ -2,6 +2,8 @@ name: Export SCANNER Camino CC review ZIP
 on:
   push:
     branches: ["camino-order-cc-review"]
+  pull_request:
+    branches: ["xingwang-stock"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,6 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify order parser and bridge adapter (read-only)
+        run: |
+          node xingwang_miniapp/tests/test_camino_classifier.js
+          python3 xingwang_miniapp/camino_description_bridge_adapter.py
       - name: Build focused full-code review ZIP
         run: |
           python3 - <<'PY'
