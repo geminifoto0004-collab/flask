@@ -154,6 +154,110 @@ def read_status(series, skus):
     finally:
         conn.close()
 
+# A sample is taken from the most recently committed TiDB inventory, NOT
+# from a live V33 bridge.  All timestamps in xw_stock_sync_state are UTC.
+STOCK_MAX_AGE_SECONDS = 3600
+
+
+def _freshness_on_connection(conn):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT last_success_utc, sku_count "
+            "FROM xw_stock_sync_state WHERE id=1"
+        )
+        row = cur.fetchone()
+    if not row or not isinstance(row[0], datetime):
+        return {"has_synced": False, "fresh": False,
+                "age_seconds": None, "synced_at_utc": None,
+                "sku_count": 0, "max_age_seconds": STOCK_MAX_AGE_SECONDS}
+    last = row[0]
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    else:
+        last = last.astimezone(timezone.utc)
+    age = max(0, (datetime.now(timezone.utc) - last).total_seconds())
+    return {"has_synced": True, "fresh": age <= STOCK_MAX_AGE_SECONDS,
+            "age_seconds": int(age),
+            "synced_at_utc": last.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "sku_count": int(row[1]),
+            "max_age_seconds": STOCK_MAX_AGE_SECONDS}
+
+
+def stock_freshness():
+    """Read last successful sync, never the time of a failed/started update."""
+    conn = _connect()
+    try:
+        _ensure(conn)
+        return _freshness_on_connection(conn)
+    finally:
+        conn.close()
+
+
+def read_sample_from_snapshot(code):
+    """Read a single product family from the last verified TiDB snapshot.
+
+    Preserve zero, negative and NULL quantities.  Return no partial family:
+    501+ results are rejected before preparing a scan token.
+    """
+    if not isinstance(code, str) or len(code) > 40:
+        raise ValueError("INVALID_PRODUCT_CODE")
+    conn = _connect()
+    try:
+        _ensure(conn)
+        freshness = _freshness_on_connection(conn)
+        if not freshness["fresh"]:
+            return {"freshness": freshness, "variants": []}
+        # ESCAPE ! is explicit: an underscore in an SKU is a literal
+        # underscore, never an accidental SQL LIKE wildcard.
+        pattern = code.replace("!", "!!").replace("_", "!_").replace("%", "!%") + "%"
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT sku, stock_rolls, stock_meters "
+                "FROM xw_stock_snapshot "
+                "WHERE is_active=1 AND "
+                "(series=%s OR sku=%s OR sku LIKE %s ESCAPE '!') "
+                "ORDER BY sku LIMIT 501",
+                (code, code, pattern)
+            )
+            rows = cur.fetchall()
+            if len(rows) > 500:
+                raise ValueError("TOO_MANY_SAMPLE_SKUS")
+            if any(len(str(row[0])) > 40 for row in rows):
+                raise ValueError("INVALID_SAMPLE_SKU")
+            statuses = {}
+            if rows:
+                keys = [row[0] for row in rows]
+                placeholders = ",".join(["%s"] * len(keys))
+                cur.execute(
+                    "SELECT sku, missing, checked_at FROM xw_sample_status "
+                    "WHERE sku IN (" + placeholders + ")", keys
+                )
+                for sku, missing, checked_at in cur.fetchall():
+                    statuses[sku] = {
+                        "missing": bool(missing),
+                        "checked_at": checked_at.isoformat(timespec="seconds")
+                    }
+        conn.commit()
+        def total(i):
+            return None if any(row[i] is None for row in rows) else str(
+                sum((row[i] for row in rows), 0)
+            )
+        return {
+            "freshness": freshness,
+            "variants": [
+                {"code": sku,
+                 "stock_rolls": None if rolls is None else str(rolls),
+                 "stock_meters": None if meters is None else str(meters),
+                 "incoming_boxes": None, "stock_rows": 1}
+                for sku, rolls, meters in rows
+            ],
+            "previous_status": statuses,
+            "stock_rolls": total(1) if rows else None,
+            "stock_meters": total(2) if rows else None,
+        }
+    finally:
+        conn.close()
+
 def save_scan(scan_id, series, skus, missing, device_id):
     """All-or-nothing transaction; replays with the same scan ID are harmless."""
     if not skus or len(skus) > 500 or len(skus) != len(set(skus)):

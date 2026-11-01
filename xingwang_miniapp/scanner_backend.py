@@ -375,6 +375,80 @@ async def logout(request: Request):
     return resp
 
 
+
+@router.get("/scanner/api/stock-freshness")
+async def sample_stock_freshness(request: Request):
+    _require(request)
+    if not scanner_tidb.configured():
+        raise HTTPException(503, "TiDB 尚未設定，無法盤點")
+    try:
+        return await asyncio.to_thread(scanner_tidb.stock_freshness)
+    except Exception:
+        logging.getLogger("uvicorn.error").exception("SAMPLE_FRESHNESS_FAILED")
+        raise HTTPException(503, "無法讀取庫存同步時間，請檢查 TiDB")
+
+
+@router.post("/scanner/api/sample")
+async def sample_from_tidb(request: Request):
+    _check_origin(request)
+    _require(request)
+    if not scanner_tidb.configured():
+        raise HTTPException(503, "TiDB 尚未設定，無法盤點")
+    if int(request.headers.get("content-length", "0") or 0) > 512:
+        raise HTTPException(413, "Request too large")
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeError):
+        raise HTTPException(400, "Invalid JSON")
+    code = body.get("code") if isinstance(body, dict) else None
+    if not isinstance(code, str) or not CODE.fullmatch(code.strip()):
+        raise HTTPException(400, "商品編號格式不正確")
+    code = code.strip()
+    async with LOCK:
+        now = time.monotonic()
+        REQUEST_TIMES[:] = [t for t in REQUEST_TIMES if now - t < 60]
+        if len(REQUEST_TIMES) >= 35:
+            raise HTTPException(429, "查詢太頻繁，請稍後再試")
+        REQUEST_TIMES.append(now)
+    try:
+        data = await asyncio.to_thread(scanner_tidb.read_sample_from_snapshot, code)
+    except ValueError as exc:
+        if str(exc) == "TOO_MANY_SAMPLE_SKUS":
+            raise HTTPException(422, "這個系列超過 500 個編號，請輸入更完整的商品編號")
+        raise HTTPException(422, "快照包含不支援的商品編號，請檢查庫存資料")
+    except Exception:
+        logging.getLogger("uvicorn.error").exception("SAMPLE_SNAPSHOT_READ_FAILED")
+        raise HTTPException(503, "TiDB 庫存查詢失敗，請稍後再試")
+    fresh = data["freshness"]
+    if not fresh["fresh"]:
+        raise HTTPException(409, "庫存最後成功同步已超過 1 小時（或尚未同步），請先前往管理頁更新")
+    variants = data["variants"]
+    if not variants:
+        raise HTTPException(404, "TiDB 庫存快照找不到這個商品編號")
+    scan_id = uuid4().hex
+    device = hashlib.sha256(request.cookies.get(COOKIE, "").encode()).hexdigest()[:16]
+    now = time.monotonic()
+    for token, entry in list(PENDING_SCANS.items()):
+        if now - entry[0] > 1800:
+            PENDING_SCANS.pop(token, None)
+    if len(PENDING_SCANS) >= 500:
+        PENDING_SCANS.pop(next(iter(PENDING_SCANS)))
+    PENDING_SCANS[scan_id] = (
+        now, device, code, tuple(v["code"] for v in variants),
+        fresh["synced_at_utc"]
+    )
+    return JSONResponse({
+        "ok": True, "product_code": code,
+        "stock_rolls": data["stock_rolls"],
+        "stock_meters": data["stock_meters"],
+        "variants": variants, "source": "tidb",
+        "as_of": fresh["synced_at_utc"],
+        "freshness": fresh,
+        "db_connected": True, "db_error": False,
+        "scan_id": scan_id, "previous_status": data["previous_status"]
+    })
+
+
 def attach_stock_lookup(stock_lookup):
     """Bind the existing read-only V33 stock bridge, without modifying it."""
     @router.post("/scanner/api/stock")
@@ -407,38 +481,14 @@ def attach_stock_lookup(stock_lookup):
                 "error": "庫存不存在" if status == 404 else
                          "本機 V33 離線或庫存暫時無法查詢，請確認 V33 已開啟"}, status_code=status)
         variants = stock_variant_breakdown(clean)
-        skus = [v["code"] for v in variants]
-        can_save = scanner_tidb.configured() and 0 < len(skus) <= 500
-        status_map = {}
-        db_error = False
-        if can_save:
-            try:
-                status_map = await asyncio.to_thread(scanner_tidb.read_status, code, skus)
-            except Exception:
-                # Keep stock lookup usable but explicitly disable sample writes.
-                logging.getLogger("uvicorn.error").exception(
-                    "SCANNER_TIDB_READ_FAILED series=%r", code
-                )
-                db_error = True
-        scan_id = None
-        if can_save and not db_error:
-            scan_id = uuid4().hex
-            device_id = hashlib.sha256(request.cookies.get(COOKIE,"").encode()).hexdigest()[:16]
-            now = time.monotonic()
-            for token,entry in list(PENDING_SCANS.items()):
-                if now - entry[0] > 1800:
-                    PENDING_SCANS.pop(token,None)
-            if len(PENDING_SCANS) >= 500:
-                PENDING_SCANS.pop(next(iter(PENDING_SCANS)))
-            PENDING_SCANS[scan_id] = (now, device_id, code, tuple(skus))
         return JSONResponse({"ok": True, "product_code": code,
             "stock_rolls": clean.get("stock_rolls"),
             "stock_meters": clean.get("stock_meters"),
             "incoming_boxes": clean.get("incoming_boxes"),
             "variants": variants,
             "source": clean.get("source"), "as_of": clean.get("as_of"),
-            "db_connected": bool(scan_id), "db_error": db_error,
-            "scan_id": scan_id, "previous_status": status_map})
+            "db_connected": False, "db_error": False,
+            "scan_id": None, "previous_status": {}})
 
     @router.post("/scanner/api/save")
     async def scanner_save(request: Request):
@@ -463,16 +513,23 @@ def attach_stock_lookup(stock_lookup):
             len(set(missed)) != len(missed)):
             raise HTTPException(400, "Invalid scan submission")
         session = PENDING_SCANS.get(scan_id)
-        if not session or time.monotonic()-session[0]>1800:
+        if not session or time.monotonic()-session[0]>1800 or len(session)!=5:
             raise HTTPException(409, "這次掃描已過期，請重新查詢")
-        started, owner, series, skus = session
+        started, owner, series, skus, snapshot_version = session
         device_id = hashlib.sha256(request.cookies.get(COOKIE,"").encode()).hexdigest()[:16]
         if not hmac.compare_digest(owner,device_id) or not set(missed).issubset(skus):
             raise HTTPException(403, "Invalid scan authorization")
         try:
+            fresh = await asyncio.to_thread(scanner_tidb.stock_freshness)
+            if not fresh["fresh"] or fresh["synced_at_utc"] != snapshot_version:
+                raise HTTPException(
+                    409, "庫存已超過 1 小時或已重新同步；請更新庫存並重新查詢布樣"
+                )
             result=await asyncio.to_thread(
                 scanner_tidb.save_scan, scan_id, series, skus, missed, device_id
             )
+        except HTTPException:
+            raise
         except Exception:
             logging.getLogger("uvicorn.error").exception(
                 "SCANNER_TIDB_SAVE_FAILED series=%r",series

@@ -27,6 +27,11 @@ button.ghost{background:transparent;color:#24517a;padding:8px}
 #reader video{max-width:100%}#reader button{font-size:12px}
 #message{font-size:13px;margin-top:9px;line-height:1.65;white-space:pre-wrap}
 #message.error{color:#ad2a2a}#message.good{color:#147b4e}
+#freshnessPanel{margin:12px 0 9px;background:#f4f7fb;border-color:#dce4ee;color:#465c73}
+#freshnessPanel.stale{background:#fff8e9;border-color:#efce8c;color:#865a13}
+#freshnessPanel.fresh{background:#f1f9f4;border-color:#b5ddc0;color:#17673b}
+.freshnessAdmin{display:inline-flex;padding:10px 11px;border-radius:10px;background:#fff;color:#145ba4;border:1px solid #cbd7e4;text-decoration:none;font-size:12px;font-weight:700}
+#freshnessCheckBtn{font-size:12px;padding:10px 12px}
 .stock-stat-grid{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .stock-stat{flex:1 1 calc(50% - 8px);min-width:118px;background:#f1f6fb;border-radius:12px;padding:12px}
 .stock-stat small{display:block;color:#627b8e;font-size:11px;margin-bottom:4px}
@@ -63,6 +68,13 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div id="app" class="hidden">
 <section class="panel">
 <div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeStock">查詢庫存</button></div>
+<div id="freshnessPanel" class="notice" role="status" aria-live="polite">
+<span id="freshnessText">正在確認 TiDB 最後成功同步時間…</span>
+<div class="row" style="margin-top:8px;flex-wrap:wrap">
+<a class="freshnessAdmin" href="/scanner/admin" target="_blank" rel="noopener noreferrer">前往更新庫存</a>
+<button type="button" id="freshnessCheckBtn" class="secondary">重新檢查</button>
+</div></div>
+
 <p class="muted" id="modeHelp">掃描系列 QR，查看每個庫存編號，勾選「無樣」。</p>
 <div id="reader"></div>
 <div class="row"><button id="cameraStart" class="fill">開啟相機連續掃描</button><button id="cameraStop" class="secondary hidden">停止相機</button></div>
@@ -98,6 +110,44 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 const $=id=>document.getElementById(id);
 let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, missing=new Set(), saved=false;
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
+
+let lastFreshness=null, checkingFreshness=null;
+function setFreshness(data){
+ lastFreshness=data;
+ const panel=$('freshnessPanel'),label=$('freshnessText');
+ panel.classList.remove('fresh','stale');
+ if(data?.fresh){
+  panel.classList.add('fresh');
+  const mins=Math.floor((data.age_seconds||0)/60);
+  label.textContent='TiDB 庫存已更新 · '+mins+' 分鐘前（需在 60 分鐘內）。布樣盤點使用這份快照，不需要 V33 在線。';
+ }else{
+  panel.classList.add('stale');
+  label.textContent=data?.has_synced
+    ?'上次成功同步已超過 1 小時，請先前往管理頁更新庫存，再進行布樣盤點。'
+    :'尚無有效的庫存同步紀錄，請先前往管理頁同步庫存。';
+ }
+}
+async function checkFreshness(){
+ if(checkingFreshness)return checkingFreshness;
+ checkingFreshness=(async()=>{
+  try{
+   const res=await fetch('/scanner/api/stock-freshness',{credentials:'same-origin',cache:'no-store'});
+   const data=await res.json();
+   if(!res.ok)throw new Error(data.detail||'TiDB 同步時間查詢失敗');
+   setFreshness(data);
+   return data;
+  }catch(e){
+   setFreshness(null);
+   $('freshnessText').textContent='無法確認 TiDB 同步時間：'+e.message+'。請檢查資料庫後再盤點。';
+   return null;
+  }finally{checkingFreshness=null}
+ })();
+ return checkingFreshness;
+}
+$('freshnessCheckBtn').onclick=checkFreshness;
+window.addEventListener('focus',()=>{if(mode==='sample' && !$('app').classList.contains('hidden'))void checkFreshness()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden && mode==='sample' && !$('app').classList.contains('hidden'))void checkFreshness()});
+
 function msg(s,type=''){const n=$('message');n.textContent=s;n.className=type}
 function fmt(x){return x===null||x===undefined?'—':Number(x).toLocaleString('en-US',{maximumFractionDigits:2})}
 async function post(path,body={}){
@@ -113,6 +163,7 @@ async function session(){
   $('app').classList.toggle('hidden',!d.signed_in);
   $('logout').classList.toggle('hidden',!d.signed_in);
   $('adminLink').classList.toggle('hidden',!d.signed_in);
+  if(d.signed_in && mode==='sample')void checkFreshness();
   if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
  }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
 }
@@ -120,7 +171,14 @@ $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await po
 $('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
 $('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
 function setMode(m){
+ if(mode!==m){
+  current=null;missing.clear();locked=false;saved=false;
+  $('result').classList.add('hidden');$('stockResult').classList.add('hidden');
+  $('stockFilter').value='';$('code').value='';
+ }
  mode=m;
+ $('freshnessPanel').classList.toggle('hidden',m!=='sample');
+ if(m==='sample')void checkFreshness();
  $('modeSample').classList.toggle('active',m==='sample');
  $('modeStock').classList.toggle('active',m==='stock');
  $('modeHelp').textContent=m==='sample'
@@ -243,9 +301,10 @@ function showResult(d){
  $('saveBtn').classList.toggle('hidden',!d.db_connected);
  $('saveBtn').disabled=false;$('saveBtn').textContent='確認完成 · 保存 TiDB';$('saveBtn').classList.remove('secondary');
  stockSort='';stockDesc=false;$('stockFilter').value='';
- $('dbNotice').textContent=d.db_connected?'已連上 TiDB：可確認保存。曾標記「無樣」的花色會自動勾選；只有按「保存」才會覆蓋狀態。':(d.db_error?'TiDB 連線失敗；可查庫存，但目前不能保存盤點。':'尚未設定 TiDB；可測試掃碼及庫存，但不能保存盤點。');
- $('series').textContent=d.product_code;$('source').textContent=d.source==='company'?'公司電腦':d.source==='home'?'家裡電腦':'V33';
- $('asof').textContent='庫存時間：'+(d.as_of||'即時回應');
+ $('dbNotice').textContent=d.db_connected?'來自 TiDB 的上次完整庫存快照；可確認保存「有樣／無樣」狀態。':(d.db_error?'TiDB 連線失敗，不能保存盤點。':'尚無可用庫存快照，不能保存盤點。');
+ $('series').textContent=d.product_code;
+ $('source').textContent=d.source==='tidb'?'TiDB 快照':d.source==='company'?'公司電腦':d.source==='home'?'家裡電腦':'V33';
+ $('asof').textContent='上次成功同步（UTC）：'+(d.as_of||'未提供');
  $('totals').replaceChildren();
  for(const [name,val] of [['庫存匹數',d.stock_rolls],['庫存米數',d.stock_meters],['商品明細',(d.variants||[]).length]]){
   const el=document.createElement('span');el.textContent=name+'：'+fmt(val);$('totals').append(el)
@@ -256,11 +315,17 @@ function showResult(d){
 async function lookup(input){
  const code=(input||'').trim();if(!valid(code)){msg('QR 內容不是有效商品編號，請檢查後重試','error');return}
  if(busy)return;
- busy=true;locked=true;$('code').value=code;$('queryBtn').disabled=true;msg('正在透過 V33 查詢 '+code+' ...');
+ busy=true;locked=true;$('code').value=code;$('queryBtn').disabled=true;
  try{
-  const d=await post('/scanner/api/stock',{code});
+  if(mode==='sample'){
+   const fresh=await checkFreshness();
+   if(!fresh?.fresh)throw Object.assign(new Error('庫存快照已超過 1 小時或無法確認。請先到管理頁更新庫存，再重新檢查。'),{status:409});
+  }
+  msg(mode==='sample'?'正在查詢 TiDB 布樣與庫存快照：'+code:'正在透過 V33 查即時庫存：'+code);
+  const d=await post(mode==='sample'?'/scanner/api/sample':'/scanner/api/stock',{code});
   showResult(d);msg('查詢完成：'+code,'good');
  }catch(e){current=null;$('result').classList.add('hidden');$('stockResult').classList.add('hidden');locked=false;
+  if(mode==='sample' && e.status===409)void checkFreshness();
   msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');
   if(e.status===401)await session();
  }finally{busy=false;$('queryBtn').disabled=false}
@@ -293,7 +358,7 @@ $('saveBtn').onclick=async()=>{
  try{const out=await post('/scanner/api/save',{scan_id:current.scan_id,missing:[...missing]});
  saved=true;renderRows();msg('已保存 TiDB：'+out.sku_count+' 個花色，無樣 '+out.missing_count+' 個。可以掃下一張。','good');
  b.textContent='已保存';b.classList.add('secondary');
- }catch(e){b.disabled=false;msg(e.message,'error')}
+ }catch(e){b.disabled=false;msg(e.message,'error');if(e.status===409)void checkFreshness()}
 };
 $('copyBtn').onclick=async()=>{
  if(!current)return;
