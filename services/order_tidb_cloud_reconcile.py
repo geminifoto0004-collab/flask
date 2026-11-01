@@ -32,6 +32,8 @@ _TABLES = (
     'cloud_workflows',
     'cloud_workflow_history',
     'cloud_share_tokens',
+    # Per-token per-order permissions must follow a failover to the standby.
+    'cloud_share_order_visibility',
     'cloud_assets',
     'cloud_order_snapshot_state',
     'cloud_order_users',
