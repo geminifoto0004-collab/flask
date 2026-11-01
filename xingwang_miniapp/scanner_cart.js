@@ -536,3 +536,43 @@ $('guestCode').addEventListener('keydown',e=>{if(e.key==='Enter')$('guestLoginBt
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&cartPending.size)void cartFlush()});
 window.addEventListener('pagehide',()=>{if(cartPending.size&&!cartSaveJob)void cartFlush()});
 window.cartEnsureSaved=cartFlush;
+
+
+/* Camino order classification - read only; absence of an order does NOT mean stock. */
+(function(root){
+ 'use strict';
+ const DESC_FIELDS=['descripcion','description','descrip','observacion','observaciones','remarks','remark','detalle','detail'];
+ const STOCK_MARKER=/(?:公司\s*(?:備貨|备货|補貨|补货|庫存|库存)|(?:內部|内部|自用)\s*(?:備貨|备货|庫存|库存)?|(?:備貨|备货|補貨|补货)|\bstock\s*(?:propio|local|libre|empresa)\b|\breposici[oó]n\b)/iu;
+ const ORDER_HEADING=/(?:[訂订定]\s*[單单]\s*(?:編號|编号|號|号|編碼|编码|#|n\.?o\.?)?|(?:n[º°o]\.?\s*)?pedido(?:\s*(?:n[º°o]\.?|numero|número|#))?|(?:order|orden)(?:\s*(?:number|n[º°o]\.?|#))?)\s*[:：#=\-]?\s*((?:KC|G)\d{4,10}|[A-Z]{1,4}-?\d{4,10}|\d{6,10})(?![A-Z\d])/iu;
+ const END_NAME=/\s+(?=\d{2,4}(?:\.\d+)?\s*(?:克\s*[/／]\s*米|克|gsm|g\s*[/／]\s*m2?|cm|公分|米|m\b|码|碼|箱|卷|匹)|公司(?:備貨|备货|補貨|补货)|公司封[條条]|冷[柜櫃]|[裝装]柜|装箱|[裝装]櫃|[规規]格|(?:fabric|tela|peso|contenedor|container)\s*[:：]|[封銷销]條)/iu;
+ function first(row,fields){
+  if(!row||typeof row!=='object')return '';
+  for(const [key,val] of Object.entries(row)){
+   if(fields.includes(key.toLowerCase().replace(/[\s_-]/g,''))&&val!=null&&String(val).trim())return String(val).trim();
+  }return '';
+ }
+ const norm=x=>String(x||'').normalize('NFKC').replace(/[\u00a0\u200b-\u200d]/g,' ').replace(/\s+/g,' ').trim();
+ function customerTail(text){
+  let tail=norm(text).replace(/^(?:CLIENTE|CUSTOMER|客[戶户])\s*[:：=]\s*/iu,'').replace(/^[\s:,;，；\-—]+/u,'');
+  if(/^\d{2,4}(?:\.\d+)?\s*(?:克|gsm|cm|米|码|碼|m\b)/iu.test(tail))return '';
+  const stop=tail.search(END_NAME);if(stop>=0)tail=tail.slice(0,stop);
+  tail=tail.replace(/[\s,:;，；.\-—]+$/u,'').trim().slice(0,100);
+  if(!/[A-Z\p{Script=Han}]/iu.test(tail)||/^(?:公司封[條条]|冷[柜櫃]|[裝装]柜|[規规]格|STOCK|ALMACEN|WAREHOUSE|CARGA|CONTENEDOR)\b/iu.test(tail))return '';
+  return tail;
+ }
+ function classify(row){
+  const description=first(row,DESC_FIELDS),glosa=first(row,['glosa']);
+  const text=norm(description),explicitStock=STOCK_MARKER.test(norm(description+' '+glosa));
+  const match=text.match(ORDER_HEADING);
+  const order_number=match?match[1].toUpperCase():'';
+  const supplied=first(row,['customer','customername','cliente','nombrecliente']);
+  const customer_name=match?(customerTail(text.slice(match.index+match[0].length))||norm(supplied)):'';
+  let kind='unknown';
+  if(order_number&&customer_name&&!explicitStock)kind='customer';
+  else if(explicitStock&&!customer_name&&!order_number)kind='company';
+  return {kind,order_number,customer_name,description,glosa,
+   reason:kind==='customer'?'有訂單號和客戶名稱':kind==='company'?'描述明確標記備貨':
+    !description?'上游未提供 Descripcion':'缺少明確分類證據或存在衝突'};
+ }
+ root.XWCaminoOrder=Object.freeze({classify});
+})(typeof window!=='undefined'?window:globalThis);
