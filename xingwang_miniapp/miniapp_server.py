@@ -736,6 +736,8 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
 from xingwang_miniapp.scanner_backend import router as scanner_router, attach_stock_lookup
 attach_stock_lookup(relay_stock_mcp)
 app.include_router(scanner_router)
+from xingwang_miniapp.scanner_cart import router as scanner_cart_router
+app.include_router(scanner_cart_router)
 
 if os.environ.get("XW_STOCK_MCP_PUBLIC", "") == "1":
     from xingwang_miniapp.stock_mcp import create_public_stock_mcp

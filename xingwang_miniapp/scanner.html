@@ -140,19 +140,37 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 .share-actions button{font-size:12px;padding:10px}
 #inventoryStatusText{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}
 #dbSetupMsg,#shareStatus{font-size:12px;color:#52677d;line-height:1.65;margin-top:9px}
+.cart-nav{position:relative}.cart-nav-count{position:absolute;right:-5px;top:-7px;min-width:17px;height:17px;border-radius:50px;display:flex;align-items:center;justify-content:center;background:#135d99;color:white;font-size:10px;font-weight:750;padding:2px}
+.cart-code-empty{color:#8796a6}.cart-code-number{font-size:22px;letter-spacing:2px;font-variant-numeric:tabular-nums;font-weight:850}
+.cart-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cart-header h2{font-size:18px;margin:0;word-break:break-word}.cart-head-actions{display:flex;gap:6px;align-items:center}
+#cartWorkspace h3{font-size:13px;color:#4d6378;margin:13px 0 7px}
+#cartWorkspace .cart-line{display:flex;align-items:center;justify-content:space-between;gap:6px;border-bottom:1px solid #eaf0f6;padding:9px 0;min-height:55px}
+.cart-line-title{min-width:0;display:flex;flex-direction:column;gap:3px}.cart-line-title strong{font-size:13px;overflow-wrap:anywhere}.cart-line-title small{font-size:11px;color:#60758b}.cart-line-title small.cart-out{color:#9c4141}
+.cart-qty-controls{display:flex;flex:none;align-items:center;gap:5px}.cart-qty-controls button{border-radius:10px;width:38px;height:38px;padding:0;font-size:23px;font-weight:500}.cart-qty-controls strong{width:30px;text-align:center;font-size:15px;font-variant-numeric:tabular-nums}
+.cart-products-head{display:flex;align-items:center;justify-content:space-between;gap:6px;border-top:1px solid #eaf0f6;padding:12px 0 3px}.cart-products-head strong{font-size:16px}
+.cart-filter{display:flex;gap:7px;margin:9px 0}.cart-filter button{flex:1;background:#edf3f9;color:#2a506c;padding:8px}.cart-filter button.active{background:#135fa7;color:white}
+.cart-history-row{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;text-align:left;margin-bottom:6px}.cart-history-left{display:flex;flex-direction:column;gap:3px}.cart-history-left small{font-size:11px}
+#cartMessage{font-size:12px;line-height:1.5;color:#16744e;margin:8px 0}#cartMessage:empty{display:none}#cartMessage.error{color:#b22e39}
+.cart-spread{display:flex;align-items:center;justify-content:space-between;gap:8px}.cart-spread>*{min-width:0}
+.cart-stack{display:flex;flex-wrap:wrap;gap:7px}.cart-stack button{flex:1;font-size:12px;padding:11px 8px}
+.cart-hint{background:#f4f7fa;border-radius:9px;padding:8px;margin:9px 0;font-size:11px;color:#63768a;line-height:1.6}
+#cartNewName{width:100%}#cartFilter{width:100%}
+#login .guest-divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:#8693a2;font-size:12px}.guest-divider:before,.guest-divider:after{content:"";height:1px;background:#e0e8f1;flex:1}
+@media(max-width:350px){.cart-qty-controls{gap:3px}.cart-qty-controls button{width:35px;height:35px}.cart-line-title strong{font-size:12px}.cart-qty-controls strong{width:23px}}
 </style>
 </head>
 <body><main>
-<header><div><h1>XINGWANG SCANNER</h1></div><div class="header-actions"><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden">登出</button></div></header>
+<header><div><h1>XINGWANG SCANNER</h1></div><div class="header-actions"><button class="admin-icon cart-nav hidden" id="cartNav" type="button" title="CART" aria-label="開啟購物車"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 2h2l3 13h13l2-9H5"/></svg><span id="cartNavCount" class="cart-nav-count">0</span></button><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden">登出</button></div></header>
 <section id="login" class="panel hidden">
 <h2>首次登入掃描器</h2>
 <p class="muted">輸入公司登入碼，這台手機將保持登入 30 天。</p>
 <input id="passcode" type="password" placeholder="公司登入碼" autocomplete="current-password">
-<button id="loginBtn">登入</button><p id="loginMessage" class="muted"></p>
+<button id="loginBtn">登入</button><div class="guest-divider">CART</div><p class="muted">客人選貨 · 8 位臨時碼，只有自己的購物車</p><input id="guestCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="8-digit code" autocomplete="one-time-code"><button id="guestLoginBtn" class="secondary" type="button">OPEN CART</button><p id="loginMessage" class="muted"></p>
 </section>
 <div id="app" class="hidden">
 <section class="panel" id="scanPanel">
-<div class="modes"><button id="modeSample" class="active" type="button" title="布樣盤點 / Muestras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M4 12h16"/></svg><span>SAMPLE</span></button><button id="modeFull" type="button" title="完整查詢 / Consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg><span>DATA</span></button></div>
+<div id="workModes" class="modes"><button id="modeSample" class="active" type="button" title="布樣盤點 / Muestras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M4 12h16"/></svg><span>SAMPLE</span></button><button id="modeFull" type="button" title="完整查詢 / Consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg><span>DATA</span></button></div>
 <div id="fullKindControls" class="full-kind hidden"><button id="fullProduct" class="active" type="button">商品查詢</button><button id="fullNota" type="button">Nota 查詢</button></div>
 <div id="freshnessPanel" class="notice hidden" role="status" aria-live="polite">
 <div class="freshness-head"><span id="freshnessText">庫存快照已超過 60 分鐘，請先更新。</span><button type="button" id="freshnessDismissBtn" class="freshness-close" aria-label="關閉庫存更新提醒" title="關閉提醒">×</button></div>
@@ -169,6 +187,28 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <svg id="cameraOffIcon" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/><path d="M3 3l18 18"/></svg>
 </button><button id="queryBtn" type="button" class="query-icon" aria-label="查詢 / Buscar" title="查詢 / Buscar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg></button></div>
 <div id="message" aria-live="polite"></div>
+</section>
+<section id="cartWorkspace" class="panel hidden" aria-label="購物車">
+ <div id="cartStart">
+  <div class="cart-header"><h2>NEW CART</h2><span class="tag">TiDB</span></div>
+  <p class="muted">每次選貨建立獨立 ID，之後可以重新打開繼續追加。</p>
+  <input id="cartNewName" type="text" maxlength="80" placeholder="Customer / Cliente (optional)" autocomplete="off">
+  <button id="cartCreateBtn" type="button" style="width:100%;margin:8px 0">＋ NEW CART</button>
+ </div>
+ <div id="cartStaffList"><h3>RECENT</h3><input id="cartFilter" type="search" placeholder="ID / Customer" autocomplete="off"><div id="cartRecent" style="margin-top:9px"></div></div>
+ <div id="cartActive" class="hidden">
+  <div class="cart-header"><button id="cartBack" class="secondary" type="button" aria-label="所有購物車">←</button><h2 id="cartShortCode"></h2><span id="cartStateLabel" class="tag">OPEN</span></div>
+  <div class="cart-spread" style="margin:10px 0"><span id="cartCustomerLabel" class="muted">CUSTOMER</span><button id="cartEditName" class="ghost" type="button" title="編輯客戶名稱" aria-label="編輯客戶名稱">✎</button></div>
+  <div id="cartShareRow" class="cart-hint"><div class="cart-spread"><span>GUEST CODE · 8H</span><span id="cartGuestCode" class="cart-code-number"></span></div><div class="cart-stack" style="margin-top:8px"><button id="cartShareBtn" type="button" class="secondary">↻ CODE</button><button id="cartGuestHandoff" type="button" class="secondary">GUEST MODE</button></div></div>
+  <div id="cartStockNote" class="cart-hint hidden"></div>
+  <div id="cartProducts"></div>
+  <div class="cart-spread" style="margin-top:14px"><h3 style="margin:0">CART ITEMS</h3><strong><span id="cartTotal">0</span> ROLL</strong></div>
+  <div id="cartItems"></div>
+  <div class="cart-spread" style="margin:10px 0"><small id="cartSavedAt" class="muted"></small><button id="cartReload" class="ghost" type="button" title="重新載入購物車">↻</button></div>
+  <div class="cart-stack"><button id="cartStateButton" type="button">✓ READY</button><button id="cartCopy" type="button" class="secondary" aria-label="複製選貨清單">COPY</button></div>
+  <p class="muted" style="margin:8px 0 0">READY ≠ RESERVAR · 正式開單前需確認庫存</p>
+ </div>
+ <div id="cartMessage" aria-live="polite"></div>
 </section>
 <section id="fullResult" class="panel hidden" aria-label="完整查詢結果">
 <div class="bar"><div><h2 id="fullTitle">完整查詢</h2><small id="fullTime" class="muted"></small></div><span class="tag">公司查詢</span></div>
@@ -302,20 +342,26 @@ async function post(path,body={}){
 async function session(){
  try{
   const d=await (await fetch('/scanner/api/session',{credentials:'same-origin',cache:'no-store'})).json();
-  $('login').classList.toggle('hidden',d.signed_in);
-  $('app').classList.toggle('hidden',!d.signed_in);
-  $('logout').classList.toggle('hidden',!d.signed_in);
-  $('adminLink').classList.toggle('hidden',!d.signed_in);
-  if(d.signed_in && mode==='admin'){setMode('admin');}
-  if(d.signed_in && mode==='sample')void checkFreshness();
+  const c=await (await fetch('/scanner/api/cart/session',{credentials:'same-origin',cache:'no-store'})).json();
+  const role=d.signed_in?'staff':c.role==='guest'?'guest':'none';
+  const signed=role!=='none';
+  $('login').classList.toggle('hidden',signed);
+  $('app').classList.toggle('hidden',!signed);
+  $('logout').classList.toggle('hidden',!signed);
+  $('adminLink').classList.toggle('hidden',role!=='staff');
+  $('cartNav').classList.toggle('hidden',role!=='staff');
+  if(role==='staff' && mode==='admin'){setMode('admin');}
+  if(role==='staff' && mode==='sample')void checkFreshness();
+  if(window.cartBootstrap)await window.cartBootstrap(role,c.cart_id);
   if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
  }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
 }
 $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await post('/scanner/api/login',{passcode:$('passcode').value});$('passcode').value='';await session()}catch(e){$('loginMessage').textContent=e.message}finally{b.disabled=false}};
 $('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
-$('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
+$('logout').onclick=async()=>{await stopCamera();if(cartRole==='guest')await post('/scanner/api/cart/guest-logout');else await post('/scanner/api/logout');mode='sample';await session()};
 function setMode(m){
- if(!['sample','full','admin'].includes(m))m='sample';
+ if(!['sample','full','admin','cart'].includes(m))m='sample';
+ if(cartRole==='guest'&&m!=='cart')m='cart';
  if(mode==='full'&&fullKind==='nota')notaInput=$('code').value;
  else if(valid($('code').value.trim()))sharedProductCode=normalizeProductCode($('code').value);
  mode=m;
@@ -326,14 +372,18 @@ function setMode(m){
  nav.title=managing?'返回上一頁':'管理分頁';
  $('adminTab').classList.toggle('hidden',!managing);
  $('scanPanel').classList.toggle('hidden',managing);
+ $('workModes').classList.toggle('hidden',m==='cart');
+ $('cartWorkspace').classList.toggle('hidden',m!=='cart');
  $('adminLink').classList.toggle('active',managing);
+ $('cartNav').classList.toggle('active',m==='cart');
  $('fullKindControls').classList.toggle('hidden',m!=='full');
+ if(window.cartApplyRole)window.cartApplyRole();
  showFreshnessWarning();
  if(m==='sample')void checkFreshness();
  if(managing)checkInventoryStatus();
  $('modeSample').classList.toggle('active',m==='sample');
  $('modeFull').classList.toggle('active',m==='full');
- $('code').placeholder=m==='full'&&fullKind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
+ $('code').placeholder=m==='cart'?'SCAN QR / SKU':m==='full'&&fullKind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
  $('code').value=m==='full'&&fullKind==='nota'?notaInput:sharedProductCode;
  syncSearchClear();
  const sampleMatch=m==='sample'&&current&&current.product_code===sharedProductCode;
@@ -695,6 +745,7 @@ function showResult(d){
  renderRows();
 }
 async function lookup(input){
+ if(mode==='cart'){if(window.cartLookup)await window.cartLookup(input);return;}
  const nota=mode==='full'&&fullKind==='nota';
  const code=nota?String(input||'').trim():normalizeProductCode(input);
  const validInput=nota?(code==='@'||/^[0-9]{1,5}$/.test(code)||code.length>=2&&code.length<=40):valid(code);
@@ -750,6 +801,12 @@ function onScan(raw){
  if(busy||mode==='admin')return;
  const code=normalizeProductCode(raw);
  if(!valid(code)){msg('QR 不是商品編號，請掃描純編號 QR','error');return}
+ if(mode==='cart'){
+  if(code===lastQrCode||cartSearch?.product_code===code)return;
+  lastQrCode=code;
+  if(window.cartLookup)void window.cartLookup(code);
+  return;
+ }
  // The camera reports the same visible QR many times per second.
  // Skip duplicates; a DIFFERENT QR can be scanned immediately, with the
  // unsaved-change confirmation already enforced inside lookup().
@@ -890,4 +947,4 @@ $('inventoryStartBtn').onclick=async()=>{
 
 if(location.hash==='#admin')mode='admin';
 session();
-</script></body></html>
+</script><script src="/scanner/cart.js"></script></body></html>

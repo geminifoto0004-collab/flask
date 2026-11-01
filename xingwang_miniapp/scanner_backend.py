@@ -18,7 +18,7 @@ from uuid import uuid4
 from xingwang_miniapp import scanner_tidb
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 router = APIRouter()
 COOKIE = "xw_scanner_session"
@@ -88,6 +88,15 @@ async def scanner_page():
         "X-Robots-Tag": "noindex, nofollow, noarchive",
         "X-Frame-Options": "DENY",
         "Content-Security-Policy": "frame-ancestors 'none'",
+    })
+
+
+@router.get("/scanner/cart.js", include_in_schema=False)
+async def scanner_cart_javascript():
+    source = Path(__file__).with_name("scanner_cart.js").read_text(encoding="utf-8")
+    return Response(source, media_type="application/javascript", headers={
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
     })
 
 
