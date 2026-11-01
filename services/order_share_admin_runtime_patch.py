@@ -318,9 +318,30 @@ def _valid_token_hash(value):
 
 
 def _share_settings_detail(token_hash):
+    started = time.perf_counter()
+    phases, outcome = {}, 'failed'
+    try:
+        result = _read_share_settings_detail(token_hash, phases)
+        outcome = 'ok'
+        return result
+    finally:
+        elapsed = round((time.perf_counter() - started) * 1000, 1)
+        print(f'[ORDER Share Detail] share={str(token_hash)[:12]} outcome={outcome} '
+              f'total_ms={elapsed} phases={phases}', flush=True)
+
+
+def _read_share_settings_detail(token_hash, phases):
+    last = time.perf_counter()
+    def mark(name):
+        nonlocal last
+        now = time.perf_counter()
+        phases[name] = round((now - last) * 1000, 1)
+        last = now
     token_hash = _valid_token_hash(token_hash)
     _ensure_columns()
+    mark("schema_ms")
     conn = get_db_connection()
+    mark("connect_ms")
     cur = get_cursor(conn)
     try:
         cur.execute(
@@ -336,6 +357,7 @@ def _share_settings_detail(token_hash):
         if not row:
             raise ValueError("share not found")
         share = get_row_dict(row, cur) or {}
+        mark("share_ms")
         cur.execute(
             """SELECT order_number, show_order, show_images, show_workflow_images, show_logistics
                FROM cloud_share_order_visibility WHERE token_hash=?""",
@@ -346,6 +368,7 @@ def _share_settings_detail(token_hash):
             for item in (get_row_dict(r, cur) or {} for r in cur.fetchall())
             if str(item.get("order_number") or "").strip()
         }
+        mark("visibility_ms")
         customer_key = str(share.get("customer_key") or "")
         cur.execute(
             """SELECT order_number, order_date, production_type, product_name, product_code,
@@ -376,6 +399,8 @@ def _share_settings_detail(token_hash):
                 "show_workflow_images": global_workflow_images if override.get("show_workflow_images") is None else bool(override.get("show_workflow_images")),
                 "show_logistics": True if override.get("show_logistics") is None else bool(override.get("show_logistics")),
             })
+        mark("orders_ms")
+        phases["orders"] = len(orders)
         expires_epoch = _dt_epoch(share.get("expires_at"))
         return {
             "id": token_hash,
@@ -922,4 +947,5 @@ try:
     print("[ORDER] share admin runtime patch ready")
 except Exception as exc:
     print(f"[WARN] ORDER share admin migration deferred: {type(exc).__name__}: {exc}")
+
 
