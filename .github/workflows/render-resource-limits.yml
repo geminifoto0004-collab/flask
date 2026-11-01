@@ -1,0 +1,30 @@
+name: Render memory and TiDB RU safety
+
+on:
+  pull_request:
+    paths:
+      - "gunicorn.conf.py"
+      - "services/order_public_share_multi_b2_page.py"
+      - "services/order_customer_share_hot_cache.py"
+      - "services/order_share_render_cache.py"
+      - "services/order_tidb_cloud_reconcile.py"
+      - "tests/test_resource_limits_20261101.py"
+      - ".github/workflows/render-resource-limits.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  memory-and-tidb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile all changed Python files
+        run: |
+          python -m py_compile gunicorn.conf.py services/order_public_share_multi_b2_page.py services/order_customer_share_hot_cache.py services/order_share_render_cache.py services/order_tidb_cloud_reconcile.py
+      - name: Cache and TiDB repair smoke regression tests
+        run: python tests/test_resource_limits_20261101.py
