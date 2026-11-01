@@ -62,7 +62,13 @@ def test_quota_circuit_and_no_credential_fields():
     evidence.target_failed('TIDB1',RuntimeError('Request Unit budget exceeded'))
     assert evidence.target_blocked('TIDB1') and not evidence.can_promote('TIDB1')
     assert evidence.can_promote('TIDB2')
-    assert set(evidence.snapshot())<={'state','verified','cloud_equal','order_equal','targets','checked_at_epoch','quota_cooldown_targets'}
+    assert set(evidence.snapshot())<={'state','verified','cloud_equal','order_equal','targets','checked_at_epoch','unavailable_cooldown_targets'}
+
+
+def test_read_timeout_quarantines_target_but_sql_validation_error_does_not():
+    evidence.target_failed('TIDB1',TimeoutError('read timed out'))
+    evidence.target_failed('TIDB2',ValueError('invalid SQL'))
+    assert evidence.target_blocked('TIDB1') and not evidence.target_blocked('TIDB2')
 
 
 def test_wrong_scope_and_expired_proof():

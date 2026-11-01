@@ -25,7 +25,9 @@ def quota_error(error):
 
 
 def target_failed(target, error):
-    if quota_error(error):
+    args=getattr(error,'args',())
+    connection_failure=isinstance(error,(TimeoutError,ConnectionError)) or bool(args and isinstance(args[0],int) and args[0] in {2003,2006,2013,2055})
+    if quota_error(error) or connection_failure:
         with _lock:
             _blocked[str(target)] = time.monotonic() + 60
 
@@ -60,7 +62,7 @@ def publish(result, expected_generation):
 def snapshot():
     with _lock:
         result = deepcopy(_evidence)
-        result['quota_cooldown_targets'] = [key for key in _blocked if target_blocked(key)]
+        result['unavailable_cooldown_targets'] = [key for key in _blocked if target_blocked(key)]
         return result
 
 

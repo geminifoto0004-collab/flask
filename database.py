@@ -430,6 +430,9 @@ class CloudMirroredCursor:
         return getattr(self._active_cursor, name)
 
     def execute(self, sql, params=None):
+        if _is_cloud_write(sql):
+            import tidb_integrity
+            tidb_integrity.invalidate()
         try:
             if params is None:
                 result = self._active_cursor.execute(sql)
@@ -446,8 +449,14 @@ class CloudMirroredCursor:
 
     def executemany(self, sql, params_list):
         if _is_cloud_write(sql):
+            import tidb_integrity
+            tidb_integrity.invalidate()
             rows = params_list if isinstance(params_list, (list, tuple)) else list(params_list)
-            result = self._active_cursor.executemany(sql, rows)
+            try:
+                result = self._active_cursor.executemany(sql, rows)
+            except Exception as error:
+                tidb_integrity.target_failed(self._connection.active_target, error)
+                raise
             self._connection._cloud_written = True
             self._connection._mirror_execute(sql, rows, many=True)
             return result
