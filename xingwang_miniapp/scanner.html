@@ -42,6 +42,10 @@ button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
 .stock-stat{flex:1 1 calc(50% - 8px);min-width:118px;background:#f1f6fb;border-radius:12px;padding:12px}
 .stock-stat small{display:block;color:#627b8e;font-size:11px;margin-bottom:4px}
 .stock-stat strong{font-size:20px;font-variant-numeric:tabular-nums;color:#213a53}
+.stock-visibility{display:flex;gap:8px;margin:12px 0 8px;align-items:center}
+.stock-visibility button{flex:1;min-width:0;background:#edf2f8;color:#294763;font-size:13px;padding:10px 8px;white-space:nowrap}
+.stock-visibility button.active{background:#145ba4;color:#fff}
+.stock-visibility button:focus-visible{outline:2px solid #145ba4;outline-offset:2px}
 .stock-filter-row{display:flex;align-items:center;gap:8px;margin:13px 0 10px}
 .stock-filter-row input{flex:1;min-width:0;width:100%;padding:10px;font-size:16px}
 .stock-filter-row .muted{white-space:nowrap}
@@ -118,6 +122,10 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <section id="stockResult" class="panel hidden" aria-label="庫存查詢結果">
 <div class="bar"><div><h2 id="stockSeries"></h2><small id="stockAsOf" class="muted"></small></div><span id="stockSource" class="tag"></span></div>
 <div class="stock-stat-grid" id="stockStats"></div>
+<div class="stock-visibility" role="group" aria-label="快速庫存顯示範圍">
+<button type="button" id="stockPositiveBtn" class="active" aria-pressed="true">有庫存（匹數 &gt; 0）</button>
+<button type="button" id="stockAllBtn" aria-pressed="false">ALL</button>
+</div>
 <div class="stock-filter-row"><input id="stockFilter" type="search" placeholder="篩選目前全部庫存明細" autocomplete="off" aria-label="篩選庫存明細"><span class="muted" id="stockCount">0 / 0 筆</span></div>
 <div class="stock-tablewrap"><table><thead><tr id="stockTableHead"></tr></thead><tbody id="stockTableBody"></tbody></table></div>
 <p class="muted stock-note" id="stockNote">僅含上次同步的庫存匹數、米數。待到貨與客戶資料不在快照內；需要完整資訊請切換「完整查詢」。</p>
@@ -128,6 +136,10 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div id="fullStats" class="stock-stat-grid"></div>
 <div id="fullTabs" class="full-tabs">
 <button data-fulltab="stock" class="active">庫存</button><button data-fulltab="camino">待到貨</button><button data-fulltab="history">歷史購買</button><button data-fulltab="reservar">預定</button>
+</div>
+<div id="fullStockVisibility" class="stock-visibility" role="group" aria-label="完整查詢庫存顯示範圍">
+<button type="button" id="fullPositiveBtn" class="active" aria-pressed="true">有庫存（匹數 &gt; 0）</button>
+<button type="button" id="fullAllBtn" aria-pressed="false">ALL</button>
 </div>
 <div class="stock-filter-row" id="fullFilterRow"><input id="fullFilter" type="search" placeholder="篩選查詢結果" autocomplete="off" aria-label="篩選完整查詢資料"><span id="fullCount" class="muted"></span></div>
 <div id="fullDetails"></div>
@@ -298,7 +310,28 @@ const stockColumns=[
  ['stock_meters','米數'],
  ['incoming_boxes','待到貨(未同步)']
 ];
-let stockSort='',stockDesc=false;
+let stockSort='',stockDesc=false,stockPositiveOnly=true,fullPositiveOnly=true;
+function hasPositivePieces(value){
+ if(value===null||value===undefined||String(value).trim()==='')return false;
+ const amount=Number(value);
+ return Number.isFinite(amount)&&amount>0;
+}
+function totalsForShownRows(rows,key){
+ if(!rows.length)return 0;
+ const values=rows.map(row=>row[key]);
+ if(values.some(value=>value===null||value===undefined||String(value).trim()===''||!Number.isFinite(Number(value))))return null;
+ return values.reduce((sum,value)=>sum+Number(value),0);
+}
+function syncVisibilityButtons(positive,positiveId,allId){
+ for(const [id,active] of [[positiveId,positive],[allId,!positive]]){
+  const button=$(id);button.classList.toggle('active',active);
+  button.setAttribute('aria-pressed',String(active));
+ }
+}
+$('stockPositiveBtn').onclick=()=>{stockPositiveOnly=true;renderStockResult()};
+$('stockAllBtn').onclick=()=>{stockPositiveOnly=false;renderStockResult()};
+$('fullPositiveBtn').onclick=()=>{fullPositiveOnly=true;renderFullResult(fullData)};
+$('fullAllBtn').onclick=()=>{fullPositiveOnly=false;renderFullResult(fullData)};
 function stockFormat(value){
  if(value===null||value===undefined||value==='')return '—';
  if(typeof value==='number')return value.toLocaleString('en-US',{maximumFractionDigits:3});
@@ -311,12 +344,15 @@ function stockRows(){
 }
 function renderStockResult(){
  if(!current)return;
- const data=current, rows=stockRows(), stats=$('stockStats');
+ const data=current, allRows=stockRows();
+ const rows=stockPositiveOnly?allRows.filter(r=>hasPositivePieces(r.stock_rolls)):allRows;
+ syncVisibilityButtons(stockPositiveOnly,'stockPositiveBtn','stockAllBtn');
+ const stats=$('stockStats');
  stats.replaceChildren();
  for(const [name,value] of [
   ['商品種類',rows.length],
-  ['庫存匹數',data.stock_rolls],
-  ['庫存米數',data.stock_meters],
+  ['庫存匹數',stockPositiveOnly?totalsForShownRows(rows,'stock_rolls'):data.stock_rolls],
+  ['庫存米數',stockPositiveOnly?totalsForShownRows(rows,'stock_meters'):data.stock_meters],
   ['同步時間',data.freshness?.synced_at_utc?new Date(data.freshness.synced_at_utc).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false}):'—']
  ]){
   const el=document.createElement('div');el.className='stock-stat';
@@ -341,7 +377,7 @@ function renderStockResult(){
    return stockDesc?-cmp:cmp;
   });
  }
- $('stockCount').textContent=list.length+' / '+rows.length+' 筆';
+ $('stockCount').textContent=list.length+' / '+allRows.length+' 筆';
  const head=$('stockTableHead');head.replaceChildren();
  for(const [field,title] of stockColumns){
   const th=document.createElement('th');
@@ -450,10 +486,15 @@ function fullTable(rows,columns){
 }
 function fullRenderProduct(data){
  const stock=Array.isArray(data.rows)?data.rows:[];
- const all=fullTab==='stock'?stock:(Array.isArray(data[fullTab])?data[fullTab]:[]);
- const p=stock.some(x=>x.pieces!=null)?stock.reduce((sum,x)=>sum+Number(x.pieces||0),0):null;
- const m=stock.some(x=>x.meters!=null)?stock.reduce((sum,x)=>sum+Number(x.meters||0),0):null;
- const cards=[['商品種類',stock.length],['庫存匹數',p],['庫存米數',m],['待到貨(匹)',data.camino_caja_total]];
+ const visibleStock=fullPositiveOnly?stock.filter(row=>hasPositivePieces(row.pieces)):stock;
+ const all=fullTab==='stock'?visibleStock:(Array.isArray(data[fullTab])?data[fullTab]:[]);
+ $('fullStockVisibility').classList.toggle('hidden',fullTab!=='stock');
+ syncVisibilityButtons(fullPositiveOnly,'fullPositiveBtn','fullAllBtn');
+ const pieces=fullTab==='stock'&&fullPositiveOnly?totalsForShownRows(visibleStock,'pieces'):
+              stock.some(x=>x.pieces!=null)?stock.reduce((sum,x)=>sum+Number(x.pieces||0),0):null;
+ const meters=fullTab==='stock'&&fullPositiveOnly?totalsForShownRows(visibleStock,'meters'):
+              stock.some(x=>x.meters!=null)?stock.reduce((sum,x)=>sum+Number(x.meters||0),0):null;
+ const cards=[['商品種類',fullTab==='stock'?visibleStock.length:stock.length],['庫存匹數',pieces],['庫存米數',meters],['待到貨(匹)',data.camino_caja_total]];
  if(fullTab==='history')cards.push(['近365天',data.history_recent_count],['最近交易',data.history_last_date]);
  fullAddCards(cards);
  let rows=all.filter(row=>Object.values(row).some(value=>String(value??'').toLowerCase().includes($('fullFilter').value.trim().toLowerCase())));
@@ -462,7 +503,7 @@ function fullRenderProduct(data){
   const diff=num?a-b:String(a??'').localeCompare(String(b??''),undefined,{numeric:true});
   return fullDesc?-diff:diff;
  });
- $('fullCount').textContent=rows.length+' / '+all.length+' 筆';
+ $('fullCount').textContent=rows.length+' / '+(fullTab==='stock'?stock.length:all.length)+' 筆';
  const cols=fullTab==='history'&&data.price_allowed?[...fullFields.history,['price','成交單價']]:fullFields[fullTab];
  $('fullDetails').replaceChildren(fullTable(rows,cols));
  $('fullHistoryMore').classList.toggle('hidden',fullTab!=='history'||!Number.isInteger(data.history_next_cursor)||data.history_next_cursor >= Number(data.history_retrievable_count??data.history_total_count??0));
@@ -512,6 +553,7 @@ function renderFullResult(data){
  $('fullTitle').textContent=(fullKind==='nota'?'Nota / 客戶查詢：':'商品查詢：')+fullCode;
  $('fullTabs').classList.toggle('hidden',fullKind==='nota');
  $('fullFilterRow').classList.toggle('hidden',fullKind==='nota');
+ $('fullStockVisibility').classList.toggle('hidden',fullKind==='nota'||fullTab!=='stock');
  if(fullKind==='nota'){fullRenderNota(data);return}
  for(const b of $('fullTabs').querySelectorAll('button[data-fulltab]'))b.classList.toggle('active',b.dataset.fulltab===fullTab);
  fullRenderProduct(data);
