@@ -850,8 +850,76 @@ def _update_share_settings_with_expiry():
 _fast._create_scoped_share = _create_scoped_share_guarded
 _fast._update_share_settings = _update_share_settings_with_expiry
 
+
+def _desktop_link_origin(value):
+    """Allow explicit transfers only to loopback or private LAN browser origins."""
+    import ipaddress
+    from urllib.parse import urlsplit
+    parsed = urlsplit(str(value or ''))
+    if (parsed.scheme not in {'http', 'https'} or not parsed.hostname
+            or parsed.username or parsed.password or parsed.path not in {'', '/'}
+            or parsed.query or parsed.fragment):
+        raise ValueError('invalid desktop origin')
+    if parsed.hostname != 'localhost':
+        address = ipaddress.ip_address(parsed.hostname)
+        networks = ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7')
+        if not address.is_loopback and not any(address in ipaddress.ip_network(n) for n in networks):
+            raise ValueError('desktop origin must be local or private LAN')
+    parsed.port  # Reject malformed ports before rendering a target origin.
+    return parsed.scheme + '://' + parsed.netloc
+
+
+@b2_test_bp.route('/admin/order-shares/desktop-sync', methods=['GET', 'POST'])
+def _cloud_share_desktop_sync():
+    """Export existing signed links through the logged-in cloud admin's browser."""
+    import hmac
+    import re
+    import secrets
+    from flask import render_template_string
+    if not session.get('logged_in'):
+        return redirect(url_for('login', next=request.full_path))
+    if not _cloud_admin_allowed():
+        return jsonify({'ok': False, 'error': 'admin login required'}), 403
+    try:
+        origin = _desktop_link_origin(request.args.get('origin'))
+        request_id = str(request.args.get('request_id') or '')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{16,128}', request_id):
+            raise ValueError('invalid request id')
+    except ValueError:
+        return jsonify({'ok': False, 'error': 'invalid local destination'}), 400
+
+    sent, rows = False, []
+    if request.method == 'POST':
+        saved = dict(session.get('order_desktop_link_export') or {})
+        valid = (saved.get('origin') == origin and saved.get('request_id') == request_id
+                 and float(saved.get('expires') or 0) >= time.time()
+                 and hmac.compare_digest(str(saved.get('csrf') or ''), str(request.form.get('csrf') or '')))
+        if not valid:
+            return jsonify({'ok': False, 'error': 'export confirmation expired; reopen from desktop'}), 403
+        session.pop('order_desktop_link_export', None)
+        rows = [{'id': item['id'], 'share_url': item['share_url']}
+                for item in _cloud_admin_share_rows(active_only=True) if item.get('share_url')]
+        sent = True
+        csrf = ''
+    else:
+        csrf = secrets.token_urlsafe(32)
+        session['order_desktop_link_export'] = {'origin': origin, 'request_id': request_id,
+                                               'csrf': csrf, 'expires': time.time() + 600}
+    script_nonce = secrets.token_urlsafe(20)
+    response = make_response(render_template_string('''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>同步分享网址</title>
+<style>body{font:15px system-ui;color:#263044;background:#f6f7fa;margin:0;padding:28px}.box{max-width:480px;margin:auto;background:white;border:1px solid #e1e5ed;border-radius:16px;padding:24px}h1{font-size:22px}code{display:block;overflow-wrap:anywhere;background:#f1f4f8;padding:12px;border-radius:8px}button{font:600 15px system-ui;background:#ff2442;color:white;border:0;border-radius:9px;padding:12px 18px;cursor:pointer}p{line-height:1.6}</style><div class="box"><h1>同步已有分享网址</h1>
+{% if sent %}<p id="result">已发送 {{ rows|length }} 条有效分享网址到本机。</p><script nonce="{{ script_nonce }}">if(window.opener){window.opener.postMessage({type:'order-share-links:v1',request_id:{{ request_id|tojson }},shares:{{ rows|tojson }}},{{ origin|tojson }});setTimeout(()=>window.close(),1200);}else{document.getElementById('result').textContent='本机窗口已关闭，请从本机重新打开同步。';}</script>
+{% else %}<p>将有效分享的网址与 QR 同步到以下本机管理页：</p><code>{{ origin }}</code><p>请确认这是你正在使用的本机地址。</p><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">同步到此本机</button></form>{% endif %}</div></html>''', origin=origin, request_id=request_id, rows=rows, sent=sent, csrf=csrf, script_nonce=script_nonce))
+    response.headers['Cache-Control'] = 'no-store, private, max-age=0'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-" + script_nonce + "'; form-action 'self'; frame-ancestors 'none'"
+    response.headers['X-Order-Desktop-Sync'] = '1'
+    return response
+
 try:
     _ensure_columns()
     print("[ORDER] share admin runtime patch ready")
 except Exception as exc:
     print(f"[WARN] ORDER share admin migration deferred: {type(exc).__name__}: {exc}")
+
