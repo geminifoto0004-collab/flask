@@ -89,6 +89,14 @@ CART_SCHEMA = (
         note TEXT NOT NULL,
         updated_at DATETIME(6) NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS xw_cart_item_notes (
+        cart_id CHAR(32) NOT NULL,
+        sku VARCHAR(128) NOT NULL,
+        note VARCHAR(240) NOT NULL DEFAULT '',
+        version INT NOT NULL DEFAULT 1,
+        updated_at DATETIME(6) NOT NULL,
+        PRIMARY KEY(cart_id,sku)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 )
 
 # Re-runnable upgrades. Existing stock and sample tables remain untouched.
@@ -430,15 +438,8 @@ def _mutate(cart_id, revision, *, sku=None, qty=None, name=None, state=None, act
                             (cart_id, sku))
                 prev = cur.fetchone()
                 old_qty = int(prev[0]) if prev else 0
-                if qty > 0:
-                    cur.execute(
-                        "SELECT stock_rolls FROM xw_stock_snapshot "
-                        "WHERE sku=%s AND is_active=1", (sku,)
-                    )
-                    stock = cur.fetchone()
-                    available = max(0, int(stock[0])) if stock and stock[0] is not None else 0
-                    if qty > available:
-                        raise HTTPException(409, "Requested quantity exceeds current stock reference")
+                # Cart stores customer demand; stock is only a reference.
+                # A shortage is highlighted in UI, not rejected by the API.
                 if qty != old_qty:
                     if qty:
                         cur.execute(
@@ -508,18 +509,8 @@ def _mutate_batch(cart_id, revision, items, actor):
                      for sku, qty in items.items() if int(existing.get(sku, 0)) != qty]
             if not delta:
                 return _load(conn, cart_id)
-            wanted = [sku for sku, _old, qty in delta if qty > 0]
-            if wanted:
-                marks = ",".join(["%s"] * len(wanted))
-                cur.execute(
-                    "SELECT sku,stock_rolls FROM xw_stock_snapshot "
-                    "WHERE is_active=1 AND sku IN (" + marks + ")", tuple(wanted)
-                )
-                available = {sku: max(0, int(n)) if n is not None else 0
-                             for sku, n in cur.fetchall()}
-                for sku, _old, qty in delta:
-                    if qty > 0 and qty > available.get(sku, 0):
-                        raise HTTPException(409, "Quantity exceeds stock reference for " + sku)
+            # Deliberately allow customer requested qty > snapshot stock.
+            # Never write/reserve inventory as part of cart edits.
             updates = [(cart_id, sku, qty, now) for sku, _old, qty in delta if qty]
             deletes = [(cart_id, sku) for sku, _old, qty in delta if not qty]
             if updates:
@@ -1020,6 +1011,94 @@ def _cart_note_save(cart_id, revision, note):
         raise
     finally:
         conn.close()
+
+
+def _item_notes_get(cart_id):
+    conn = _db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT state FROM xw_carts WHERE id=%s", (cart_id,))
+            state = cur.fetchone()
+            if not state or state[0] == "cancelled":
+                raise HTTPException(404, "Cart not found")
+            cur.execute(
+                "SELECT sku,note,version FROM xw_cart_item_notes WHERE cart_id=%s",
+                (cart_id,)
+            )
+            return {sku: {"note": note, "version": int(version)}
+                    for sku,note,version in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def _item_note_save(cart_id, sku, note, version):
+    # Notes have their own revision. They must not race against qty revisions.
+    conn = _db()
+    try:
+        now = utcnow()
+        with conn.cursor() as cur:
+            cur.execute("SELECT state FROM xw_carts WHERE id=%s", (cart_id,))
+            state = cur.fetchone()
+            if not state or state[0] == "cancelled":
+                raise HTTPException(404, "Cart not found")
+            cur.execute(
+                "SELECT version FROM xw_cart_item_notes "
+                "WHERE cart_id=%s AND sku=%s FOR UPDATE", (cart_id, sku)
+            )
+            found = cur.fetchone()
+            old_version = int(found[0]) if found else 0
+            if old_version != version:
+                raise HTTPException(409, "SKU note updated on another device")
+            if found:
+                cur.execute(
+                    "UPDATE xw_cart_item_notes SET note=%s,version=version+1,"
+                    "updated_at=%s WHERE cart_id=%s AND sku=%s",
+                    (note,now,cart_id,sku)
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO xw_cart_item_notes(cart_id,sku,note,version,updated_at) "
+                    "VALUES(%s,%s,%s,1,%s)",
+                    (cart_id,sku,note,now)
+                )
+        conn.commit()
+        return old_version + 1
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/scanner/api/cart/item-notes")
+async def cart_item_notes(request: Request):
+    staff._check_origin(request)
+    staff._require(request)
+    body = await _body(request)
+    try:
+        notes = await asyncio.to_thread(_item_notes_get, _id(body))
+        return {"ok": True, "notes": notes}
+    except Exception as exc:
+        _error_safe(exc, "ITEM_NOTES")
+
+
+@router.post("/scanner/api/cart/item-note/save")
+async def cart_item_note_save(request: Request):
+    staff._check_origin(request)
+    staff._require(request)
+    body = await _body(request, limit=2048)
+    sku, note, version = body.get("sku"), body.get("note"), body.get("version")
+    if (not isinstance(sku,str) or not staff.CODE.fullmatch(sku) or
+        not isinstance(note,str) or len(note)>180 or chr(0) in note or
+        type(version) is not int or version<0):
+        raise HTTPException(400, "Invalid item note")
+    try:
+        new_version = await asyncio.to_thread(
+            _item_note_save, _id(body), sku, note.strip(), version
+        )
+        return {"ok": True, "sku": sku, "note": note.strip(), "version": new_version}
+    except Exception as exc:
+        _error_safe(exc, "ITEM_NOTE_SAVE")
 
 
 @router.post("/scanner/api/cart/note/get")
