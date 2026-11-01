@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow,noarchive"><title>XINGWANG · 庫存管理</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#192a39;background:#f3f5f9}*{box-sizing:border-box}body{margin:0}main{max-width:760px;margin:auto;padding:20px 14px 65px}
+header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:15px}h1{font-size:21px;margin:0}h2{font-size:16px;margin:0 0 8px}
+small,.muted{font-size:12px;color:#667b91;line-height:1.65}small{display:block;margin-top:4px}
+.panel{background:#fff;border:1px solid #dce4ee;border-radius:17px;padding:18px;margin:12px 0;box-shadow:0 2px 8px #0b25400b}
+button{border:0;border-radius:10px;background:#1265bb;color:#fff;padding:12px 16px;font:inherit;font-weight:700;cursor:pointer}
+button.secondary{background:#edf2f8;color:#213a53}button:disabled{opacity:.55;cursor:wait}.full{width:100%}
+a{color:#1265bb;text-decoration:none}.return{background:#fff;border:1px solid #dce4ee;padding:10px 12px;border-radius:10px;white-space:nowrap;font-size:13px}
+.headerbar{display:flex;align-items:center;justify-content:space-between;gap:10px}.pill{background:#eff5fc;color:#175da5;font-size:11px;border-radius:15px;padding:5px 9px}
+#inventoryStatusText{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}
+#dbSetupMsg,#shareStatus{font-size:12px;color:#52677d;line-height:1.65;margin-top:9px}
+.share-layout{display:flex;align-items:center;gap:15px}.share-layout img{width:130px;height:130px;object-fit:contain;border:1px solid #d8e1eb;padding:7px;border-radius:10px;background:white}
+.share-copy{flex:1;min-width:0}.share-copy p{overflow-wrap:anywhere}.share-actions{display:flex;flex-wrap:wrap;gap:8px}.share-actions button{font-size:12px;padding:10px}
+.hidden{display:none!important}@media(max-width:430px){.panel{padding:13px}.share-layout{gap:10px;align-items:flex-start}.share-layout img{width:105px;height:105px}}
+</style></head><body><main>
+<header><div><h1>XINGWANG · 管理</h1><small>庫存同步、資料庫檢查與分享</small></div><a class="return" href="/s">返回掃描器</a></header>
+<section id="needsLogin" class="panel hidden"><h2>請先登入掃描器</h2><p class="muted">登入後才能管理資料庫與同步。</p><a class="return" href="/s">前往登入</a></section>
+<div id="adminApp" class="hidden">
+<section class="panel"><div class="headerbar"><h2>Access 庫存同步</h2><span class="pill">手動</span></div><p class="muted">由 Render 通知 V33 從本機 Flask 取得完整庫存，再更新 TiDB；布樣盤點資料不會被覆蓋。</p>
+<button id="inventoryStartBtn" class="full">更新 Access 庫存到 TiDB</button><p id="inventoryStatusText" aria-live="polite">正在讀取最後成功時間…</p></section>
+<section class="panel"><div class="headerbar"><h2>資料庫維護</h2><span class="pill">管理工具</span></div><p class="muted">首次部署或連線異常時才需要使用。</p>
+<button id="dbSetupBtn" class="secondary full">檢查 TiDB 連線並建立資料表</button><div id="dbSetupMsg" aria-live="polite"></div></section>
+<section class="panel"><h2>分享掃描器入口</h2><div class="share-layout">
+<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACUAAAAlAQAAAADt5R2uAAAAz0lEQVR42mP8z8DA8JOJgYGBgQGZZC6UFy+4w/j94S/emUx/Gzk+MTAxfJ/FwMDEwHKVgYGJuU6Tj4Hxg6rDawuG/981/v9g+O62irmC6adyeC0D428/lVeKTH/03iozMPzn6Lb7wfil5H/kDhauZBcpBqa/0UuuMjD8FNq17wfjl+OnbLcx/hUKkvnNxJBWrsnA9PXmplgGFt6l394yMH2UnX2LgYX9zLXPDAxfQjYx/WD8kvrmlyUTA4vzTwbG74+C5PUYPohGyf1gxOELAK1ESjlC+l01AAAAAElFTkSuQmCC" alt="掃描器 QR Code" width="130" height="130">
+<div class="share-copy"><p class="muted">同事開啟後仍需要公司登入碼。</p><div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">複製網址</button></div>
+<p class="muted"><a href="/s" target="_blank" rel="noopener noreferrer">xingwang-stock.onrender.com/s</a></p><div id="shareStatus" aria-live="polite"></div></div></div></section>
+</div></main><script>
+'use strict';const $=id=>document.getElementById(id);
+async function post(path,body={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify(body)});let data={};try{data=await r.json()}catch(_){}if(!r.ok)throw Object.assign(new Error(data.error||data.detail||'請求失敗 ('+r.status+')'),{status:r.status});return data}
+const scannerShareURL=location.origin+'/s';
+async function copyScannerURL(){try{await navigator.clipboard.writeText(scannerShareURL);$('shareStatus').textContent='已複製網址';}catch(_){window.prompt('複製這個入口網址',scannerShareURL)}}
+$('copyScannerBtn').onclick=copyScannerURL;
+$('shareScannerBtn').onclick=async()=>{if(navigator.share){try{await navigator.share({title:'XINGWANG 掃描器',url:scannerShareURL});$('shareStatus').textContent='已開啟分享選單';}catch(e){if(e?.name!=='AbortError')await copyScannerURL()}}else await copyScannerURL()};
+$('dbSetupBtn').onclick=async()=>{
+ const b=$('dbSetupBtn');b.disabled=true;$('dbSetupMsg').textContent='正在檢查 TiDB...';
+ try {
+  const data=await post('/scanner/api/db/setup');
+  $('dbSetupMsg').textContent='TiDB 已連線，資料表 '+data.tables.length+' 張。庫存 '+data.stock_count+' 筆；布樣記錄 '+data.sample_count+' 筆。';
+ } catch(e) {$('dbSetupMsg').textContent=e.message}
+ finally {b.disabled=false}
+};
+
+
+let inventoryPolling=false;
+async function inventoryRefresh(){
+ if(!inventoryPolling)return;
+ try {
+  const r=await fetch('/scanner/api/inventory/status',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)throw new Error('Unable to read inventory sync status');
+  const d=await r.json(), j=d.job||{}, last=d.last_success||{};
+  let state='';
+  if(j.state==='reading')state='正在透過 V33 讀取本機 Flask 庫存…';
+  else if(j.state==='writing'){
+    const done=Number(j.processed||0),total=Number(j.total_changes||0);
+    const phase=j.phase||'connecting';
+    const phaseText={
+      connecting:'正在連接 TiDB',
+      comparing:'正在比較既有庫存',
+      writing:'正在批次寫入 TiDB',
+      committing:'新庫存已全部驗證，正在切換正式資料表',
+      finished:'寫入完成'
+    };
+    state=(phaseText[phase]||'正在同步')+
+      (phase==='writing'&&total?'：'+done+' / '+total+'（'+Math.floor(done/total*100)+'%）':'')+
+      (j.snapshot_count?'｜總商品 '+j.snapshot_count+' 筆':'');
+  }
+  else if(j.state==='failed')state='同步失敗：'+(j.error||'請檢查 Render 日誌');
+  else if(j.state==='success'){
+    const result=j.result||{};
+    state=result.mode==='replace'
+      ?'本次完整庫存已成功替換：'+result.sku_count+' 筆（舊快照 '+result.replaced_old+' 筆）'
+      :'本次同步成功。';
+    const t=result.timings_ms;
+    if(t)state+='\n耗時：本機讀取與傳送 '+(t.bridge/1000).toFixed(1)+
+      ' 秒｜TiDB 寫入 '+(t.database/1000).toFixed(1)+
+      ' 秒｜總計 '+(t.total/1000).toFixed(1)+' 秒';
+  }
+  const b=$('inventoryStartBtn');b.disabled=j.state==='reading'||j.state==='writing';
+  let previous=last.pending?'本次寫入尚未提交；成功時間將在完成後更新':'尚無成功紀錄';
+  if(last.has_synced){
+   const time=new Date(last.synced_at_utc);
+   const dt=isNaN(time.getTime())?last.synced_at_utc:
+     time.toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false});
+   previous='最後成功：'+dt+'（智利時間）｜'+last.sku_count+' 筆｜新增 '+last.inserted+
+             '｜更新 '+last.updated+'｜停用 '+last.deactivated;
+  }
+  const breakdown=last.stock_breakdown;
+  if(last.has_synced && breakdown && Number.isFinite(breakdown.active)){
+    previous+='\n實際庫存分類（依 SUM(STOCK)）：正數 '+breakdown.positive+
+      '｜零庫存 '+breakdown.zero+
+      '｜負庫存 '+breakdown.negative+
+      '｜NULL '+breakdown.null+
+      '｜有效總筆數 '+breakdown.active;
+  }
+  $('inventoryStatusText').textContent=(state?state+'\n':'')+previous;
+  if(j.state==='reading'||j.state==='writing')setTimeout(inventoryRefresh,3000);
+  else inventoryPolling=false;
+ }catch(e){inventoryPolling=false;$('inventoryStatusText').textContent='無法取得同步狀態：'+e.message}
+}
+function checkInventoryStatus(){
+ inventoryPolling=true;inventoryRefresh();
+}
+$('inventoryStartBtn').onclick=async()=>{
+ const b=$('inventoryStartBtn');b.disabled=true;
+ $('inventoryStatusText').textContent='正在向 V33 發出庫存同步指令…';
+ try{await post('/scanner/api/inventory/start');checkInventoryStatus()}
+ catch(e){b.disabled=false;$('inventoryStatusText').textContent='無法開始：'+e.message}
+};
+
+async function initialize(){try{const r=await fetch('/scanner/api/session',{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw new Error('無法讀取登入狀態');const s=await r.json();$('needsLogin').classList.toggle('hidden',s.signed_in);$('adminApp').classList.toggle('hidden',!s.signed_in);if(s.signed_in)checkInventoryStatus()}catch(e){$('needsLogin').classList.remove('hidden');$('needsLogin').querySelector('p').textContent=e.message}}
+initialize();
+</script></body></html>

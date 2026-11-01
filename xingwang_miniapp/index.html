@@ -10,11 +10,11 @@ body{width:100%;max-width:100%;margin:0;overflow-x:hidden;-webkit-text-size-adju
 button,input{font-family:inherit}button{border:0;border-radius:10px;padding:11px 14px;font-weight:700;cursor:pointer;background:var(--tg-theme-button-color,#1686e9);color:var(--tg-theme-button-text-color,#fff)}button:disabled{opacity:.55}
 header{padding:15px 13px 12px;background:var(--tg-theme-bg-color,#f6f7fa);border-bottom:1px solid #9cabbc55}
 h1{font-size:18px;margin:0}.sub{font-size:11px;opacity:.7;line-height:1.5;margin:5px 0 12px}
-.scanner-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-bottom:13px;align-items:stretch}
-.scanner-link{display:flex;align-items:center;justify-content:center;gap:9px;padding:12px 13px;border-radius:12px;background:var(--tg-theme-button-color,#1686e9);color:var(--tg-theme-button-text-color,#fff);font-size:14px;font-weight:750;text-decoration:none;text-align:center;min-width:0}
-.scanner-link:focus-visible,.scanner-share:focus-visible{outline:2px solid currentColor;outline-offset:2px}
-.scanner-share{background:var(--tg-theme-secondary-bg-color,#e9edf3);color:var(--tg-theme-text-color,#1a293b);font-size:13px;border:1px solid #9caabb55}
-#scannerShareStatus{font-size:11px;margin:-5px 0 9px;line-height:1.4;opacity:.8;min-height:0}
+.stock-title-row{display:flex;align-items:center;gap:7px;min-width:0}.stock-title-row h1{white-space:nowrap}
+.scanner-icon-link{display:inline-flex;align-items:center;justify-content:center;flex:none;width:33px;height:33px;border-radius:9px;border:1px solid #9caabb55;color:var(--tg-theme-text-color,#1a293b);background:var(--tg-theme-secondary-bg-color,#e9edf3);text-decoration:none}
+.scanner-icon-link svg{width:20px;height:20px;display:block}
+.scanner-icon-link:hover{color:var(--tg-theme-button-text-color,#fff);background:var(--tg-theme-button-color,#1686e9)}
+.scanner-icon-link:focus-visible{outline:2px solid var(--tg-theme-button-color,#1686e9);outline-offset:2px}
 .modes{display:flex;gap:7px}.modes button{flex:1;font-size:14px;color:inherit;background:var(--tg-theme-secondary-bg-color,#e9edf3)}.modes button.on{color:var(--tg-theme-button-text-color,#fff);background:var(--tg-theme-button-color,#1686e9)}
 .search{margin-top:12px;display:flex;align-items:center;gap:7px;width:100%;min-width:0}.entry{flex:1;display:flex;align-items:center;min-width:0;max-width:100%;border:1px solid #9faebe;border-radius:11px;background:var(--tg-theme-secondary-bg-color,#fff)}
 .entry input{width:100%;flex:1;min-width:0;border:0;outline:none;background:transparent;color:inherit;padding:12px;font-size:16px}
@@ -72,12 +72,7 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 @media(min-width:700px){body{max-width:1000px;margin:auto}.doc-info{grid-template-columns:repeat(4,minmax(0,1fr))}.tablewrap{max-height:74vh}}
 </style></head><body>
 <header>
-<h1>XINGWANG STOCK</h1><p class="sub">Telegram 授权 · 本机实时查询 · 一次获取，点击切换</p>
-<nav class="scanner-entry" aria-label="掃描器入口">
-<a class="scanner-link" href="/s">▣&nbsp; 掃描 QR／布樣盤點</a>
-<button type="button" class="scanner-share" id="scannerShare">分享連結</button>
-</nav>
-<div id="scannerShareStatus" role="status" aria-live="polite"></div>
+<div class="stock-title-row"><h1>XINGWANG STOCK</h1><a class="scanner-icon-link" href="/s" target="_blank" rel="noopener noreferrer" title="布樣盤點 · 開啟新分頁" aria-label="掃描布樣盤點（新分頁）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3M21 16v3a2 2 0 0 1-2 2h-3"/><rect x="7" y="7" width="4" height="4" rx="1"/><path d="M15 7h2v2h-2zM7 15h2v2H7zM14 14h3v3h-3z"/></svg></a></div><p class="sub">Telegram 授权 · 本机实时查询 · 一次获取，点击切换</p>
 <div class="modes" id="modes"><button class="on" data-mode="product">商品编号</button><button data-mode="nota">Nota / @ 预定</button></div>
 <div class="search"><div class="entry"><input id="q" value="" placeholder="输入商品编号" autocomplete="off" enterkeyhint="search"/><button type="button" id="clear" class="clear" aria-label="清除搜索内容">×</button></div><button type="button" id="go">查询</button></div>
 <div class="nota-range" id="notaRange" hidden>
@@ -103,31 +98,11 @@ th{position:sticky;top:0;background:var(--tg-theme-secondary-bg-color,#fff);font
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
 const $=id=>document.getElementById(id);
 const scannerShortLink=location.origin+'/s';
-/* Telegram Mini App: open in the device browser, not an inner WebView frame. */
-document.querySelector('a.scanner-link')?.addEventListener('click',event=>{
+document.querySelector('a.scanner-icon-link')?.addEventListener('click',event=>{
  if(tg?.initData && typeof tg.openLink==='function'){
   event.preventDefault();
-  tg.openLink(scannerShortLink);
- }
-});
-
-$('scannerShare').addEventListener('click',async()=>{
- const b=$('scannerShare');
- try{
-  if(navigator.share){
-   await navigator.share({title:'XINGWANG 掃描器',url:scannerShortLink});
-   $('scannerShareStatus').textContent='已開啟分享選單';
-  }else if(navigator.clipboard&&window.isSecureContext){
-   await navigator.clipboard.writeText(scannerShortLink);
-   $('scannerShareStatus').textContent='掃描器連結已複製，貼到 WhatsApp／Telegram 即可分享';
-  }else{
-   window.prompt('複製掃描器連結',scannerShortLink);
-   $('scannerShareStatus').textContent='請複製上方網址分享';
-  }
- }catch(e){
-  if(e&&e.name==='AbortError')return;
-  try{await navigator.clipboard.writeText(scannerShortLink);$('scannerShareStatus').textContent='掃描器連結已複製';}
-  catch(_){window.prompt('複製掃描器連結',scannerShortLink);}
+  try{tg.openLink(scannerShortLink);}
+  catch(_){window.open(scannerShortLink,'_blank','noopener,noreferrer');}
  }
 });
 

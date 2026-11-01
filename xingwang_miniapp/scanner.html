@@ -6,7 +6,7 @@
 <style>
 :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#192a39;background:#f3f5f9}
 *{box-sizing:border-box}body{margin:0}button,input{font:inherit}
-main{max-width:780px;margin:auto;padding:15px 14px 90px}
+main{max-width:780px;margin:auto;padding:18px 14px 65px}
 header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:16px}
 h1{font-size:21px;margin:0}h2{font-size:16px;margin:0 0 10px}
 small,.muted{color:#64748b;font-size:12px;line-height:1.5}
@@ -30,17 +30,11 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 .metrics{display:flex;flex-wrap:wrap;gap:8px}.metrics span{background:#f1f6fb;border-radius:10px;padding:9px;flex:1;white-space:nowrap}
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .notice{background:#fff8e9;border:1px solid #f0d9a6;border-radius:10px;padding:10px;font-size:12px;color:#835a15}
-.share-entry{display:grid;grid-template-columns:166px minmax(0,1fr);gap:13px;align-items:center}
-.share-qr{display:block;width:166px;height:166px;border:1px solid #d8e1eb;border-radius:11px;background:#fff;padding:9px;object-fit:contain;image-rendering:pixelated}
-.share-copy{min-width:0}.share-copy h2{margin:0 0 6px}.share-copy p{margin:0 0 9px}.share-actions{display:flex;flex-wrap:wrap;gap:7px}
-.share-actions button{padding:10px 12px;min-width:102px}.share-link{color:#175da5;font-size:12px;overflow-wrap:anywhere;text-decoration:none}
-#shareStatus{font-size:12px;color:#147b4e;margin-top:8px;min-height:0}
-@media(max-width:420px){.share-entry{grid-template-columns:132px minmax(0,1fr);gap:10px}.share-qr{width:132px;height:132px;padding:6px}.share-actions button{font-size:12px;min-width:0;padding:9px}.share-copy h2{font-size:14px}}
 .hidden{display:none!important}@media (max-width:420px){.panel{padding:12px}.row input{width:100%}button{padding:11px}}
 </style>
 </head>
 <body><main>
-<header><div><h1>XINGWANG SCANNER</h1><small>QR Code · 即時庫存 · 布樣檢查</small></div><button id="logout" class="ghost hidden">登出</button></header>
+<header><div><h1>XINGWANG SCANNER</h1><small>掃描布樣 · 查詢庫存 · 確認盤點</small></div><button id="logout" class="ghost hidden">登出</button></header>
 <section id="login" class="panel hidden">
 <h2>首次登入掃描器</h2>
 <p class="muted">輸入公司登入碼，這台手機將保持登入 30 天。</p>
@@ -49,29 +43,13 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 </section>
 <div id="app" class="hidden">
 <section class="panel">
-<div class="share-entry">
-<img class="share-qr" id="shareScannerQR" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACUAAAAlAQAAAADt5R2uAAAAz0lEQVR42mP8z8DA8JOJgYGBgQGZZC6UFy+4w/j94S/emUx/Gzk+MTAxfJ/FwMDEwHKVgYGJuU6Tj4Hxg6rDawuG/981/v9g+O62irmC6adyeC0D428/lVeKTH/03iozMPzn6Lb7wfil5H/kDhauZBcpBqa/0UuuMjD8FNq17wfjl+OnbLcx/hUKkvnNxJBWrsnA9PXmplgGFt6l394yMH2UnX2LgYX9zLXPDAxfQjYx/WD8kvrmlyUTA4vzTwbG74+C5PUYPohGyf1gxOELAK1ESjlC+l01AAAAAElFTkSuQmCC" alt="XINGWANG 掃描器入口 QR Code。掃描後會開啟登入頁面。" width="166" height="166">
-<div class="share-copy"><h2>讓同事掃 QR 直接進入</h2>
-<p class="muted">同事用手機相機掃左邊 QR，或從 Telegram 查詢頁點「掃描器」。進入仍需登入碼。</p>
-<div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">複製網址</button></div>
-<a class="share-link" href="/s" target="_blank" rel="noopener">xingwang-stock.onrender.com/s</a>
-<div id="shareStatus" aria-live="polite"></div></div>
-</div></section>
-<section class="panel">
 <div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeStock">查詢庫存</button></div>
-<div class="row" style="margin-top:10px"><button id="dbSetupBtn" class="secondary fill">檢查 TiDB 連線並建立資料表</button></div><div id="dbSetupMsg" class="muted" aria-live="polite"></div>
 <p class="muted" id="modeHelp">掃描系列 QR，查看每個庫存編號，勾選「無樣」。</p>
 <div id="reader"></div>
 <div class="row"><button id="cameraStart" class="fill">開啟相機連續掃描</button><button id="cameraStop" class="secondary hidden">停止相機</button></div>
 <p id="cameraHint" class="muted">第一次使用請允許相機權限；不必切換到手機原生相機。</p>
 <div class="row"><input id="code" class="fill" placeholder="或手動輸入 12-225" autocomplete="off" enterkeyhint="search"><button id="queryBtn">查詢</button></div>
 <div id="message" aria-live="polite">請掃描或輸入商品系列編號。</div>
-</section>
-<section class="panel" id="inventoryPanel">
-<div class="bar"><h2>Access 庫存 → TiDB</h2><span class="tag">手動同步</span></div>
-<p class="muted">由 Render 通知目前連線的 V33，從原本 Flask 取得全部庫存，再更新 TiDB。不需要在 V33 設定資料庫。</p>
-<div class="row"><button id="inventoryStartBtn" class="fill">更新 Access 庫存到 TiDB</button></div>
-<p id="inventoryStatusText" class="muted" aria-live="polite">正在讀取最後成功時間…</p>
 </section>
 <section id="result" class="panel hidden">
 <div class="bar"><div><h2 id="series"></h2><small id="asof"></small></div><span id="source" class="tag"></span></div>
@@ -85,33 +63,13 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 </div>
 <div id="stockControls" class="hidden"><button id="nextStock" class="fill">掃下一張</button></div>
 </section>
-<footer class="muted">現有 V33 即時庫存 · 布樣檢查資料獨立保存至 TiDB · 不修改 Access</footer>
+<footer class="muted">XINGWANG · 布樣盤點與即時庫存</footer>
 </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const scannerShareURL=location.origin+'/s';
-async function copyScannerURL(){
- try{
-  await navigator.clipboard.writeText(scannerShareURL);
-  $('shareStatus').textContent='已複製網址，可以貼到 Telegram 或 WhatsApp';
- }catch(_){
-  window.prompt('複製這個入口網址',scannerShareURL);
-  $('shareStatus').textContent='可把上面的網址傳給同事';
- }
-}
-$('copyScannerBtn').onclick=copyScannerURL;
-$('shareScannerBtn').onclick=async()=>{
- if(navigator.share){
-  try{
-   await navigator.share({title:'XINGWANG 掃描器',url:scannerShareURL});
-   $('shareStatus').textContent='已開啟手機分享選單';
-  }catch(e){if(e?.name!=='AbortError')await copyScannerURL()}
- }else await copyScannerURL();
-};
-
 let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, missing=new Set(), saved=false;
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
 function msg(s,type=''){const n=$('message');n.textContent=s;n.className=type}
@@ -129,85 +87,10 @@ async function session(){
   $('app').classList.toggle('hidden',!d.signed_in);
   $('logout').classList.toggle('hidden',!d.signed_in);
   if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
-  if(d.signed_in)checkInventoryStatus();else inventoryPolling=false;
  }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
 }
 $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await post('/scanner/api/login',{passcode:$('passcode').value});$('passcode').value='';await session()}catch(e){$('loginMessage').textContent=e.message}finally{b.disabled=false}};
 $('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
-$('dbSetupBtn').onclick=async()=>{
- const b=$('dbSetupBtn');b.disabled=true;$('dbSetupMsg').textContent='正在檢查 TiDB...';
- try {
-  const data=await post('/scanner/api/db/setup');
-  $('dbSetupMsg').textContent='TiDB 已連線，資料表 '+data.tables.length+' 張。庫存 '+data.stock_count+' 筆；布樣記錄 '+data.sample_count+' 筆。';
- } catch(e) {$('dbSetupMsg').textContent=e.message}
- finally {b.disabled=false}
-};
-
-let inventoryPolling=false;
-async function inventoryRefresh(){
- if(!inventoryPolling)return;
- try {
-  const r=await fetch('/scanner/api/inventory/status',{credentials:'same-origin',cache:'no-store'});
-  if(!r.ok)throw new Error('Unable to read inventory sync status');
-  const d=await r.json(), j=d.job||{}, last=d.last_success||{};
-  let state='';
-  if(j.state==='reading')state='正在透過 V33 讀取本機 Flask 庫存…';
-  else if(j.state==='writing'){
-    const done=Number(j.processed||0),total=Number(j.total_changes||0);
-    const phase=j.phase||'connecting';
-    const phaseText={
-      connecting:'正在連接 TiDB',
-      comparing:'正在比較既有庫存',
-      writing:'正在批次寫入 TiDB',
-      committing:'新庫存已全部驗證，正在切換正式資料表',
-      finished:'寫入完成'
-    };
-    state=(phaseText[phase]||'正在同步')+
-      (phase==='writing'&&total?'：'+done+' / '+total+'（'+Math.floor(done/total*100)+'%）':'')+
-      (j.snapshot_count?'｜總商品 '+j.snapshot_count+' 筆':'');
-  }
-  else if(j.state==='failed')state='同步失敗：'+(j.error||'請檢查 Render 日誌');
-  else if(j.state==='success'){
-    const result=j.result||{};
-    state=result.mode==='replace'
-      ?'本次完整庫存已成功替換：'+result.sku_count+' 筆（舊快照 '+result.replaced_old+' 筆）'
-      :'本次同步成功。';
-    const t=result.timings_ms;
-    if(t)state+='\n耗時：本機讀取與傳送 '+(t.bridge/1000).toFixed(1)+
-      ' 秒｜TiDB 寫入 '+(t.database/1000).toFixed(1)+
-      ' 秒｜總計 '+(t.total/1000).toFixed(1)+' 秒';
-  }
-  const b=$('inventoryStartBtn');b.disabled=j.state==='reading'||j.state==='writing';
-  let previous=last.pending?'本次寫入尚未提交；成功時間將在完成後更新':'尚無成功紀錄';
-  if(last.has_synced){
-   const time=new Date(last.synced_at_utc);
-   const dt=isNaN(time.getTime())?last.synced_at_utc:
-     time.toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false});
-   previous='最後成功：'+dt+'（智利時間）｜'+last.sku_count+' 筆｜新增 '+last.inserted+
-             '｜更新 '+last.updated+'｜停用 '+last.deactivated;
-  }
-  const breakdown=last.stock_breakdown;
-  if(last.has_synced && breakdown && Number.isFinite(breakdown.active)){
-    previous+='\n實際庫存分類（依 SUM(STOCK)）：正數 '+breakdown.positive+
-      '｜零庫存 '+breakdown.zero+
-      '｜負庫存 '+breakdown.negative+
-      '｜NULL '+breakdown.null+
-      '｜有效總筆數 '+breakdown.active;
-  }
-  $('inventoryStatusText').textContent=(state?state+'\n':'')+previous;
-  if(j.state==='reading'||j.state==='writing')setTimeout(inventoryRefresh,3000);
-  else inventoryPolling=false;
- }catch(e){inventoryPolling=false;$('inventoryStatusText').textContent='無法取得同步狀態：'+e.message}
-}
-function checkInventoryStatus(){
- inventoryPolling=true;inventoryRefresh();
-}
-$('inventoryStartBtn').onclick=async()=>{
- const b=$('inventoryStartBtn');b.disabled=true;
- $('inventoryStatusText').textContent='正在向 V33 發出庫存同步指令…';
- try{await post('/scanner/api/inventory/start');checkInventoryStatus()}
- catch(e){b.disabled=false;$('inventoryStatusText').textContent='無法開始：'+e.message}
-};
 $('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
 function setMode(m){
  mode=m;

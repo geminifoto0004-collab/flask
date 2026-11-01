@@ -29,6 +29,7 @@ REQUEST_TIMES = []
 LOCK = asyncio.Lock()
 PENDING_SCANS = {}  # random scan_id => (time, signed-in device, series, real SKUs)
 PAGE = Path(__file__).with_name("scanner.html").read_text(encoding="utf-8")
+ADMIN_PAGE = Path(__file__).with_name("scanner_admin.html").read_text(encoding="utf-8")
 
 
 def _passcode():
@@ -85,6 +86,15 @@ def _require(request):
 @router.get("/scanner", response_class=HTMLResponse)
 async def scanner_page():
     return HTMLResponse(PAGE, headers={
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "X-Frame-Options": "DENY",
+        "Content-Security-Policy": "frame-ancestors 'none'",
+    })
+
+
+@router.get("/scanner/admin", response_class=HTMLResponse)
+async def scanner_admin_page():
+    return HTMLResponse(ADMIN_PAGE, headers={
         "X-Robots-Tag": "noindex, nofollow, noarchive",
         "X-Frame-Options": "DENY",
         "Content-Security-Policy": "frame-ancestors 'none'",
