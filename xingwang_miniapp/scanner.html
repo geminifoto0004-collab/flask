@@ -370,7 +370,17 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 .cart-products-head{display:flex;align-items:center;justify-content:space-between;gap:6px;border-top:1px solid #eaf0f6;padding:12px 0 3px}.cart-products-head strong{font-size:16px}
 .cart-filter{display:flex;gap:7px;margin:9px 0}.cart-filter button{flex:1;background:#edf3f9;color:#2a506c;padding:8px}.cart-filter button.active{background:#135fa7;color:white}
 .cart-history-row{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;text-align:left;margin-bottom:6px}.cart-history-left{display:flex;flex-direction:column;gap:3px}.cart-history-left small{font-size:11px}
-#cartMessage{font-size:12px;line-height:1.5;color:#16744e;margin:8px 0}#cartMessage:empty{display:none}#cartMessage.error{color:#b22e39}
+/* Cart notifications are transient overlay feedback, never grid content. */
+#cartWorkspace #cartMessage{position:fixed;left:calc(50% - 30px);bottom:calc(96px + env(safe-area-inset-bottom,0px));top:auto;right:auto;transform:translateX(-50%) translateY(8px);z-index:150;box-sizing:border-box;width:max-content;max-width:min(92vw,520px);max-height:none;margin:0;padding:10px 16px;border:0;border-radius:999px;background:#241017;color:#fff;box-shadow:0 6px 20px #24101733;font-size:14px;font-weight:700;line-height:1.35;text-align:center;white-space:normal;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s}
+#cartWorkspace #cartMessage.show{opacity:1;transform:translateX(-50%)}
+#cartWorkspace #cartMessage.error{background:#A33A2E;color:#fff}
+#cartMessage:empty{display:none}
+#cartSidebarCreateBtn{display:none}
+@media(max-width:949px){#cartWorkspace #cartMessage{left:50%;bottom:calc(110px + env(safe-area-inset-bottom,0px));max-width:calc(100vw - 24px)}}
+@media(min-width:950px){
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartSidebarCreateBtn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;width:100%;margin:12px 0 14px;border:0;border-radius:12px;background:var(--wine);color:#fff;font-size:14px;font-weight:700}
+ #cartStaffList .cart-history-row.current{background:#F6E8EC;border-color:#E3BFCB}
+}
 .cart-spread{display:flex;align-items:center;justify-content:space-between;gap:8px}.cart-spread>*{min-width:0}
 .cart-stack{display:flex;flex-wrap:wrap;gap:7px}.cart-stack button{flex:1;font-size:12px;padding:11px 8px}
 .cart-hint{;border-radius:9px;padding:8px;margin:9px 0;font-size:11px;line-height:1.6}
@@ -431,8 +441,8 @@ body:has(#cartWorkspace:not(.hidden) #cartActive:not(.hidden)) main{padding-bott
 .cart-dock-confirm{;min-width:112px}
 #cartWorkspace .cart-confirmed-box{max-height:220px}
 #scanPanel.cart-scanner-parked{position:absolute!important;left:-9999px!important;top:0!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important;pointer-events:none!important;padding:0!important;margin:0!important}
-#cartWorkspace:has(#cartActive:not(.hidden)) #cartMessage:not(:empty){position:fixed;z-index:26;bottom:calc(82px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);width:min(700px,calc(100% - 30px));border:1px solid #bfd7ea;box-shadow:0 4px 18px #1c324124;border-radius:9px;padding:8px 12px;font-size:12px;max-height:100px;overflow:auto}
-#cartWorkspace:has(#cartActive:not(.hidden)) #cartMessage.error{}
+
+
 @media(max-width:370px){.cart-dock{gap:5px;padding:7px}.cart-dock-count strong{font-size:17px}.cart-dock-switch,.cart-dock-confirm{min-width:0;padding:0 9px;font-size:12px}#cartWorkspace .cart-qty-controls button{width:35px}#cartWorkspace .cart-qty-controls input.cart-qty{width:42px}}
 
 /* CC 2026 mobile redesign. Colors and touch controls derived from user-provided
@@ -532,8 +542,8 @@ small,.muted{color:var(--muted)}
 .cart-item-heading{color:var(--wine-deep)}
 .cart-inventory-disclaimer{color:var(--muted)}
 #cartWorkspace .cart-confirmed-box{background:var(--paper);border-color:var(--hair)}
-#cartWorkspace:has(#cartActive:not(.hidden)) #cartMessage:not(:empty){background:#fff;color:var(--wine-deep);border-color:var(--stroke)}
-#cartWorkspace:has(#cartActive:not(.hidden)) #cartMessage.error{background:#FFF3F1;color:var(--danger);border-color:#EDC3BE}
+
+
 #cartStaffList{margin-top:12px}
 .cart-history-row{background:#fff;border:1px solid var(--hair);border-radius:12px;color:var(--ink);min-height:62px}
 .cart-history-row:hover{border-color:var(--wine)}
@@ -718,7 +728,7 @@ body:has(#cartWorkspace:not(.hidden)) main{padding:0 0 calc(93px + env(safe-area
 #cartWorkspace #cartStateButton{;background:var(--wine);border:0;display:flex;align-items:center;justify-content:center;color:#fff;padding:0}
 #cartWorkspace #cartStateButton:disabled{opacity:.5}
 #cartSwitchView{display:none!important}
-#cartWorkspace #cartMessage:not(:empty){position:fixed;left:14px;right:14px;top:12px;bottom:auto;z-index:95;background:#fff;border:1px solid var(--stroke);border-radius:12px;padding:10px;color:var(--wine-deep);transform:none;width:auto}
+
 #cartWorkspace #cartMessage.error{background:#fff3f1;color:#A33A2E}
 #scanPanel.cc-cart-camera-active{position:fixed;z-index:70;inset:0;display:flex!important;flex-direction:column;align-items:stretch;background:var(--paper);padding:60px 16px 16px;margin:0;max-width:none}
 #scanPanel.cc-cart-camera-active #workModes,#scanPanel.cc-cart-camera-active #fullKindControls,#scanPanel.cc-cart-camera-active #freshnessPanel{display:none!important}
@@ -745,7 +755,7 @@ body:has(#cartWorkspace:not(.hidden)) #scanPanel:not(.cc-cart-camera-active){dis
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartMeta{grid-column:3;grid-row:1;display:block!important;position:sticky;top:0;border-radius:0;border-left:1px solid var(--hair);margin:0;align-self:start;height:100vh}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartDetailsBtn{visibility:hidden}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartDock{grid-column:2;grid-row:1;width:auto;max-width:none}
- #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartMessage{grid-column:2}
+ 
  #cartWorkspace.cart-has-active[data-cart-role="staff"] .cart-filter{padding-top:0}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartScanNow{background:var(--wine);color:#fff;border:1.5px solid var(--wine)}
 }
@@ -1522,6 +1532,7 @@ body.cc-sample-detail #result{
  </div>
  <div id="cartStaffList" class="cc-cart-list">
    <div class="cc-cart-filter"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="cartFilter" type="search" placeholder="搜索 / Buscar" autocomplete="off"></div>
+   <button id="cartSidebarCreateBtn" type="button" aria-label="新建购物车 / Nuevo carrito" title="新建购物车 / Nuevo carrito"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>新建 / Nuevo</span></button>
    <div id="cartRecent"></div>
  </div>
 <div id="cartActive" class="hidden">
