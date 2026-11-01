@@ -1462,6 +1462,58 @@ body.cc-sample-detail #result{
  #cartWorkspace .cart-filter.cc-three-filters strong{font-size:11px!important}
 }
 
+
+/* Camino order type: secondary filters in CC wine-white palette. Read-only. */
+#caminoOrderFilters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+ gap:6px;padding:8px 12px 9px;background:#F8F4F5}
+#caminoOrderFilters.hidden{display:none!important}
+#caminoOrderFilters button{display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;
+ min-height:38px;padding:5px 3px;font-size:clamp(10px,2.8vw,13px);font-weight:700;white-space:nowrap;
+ color:#4A3840;background:#fff;border:1px solid #D9CDD2;border-radius:12px}
+#caminoOrderFilters button strong{font-size:12px;font-variant-numeric:tabular-nums}
+#caminoOrderFilters button.active{color:#fff;background:#6A1B36;border-color:#6A1B36}
+#fullResult[data-full-tab="camino"] .full-table td[data-key="order_type"]{font-weight:750;color:#6A1B36}
+#fullResult[data-full-tab="camino"] .full-table tr[data-camino-kind="customer"] td[data-key="order_type"]{color:#087751}
+#fullResult[data-full-tab="camino"] .full-table tr[data-camino-kind="unknown"] td[data-key="order_type"]{color:#9F681B}
+#fullResult[data-full-tab="camino"] .full-table td[data-key="description"]{
+ max-width:380px;white-space:normal;overflow-wrap:anywhere;font-size:12px;color:#675660}
+@media(max-width:700px){
+ #fullResult[data-full-tab="camino"] .full-table{max-height:none;overflow:visible;width:100%;min-width:0}
+ #fullResult[data-full-tab="camino"] .full-table table,
+ #fullResult[data-full-tab="camino"] .full-table thead,
+ #fullResult[data-full-tab="camino"] .full-table tbody{display:block;min-width:0;width:100%}
+ #fullResult[data-full-tab="camino"] .full-table thead tr{display:flex;gap:6px;padding:4px 12px 9px;
+  overflow-x:auto;-webkit-overflow-scrolling:touch}
+ #fullResult[data-full-tab="camino"] .full-table thead th{display:inline-block;flex:none;min-width:0;
+  padding:7px 9px;border:1px solid #D9CDD2;border-radius:18px;background:#fff;font-size:12px}
+ #fullResult[data-full-tab="camino"] .full-table tbody tr{box-sizing:border-box;display:grid;
+  grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;margin:0;padding:13px 14px;
+  background:#fff;border-bottom:1px solid #EBE2E5;width:100%}
+ #fullResult[data-full-tab="camino"] .full-table tbody tr:has(> td.full-empty){display:block}
+ #fullResult[data-full-tab="camino"] .full-table tbody td{box-sizing:border-box;display:block;
+  min-width:0;width:auto;padding:0;border:0;white-space:normal;overflow-wrap:anywhere;
+  font-size:13px;line-height:1.35}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="code"]{grid-row:1;grid-column:1;font-size:18px;font-weight:800}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="caja"]{grid-row:1;grid-column:2;font-size:18px;font-weight:800;text-align:right}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="caja"]::before{content:"匹 ";font-size:12px;color:#806E77}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="order_type"]{grid-row:2;grid-column:1}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="order_number"]{grid-row:2;grid-column:2;text-align:right;font-weight:700}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="customer_name"]{grid-row:3;grid-column:1/-1}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="customer_name"]::before{
+  content:"客戶";display:block;margin-bottom:3px;font-size:11px;color:#806E77}
+ #fullResult[data-full-tab="camino"] .full-table .full-customer{
+  width:100%;max-width:none;white-space:normal;overflow:visible;text-overflow:clip;
+  overflow-wrap:anywhere;min-height:34px;padding:6px 9px;border-radius:9px;background:#F8F4F5;text-align:left}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="container"]{grid-row:4;grid-column:1;color:#806E77}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="eta"]{grid-row:4;grid-column:2;color:#806E77;text-align:right}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="units"]{grid-row:5;grid-column:1;color:#806E77}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="unit_type"]{grid-row:5;grid-column:2;color:#806E77;text-align:right}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="description"]{
+  grid-row:6;grid-column:1/-1;max-width:none;padding-top:5px;border-top:1px dashed #E9DEE2}
+ #fullResult[data-full-tab="camino"] .full-table tbody td[data-key="description"]::before{
+  content:"原始描述";display:block;font-size:11px;color:#806E77;margin-bottom:2px}
+}
+
 </style>
 </head>
 <body><main>
@@ -1572,6 +1624,12 @@ body.cc-sample-detail #result{
 </div>
 <div id="fullTabs" class="full-tabs" role="group" aria-label="商品查询分类 / Consultas">
 <button type="button" data-fulltab="stock" class="active">庫存</button><button type="button" data-fulltab="camino">待到貨</button><button type="button" data-fulltab="history">歷史購買</button><button type="button" data-fulltab="reservar">預訂</button>
+</div>
+<div id="caminoOrderFilters" class="camino-order-filters hidden" role="group" aria-label="待到貨分類">
+ <button type="button" data-camino-kind="all" class="active">全部 <strong>0</strong></button>
+ <button type="button" data-camino-kind="customer">客戶訂單 <strong>0</strong></button>
+ <button type="button" data-camino-kind="company">公司備貨 <strong>0</strong></button>
+ <button type="button" data-camino-kind="unknown">待確認 <strong>0</strong></button>
 </div>
 <div id="fullStats" class="stock-stat-grid"></div>
 <div id="fullStockVisibility" class="stock-visibility" role="group" aria-label="完整查詢庫存顯示範圍">
@@ -1971,11 +2029,35 @@ $('fullAllBtn').onclick=()=>{fullPositiveOnly=false;renderFullResult(fullData)};
 
 const fullFields={
  stock:[['code','商品編號'],['pieces','匹數'],['meters','米數'],['reserved','預定狀態']],
- camino:[['code','商品編號'],['container','貨櫃'],['caja','匹數'],['units','米數'],['unit_type','單位'],['eta','到貨日期']],
+ camino:[['code','商品編號'],['order_type','分類'],['order_number','訂單號'],['customer_name','客戶'],['container','貨櫃'],['caja','匹數'],['units','米數'],['unit_type','單位'],['eta','到貨日期'],['description','原始描述']],
  history:[['date','日期'],['nota','Nota'],['customer','客戶'],['code','商品編號'],['quantity','CAJA']],
  reservar:[['date','日期'],['code','商品編號'],['customer','客戶'],['nota','預定單號']]
 };
 const fullTitles={stock:'庫存',camino:'待到貨',history:'歷史購買',reservar:'預定'};
+let caminoClassMode='all';
+const CAMINO_LABELS={customer:'客戶訂單',company:'公司備貨',unknown:'待確認'};
+function caminoDecorate(row){
+ const parsed=window.XWCaminoOrder?.classify(row)||{kind:'unknown',description:'',order_number:'',customer_name:'',reason:'分類元件未載入'};
+ return {...row,order_kind:parsed.kind,order_type:CAMINO_LABELS[parsed.kind]||CAMINO_LABELS.unknown,
+   order_number:parsed.order_number||'',customer_name:parsed.customer_name||'',
+   description:parsed.description||'',camino_reason:parsed.reason};
+}
+function syncCaminoFilters(rows){
+ const kinds={all:rows.length,customer:0,company:0,unknown:0};
+ for(const row of rows)kinds[row.order_kind]=(kinds[row.order_kind]||0)+1;
+ for(const button of $('caminoOrderFilters').querySelectorAll('button[data-camino-kind]')){
+  const kind=button.dataset.caminoKind;
+  button.classList.toggle('active',caminoClassMode===kind);
+  button.setAttribute('aria-pressed',String(caminoClassMode===kind));
+  button.querySelector('strong').textContent=kinds[kind]||0;
+ }
+}
+$('caminoOrderFilters').addEventListener('click',event=>{
+ const button=event.target.closest('button[data-camino-kind]');
+ if(!button)return;
+ caminoClassMode=button.dataset.caminoKind;
+ renderFullResult(fullData);
+});
 function fullTxt(v,p=null){
  if(v==null||v==='')return '—';
  if(p===1){const n=Number(v);return Number.isFinite(n)?fmtMeters(n):'—'}
@@ -1997,7 +2079,7 @@ async function fullRequest(action,q,extra={}){
 async function queryFull(code){
  const start=performance.now();
  const data=await fullRequest(fullKind==='nota'?'nota':'stock',code);
- fullData=data;fullDataKind=fullKind;fullCode=code;fullTab='stock';fullSort=fullKind==='product'?'code':'';fullDesc=false;
+ fullData=data;fullDataKind=fullKind;fullCode=code;fullTab='stock';fullSort=fullKind==='product'?'code':'';fullDesc=false;caminoClassMode='all';
  $('fullFilter').value='';
  $('fullTime').textContent='本次查詢耗時 '+((performance.now()-start)/1000).toFixed(2)+' 秒';
  return data;
@@ -2030,12 +2112,13 @@ function fullTable(rows,columns){
  }
  for(const row of rows){
   const tr=document.createElement('tr');
+  if(row.order_kind)tr.dataset.caminoKind=row.order_kind;
   for(const [key] of columns){
-   const td=document.createElement('td');
+   const td=document.createElement('td');td.dataset.key=key;
    const value=key==='reserved'?(row.reserved?'有預定':'')
      :key==='eta'?String(fullTxt(row.eta)).replace(/Iquique\s*,\s*Chile$/i,'').trim()
      :fullTxt(row[key],['meters','units','stock_meters'].includes(key)?1:null);
-   if(key==='customer'){
+   if(key==='customer'||key==='customer_name'){
     const b=document.createElement('button');b.type='button';b.className='secondary full-customer';
     b.textContent=value;b.title=value;b.onclick=()=>b.classList.toggle('expanded');
     td.append(b);
@@ -2067,7 +2150,10 @@ function ccFullStockRows(rows){
 function fullRenderProduct(data){
  const stock=Array.isArray(data.rows)?data.rows:[];
  const visibleStock=fullPositiveOnly?stock.filter(row=>hasPositivePieces(row.pieces)):stock;
- const all=fullTab==='stock'?visibleStock:(Array.isArray(data[fullTab])?data[fullTab]:[]);
+ const rawAll=fullTab==='stock'?visibleStock:(Array.isArray(data[fullTab])?data[fullTab]:[]);
+ const all=fullTab==='camino'?rawAll.map(caminoDecorate):rawAll;
+ $('caminoOrderFilters').classList.toggle('hidden',fullTab!=='camino');
+ if(fullTab==='camino')syncCaminoFilters(all);
  $('fullStockVisibility').classList.toggle('hidden',fullTab!=='stock');
  updateVisibilityCounts('fullPositiveCount','fullAllCount',stock.filter(row=>hasPositivePieces(row.pieces)).length,stock.length);
  syncVisibilityButtons(fullPositiveOnly,'fullPositiveBtn','fullAllBtn');
@@ -2077,7 +2163,8 @@ function fullRenderProduct(data){
  const cards=[['商品種類',fullTab==='stock'?visibleStock.length:stock.length],['庫存匹數',pieces],['庫存米數',meters],['待到貨(匹)',data.camino_caja_total]];
  if(fullTab==='history')cards.push(['近365天',data.history_recent_count],['最近交易',data.history_last_date]);
  fullAddCards(cards);
- let rows=all.filter(row=>Object.values(row).some(value=>String(value??'').toLowerCase().includes($('fullFilter').value.trim().toLowerCase())));
+ let rows=all.filter(row=>(fullTab!=='camino'||caminoClassMode==='all'||row.order_kind===caminoClassMode)
+  &&Object.values(row).some(value=>String(value??'').toLowerCase().includes($('fullFilter').value.trim().toLowerCase())));
  if(fullTab==='stock')rows=rows.slice().sort((a,b)=>compareSkus(a.code,b.code));
  if(fullSort)rows=rows.slice().sort((x,y)=>{
   const a=x[fullSort],b=y[fullSort],num=(typeof a==='number'&&typeof b==='number');
@@ -2088,7 +2175,10 @@ function fullRenderProduct(data){
  const cols=fullTab==='history'&&data.price_allowed?[...fullFields.history,['price','成交單價']]:fullFields[fullTab];
  $('fullDetails').replaceChildren(fullTab==='stock'?ccFullStockRows(rows):fullTable(rows,cols));
  $('fullHistoryMore').classList.toggle('hidden',fullTab!=='history'||!Number.isInteger(data.history_next_cursor)||data.history_next_cursor >= Number(data.history_retrievable_count??data.history_total_count??0));
- $('fullNote').textContent=fullTab==='history'?'本頁為公司唯讀查詢，不提供成交單價。':''; 
+ $('fullNote').textContent=fullTab==='history'?'本頁為公司唯讀查詢，不提供成交單價。':
+ fullTab==='camino'?(all.some(x=>!x.description)
+  ?'部分待到貨缺少 Access Camino.Descripcion；無描述的項目標為「待確認」，不能當作公司備貨。'
+  :'依原始描述推測分類，請以訂單與客戶資料核對；不會修改 Access 或庫存。'):''; 
 }
 function fullRenderNota(data){
  const docs=Array.isArray(data.documents)?data.documents:(data.nota?[data]:[]);
@@ -2141,6 +2231,7 @@ function renderFullResult(data){
  $('fullTabs').classList.toggle('hidden',fullKind==='nota');
  $('fullFilterRow').classList.toggle('hidden',fullKind==='nota');
  $('fullStockVisibility').classList.toggle('hidden',fullKind==='nota'||fullTab!=='stock');
+ $('caminoOrderFilters').classList.toggle('hidden',fullKind==='nota'||fullTab!=='camino');
  if(fullKind==='nota'){fullRenderNota(data);return}
  for(const b of $('fullTabs').querySelectorAll('button[data-fulltab]'))b.classList.toggle('active',b.dataset.fulltab===fullTab);
  fullRenderProduct(data);

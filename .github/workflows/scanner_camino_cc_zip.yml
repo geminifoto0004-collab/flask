@@ -1,0 +1,44 @@
+name: Export SCANNER Camino CC review ZIP
+on:
+  push:
+    branches: ["camino-order-cc-review"]
+  pull_request:
+    branches: ["xingwang-stock"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify order parser and bridge adapter (read-only)
+        run: |
+          node xingwang_miniapp/tests/test_camino_classifier.js
+          python3 xingwang_miniapp/camino_description_bridge_adapter.py
+      - name: Build focused full-code review ZIP
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          root=pathlib.Path("xingwang_miniapp")
+          filenames=[
+            "scanner.html", "scanner_cart.js", "scanner_backend.py",
+            "scanner_cart.py", "scanner_tidb.py", "miniapp_server.py",
+            "index.html", "stock_sync_api.py", "stock_mcp.py",
+            "CAMINO_CC_REVIEW.md", "camino_description_bridge_adapter.py",
+          ]
+          files=[root/name for name in filenames]
+          files += sorted((root/"tests").glob("test_scanner_*.py"))
+          files += sorted((root/"tests").glob("test_camino_classifier.js"))
+          with zipfile.ZipFile("XINGWANG_CAMINO_CC.zip","w",zipfile.ZIP_DEFLATED) as z:
+            for file in files:
+              if not file.is_file(): raise RuntimeError("Missing "+str(file))
+              z.write(file,file.as_posix())
+            z.writestr("SOURCE_BRANCH.txt","geminifoto0004-collab/flask @ camino-order-cc-review\nNo production deployment.\n")
+          print("Packaged",len(files),"source/test files")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XINGWANG_CAMINO_CC
+          path: XINGWANG_CAMINO_CC.zip
+          retention-days: 30
