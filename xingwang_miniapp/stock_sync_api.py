@@ -15,7 +15,7 @@ import re
 import secrets
 import time
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -82,9 +82,10 @@ def _value(raw):
         amount = Decimal(str(raw))
         if not amount.is_finite() or abs(amount) > _AMOUNT:
             raise ValueError("Out-of-range inventory quantity")
-        if amount != amount.quantize(_UNIT):
-            raise ValueError("Inventory quantity has too many decimal places")
-        return amount
+        # Access SUM(UNT * PN) may return binary floating-point tails.
+        # TiDB DECIMAL(18,3) already stores millesimal precision: round once,
+        # explicitly and consistently, rather than rejecting valid totals.
+        return amount.quantize(_UNIT, rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError):
         raise ValueError("Invalid inventory quantity")
 

@@ -205,7 +205,29 @@ async def _inventory_run(job_id):
         if isinstance(exc, RuntimeError):
             safe = str(exc)[:180]
         elif isinstance(exc, ValueError):
-            safe = "Inventory validation failed; previous TiDB snapshot retained"
+            # These messages are fixed constants from the validator, never SKU,
+            # quantity, credential or raw client data.
+            allowed_reasons = {
+                "Unsupported payload format",
+                "Full snapshot required",
+                "Invalid inventory size",
+                "Inventory row count mismatch",
+                "Invalid inventory row",
+                "Invalid SKU in inventory",
+                "Duplicate SKU in inventory",
+                "Missing stock quantity field",
+                "Missing or invalid inventory quantity",
+                "Invalid inventory quantity",
+                "Out-of-range inventory quantity",
+                "Inventory quantity has too many decimal places",
+            }
+            reason = str(exc)
+            safe = ("資料驗證失敗：" + reason if reason in allowed_reasons
+                    else "Inventory validation failed; previous TiDB snapshot retained")
+            logging.getLogger("uvicorn.error").warning(
+                "STOCK_VALIDATION_REJECTED reason=%s",
+                reason if reason in allowed_reasons else "UNKNOWN",
+            )
         else:
             safe = "Stock sync failed; see Render logs"
         logging.getLogger("uvicorn.error").error(
