@@ -1186,6 +1186,57 @@ body.cc-sample-detail #result{
  #result table .sample-check-cell{width:54px!important;min-width:54px!important;padding-right:7px!important}
 }
 
+
+/* CART: ALL / positive STOCK / SELECTED — three equal-width filters. */
+#cartWorkspace .cart-filter.cc-three-filters{
+ box-sizing:border-box!important;
+ display:grid!important;
+ grid-template-columns:repeat(3,minmax(0,1fr))!important;
+ gap:6px!important;
+ flex-wrap:nowrap!important;
+ margin:0!important;
+ padding:0 14px 9px!important;
+ width:100%!important;
+}
+#cartWorkspace .cart-filter.cc-three-filters button{
+ box-sizing:border-box!important;
+ display:flex!important;
+ align-items:center!important;
+ justify-content:center!important;
+ flex:initial!important;
+ width:100%!important;
+ min-width:0!important;
+ height:38px!important;
+ min-height:38px!important;
+ padding:0 5px!important;
+ gap:4px!important;
+ font-size:12px!important;
+ font-weight:700!important;
+ white-space:nowrap!important;
+ overflow:hidden!important;
+}
+#cartWorkspace .cart-filter.cc-three-filters .cc-filter-icon{
+ display:inline-flex!important;flex:0 0 auto!important;order:0!important;
+ align-items:center!important;justify-content:center!important;
+}
+#cartWorkspace .cart-filter.cc-three-filters .cc-filter-icon svg{
+ width:14px!important;height:14px!important;
+}
+#cartWorkspace .cart-filter.cc-three-filters .cc-filter-name{
+ order:1!important;min-width:0!important;flex:0 1 auto!important;
+ white-space:nowrap!important;font-size:12px!important;
+}
+#cartWorkspace .cart-filter.cc-three-filters strong{
+ order:2!important;flex:0 0 auto!important;font-size:12px!important;
+}
+@media(max-width:360px){
+ #cartWorkspace .cart-filter.cc-three-filters{gap:4px!important;padding-inline:10px!important}
+ #cartWorkspace .cart-filter.cc-three-filters button{gap:3px!important;padding-inline:4px!important}
+ #cartWorkspace .cart-filter.cc-three-filters .cc-filter-icon svg{width:12px!important;height:12px!important}
+ #cartWorkspace .cart-filter.cc-three-filters .cc-filter-name,
+ #cartWorkspace .cart-filter.cc-three-filters strong{font-size:11px!important}
+}
+
 </style>
 </head>
 <body><main>

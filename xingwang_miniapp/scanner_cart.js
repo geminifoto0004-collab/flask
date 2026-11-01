@@ -2,7 +2,7 @@
 // Cart controller for the existing /scanner page. Guest can access cart endpoints
 // only; staff-only DOM is also removed from the guest presentation.
 let cartRole='none', cartData=null, cartSearch=null, cartGuestCode='',cartBusy=false;
-let cartAll=false,cartRecent=[],cartLookupPending=false;
+let cartFilterMode='all',cartRecent=[],cartLookupPending=false;
 let cartView='pick',cartSkuSearch='',cartCameraOpen=false,cartSummaryOpen=false;
 const CART_SAVE_DELAY=1200;
 let cartPending=new Map(),cartSending=new Map(),cartSaveTimer=null,cartSaveJob=null,cartSaveError=false;
@@ -137,30 +137,41 @@ function cartRender(){
  }
  for(const item of items)host.append(cartRow(item.sku,item.qty,null,false));
  const products=$('cartProducts');products.replaceChildren();
- let rows=[],selected=[],all=[];
+ let rows=[],selected=[],inStock=[],all=[];
  if(cartSearch){
   all=Array.isArray(cartSearch.variants)?[...cartSearch.variants].sort((a,b)=>compareSkus(a.code,b.code)):[];
   selected=all.filter(v=>cartItemQty(v.code)>0);
+  inStock=all.filter(v=>Number(v.stock_rolls)>0);
  }else{
   all=items.map(i=>({code:i.sku,stock_rolls:null}));
   selected=all;
+  inStock=[];
  }
  $('cartProductToolbar').classList.toggle('hidden',!all.length);
- const oldFilter=products.querySelector('.cart-filter');
- const bar=document.createElement('div');bar.className='cart-filter';
- for(const [active,count,kind,label] of [[false,all.length,'all','全部 Todos'],[true,selected.length,'selected','已选 Elegidos']]){
+ const bar=document.createElement('div');bar.className='cart-filter cc-three-filters';
+ const choices=[
+  {key:'all',items:all,label:'全部',es:'Todos',icon:'<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>'},
+  {key:'stock',items:inStock,label:'有库存',es:'Con stock',icon:'<path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/>'},
+  {key:'selected',items:selected,label:'已选',es:'Elegidos',icon:'<path d="m5 12.5 4.5 4.5L19 7"/>'}
+ ];
+ for(const choice of choices){
   const button=document.createElement('button');button.type='button';
-  button.className=cartAll===active?'active':'';
-  button.setAttribute('aria-label',label);
-  const icon=document.createElement('span');icon.innerHTML=kind==='all'
-   ?'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>'
-   :'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12.5 4.5 4.5L19 7"/></svg>';
-  const lbl=document.createElement('span');lbl.textContent=label;
-  const countEl=document.createElement('strong');countEl.textContent=String(count);
-  button.append(icon,lbl,countEl);button.onclick=()=>{cartAll=active;cartRender()};bar.append(button);
+  button.className=cartFilterMode===choice.key?'active':'';
+  button.setAttribute('aria-pressed',String(cartFilterMode===choice.key));
+  button.setAttribute('aria-label',choice.label+' / '+choice.es+' '+choice.items.length);
+  const icon=document.createElement('span');icon.className='cc-filter-icon';
+  icon.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">'+choice.icon+'</svg>';
+  const label=document.createElement('span');label.className='cc-filter-name';
+  label.textContent=choice.label;
+  const countEl=document.createElement('strong');countEl.textContent=String(choice.items.length);
+  button.append(icon,label,countEl);
+  button.onclick=()=>{cartFilterMode=choice.key;cartRender()};
+  bar.append(button);
  }
  if(all.length)products.append(bar);
- rows=(cartAll?selected:all).filter(v=>v.code.toLowerCase().includes(cartSkuSearch.toLowerCase()));
+ const pools={all,inStock,selected};
+ const filterRows=cartFilterMode==='stock'?pools.inStock:cartFilterMode==='selected'?pools.selected:pools.all;
+ rows=filterRows.filter(v=>v.code.toLowerCase().includes(cartSkuSearch.toLowerCase()));
  if(!rows.length&&all.length){
   const p=document.createElement('p');p.className='muted cc-empty-filter';
   p.textContent='没有符合的编号 / Sin resultados';products.append(p);
@@ -410,7 +421,7 @@ async function cartLookup(input){
  $('code').value=code;syncSearchClear();
  try{
   const d=await post('/scanner/api/cart/lookup',{cart_id:cartData.id,code});
-  cartCameraOpen=false;cartView='pick';cartSearch=d;cartAll=false;cartSkuSearch='';$('cartSkuFilter').value='';
+  cartCameraOpen=false;cartView='pick';cartSearch=d;cartFilterMode='all';cartSkuSearch='';$('cartSkuFilter').value='';
   cartRender();cartMsgClean();
   $('cartWorkspace').scrollIntoView({behavior:'smooth',block:'start'});
  }catch(e){cartNotice(e.message,true)}
