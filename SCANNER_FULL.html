@@ -1,0 +1,1540 @@
+<!doctype html>
+<html lang="zh-Hant"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>XINGWANG · QR 布樣掃描</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#192a39;background:#f3f5f9}
+*{box-sizing:border-box}body{margin:0}button,input{font:inherit}
+main{max-width:780px;margin:auto;padding:18px 14px 65px}
+header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:16px}
+.header-actions{display:flex;align-items:center;gap:5px;flex:none}
+.admin-icon{width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;flex:none;border:1px solid #d1dfec;border-radius:10px;background:#edf3fa;color:#21527e;text-decoration:none}
+.admin-icon:hover{background:#ddebf9;color:#1265bb}
+.admin-icon:focus-visible{outline:2px solid #1265bb;outline-offset:2px}
+.admin-icon[data-back="true"] svg{display:none}
+.admin-icon[data-back="true"]::before{content:"←";font-size:24px;line-height:1;font-weight:500}
+.admin-icon svg{width:22px;height:22px;display:block}
+h1{font-size:21px;margin:0}h2{font-size:16px;margin:0 0 10px}
+small,.muted{color:#64748b;font-size:12px;line-height:1.5}
+.panel{background:white;border:1px solid #dce4ee;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 6px #0b25400b}
+input{min-width:0;border:1px solid #c9d4e0;background:#fff;color:#172b40;border-radius:10px;padding:12px;font-size:16px}
+button{border:0;background:#1265bb;color:#fff;border-radius:10px;padding:12px 15px;font-weight:700;cursor:pointer}
+button.secondary{background:#eef3f8;color:#213a53}button:disabled{opacity:.55;cursor:wait}
+button.ghost{background:transparent;color:#24517a;padding:8px}
+button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
+.row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}.fill{flex:1}
+.modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.modes button{background:#edf2f8;color:#2d4864;min-width:0;padding:11px 6px;font-size:13px}
+.modes button.active{background:#145ba4;color:#fff}
+#reader{max-width:460px;margin:10px auto;overflow:hidden;border-radius:10px}
+#reader video{max-width:100%}#reader button{font-size:12px}
+#message{font-size:13px;margin-top:9px;line-height:1.65;white-space:pre-wrap}
+#message:empty{display:none}
+.sample-sku-sort{cursor:pointer;user-select:none;white-space:nowrap}
+.sample-sku-sort:focus-visible{outline:2px solid #155fa5;outline-offset:3px}
+#message.error{color:#ad2a2a}#message.good{color:#147b4e}
+#freshnessPanel{margin:12px 0 9px;background:#f4f7fb;border-color:#dce4ee;color:#465c73}
+#freshnessPanel.stale{background:#fff8e9;border-color:#efce8c;color:#865a13}
+#freshnessPanel.fresh{background:#f1f9f4;border-color:#b5ddc0;color:#17673b}
+.freshnessAdmin{display:inline-flex;padding:10px 11px;border-radius:10px;background:#fff;color:#145ba4;border:1px solid #cbd7e4;text-decoration:none;font-size:12px;font-weight:700}
+#freshnessCheckBtn{font-size:12px;padding:10px 12px}
+#freshnessContinueBtn{font-size:12px;padding:10px 11px}
+#freshnessPanel.acknowledged{padding:9px 11px;background:#fff9ec;border-color:#efd9a5}
+#freshnessPanel.acknowledged .freshness-head{font-size:11px}
+#freshnessPanel.acknowledged #freshnessContinueBtn{display:none}
+.freshness-head{display:flex;align-items:flex-start;gap:10px;justify-content:space-between}
+#freshnessText{flex:1;min-width:0}
+#freshnessDismissBtn{flex:0 0 30px;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;background:transparent;color:inherit;opacity:.8;font-size:24px;font-weight:400;line-height:1;border-radius:8px;padding:0;margin:-6px -6px 0 0}
+#freshnessDismissBtn:hover{background:#00000012;opacity:1}
+#freshnessDismissBtn:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.stock-stat-grid{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.stock-stat{flex:1 1 calc(50% - 8px);min-width:118px;background:#f1f6fb;border-radius:12px;padding:12px}
+.stock-stat small{display:block;color:#627b8e;font-size:11px;margin-bottom:4px}
+.stock-stat strong{font-size:20px;font-variant-numeric:tabular-nums;color:#213a53}
+.stock-visibility{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 8px}
+.scanner-search-row{display:flex;align-items:center;gap:8px}.scanner-search-row input{flex:1;min-width:0}
+.search-input-wrap{display:flex;flex:1;min-width:0;position:relative;align-items:center}
+.search-input-wrap #code{width:100%;padding-right:37px;appearance:none;-webkit-appearance:none}
+.search-input-wrap #code::-webkit-search-cancel-button{display:none}
+.search-clear{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#66788a;border-radius:7px;width:32px;height:32px;font-size:23px;font-weight:400;line-height:1;display:flex;justify-content:center;align-items:center;padding:0}
+.search-clear:hover{background:#e9eef4;color:#253c52}
+.search-clear:focus-visible{outline:2px solid #155fa5}
+
+.camera-toggle{flex:0 0 44px;width:44px;height:44px;border:1px solid #bdd0e2;border-radius:11px;background:#edf3fa;color:#165a94;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.camera-toggle svg{width:22px;height:22px;display:block}.camera-toggle[aria-pressed="true"]{background:#b74439;color:white;border-color:#b74439}
+.camera-toggle:focus-visible{outline:2px solid #165da5;outline-offset:2px}
+.sample-check{width:23px;height:23px;cursor:pointer;accent-color:#1765a5;vertical-align:middle}
+.sample-check-cell{text-align:center;min-width:62px}.sample-headcheck{display:inline-flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;white-space:nowrap}.sample-headcheck input{margin:0;accent-color:#1765a5}
+.previous-sample{display:block;color:#788699;font-size:10px;margin-top:7px;white-space:nowrap;text-align:center}
+.sample-visibility-legend{font-size:11px;color:#64748b;margin:7px 0 0}
+.sample-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:9px}
+.sample-actions button{padding:8px 12px;font-size:12px;background:#edf2f8;color:#2e526f}
+.sample-actions button:disabled{opacity:.55}
+
+
+.stock-visibility button{display:flex;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:54px;background:#edf2f8;color:#294763;border:1px solid #d7e3ef;font-size:13px;padding:9px 7px;white-space:nowrap}.stock-visibility button svg{width:21px;height:21px;flex:none}.stock-visibility .filter-count{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.5px}.stock-visibility .filter-label{font-size:12px;font-weight:700;opacity:.87}.query-icon{width:44px;height:44px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0}.query-icon svg{width:21px;height:21px}.save-action{display:flex;align-items:center;justify-content:center;gap:9px;min-height:46px}.save-action svg{width:20px;height:20px}.save-action span:last-child{font-variant-numeric:tabular-nums}.audit-badge{font-weight:800;font-size:13px;font-variant-numeric:tabular-nums;border:1px solid transparent}.audit-badge.age-green{background:#e7f8ee;color:#167447;border-color:#b6e5c8}.audit-badge.age-amber{background:#fff4dc;color:#995c00;border-color:#f3d99b}.audit-badge.age-red{background:#ffe9e9;color:#bb2c35;border-color:#f1b9bd}.audit-badge.age-deep{background:#7f2028;color:#fff;border-color:#7f2028}.audit-badge.age-none{background:#eef1f5;color:#667587;border-color:#d7dee6}.modes button svg{width:19px;height:19px;flex:none}.modes button{display:flex;align-items:center;justify-content:center;gap:8px}.sample-visibility-legend{font-size:12px}
+.stock-visibility button.active{background:#145ba4;color:#fff}
+.stock-visibility button:focus-visible{outline:2px solid #145ba4;outline-offset:2px}
+.stock-filter-row{display:flex;align-items:center;gap:8px;margin:13px 0 10px}
+.stock-filter-row input{flex:1;min-width:0;width:100%;padding:10px;font-size:16px}
+.stock-filter-row .muted{white-space:nowrap}
+.stock-tablewrap{overflow:auto;max-height:65vh;min-height:90px;border:1px solid #ecf0f4;border-radius:12px}
+.stock-tablewrap table{min-width:100%;width:100%;font-size:13px}
+.stock-tablewrap th,.stock-tablewrap td{padding:11px 10px;white-space:nowrap}
+.stock-tablewrap th{position:sticky;top:0;background:#f7fafd;cursor:pointer;user-select:none}
+.stock-tablewrap th:focus-visible{outline:2px solid #1265bb;outline-offset:-2px}
+.stock-tablewrap td{font-variant-numeric:tabular-nums}
+.stock-note{margin:10px 0 0}
+#login{max-width:420px;margin:30px auto}#login input{width:100%;margin:12px 0}
+#login button{width:100%}.info{background:#f5f8fc;border-radius:10px;padding:11px;color:#52677d;font-size:12px;line-height:1.6}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;border-bottom:1px solid #ecf0f4;text-align:left}th{font-size:12px;color:#667b8a}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.stockline{display:flex;align-items:center;gap:7px}input[type="checkbox"]{width:23px;height:23px;accent-color:#c8493a;cursor:pointer}
+.tag{display:inline-block;background:#edf2f8;border-radius:8px;padding:5px 9px;font-size:12px}
+.sample-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:13px 0}
+.sample-stat{min-width:0;display:flex;flex-direction:column;gap:6px;background:#f2f7fc;border:1px solid #dde8f3;border-radius:13px;padding:12px 9px}
+.sample-stat-label{font-size:11px;color:#65788e;white-space:nowrap}
+.sample-stat-value{font-size:21px;font-weight:750;letter-spacing:-.4px;color:#193e61;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.sample-stat-sub{font-size:10px;color:#778a9f}
+#result .sample-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:9px 0}
+#result .sample-stat{flex-direction:row;align-items:center;justify-content:space-between;gap:8px;padding:10px 11px;min-height:55px;background:#f4f8fc;border-color:#e1e9f2}
+#result .sample-stat-label{font-weight:750;font-size:11px}
+#result .sample-stat-value{font-size:clamp(16px,4.3vw,20px);white-space:nowrap;overflow-wrap:normal}
+#result .stock-visibility{margin:10px 0 8px}
+#result tbody td{padding:10px 7px}
+#result tbody tr{height:54px}
+#result thead th{padding:10px 7px}
+#result input[type="checkbox"]{accent-color:#1765a5}
+#result .sample-check-cell{min-width:54px;width:54px}
+#result #missingCount{margin:12px 0 8px;font-size:12px}
+@media(max-width:380px){#result .sample-stat{padding:9px 7px;gap:4px}#result .sample-stat-value{font-size:16px}}
+@media(max-width:380px){.sample-stats{gap:6px}.sample-stat{padding:9px 6px}.sample-stat-value{font-size:18px}}
+
+.bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.sample-series-header{display:flex;align-items:center;gap:9px;min-width:0;white-space:nowrap}
+.sample-series-header #series{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(16px,4vw,21px);margin:0;line-height:1.35}
+.sample-series-header .sample-sync{display:inline-flex;align-items:center;gap:4px;flex:none;min-width:0;color:#64748b;white-space:nowrap}
+.sample-series-header .sample-sync svg{width:14px;height:14px;flex:none}
+.sample-series-header #asof{font-size:12px;line-height:1.2;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sample-series-header #source{flex:none;white-space:nowrap}
+@media(max-width:360px){.sample-series-header{gap:5px}.sample-series-header .sample-sync{gap:2px}.sample-series-header #asof{font-size:11px}.sample-series-header .sample-sync svg{width:12px;height:12px}.sample-series-header #source{padding:5px 6px;font-size:12px}}
+.notice{background:#fff8e9;border:1px solid #f0d9a6;border-radius:10px;padding:10px;font-size:12px;color:#835a15}
+.hidden{display:none!important}@media (max-width:420px){.panel{padding:12px}.row input{width:100%}button{padding:11px}}
+.full-kind{display:flex;gap:8px;margin:10px 0 0}
+.full-kind button{flex:1;background:#edf2f8;color:#294763;font-size:13px}
+.full-kind button.active{background:#1965aa;color:white}
+.full-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:12px 0}
+.full-tabs button{flex:1;white-space:nowrap;background:#edf2f8;color:#294763;font-size:12px;padding:10px 8px}
+.full-tabs button.active{background:#1965aa;color:white}
+.full-row{padding:12px 10px;border-bottom:1px solid #e5ebf3}
+.full-doc{padding:13px;border:1px solid #e1e8f1;border-radius:12px;margin:10px 0}
+.full-doc summary{cursor:pointer;font-weight:700}
+.full-doc dl{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
+.full-doc dt{font-size:11px;color:#65778c}
+.full-doc dd{margin:1px 0 0;font-size:13px;overflow-wrap:anywhere}
+.full-table{overflow:auto;max-height:65vh;min-height:50px}
+.full-table th,.full-table td{white-space:nowrap;font-size:12px}
+.full-table th{cursor:pointer}
+.full-empty{padding:14px;color:#64748b}
+.full-customer{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.full-customer.expanded{white-space:normal;max-width:360px;overflow-wrap:anywhere}
+.headerbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pill{background:#eff5fc;color:#175da5;font-size:11px;border-radius:15px;padding:5px 9px}
+.share-layout{display:flex;align-items:center;gap:15px}.share-layout img{width:130px;height:130px;object-fit:contain;border:1px solid #d8e1eb;padding:7px;border-radius:10px}
+.share-copy{flex:1;min-width:0}.share-copy p{overflow-wrap:anywhere}.share-actions{display:flex;flex-wrap:wrap;gap:8px}
+.share-actions button{font-size:12px;padding:10px}
+#inventoryStatusText{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}
+#dbSetupMsg,#shareStatus{font-size:12px;color:#52677d;line-height:1.65;margin-top:9px}
+.cart-nav{position:relative}.cart-nav-count{position:absolute;right:-5px;top:-7px;min-width:17px;height:17px;border-radius:50px;display:flex;align-items:center;justify-content:center;background:#135d99;color:white;font-size:10px;font-weight:750;padding:2px}
+.cart-code-empty{color:#8796a6}.cart-code-number{font-size:22px;letter-spacing:2px;font-variant-numeric:tabular-nums;font-weight:850}
+.cart-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cart-header h2{font-size:18px;margin:0;word-break:break-word}.cart-head-actions{display:flex;gap:6px;align-items:center}
+#cartWorkspace h3{font-size:13px;color:#4d6378;margin:13px 0 7px}
+#cartWorkspace .cart-line{display:flex;align-items:center;justify-content:space-between;gap:6px;border-bottom:1px solid #eaf0f6;padding:9px 0;min-height:55px}
+.cart-line-title{min-width:0;display:flex;flex-direction:column;gap:3px}.cart-line-title strong{font-size:13px;overflow-wrap:anywhere}.cart-line-title small{font-size:11px;color:#60758b}.cart-line-title small.cart-out{color:#9c4141}
+.cart-qty-controls{display:flex;flex:none;align-items:center;gap:5px}.cart-qty-controls button{border-radius:10px;width:38px;height:38px;padding:0;font-size:23px;font-weight:500}.cart-qty-controls strong{width:30px;text-align:center;font-size:15px;font-variant-numeric:tabular-nums}
+.cart-products-head{display:flex;align-items:center;justify-content:space-between;gap:6px;border-top:1px solid #eaf0f6;padding:12px 0 3px}.cart-products-head strong{font-size:16px}
+.cart-filter{display:flex;gap:7px;margin:9px 0}.cart-filter button{flex:1;background:#edf3f9;color:#2a506c;padding:8px}.cart-filter button.active{background:#135fa7;color:white}
+.cart-history-row{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;text-align:left;margin-bottom:6px}.cart-history-left{display:flex;flex-direction:column;gap:3px}.cart-history-left small{font-size:11px}
+#cartMessage{font-size:12px;line-height:1.5;color:#16744e;margin:8px 0}#cartMessage:empty{display:none}#cartMessage.error{color:#b22e39}
+.cart-spread{display:flex;align-items:center;justify-content:space-between;gap:8px}.cart-spread>*{min-width:0}
+.cart-stack{display:flex;flex-wrap:wrap;gap:7px}.cart-stack button{flex:1;font-size:12px;padding:11px 8px}
+.cart-hint{background:#f4f7fa;border-radius:9px;padding:8px;margin:9px 0;font-size:11px;color:#63768a;line-height:1.6}
+#cartNewName{width:100%}#cartFilter{width:100%}
+.cart-times{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.cart-times>div{min-width:0;background:#f3f7fb;border-radius:9px;padding:10px 8px;display:flex;flex-direction:column;gap:4px}
+.cart-times span{font-size:10px;font-weight:650;color:#64788a;letter-spacing:.3px}
+.cart-times strong{font-size:13px;color:#173a59;font-variant-numeric:tabular-nums}
+.cart-confirmed-box{margin:10px 0;padding:10px;background:#f6f9fd;border:1px solid #dce7f3;border-radius:10px;max-height:270px;overflow-y:auto}
+.cart-confirmed-box .cart-spread{font-size:12px;border-top:1px solid #e1e9f2;margin-top:5px;padding-top:6px}
+#cartVersionBtn{font-size:12px;padding:7px 11px}
+#login .guest-divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:#8693a2;font-size:12px}.guest-divider:before,.guest-divider:after{content:"";height:1px;background:#e0e8f1;flex:1}
+@media(max-width:350px){.cart-qty-controls{gap:3px}.cart-qty-controls button{width:35px;height:35px}.cart-line-title strong{font-size:12px}.cart-qty-controls strong{width:23px}}
+
+/* Cart: dense mobile pick / review with the main action always in reach */
+body:has(#cartWorkspace:not(.hidden) #cartActive:not(.hidden)) main{padding-bottom:calc(105px + env(safe-area-inset-bottom,0px))}
+#cartWorkspace:has(#cartActive:not(.hidden)){padding:11px 12px;border-radius:14px}
+.cart-compact-head{display:flex;align-items:center;gap:8px;min-height:40px}
+.cart-back,.cart-details-btn{flex:none;width:38px;height:38px;padding:0!important;font-size:19px;border-radius:10px}
+.cart-details-btn{font-size:17px;letter-spacing:1px}
+.cart-compact-title{display:flex;flex:1;min-width:0;flex-direction:column;gap:2px}
+.cart-compact-title strong{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.cart-compact-title span{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cart-compact-head .tag{padding:5px 6px;font-size:10px;flex:none}
+.cart-meta{margin-top:10px;padding:10px;background:#f5f8fc;border:1px solid #e0e9f3;border-radius:12px}
+.cart-meta .cart-times{margin:0 0 8px}
+.cart-meta #cartEditName{padding:8px 11px;font-size:12px;margin-top:8px}
+.cart-meta-actions{display:flex;gap:7px}.cart-meta-actions button{flex:1;padding:9px;font-size:12px}
+.cart-meta .cart-hint{background:white;border:1px solid #e7edf5}
+.cart-meta .cart-code-number{font-size:19px}
+.cart-product-toolbar{margin:10px 0 6px}
+.cart-product-toolbar input{width:100%;padding:9px 11px;font-size:16px}
+.cart-pick-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:#73859b;padding:25px 10px;min-height:150px;text-align:center;font-size:12px}
+.cart-pick-empty strong{color:#213b54;font-size:16px}
+.cart-pick-empty-icon{font-size:28px;line-height:1}
+.cart-item-heading{display:flex;align-items:center;justify-content:space-between;padding:12px 2px 7px;color:#344b64;font-size:12px}
+#cartWorkspace .cart-line{min-height:47px;padding:5px 0;gap:5px}
+#cartWorkspace .cart-line-title strong{font-size:14px}
+#cartWorkspace .cart-line-title small{font-size:11px}
+#cartWorkspace .cart-qty-controls{gap:3px}
+#cartWorkspace .cart-qty-controls button{height:38px;width:38px;background:#edf3f9;color:#205480;font-size:22px}
+#cartWorkspace .cart-qty-controls button:disabled{opacity:.4}
+#cartWorkspace .cart-qty-controls input.cart-qty{height:38px;width:48px;padding:0 3px;text-align:center;font-size:16px;border:1px solid #dbe4ee;background:#fff;border-radius:8px;color:#152e45;font-weight:700;appearance:textfield;-moz-appearance:textfield}
+#cartWorkspace .cart-qty-controls input.cart-qty::-webkit-inner-spin-button,#cartWorkspace .cart-qty-controls input.cart-qty::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#cartWorkspace .cart-qty-controls input.cart-qty:focus{outline:2px solid #2e76c1;outline-offset:0}
+#cartWorkspace .cart-products-head{margin:8px 0 0;padding:8px 0 2px;border-top:1px solid #eef2f8}
+#cartWorkspace .cart-filter{margin:7px 0}
+#cartWorkspace .cart-filter button{padding:7px}
+.cart-inventory-disclaimer{font-size:11px;color:#77869a;margin:15px 0 6px}
+.cart-dock{position:fixed;z-index:25;bottom:calc(9px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);width:min(750px,calc(100% - 20px));background:#fff;box-shadow:0 4px 22px #152b4650;border:1px solid #dce6f2;border-radius:15px;padding:8px 10px;display:flex;align-items:center;gap:8px;min-height:66px}
+.cart-dock-count{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;white-space:nowrap}
+.cart-dock-count strong{font-size:20px;color:#122e47;font-variant-numeric:tabular-nums}
+.cart-dock-count strong small{font-size:10px;font-weight:700;color:#5f7185}
+.cart-save-status{font-size:10px;color:#39825c;overflow:hidden;text-overflow:ellipsis}
+.cart-save-status[data-error="true"]{color:#b4343d;font-weight:700}
+.cart-dock-switch,.cart-dock-confirm{height:46px;border-radius:10px;padding:0 13px;font-size:13px;white-space:nowrap}
+.cart-dock-switch{background:#1567ad;color:#fff;min-width:108px}
+.cart-dock-confirm{background:#18815d;color:#fff;min-width:112px}
+#cartWorkspace .cart-confirmed-box{max-height:220px}
+#scanPanel.cart-scanner-parked{position:absolute!important;left:-9999px!important;top:0!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important;pointer-events:none!important;padding:0!important;margin:0!important}
+#cartWorkspace:has(#cartActive:not(.hidden)) #cartMessage:not(:empty){position:fixed;z-index:26;bottom:calc(82px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);width:min(700px,calc(100% - 30px));border:1px solid #bfd7ea;background:#f4f9ff;color:#1b587c;box-shadow:0 4px 18px #1c324124;border-radius:9px;padding:8px 12px;font-size:12px;max-height:100px;overflow:auto}
+#cartWorkspace:has(#cartActive:not(.hidden)) #cartMessage.error{border-color:#ffc6c4;background:#fff4f4;color:#a32931}
+@media(max-width:370px){.cart-dock{gap:5px;padding:7px}.cart-dock-count strong{font-size:17px}.cart-dock-switch,.cart-dock-confirm{min-width:0;padding:0 9px;font-size:12px}#cartWorkspace .cart-qty-controls button{width:35px}#cartWorkspace .cart-qty-controls input.cart-qty{width:42px}}
+</style>
+</head>
+<body><main>
+<header><div><h1>XINGWANG SCANNER</h1></div><div class="header-actions"><button class="admin-icon cart-nav hidden" id="cartNav" type="button" title="CART" aria-label="開啟購物車"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 2h2l3 13h13l2-9H5"/></svg><span id="cartNavCount" class="cart-nav-count">0</span></button><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden">登出</button></div></header>
+<section id="login" class="panel hidden">
+<h2>首次登入掃描器</h2>
+<p class="muted">輸入公司登入碼，這台手機將保持登入 30 天。</p>
+<input id="passcode" type="password" placeholder="公司登入碼" autocomplete="current-password">
+<button id="loginBtn">登入</button><div class="guest-divider">CART</div><p class="muted">客人選貨 · 8 位臨時碼，只有自己的購物車</p><input id="guestCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="8-digit code" autocomplete="one-time-code"><button id="guestLoginBtn" class="secondary" type="button">OPEN CART</button><p id="loginMessage" class="muted"></p>
+</section>
+<div id="app" class="hidden">
+<section class="panel" id="scanPanel">
+<div id="workModes" class="modes"><button id="modeSample" class="active" type="button" title="布樣盤點 / Muestras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M4 12h16"/></svg><span>SAMPLE</span></button><button id="modeFull" type="button" title="完整查詢 / Consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg><span>DATA</span></button></div>
+<div id="fullKindControls" class="full-kind hidden"><button id="fullProduct" class="active" type="button">商品查詢</button><button id="fullNota" type="button">Nota 查詢</button></div>
+<div id="freshnessPanel" class="notice hidden" role="status" aria-live="polite">
+<div class="freshness-head"><span id="freshnessText">庫存已超過 60 分鐘，請確認是否使用舊資料。</span></div>
+<div class="row" style="margin-top:8px;flex-wrap:wrap">
+<button type="button" id="freshnessContinueBtn" class="secondary hidden">繼續使用舊庫存</button>
+<button type="button" id="freshnessAdminBtn" class="freshnessAdmin">更新庫存</button>
+<button type="button" id="freshnessCheckBtn" class="secondary" aria-label="重新檢查同步時間" title="重新檢查同步時間">↻</button>
+</div></div>
+
+<div id="reader"></div>
+<div class="scanner-search-row">
+<div class="search-input-wrap"><input id="code" type="search" placeholder="掃描或輸入 12-225" autocomplete="off" enterkeyhint="search" aria-label="商品編號或查詢條件"><button type="button" id="codeClearBtn" class="search-clear hidden" aria-label="清除輸入" title="清除輸入">×</button></div>
+<button id="cameraToggle" type="button" class="camera-toggle" aria-pressed="false" aria-label="開啟連續掃描" title="開啟連續掃描">
+<svg id="cameraOnIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
+<svg id="cameraOffIcon" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/><path d="M3 3l18 18"/></svg>
+</button><button id="queryBtn" type="button" class="query-icon" aria-label="查詢 / Buscar" title="查詢 / Buscar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg></button></div>
+<div id="message" aria-live="polite"></div>
+</section>
+<section id="cartWorkspace" class="panel hidden" aria-label="購物車">
+ <div id="cartStart">
+  <div class="cart-header"><h2>NEW CART</h2><span class="tag">TiDB</span></div>
+  <p class="muted">每次選貨建立獨立 ID，之後可以重新打開繼續追加。</p>
+  <input id="cartNewName" type="text" maxlength="80" placeholder="Customer / Cliente (optional)" autocomplete="off">
+  <button id="cartCreateBtn" type="button" style="width:100%;margin:8px 0">＋ NEW CART</button>
+ </div>
+ <div id="cartStaffList"><h3>RECENT</h3><input id="cartFilter" type="search" placeholder="ID / Customer" autocomplete="off"><div id="cartRecent" style="margin-top:9px"></div></div>
+ <div id="cartActive" class="hidden">
+  <div class="cart-compact-head">
+   <button id="cartBack" class="cart-back secondary" type="button" aria-label="返回所有購物車">←</button>
+   <div class="cart-compact-title"><strong id="cartShortCode" title="點選複製 Cart ID"></strong><span id="cartCustomerLabel" class="muted"></span></div>
+   <span id="cartStateLabel" class="tag">DRAFT</span>
+   <button id="cartDetailsBtn" class="cart-details-btn secondary" type="button" aria-expanded="false" aria-controls="cartMeta" aria-label="購物車詳細資料與訪客">•••</button>
+  </div>
+  <div id="cartMeta" class="cart-meta hidden">
+   <div class="cart-times"><div><span>OPENED</span><strong id="cartOpenedAt">—</strong></div><div><span>CONFIRMED</span><strong id="cartConfirmedAt">—</strong></div></div>
+   <div class="cart-spread"><span class="muted">LAST VERSION <strong id="cartVersionLabel">—</strong></span><button type="button" id="cartVersionBtn" class="secondary hidden" title="查看最後已確認清單">V1</button></div>
+   <div id="cartConfirmedBox" class="cart-confirmed-box hidden" aria-label="已確認版本商品清單"></div>
+   <button id="cartEditName" class="secondary" type="button">✎ CUSTOMER</button>
+   <div id="cartShareRow" class="cart-hint">
+    <div class="cart-spread"><span>GUEST CODE · 8H</span><span id="cartGuestCode" class="cart-code-number"></span></div>
+    <div class="cart-stack" style="margin-top:8px"><button id="cartShareBtn" type="button" class="secondary">↻ CODE</button><button id="cartGuestHandoff" type="button" class="secondary">GUEST MODE</button></div>
+   </div>
+   <div class="cart-meta-actions"><button id="cartReload" class="secondary" type="button">↻ RELOAD</button><button id="cartCopy" class="secondary" type="button">COPY LIST</button></div>
+  </div>
+  <div id="cartPickView">
+   <div id="cartProductToolbar" class="cart-product-toolbar hidden"><input id="cartSkuFilter" type="search" placeholder="搜尋此系列色號 / SKU" autocomplete="off" aria-label="搜尋此系列商品"/></div>
+   <div id="cartProducts"></div>
+   <div id="cartStockNote" class="cart-hint hidden"></div>
+   <div id="cartPickEmpty" class="cart-pick-empty"><div class="cart-pick-empty-icon">▣</div><strong>SCAN QR</strong><span>掃描或輸入布料編號，選擇需要的匹數</span></div>
+  </div>
+  <div id="cartItemView" class="hidden">
+   <div class="cart-item-heading"><strong>CART ITEMS</strong><span id="cartSkuCount"></span></div>
+   <div id="cartItems"></div>
+   <p class="cart-inventory-disclaimer">選貨清單 ≠ RESERVAR，正式開單前需要確認庫存</p>
+  </div>
+  <div id="cartDock" class="cart-dock">
+   <div class="cart-dock-count"><strong><span id="cartTotal">0</span> <small>ROLL</small></strong><span id="cartSavedAt" class="cart-save-status">✓ SAVED</span></div>
+   <button id="cartSwitchView" class="cart-dock-switch" type="button">CART <span id="cartDockSkuCount"></span></button>
+   <button id="cartStateButton" class="cart-dock-confirm hidden" type="button">✓ CONFIRM</button>
+  </div>
+ </div>
+ <div id="cartMessage" aria-live="polite"></div>
+</section>
+<section id="fullResult" class="panel hidden" aria-label="完整查詢結果">
+<div class="bar"><div><h2 id="fullTitle">完整查詢</h2><small id="fullTime" class="muted"></small></div><span class="tag">公司查詢</span></div>
+<div id="fullStats" class="stock-stat-grid"></div>
+<div id="fullTabs" class="full-tabs">
+<button data-fulltab="stock" class="active">庫存</button><button data-fulltab="camino">待到貨</button><button data-fulltab="history">歷史購買</button><button data-fulltab="reservar">預定</button>
+</div>
+<div id="fullStockVisibility" class="stock-visibility" role="group" aria-label="完整查詢庫存顯示範圍">
+<button type="button" id="fullPositiveBtn" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="fullPositiveCount" class="filter-count">0</strong><span class="filter-label">&gt;0</span></button>
+<button type="button" id="fullAllBtn" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="fullAllCount" class="filter-count">0</strong><span class="filter-label">ALL</span></button>
+</div>
+<div class="stock-filter-row" id="fullFilterRow"><input id="fullFilter" type="search" placeholder="篩選查詢結果" autocomplete="off" aria-label="篩選完整查詢資料"><span id="fullCount" class="muted"></span></div>
+<div id="fullDetails"></div>
+<p id="fullNote" class="muted stock-note"></p>
+<div class="row"><button id="fullHistoryMore" class="secondary fill hidden">載入更多購買紀錄</button><button type="button" id="fullNext" class="secondary">查下一筆</button></div>
+</section>
+<section id="result" class="panel hidden">
+<div class="sample-series-header"><h2 id="series"></h2><span class="sample-sync" title="庫存更新 / Stock updated"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><small id="asof"></small></span><span id="source" class="tag"></span></div>
+<div class="stock-visibility" role="group" aria-label="布樣盤點顯示範圍">
+<button id="samplePositiveBtn" type="button" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="samplePositiveCount" class="filter-count">0</strong><span class="filter-label">&gt;0</span></button>
+<button id="sampleAllBtn" type="button" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="sampleAllCount" class="filter-count">0</strong><span class="filter-label">ALL</span></button></div>
+<div id="totals" class="sample-stats" aria-label="庫存統計"></div>
+<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th id="sampleSkuSort" class="sample-sku-sort" tabindex="0" role="button" aria-label="商品編號排序" aria-sort="ascending">SKU ▲</th><th id="sampleRollsSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="匹數排序">ROLL</th><th id="sampleMetersSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="米數排序">M</th><th class="sample-check-cell"><label class="sample-headcheck">✓ <input id="sampleHeaderCheck" type="checkbox" aria-label="目前顯示商品全部有樣或無樣"></label></th></tr></thead><tbody id="rows"></tbody></table></div>
+<p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的商品編號，請確認快照中的編號。</p>
+<div id="sampleControls">
+<div id="dbNotice" class="notice">尚未確認 TiDB 連線；不會寫入盤點資料。</div>
+<p id="missingCount" class="muted"></p>
+<div class="row"><button id="saveBtn" type="button" class="fill hidden save-action" title="僅儲存目前顯示的商品 / Solo visibles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h14l3 3v15H3V3h1Z"/><path d="M7 3v7h10V3M7 21v-7h10v7"/></svg><span id="saveBtnText">SAVE</span><span id="saveScopeCount">0</span></button></div>
+</div>
+</section>
+<section id="adminTab" class="hidden" aria-label="管理分頁"><div id="adminApp">
+<section class="panel"><div class="headerbar"><h2>Access 庫存同步</h2><span class="pill">手動</span></div><p class="muted">雲端通知本機系統 從本機 Flask 取得完整庫存，再更新 TiDB；布樣盤點資料不會被覆蓋。</p>
+<button id="inventoryStartBtn" class="full">更新 Access 庫存到 TiDB</button><p id="inventoryStatusText" aria-live="polite">正在讀取最後成功時間…</p></section>
+<section class="panel"><div class="headerbar"><h2>資料庫維護</h2><span class="pill">管理工具</span></div><p class="muted">首次部署或連線異常時才需要使用。</p>
+<button id="dbSetupBtn" class="secondary full">檢查 TiDB 連線並建立資料表</button><div id="dbSetupMsg" aria-live="polite"></div></section>
+<section class="panel"><h2>分享掃描器入口</h2><div class="share-layout">
+<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACUAAAAlAQAAAADt5R2uAAAAz0lEQVR42mP8z8DA8JOJgYGBgQGZZC6UFy+4w/j94S/emUx/Gzk+MTAxfJ/FwMDEwHKVgYGJuU6Tj4Hxg6rDawuG/981/v9g+O62irmC6adyeC0D428/lVeKTH/03iozMPzn6Lb7wfil5H/kDhauZBcpBqa/0UuuMjD8FNq17wfjl+OnbLcx/hUKkvnNxJBWrsnA9PXmplgGFt6l394yMH2UnX2LgYX9zLXPDAxfQjYx/WD8kvrmlyUTA4vzTwbG74+C5PUYPohGyf1gxOELAK1ESjlC+l01AAAAAElFTkSuQmCC" alt="掃描器 QR Code" width="130" height="130">
+<div class="share-copy"><p class="muted">同事開啟後仍需要公司登入碼。</p><div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">複製網址</button></div>
+<p class="muted"><a href="/s" target="_blank" rel="noopener noreferrer">xingwang-stock.onrender.com/s</a></p><div id="shareStatus" aria-live="polite"></div></div></div></section>
+</div></section>
+<footer class="muted">XINGWANG</footer>
+</div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let mode='sample', reader=null, running=false, busy=false, current=null, saved=false, lastQrCode='';
+let sampleStates=new Map(),samplePositiveOnly=true,sampleSortField='code',sampleDescending=false,sampleDirty=false,savedScope=new Set(),sharedProductCode='',notaInput='',lastWorkMode='sample';
+let fullKind='product',fullTab='stock',fullData=null,fullDataKind='product',fullSort='',fullDesc=false,fullCode='',fullSession='';
+try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
+const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
+const normalizeProductCode=s=>String(s||'').trim().toUpperCase();
+const skuCollator=new Intl.Collator('en',{numeric:true,sensitivity:'base'});
+const compareSkus=(a,b)=>skuCollator.compare(String(a||''),String(b||''));
+function setSampleSort(field){
+ if(sampleSortField===field)sampleDescending=!sampleDescending;
+ else{sampleSortField=field;sampleDescending=false}
+ renderRows();
+}
+for(const [id,field] of [['sampleSkuSort','code'],['sampleRollsSort','stock_rolls'],['sampleMetersSort','stock_meters']]){
+ $(id).onclick=()=>setSampleSort(field);
+ $(id).onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setSampleSort(field)}};
+}
+
+
+let lastFreshness=null, checkingFreshness=null;
+// Per-page explicit choice. Never turn a stale snapshot into "fresh", and
+// never reuse the choice after a different stock snapshot is published.
+let staleAcceptedVersion=null;
+function staleAccepted(data=lastFreshness){
+ return !!(data?.has_synced&&!data.fresh&&data.synced_at_utc&&
+   staleAcceptedVersion===data.synced_at_utc);
+}
+function stockSyncLabel(iso){
+ if(!iso)return '—';
+ const d=new Date(iso);
+ return Number.isFinite(d.getTime())?d.toLocaleString('zh-TW',{
+  timeZone:'America/Santiago',hour12:false,month:'2-digit',day:'2-digit',
+  hour:'2-digit',minute:'2-digit'
+ }):'—';
+}
+function showFreshnessWarning(){
+ const data=lastFreshness;
+ const stale=data?.fresh!==true;
+ const acknowledged=staleAccepted(data);
+ const panel=$('freshnessPanel');
+ panel.classList.toggle('hidden',mode!=='sample'||!stale);
+ panel.classList.toggle('acknowledged',acknowledged);
+ $('freshnessContinueBtn').classList.toggle('hidden',!data?.has_synced||acknowledged);
+ $('freshnessContinueBtn').disabled=!data?.has_synced||acknowledged;
+ $('freshnessText').textContent=data?.has_synced
+  ?('⚠ 庫存未更新 · '+stockSyncLabel(data.synced_at_utc)+
+    (acknowledged?' · 已選擇繼續使用舊庫存':' · 超過 60 分鐘，可自行選擇繼續'))
+  :'⚠ '+(data?'尚無有效庫存，請先更新。':'無法確認庫存同步時間，請檢查連線。');
+}
+function setFreshness(data){
+ if(!data?.has_synced||data.synced_at_utc!==staleAcceptedVersion&&staleAcceptedVersion){
+  staleAcceptedVersion=null;
+ }
+ lastFreshness=data;
+ const panel=$('freshnessPanel');
+ panel.classList.toggle('stale',!data?.fresh);
+ showFreshnessWarning();
+}
+async function checkFreshness(){
+ if(checkingFreshness)return checkingFreshness;
+ checkingFreshness=(async()=>{
+  try{
+   const res=await fetch('/scanner/api/stock-freshness',{credentials:'same-origin',cache:'no-store'});
+   const data=await res.json();
+   if(!res.ok)throw new Error(data.detail||'TiDB 同步時間查詢失敗');
+   setFreshness(data);
+   return data;
+  }catch(e){
+   setFreshness(null);
+   $('freshnessText').textContent='⚠ 無法確認 TiDB 同步時間：'+e.message;
+   return null;
+  }finally{checkingFreshness=null}
+ })();
+ return checkingFreshness;
+}
+$('freshnessCheckBtn').onclick=checkFreshness;
+$('freshnessContinueBtn').onclick=()=>{
+ if(!lastFreshness?.has_synced||lastFreshness.fresh)return;
+ staleAcceptedVersion=lastFreshness.synced_at_utc;
+ showFreshnessWarning();
+ msg('使用上次同步的庫存資料（'+stockSyncLabel(staleAcceptedVersion)+'）；實際數量可能已變動。','good');
+};
+window.addEventListener('focus',()=>{if(mode==='sample' && !$('app').classList.contains('hidden'))void checkFreshness()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden && mode==='sample' && !$('app').classList.contains('hidden'))void checkFreshness()});
+
+function msg(s,type=''){const n=$('message');n.textContent=s;n.className=type}
+function fmt(x,precision=2){
+ if(x===null||x===undefined||x==='')return '—';
+ const n=Number(x);if(!Number.isFinite(n))return '—';
+ return n.toLocaleString('en-US',{minimumFractionDigits:precision===1?1:0,maximumFractionDigits:precision});
+}
+function fmtMeters(x){return fmt(x,1)}
+
+async function post(path,body={}){
+ const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body),cache:'no-store'});
+ let data={};try{data=await r.json()}catch(_){}
+ if(!r.ok)throw Object.assign(new Error(data.error||data.detail||'請求失敗 ('+r.status+')'),{status:r.status});
+ return data
+}
+async function session(){
+ try{
+  const d=await (await fetch('/scanner/api/session',{credentials:'same-origin',cache:'no-store'})).json();
+  const c=await (await fetch('/scanner/api/cart/session',{credentials:'same-origin',cache:'no-store'})).json();
+  const role=d.signed_in?'staff':c.role==='guest'?'guest':'none';
+  const signed=role!=='none';
+  $('login').classList.toggle('hidden',signed);
+  $('app').classList.toggle('hidden',!signed);
+  $('logout').classList.toggle('hidden',!signed);
+  $('adminLink').classList.toggle('hidden',role!=='staff');
+  $('cartNav').classList.toggle('hidden',role!=='staff');
+  if(role==='staff' && mode==='admin'){setMode('admin');}
+  if(role==='staff' && mode==='sample')void checkFreshness();
+  if(window.cartBootstrap)await window.cartBootstrap(role,c.cart_id);
+  if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
+ }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
+}
+$('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await post('/scanner/api/login',{passcode:$('passcode').value});$('passcode').value='';await session()}catch(e){$('loginMessage').textContent=e.message}finally{b.disabled=false}};
+$('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
+$('logout').onclick=async()=>{if(window.cartEnsureSaved&&!(await window.cartEnsureSaved()))return;await stopCamera();if(cartRole==='guest')await post('/scanner/api/cart/guest-logout');else await post('/scanner/api/logout');mode='sample';await session()};
+function setMode(m){
+ if(!['sample','full','admin','cart'].includes(m))m='sample';
+ if(cartRole==='guest'&&m!=='cart')m='cart';
+ if(mode==='full'&&fullKind==='nota')notaInput=$('code').value;
+ else if(valid($('code').value.trim()))sharedProductCode=normalizeProductCode($('code').value);
+ const wasMode=mode;
+ mode=m;
+ if(m==='cart'&&wasMode!=='cart')lastQrCode='';
+ const managing=m==='admin';
+ if(!managing)lastWorkMode=m;
+ const nav=$('adminLink');nav.dataset.back=String(managing);
+ nav.setAttribute('aria-label',managing?'返回盤點或查詢':'開啟管理分頁');
+ nav.title=managing?'返回上一頁':'管理分頁';
+ $('adminTab').classList.toggle('hidden',!managing);
+ $('scanPanel').classList.toggle('hidden',managing);
+ if(m!=='cart')$('scanPanel').classList.remove('cart-scanner-parked');
+ $('workModes').classList.toggle('hidden',m==='cart');
+ $('cartWorkspace').classList.toggle('hidden',m!=='cart');
+ $('adminLink').classList.toggle('active',managing);
+ $('cartNav').classList.toggle('active',m==='cart');
+ $('fullKindControls').classList.toggle('hidden',m!=='full');
+ if(window.cartApplyRole)window.cartApplyRole();
+ showFreshnessWarning();
+ if(m==='sample')void checkFreshness();
+ if(managing)checkInventoryStatus();
+ $('modeSample').classList.toggle('active',m==='sample');
+ $('modeFull').classList.toggle('active',m==='full');
+ $('code').placeholder=m==='cart'?'SCAN QR / SKU':m==='full'&&fullKind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
+ $('code').value=m==='full'&&fullKind==='nota'?notaInput:sharedProductCode;
+ syncSearchClear();
+ const sampleMatch=m==='sample'&&current&&current.product_code===sharedProductCode;
+ const fullMatch=m==='full'&&fullData&&fullDataKind===fullKind&&fullCode===(fullKind==='nota'?notaInput:sharedProductCode);
+ $('result').classList.toggle('hidden',!sampleMatch);
+ $('fullResult').classList.toggle('hidden',!fullMatch);
+ if(sampleMatch)renderRows();
+ if(fullMatch)renderFullResult(fullData);
+ history.replaceState(null,'',location.pathname+(managing?'#admin':''));
+}
+$('modeSample').onclick=()=>setMode('sample');
+$('modeFull').onclick=()=>setMode('full');
+$('adminLink').onclick=()=>setMode(mode==='admin'?lastWorkMode:'admin');
+$('freshnessAdminBtn').onclick=()=>setMode('admin');
+$('fullProduct').onclick=()=>setFullKind('product');
+$('fullNota').onclick=()=>setFullKind('nota');
+function setFullKind(kind){
+ if(kind===fullKind)return;
+ if(fullKind==='nota')notaInput=$('code').value;
+ else if(valid($('code').value.trim()))sharedProductCode=normalizeProductCode($('code').value);
+ fullKind=kind;
+ $('fullProduct').classList.toggle('active',kind==='product');
+ $('fullNota').classList.toggle('active',kind==='nota');
+ $('code').placeholder=kind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
+ $('code').value=kind==='nota'?notaInput:sharedProductCode;
+ syncSearchClear();
+ const match=fullData&&fullDataKind===kind&&fullCode===(kind==='nota'?notaInput:sharedProductCode);
+ $('fullResult').classList.toggle('hidden',!match);
+ if(match)renderFullResult(fullData);
+}
+let fullPositiveOnly=true;
+function hasPositivePieces(v){if(v==null||String(v).trim()==='')return false;const n=Number(v);return Number.isFinite(n)&&n>0}
+function meterForSum(value){
+ if(value==null)return 0;
+ const s=String(value).trim();
+ if(!s||s==='—'||s==='-'||s==='–')return 0;
+ const n=Number(s);
+ return Number.isFinite(n)?n:null;
+}
+function totalsForShownRows(rows,key){
+ if(!rows.length)return 0;
+ if(key==='meters'||key==='stock_meters'){
+  let sum=0;
+  for(const row of rows){
+   const n=meterForSum(row[key]);
+   if(n===null)return null;
+   sum+=n;
+  }
+  return sum;
+ }
+ if(rows.some(r=>r[key]==null||String(r[key]).trim()===''))return null;
+ return rows.reduce((sum,r)=>sum+Number(r[key]),0);
+}
+function updateVisibilityCounts(positiveId,allId,positive,total){
+ $(positiveId).textContent=fmt(positive);
+ $(allId).textContent=fmt(total);
+}
+function syncVisibilityButtons(yes,yesId,allId){
+ for(const [id,active] of [[yesId,yes],[allId,!yes]]){
+  $(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));
+ }
+}
+$('samplePositiveBtn').onclick=()=>{samplePositiveOnly=true;renderRows()};
+$('sampleAllBtn').onclick=()=>{samplePositiveOnly=false;renderRows()};
+$('fullPositiveBtn').onclick=()=>{fullPositiveOnly=true;renderFullResult(fullData)};
+$('fullAllBtn').onclick=()=>{fullPositiveOnly=false;renderFullResult(fullData)};
+
+const fullFields={
+ stock:[['code','商品編號'],['pieces','匹數'],['meters','米數'],['reserved','預定狀態']],
+ camino:[['code','商品編號'],['container','貨櫃'],['caja','匹數'],['units','米數'],['unit_type','單位'],['eta','到貨日期']],
+ history:[['date','日期'],['nota','Nota'],['customer','客戶'],['code','商品編號'],['quantity','CAJA']],
+ reservar:[['date','日期'],['code','商品編號'],['customer','客戶'],['nota','預定單號']]
+};
+const fullTitles={stock:'庫存',camino:'待到貨',history:'歷史購買',reservar:'預定'};
+function fullTxt(v,p=null){
+ if(v==null||v==='')return '—';
+ if(p===1){const n=Number(v);return Number.isFinite(n)?fmtMeters(n):'—'}
+ return typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v);
+}
+function fullSessionRemember(data){
+ if(typeof data?.miniapp_session==='string' && /^xw_[A-Za-z0-9_-]{40,80}$/.test(data.miniapp_session)){
+  fullSession=data.miniapp_session;
+  try{sessionStorage.setItem('xw_full_miniapp_session',fullSession)}catch(_){}
+ }
+}
+async function fullRequest(action,q,extra={}){
+ const response=await fetch('/scanner/api/full',{method:'POST',credentials:'same-origin',cache:'no-store',
+  headers:{'Content-Type':'application/json'},body:JSON.stringify({action,q,...extra})});
+ const data=await response.json();
+ if(!response.ok||data.ok!==true)throw Error(data.error||data.detail||'完整查詢失敗');
+ return data.data||{};
+}
+async function queryFull(code){
+ const start=performance.now();
+ const data=await fullRequest(fullKind==='nota'?'nota':'stock',code);
+ fullData=data;fullDataKind=fullKind;fullCode=code;fullTab='stock';fullSort=fullKind==='product'?'code':'';fullDesc=false;
+ $('fullFilter').value='';
+ $('fullTime').textContent='本次查詢耗時 '+((performance.now()-start)/1000).toFixed(2)+' 秒';
+ return data;
+}
+function fullAddCards(cards){
+ const host=$('fullStats');host.replaceChildren();
+ for(const [label,value] of cards){
+  const box=document.createElement('div');box.className='stock-stat';
+  const small=document.createElement('small');small.textContent=label;
+  const large=document.createElement('strong');large.textContent=fullTxt(value,label.includes('米數')?1:null);
+  box.append(small,large);host.append(box);
+ }
+}
+function fullTable(rows,columns){
+ const outer=document.createElement('div');outer.className='full-table';
+ const table=document.createElement('table'),thead=document.createElement('thead'),trh=document.createElement('tr');
+ for(const [key,label] of columns){
+  const th=document.createElement('th');th.textContent=label+(fullSort===key?(fullDesc?' ▼':' ▲'):'');
+  th.tabIndex=0;th.setAttribute('role','button');th.setAttribute('aria-label',label+'排序');
+  if(fullSort===key)th.setAttribute('aria-sort',fullDesc?'descending':'ascending');
+  const sort=()=>{if(fullSort===key)fullDesc=!fullDesc;else{fullSort=key;fullDesc=false}renderFullResult(fullData)};
+  th.onclick=sort;th.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();sort()}};
+  trh.append(th);
+ }
+ thead.append(trh);table.append(thead);
+ const tbody=document.createElement('tbody');
+ if(!rows.length){
+  const tr=document.createElement('tr'),cell=document.createElement('td');
+  cell.colSpan=columns.length;cell.className='full-empty';cell.textContent='沒有符合的資料';tr.append(cell);tbody.append(tr);
+ }
+ for(const row of rows){
+  const tr=document.createElement('tr');
+  for(const [key] of columns){
+   const td=document.createElement('td');
+   const value=key==='reserved'?(row.reserved?'有預定':'')
+     :key==='eta'?String(fullTxt(row.eta)).replace(/Iquique\s*,\s*Chile$/i,'').trim()
+     :fullTxt(row[key],['meters','units','stock_meters'].includes(key)?1:null);
+   if(key==='customer'){
+    const b=document.createElement('button');b.type='button';b.className='secondary full-customer';
+    b.textContent=value;b.title=value;b.onclick=()=>b.classList.toggle('expanded');
+    td.append(b);
+   }else td.textContent=value;
+   tr.append(td);
+  }
+  tbody.append(tr);
+ }
+ table.append(tbody);outer.append(table);return outer;
+}
+function fullRenderProduct(data){
+ const stock=Array.isArray(data.rows)?data.rows:[];
+ const visibleStock=fullPositiveOnly?stock.filter(row=>hasPositivePieces(row.pieces)):stock;
+ const all=fullTab==='stock'?visibleStock:(Array.isArray(data[fullTab])?data[fullTab]:[]);
+ $('fullStockVisibility').classList.toggle('hidden',fullTab!=='stock');
+ updateVisibilityCounts('fullPositiveCount','fullAllCount',stock.filter(row=>hasPositivePieces(row.pieces)).length,stock.length);
+ syncVisibilityButtons(fullPositiveOnly,'fullPositiveBtn','fullAllBtn');
+ const pieces=fullTab==='stock'&&fullPositiveOnly?totalsForShownRows(visibleStock,'pieces'):
+              stock.some(x=>x.pieces!=null)?stock.reduce((sum,x)=>sum+Number(x.pieces||0),0):null;
+ const meters=totalsForShownRows(fullTab==='stock'&&fullPositiveOnly?visibleStock:stock,'meters');
+ const cards=[['商品種類',fullTab==='stock'?visibleStock.length:stock.length],['庫存匹數',pieces],['庫存米數',meters],['待到貨(匹)',data.camino_caja_total]];
+ if(fullTab==='history')cards.push(['近365天',data.history_recent_count],['最近交易',data.history_last_date]);
+ fullAddCards(cards);
+ let rows=all.filter(row=>Object.values(row).some(value=>String(value??'').toLowerCase().includes($('fullFilter').value.trim().toLowerCase())));
+ if(fullSort)rows=rows.slice().sort((x,y)=>{
+  const a=x[fullSort],b=y[fullSort],num=(typeof a==='number'&&typeof b==='number');
+  const diff=num?a-b:String(a??'').localeCompare(String(b??''),undefined,{numeric:true});
+  return fullDesc?-diff:diff;
+ });
+ $('fullCount').textContent=rows.length+' / '+(fullTab==='stock'?stock.length:all.length)+' 筆';
+ const cols=fullTab==='history'&&data.price_allowed?[...fullFields.history,['price','成交單價']]:fullFields[fullTab];
+ $('fullDetails').replaceChildren(fullTable(rows,cols));
+ $('fullHistoryMore').classList.toggle('hidden',fullTab!=='history'||!Number.isInteger(data.history_next_cursor)||data.history_next_cursor >= Number(data.history_retrievable_count??data.history_total_count??0));
+ $('fullNote').textContent=fullTab==='history'?'本頁為公司唯讀查詢，不提供成交單價。':''; 
+}
+function fullRenderNota(data){
+ const docs=Array.isArray(data.documents)?data.documents:(data.nota?[data]:[]);
+ fullAddCards([['符合單據',docs.length],['查詢條件',fullCode]]);
+ $('fullFilterRow').classList.add('hidden');$('fullHistoryMore').classList.add('hidden');
+ const host=$('fullDetails');host.replaceChildren();
+ if(!docs.length){const div=document.createElement('div');div.className='full-empty';div.textContent='沒有符合的單據';host.append(div)}
+ for(const doc of docs){
+  const box=document.createElement('details');box.className='full-doc';
+  const summary=document.createElement('summary');
+  summary.textContent=(doc.nota?'Nota '+doc.nota:fullCode)+' · '+(doc.customer||'');
+  box.append(summary);
+  const info=document.createElement('dl');
+  for(const [label,value] of [['日期',doc.date],['客戶',doc.customer],['出貨日期',doc.shipped_at],['司機',doc.pilotero]]){
+   const wrap=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');
+   dt.textContent=label;dd.textContent=fullTxt(value);wrap.append(dt,dd);info.append(wrap);
+  }
+  box.append(info);
+  const content=document.createElement('div');
+  const rows=doc.rows||[];
+  if(rows.length)content.append(fullTable(rows,[['code','商品編號'],['caja','CAJA'],['quantity','UNT']]));
+  else{
+   const tip=document.createElement('p');tip.className='muted';tip.textContent='展開後可載入 Nota 商品明細。';
+   const btn=document.createElement('button');btn.className='secondary';btn.textContent='載入商品明細';
+   btn.onclick=async()=>{
+    btn.disabled=true;btn.textContent='讀取中…';
+    try{
+     const more=await fullRequest('nota_details',String(doc.nota||''),{customer:String(doc.customer||'').slice(0,130)});
+     if(more.nota!==String(doc.nota)||more.customer!==String(doc.customer))throw Error('單據資料不一致');
+     doc.rows=Array.isArray(more.rows)?more.rows:[];
+     content.replaceChildren(fullTable(doc.rows,[['code','商品編號'],['caja','CAJA'],['quantity','UNT']]));
+    }catch(e){tip.textContent=e.message;btn.disabled=false;btn.textContent='重試讀取'}
+   };
+   content.append(tip,btn);
+  }
+  box.append(content);host.append(box);
+ }
+ $('fullNote').textContent='顯示已授權的 Nota 資料；詳細圖片與重量可保留在原完整查詢功能中。';
+}
+function renderFullResult(data){
+ if(!data)return;
+ $('fullResult').classList.remove('hidden');
+ $('fullTitle').textContent=(fullKind==='nota'?'Nota / 客戶查詢：':'商品查詢：')+fullCode;
+ $('fullTabs').classList.toggle('hidden',fullKind==='nota');
+ $('fullFilterRow').classList.toggle('hidden',fullKind==='nota');
+ $('fullStockVisibility').classList.toggle('hidden',fullKind==='nota'||fullTab!=='stock');
+ if(fullKind==='nota'){fullRenderNota(data);return}
+ for(const b of $('fullTabs').querySelectorAll('button[data-fulltab]'))b.classList.toggle('active',b.dataset.fulltab===fullTab);
+ fullRenderProduct(data);
+}
+$('fullTabs').addEventListener('click',e=>{
+ const b=e.target.closest('button[data-fulltab]');
+ if(!b)return;fullTab=b.dataset.fulltab;fullSort='';fullDesc=false;$('fullFilter').value='';
+ renderFullResult(fullData);
+});
+$('fullFilter').oninput=()=>renderFullResult(fullData);
+$('fullHistoryMore').onclick=async()=>{
+ if(!fullData||fullKind!=='product')return;
+ const cursor=Number(fullData.history_next_cursor||0);
+ const b=$('fullHistoryMore');b.disabled=true;
+ try{
+  const more=await fullRequest('history_more',fullCode,{cursor,include_older:cursor>=Number(fullData.history_recent_count||0)});
+  fullData.history=[...(fullData.history||[]),...(more.rows||[])];
+  fullData.history_next_cursor=more.next_cursor??(cursor+(more.rows||[]).length);
+  renderFullResult(fullData);
+ }catch(e){msg(e.message,'error')}finally{b.disabled=false}
+};
+
+function visibleSampleRows(){
+ if(!current||!Array.isArray(current.variants))return [];
+ return samplePositiveOnly
+   ?current.variants.filter(x=>hasPositivePieces(x.stock_rolls))
+   :current.variants;
+}
+function setSampleVisibleState(hasSample){
+ if(!current||saved)return;
+ for(const row of visibleSampleRows())sampleStates.set(row.code,hasSample);
+ sampleDirty=true;
+ renderRows();
+}
+$('sampleHeaderCheck').onchange=()=>setSampleVisibleState($('sampleHeaderCheck').checked);
+function renderRows(){
+ const body=$('rows');body.replaceChildren();if(!current)return;
+ const all=Array.isArray(current.variants)?current.variants:[];
+ const visible=visibleSampleRows().slice().sort((a,b)=>{
+  const f=sampleSortField,dir=sampleDescending?-1:1;
+  if(f==='code')return compareSkus(a.code,b.code)*dir;
+  const av=a[f],bv=b[f],an=av==null||av==='',bn=bv==null||bv==='';
+  if(an!==bn)return an?1:-1;
+  const diff=an?0:Number(av)-Number(bv);
+  return diff?diff*dir:compareSkus(a.code,b.code);
+ });
+ for(const [field,id,label] of [['code','sampleSkuSort','SKU'],['stock_rolls','sampleRollsSort','ROLL'],['stock_meters','sampleMetersSort','M']]){
+  const th=$(id),active=field===sampleSortField;
+  th.textContent=label+(active?(sampleDescending?' ▼':' ▲'):'');
+  if(active)th.setAttribute('aria-sort',sampleDescending?'descending':'ascending');
+  else th.removeAttribute('aria-sort');
+ }
+ updateVisibilityCounts('samplePositiveCount','sampleAllCount',all.filter(row=>hasPositivePieces(row.stock_rolls)).length,all.length);
+ syncVisibilityButtons(samplePositiveOnly,'samplePositiveBtn','sampleAllBtn');
+ const headerCheck=$('sampleHeaderCheck');
+ headerCheck.disabled=saved||!visible.length;
+ const checked=visible.filter(row=>sampleStates.get(row.code)===true).length;
+ headerCheck.checked=visible.length>0&&checked===visible.length;
+ headerCheck.indeterminate=checked>0&&checked<visible.length;
+ $('emptyMsg').classList.toggle('hidden',visible.length>0);
+ $('emptyMsg').textContent=all.length?'沒有正庫存商品，請點 ALL 查看。':'沒有符合商品。';
+ $('totals').replaceChildren();
+ for(const [label,value] of [
+  ['ROLL',totalsForShownRows(visible,'stock_rolls')],
+  ['M',totalsForShownRows(visible,'stock_meters')]
+ ]){
+  const card=document.createElement('div');card.className='sample-stat';
+  const title=document.createElement('span');title.className='sample-stat-label';title.textContent=label;
+  const number=document.createElement('strong');number.className='sample-stat-value';
+  number.textContent=value==null?'—':label==='M'?fmtMeters(value):fmt(value);
+  card.append(title,number);$('totals').append(card);
+ }
+ for(const row of visible){
+  const tr=document.createElement('tr');
+  for(const value of [row.code,fmt(row.stock_rolls),fmtMeters(row.stock_meters)]){
+   const td=document.createElement('td');td.textContent=value;if(value!==row.code)td.className='num';tr.append(td);
+  }
+  const td=document.createElement('td');td.className='sample-check-cell';
+  const cb=document.createElement('input');cb.type='checkbox';cb.className='sample-check';
+  cb.checked=sampleStates.get(row.code)===true;
+  cb.disabled=saved;
+  cb.setAttribute('aria-label',row.code+' 有樣');
+  cb.onchange=()=>{sampleStates.set(row.code,cb.checked);sampleDirty=true;updateMissing()};
+  td.append(cb);
+  tr.append(td);body.append(tr);
+ }
+ updateMissing();
+}
+function updateMissing(){
+ const visible=visibleSampleRows(),yes=visible.filter(x=>sampleStates.get(x.code)===true).length;
+ const header=$('sampleHeaderCheck');
+ header.checked=visible.length>0&&yes===visible.length;
+ header.indeterminate=yes>0&&yes<visible.length;
+ const no=visible.length-yes;
+ $('missingCount').textContent=saved?('✓ '+fmt(savedScope.size)):('☑ '+fmt(yes)+'   ☐ '+fmt(no));
+ $('saveScopeCount').textContent=saved?'✓':fmt(visible.length);
+ $('saveBtn').disabled=saved||visible.length===0;
+}
+function auditAgeLabel(checkedAt){
+ if(!checkedAt)return '—';
+ const raw=String(checkedAt);
+ const parsed=Date.parse(/[zZ]$|[+-][0-9]{2}:[0-9]{2}$/.test(raw)?raw:raw+'Z');
+ if(!Number.isFinite(parsed))return '—';
+ const days=Math.floor(Math.max(0,Date.now()-parsed)/86400000);
+ if(days<7)return '7−';
+ if(days<30)return '7+';
+ if(days<90)return '30+';
+ if(days<180)return '90+';
+ return '180+';
+}
+function auditAgeClass(label){
+ if(label==='7−'||label==='7+')return 'age-green';
+ if(label==='30+')return 'age-amber';
+ if(label==='90+')return 'age-red';
+ if(label==='180+')return 'age-deep';
+ return 'age-none';
+}
+function renderLastChecked(){
+ if(!current)return;
+ const badge=$('source');
+ const age=auditAgeLabel(current.last_checked_at);
+ badge.textContent='● '+age;
+ badge.className='tag audit-badge '+auditAgeClass(age);
+ if(current.last_checked_at){
+  const exact=new Date(current.last_checked_at).toLocaleString('zh-TW',{
+   timeZone:'America/Santiago',hour12:false,year:'numeric',month:'2-digit',
+   day:'2-digit',hour:'2-digit',minute:'2-digit'
+  });
+  badge.title='最近盤點：'+exact+'；本次保存 '+(current.last_checked_count??0)+' 筆';
+ }else badge.title='尚無正式保存的盤點紀錄';
+}
+function showResult(d){
+ current=d;sampleStates=new Map();saved=false;sampleDirty=false;savedScope.clear();
+ for(const row of d.variants||[]){
+  const prior=d.previous_status?.[row.code];
+  sampleStates.set(row.code,prior?prior.missing===false:true);
+ }
+ $('result').classList.remove('hidden');
+ $('saveBtn').classList.toggle('hidden',!d.db_connected);
+ $('saveBtnText').textContent='SAVE';$('saveScopeCount').textContent='0';$('saveBtn').classList.remove('secondary');
+ $('dbNotice').classList.toggle('hidden',Boolean(d.db_connected));
+ $('dbNotice').textContent=d.db_connected?'':'TiDB 不可用，暫時不能保存。';
+ $('series').textContent=d.product_code;renderLastChecked();
+ $('asof').textContent=d.as_of?new Date(d.as_of).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit'}):'—';
+ renderRows();
+}
+async function lookup(input){
+ if(mode==='cart'){if(window.cartLookup)await window.cartLookup(input);return;}
+ const nota=mode==='full'&&fullKind==='nota';
+ const code=nota?String(input||'').trim():normalizeProductCode(input);
+ const validInput=nota?(code==='@'||/^[0-9]{1,5}$/.test(code)||code.length>=2&&code.length<=40):valid(code);
+ if(!validInput){msg('查詢條件不正確，請檢查後重試','error');return}
+ if(busy||mode==='admin')return;
+ if(mode==='sample'&&current&&current.product_code!==code&&sampleDirty&&!saved&&!confirm('尚有未保存的布樣修改，確定查其他編號嗎？'))return;
+ busy=true;$('queryBtn').disabled=true;
+ $('code').value=code;syncSearchClear();
+ try{
+  if(mode==='full'){
+   if(nota)notaInput=code;else sharedProductCode=code;
+   if(fullData&&fullCode===code&&fullDataKind===fullKind){renderFullResult(fullData);msg('顯示已查詢的完整資料','good')}
+   else{msg('查詢完整資料：'+code);const data=await queryFull(code);renderFullResult(data);msg('查詢完成','good')}
+  }else{
+   if(current?.product_code===code&&!saved&&current.scan_id){
+    sharedProductCode=code;renderRows();$('result').classList.remove('hidden');msg('原本的盤點選擇仍保留','good');
+   }else{
+    const fresh=await checkFreshness();
+    if(!fresh?.has_synced)throw Object.assign(new Error('尚無有效庫存快照，請先更新庫存'),{status:409});
+    if(!fresh.fresh&&!staleAccepted(fresh))
+     throw Object.assign(new Error('⚠ 庫存超過 60 分鐘；請先按「繼續使用舊庫存」，或更新庫存'),{status:409});
+    msg('正在查詢布樣：'+code);
+    const d=await post('/scanner/api/sample',{code,allow_stale:staleAccepted(fresh)});
+    sharedProductCode=code;showResult(d);msg('');
+   }
+  }
+ }catch(e){if(mode==='sample'&&e.status===409)void checkFreshness();msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');if(e.status===401)await session()}
+ finally{busy=false;$('queryBtn').disabled=false}
+}
+function syncSearchClear(){
+ $('codeClearBtn').classList.toggle('hidden',!$('code').value);
+}
+function normalizeCodeInput(){
+ if(mode!=='sample'&&!(mode==='full'&&fullKind==='product')){
+  syncSearchClear();return;
+ }
+ const input=$('code'),value=input.value.toUpperCase();
+ if(input.value!==value){
+  const start=input.selectionStart,end=input.selectionEnd;
+  input.value=value;
+  try{input.setSelectionRange(start,end)}catch(_){}
+ }
+ syncSearchClear();
+}
+$('code').addEventListener('input',normalizeCodeInput);
+$('code').addEventListener('compositionend',normalizeCodeInput);
+$('codeClearBtn').onclick=()=>{
+ $('code').value='';
+ syncSearchClear();
+ $('code').focus();
+};
+$('queryBtn').onclick=()=>lookup($('code').value);
+$('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
+function onScan(raw){
+ if(busy||mode==='admin')return;
+ const code=normalizeProductCode(raw);
+ if(!valid(code)){msg('QR 不是商品編號，請掃描純編號 QR','error');return}
+ if(mode==='cart'){
+  if(window.cartIsReviewing?.())return;
+  if(code===lastQrCode||cartSearch?.product_code===code)return;
+  lastQrCode=code;
+  if(window.cartLookup)void window.cartLookup(code);
+  return;
+ }
+ // The camera reports the same visible QR many times per second.
+ // Skip duplicates; a DIFFERENT QR can be scanned immediately, with the
+ // unsaved-change confirmation already enforced inside lookup().
+ if(code===lastQrCode||(mode==='sample'&&code===current?.product_code)||
+    (mode==='full'&&code===fullCode&&fullData))return;
+ lastQrCode=code;
+ void lookup(code);
+}
+async function startCamera(){
+ if(running)return;
+ if(!window.Html5Qrcode){msg('相機元件尚未載入，請重新整理。','error');return}
+ try{
+  reader=new Html5Qrcode('reader',{verbose:false});
+  await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});
+  running=true;lastQrCode='';syncCameraButton();msg('相機已開啟，可連續掃描商品編號。');
+ }catch(e){reader=null;running=false;syncCameraButton();msg('相機權限或開啟失敗：'+String(e),'error')}
+}
+async function stopCamera(){
+ if(reader&&running){try{await reader.stop()}catch(_){}}
+ if(reader){try{reader.clear()}catch(_){}}
+ reader=null;running=false;syncCameraButton();
+}
+function syncCameraButton(){
+ const b=$('cameraToggle');
+ b.setAttribute('aria-pressed',String(running));b.setAttribute('aria-label',running?'停止連續掃描':'開啟連續掃描');
+ b.title=running?'停止連續掃描':'開啟連續掃描';
+ $('cameraOnIcon').classList.toggle('hidden',running);$('cameraOffIcon').classList.toggle('hidden',!running);
+}
+$('cameraToggle').onclick=async()=>{if(running)await stopCamera();else await startCamera()};
+function clearFullQuery(){
+ // The existing "查下一筆" action belongs only to the full-inquiry tab.
+ fullData=null;fullCode='';lastQrCode='';
+ $('code').value='';syncSearchClear();
+ $('fullResult').classList.add('hidden');
+ msg('');
+ $('code').focus();
+}
+$('fullNext').onclick=clearFullQuery;
+$('saveBtn').onclick=async()=>{
+ if(!current?.db_connected||!current?.scan_id||saved||!visibleSampleRows().length)return;
+ const b=$('saveBtn');b.disabled=true;
+ const visible=visibleSampleRows();
+ const present=visible.filter(row=>sampleStates.get(row.code)===true).map(row=>row.code);
+ const missing=visible.filter(row=>sampleStates.get(row.code)!==true).map(row=>row.code);
+ try{
+  const out=await post('/scanner/api/save',{scan_id:current.scan_id,present,missing,allow_stale:staleAccepted()});
+  saved=true;sampleDirty=false;savedScope=new Set(visible.map(row=>row.code));
+  current.last_checked_at=out.checked_at?out.checked_at+'Z':new Date().toISOString();
+  current.last_checked_count=out.sku_count;
+  current.last_missing_count=out.missing_count;
+  renderLastChecked();
+  for(const sku of present)current.previous_status[sku]={missing:false};
+  for(const sku of missing)current.previous_status[sku]={missing:true};
+  renderRows();msg('已保存 '+out.sku_count+' 個確認：有樣 '+present.length+'，無樣 '+missing.length+'。','good');
+  $('saveBtnText').textContent='SAVED';$('saveScopeCount').textContent='✓';b.classList.add('secondary');
+ }catch(e){b.disabled=false;msg(e.message,'error');if(e.status===409)void checkFreshness()}
+};
+const scannerShareURL=location.origin+'/s';
+async function copyScannerURL(){try{await navigator.clipboard.writeText(scannerShareURL);$('shareStatus').textContent='已複製網址';}catch(_){window.prompt('複製這個入口網址',scannerShareURL)}}
+$('copyScannerBtn').onclick=copyScannerURL;
+$('shareScannerBtn').onclick=async()=>{if(navigator.share){try{await navigator.share({title:'XINGWANG 掃描器',url:scannerShareURL});$('shareStatus').textContent='已開啟分享選單';}catch(e){if(e?.name!=='AbortError')await copyScannerURL()}}else await copyScannerURL()};
+$('dbSetupBtn').onclick=async()=>{
+ const b=$('dbSetupBtn');b.disabled=true;$('dbSetupMsg').textContent='正在檢查 TiDB...';
+ try {
+  const data=await post('/scanner/api/db/setup');
+  $('dbSetupMsg').textContent='TiDB 已連線，資料表 '+data.tables.length+' 張。庫存 '+data.stock_count+' 筆；布樣記錄 '+data.sample_count+' 筆。';
+ } catch(e) {$('dbSetupMsg').textContent=e.message}
+ finally {b.disabled=false}
+};
+
+
+let inventoryPolling=false;
+async function inventoryRefresh(){
+ if(!inventoryPolling)return;
+ try {
+  const r=await fetch('/scanner/api/inventory/status',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)throw new Error('Unable to read inventory sync status');
+  const d=await r.json(), j=d.job||{}, last=d.last_success||{};
+  let state='';
+  if(j.state==='reading')state='正在透過 本機 讀取本機 Flask 庫存…';
+  else if(j.state==='writing'){
+    const done=Number(j.processed||0),total=Number(j.total_changes||0);
+    const phase=j.phase||'connecting';
+    const phaseText={
+      connecting:'正在連接 TiDB',
+      comparing:'正在準備庫存快照',
+      writing:'正在批次寫入 TiDB',
+      committing:'新庫存已全部驗證，正在切換正式資料表',
+      finished:'寫入完成'
+    };
+    state=(phaseText[phase]||'正在同步')+
+      (phase==='writing'&&total?'：'+done+' / '+total+'（'+Math.floor(done/total*100)+'%）':'')+
+      (j.snapshot_count?'｜總商品 '+j.snapshot_count+' 筆':'');
+  }
+  else if(j.state==='failed')state='同步失敗：'+(j.error||'請檢查 Render 日誌');
+  else if(j.state==='success'){
+    const result=j.result||{};
+    state=result.mode==='replace'
+      ?'本次完整庫存已成功替換：'+result.sku_count+' 筆（舊快照 '+result.replaced_old+' 筆）'
+      :'本次同步成功。';
+    const t=result.timings_ms;
+    if(t)state+='\n耗時：本機讀取與傳送 '+(t.bridge/1000).toFixed(1)+
+      ' 秒｜TiDB 寫入 '+(t.database/1000).toFixed(1)+
+      ' 秒｜總計 '+(t.total/1000).toFixed(1)+' 秒';
+  }
+  const b=$('inventoryStartBtn');b.disabled=j.state==='reading'||j.state==='writing';
+  let previous=last.pending?'本次寫入尚未提交；成功時間將在完成後更新':'尚無成功紀錄';
+  if(last.has_synced){
+   const time=new Date(last.synced_at_utc);
+   const dt=isNaN(time.getTime())?last.synced_at_utc:
+     time.toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false});
+   previous='最後成功：'+dt+'｜'+last.sku_count+' 筆｜新增 '+last.inserted+
+             '｜更新 '+last.updated+'｜停用 '+last.deactivated;
+  }
+  const breakdown=last.stock_breakdown;
+  if(last.has_synced && breakdown && Number.isFinite(breakdown.active)){
+    previous+='\n實際庫存分類（依 SUM(STOCK)）：正數 '+breakdown.positive+
+      '｜零庫存 '+breakdown.zero+
+      '｜負庫存 '+breakdown.negative+
+      '｜NULL '+breakdown.null+
+      '｜有效總筆數 '+breakdown.active;
+  }
+  $('inventoryStatusText').textContent=(state?state+'\n':'')+previous;
+  if(j.state==='reading'||j.state==='writing')setTimeout(inventoryRefresh,3000);
+  else inventoryPolling=false;
+ }catch(e){inventoryPolling=false;$('inventoryStatusText').textContent='無法取得同步狀態：'+e.message}
+}
+function checkInventoryStatus(){
+ inventoryPolling=true;inventoryRefresh();
+}
+$('inventoryStartBtn').onclick=async()=>{
+ const b=$('inventoryStartBtn');b.disabled=true;
+ $('inventoryStatusText').textContent='正在向 本機 發出庫存同步指令…';
+ try{await post('/scanner/api/inventory/start');checkInventoryStatus()}
+ catch(e){b.disabled=false;$('inventoryStatusText').textContent='無法開始：'+e.message}
+};
+
+
+if(location.hash==='#admin')mode='admin';
+</script><script>
+'use strict';
+// Cart controller for the existing /scanner page. Guest can access cart endpoints
+// only; staff-only DOM is also removed from the guest presentation.
+let cartRole='none', cartData=null, cartSearch=null, cartGuestCode='',cartBusy=false;
+let cartAll=false,cartRecent=[],cartLookupPending=false;
+let cartView='pick',cartSkuSearch='';
+const CART_SAVE_DELAY=1200;
+let cartPending=new Map(),cartSending=new Map(),cartSaveTimer=null,cartSaveJob=null,cartSaveError=false;
+function cartClearTimer(){if(cartSaveTimer){clearTimeout(cartSaveTimer);cartSaveTimer=null;}}
+function cartEffectiveItems(){
+ const items=new Map((cartData?.items||[]).map(i=>[i.sku,i.qty]));
+ for(const [sku,qty] of cartSending){if(qty>0)items.set(sku,qty);else items.delete(sku);}
+ for(const [sku,qty] of cartPending){if(qty>0)items.set(sku,qty);else items.delete(sku);}
+ return Array.from(items,([sku,qty])=>({sku,qty})).sort((a,b)=>compareSkus(a.sku,b.sku));
+}
+const cartText=(id,text)=>{const el=document.getElementById(id);if(el)el.textContent=text};
+function cartNotice(text,bad=false){
+ const n=$('cartMessage');n.textContent=text==='✓ SAVED'?'':text||'';n.className=bad?'error':'';
+ if(bad)msg(text,'error');
+}
+function cartLocalTime(value){
+ if(!value)return '—';
+ const d=new Date(value);return Number.isFinite(d.valueOf())?d.toLocaleString('es-CL',{timeZone:'America/Santiago',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
+}
+function cartMsgClean(){
+ cartNotice('');msg('');
+}
+function cartItemQty(sku){
+ if(cartPending.has(sku))return cartPending.get(sku);
+ if(cartSending.has(sku))return cartSending.get(sku);
+ return Number(cartData?.items?.find(i=>i.sku===sku)?.qty||0);
+}
+function cartSum(){return cartEffectiveItems().reduce((n,i)=>n+i.qty,0)}
+function cartUpdateHeader(){
+ $('cartNavCount').textContent=String(cartSum());
+ if(!cartData)return;
+ cartText('cartShortCode','#'+cartData.short_code.split('-').slice(-1)[0]);
+ $('cartShortCode').title=cartData.short_code+' · tap to copy';
+ cartText('cartStateLabel',cartPending.size||cartSending.size?'DRAFT':cartData.state==='ready'?'READY':'DRAFT');
+ cartText('cartOpenedAt',cartLocalTime(cartData.guest_opened_at));
+ cartText('cartConfirmedAt',cartLocalTime(cartData.confirmed_at));
+ cartText('cartVersionLabel',cartData.confirmed_version?'V'+cartData.confirmed_version:'—');
+ $('cartVersionBtn').classList.toggle('hidden',cartRole!=='staff'||!cartData.confirmed_version);
+ $('cartVersionBtn').textContent='V'+(cartData.confirmed_version||'—');
+ cartText('cartSavedAt',cartSaveError?'! UNSAVED':cartSaveJob?'… SAVING':cartPending.size?'● PENDING':'✓ SAVED');
+ $('cartSavedAt').dataset.error=cartSaveError?'true':'false';
+ cartText('cartCustomerLabel',cartData.customer_name||'CUSTOMER');
+ cartText('cartTotal',String(cartSum()));
+ cartText('cartSkuCount',cartEffectiveItems().length+' SKU');
+ cartText('cartDockSkuCount',cartEffectiveItems().length+' SKU');
+ cartText('cartGuestCode',cartGuestCode||'········');
+ $('cartGuestCode').classList.toggle('cart-code-empty',!cartGuestCode);
+ $('cartShareRow').classList.toggle('hidden',cartRole!=='staff');
+ $('cartEditName').classList.toggle('hidden',cartRole!=='staff');
+ $('cartBack').classList.toggle('hidden',cartRole!=='staff');
+ $('cartStateButton').textContent=cartData.state==='ready'&&cartData.confirmed_version>0&&!cartPending.size&&!cartSending.size?'REOPEN':'✓ CONFIRM';
+ $('cartStateButton').title=cartData.state==='ready'&&cartData.confirmed_version>0&&!cartPending.size&&!cartSending.size?'繼續選貨':'確認本次選貨，保留不可覆蓋的版本';
+ $('cartStateButton').disabled=cartBusy||Boolean(cartSaveJob);
+}
+function cartSetData(data){
+ cartData=data;
+ if(data)cartRender();
+}
+function cartRow(sku,qty,stockValue,fromSearch){
+ const row=document.createElement('div');row.className='cart-line';
+ const left=document.createElement('div');left.className='cart-line-title';
+ const name=document.createElement('strong');name.textContent=sku;
+ const stock=document.createElement('small');
+ const n=stockValue==null||String(stockValue).trim()===''?null:Number(stockValue);
+ const available=n!=null&&Number.isFinite(n)?Math.max(0,Math.floor(n)):null;
+ stock.textContent=fromSearch?('STOCK '+(available===null?'—':fmt(available))+' ROLL'):'';
+ if(fromSearch&&available===0)stock.classList.add('cart-out');
+ left.append(name,stock);row.append(left);
+ const controls=document.createElement('div');controls.className='cart-qty-controls';
+ const dec=document.createElement('button');dec.type='button';dec.className='secondary';dec.textContent='−';dec.setAttribute('aria-label',sku+' minus');
+ const value=document.createElement('input');value.type='number';value.inputMode='numeric';
+ value.min='0';value.max=String(available===null?9999:Math.min(9999,available));value.step='1';
+ value.className='cart-qty';value.value=String(qty);value.setAttribute('aria-label',sku+' ROLL');value.title='點一下輸入匹數';
+ const inc=document.createElement('button');inc.type='button';inc.className='secondary';inc.textContent='+';inc.setAttribute('aria-label',sku+' plus');
+ dec.disabled=cartBusy||qty===0;
+ inc.disabled=cartBusy||(fromSearch?available===null||qty>=available:qty>=9999);
+ const update=n=>{
+  if(n>9999||n<0||!Number.isInteger(n)||fromSearch&&(available===null||n>available)){
+   cartNotice('數量必須為有效匹數，不得超過庫存參考值','error');
+   value.value=String(cartItemQty(sku));return;
+  }
+  if(n!==cartItemQty(sku))cartChange(sku,n);
+ };
+ value.onfocus=()=>value.select();
+ value.onchange=()=>{
+  const raw=value.value.trim(),n=Number(raw);
+  if(raw===''||!/^\d+$/.test(raw)){value.value=String(cartItemQty(sku));return}
+  update(n);
+ };
+ value.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();value.blur()}};
+ dec.onclick=()=>update(Math.max(0,cartItemQty(sku)-1));
+ inc.onclick=()=>update(cartItemQty(sku)+1);
+ controls.append(dec,value,inc);row.append(controls);
+ return row;
+}
+function cartRender(){
+ const isGuest=cartRole==='guest',hasCart=Boolean(cartData),picking=cartView==='pick';
+ $('cartStart').classList.toggle('hidden',isGuest||hasCart);
+ if(mode==='cart'){
+  const park=hasCart&&!picking&&running;
+  $('scanPanel').classList.toggle('hidden',!hasCart||(!picking&&!running));
+  $('scanPanel').classList.toggle('cart-scanner-parked',park);
+ }
+ $('cartActive').classList.toggle('hidden',!hasCart);
+ $('cartStaffList').classList.toggle('hidden',isGuest||hasCart);
+ if(!hasCart)return;
+ cartUpdateHeader();
+ $('cartPickView').classList.toggle('hidden',!picking);
+ $('cartItemView').classList.toggle('hidden',picking);
+ $('cartSwitchView').textContent=picking?'CART · '+cartEffectiveItems().length:'SCAN MORE';
+ $('cartStateButton').classList.toggle('hidden',picking);
+ const host=$('cartItems');
+ if(!picking){
+  host.replaceChildren();
+  const rows=cartEffectiveItems();
+  if(!rows.length){
+   const empty=document.createElement('p');empty.className='muted';empty.textContent='尚未選擇商品，點 SCAN MORE 開始選貨';host.append(empty);
+  }
+  for(const item of rows)host.append(cartRow(item.sku,item.qty,null,false));
+ }
+ $('cartPickEmpty').classList.toggle('hidden',Boolean(cartSearch));
+ const products=$('cartProducts');
+ if(!picking)return;
+ products.replaceChildren();
+ if(cartSearch){
+  const header=document.createElement('div');header.className='cart-products-head';
+  const title=document.createElement('strong');title.textContent=cartSearch.product_code;
+  const time=document.createElement('small');time.textContent='STOCK '+cartLocalTime(cartSearch.as_of);
+  header.append(title,time);products.append(header);
+  const all=Array.isArray(cartSearch.variants)?cartSearch.variants:[];
+  const positive=all.filter(v=>Number(v.stock_rolls)>0||cartItemQty(v.code)>0);
+  const bar=document.createElement('div');bar.className='cart-filter';
+  for(const [key,label,count] of [[false,'>0',positive.length],[true,'ALL',all.length]]){
+   const button=document.createElement('button');button.type='button';button.textContent=count+' '+label;
+   button.className=cartAll===key?'active':'';
+   button.onclick=()=>{cartAll=key;cartRender()};bar.append(button);
+  }
+  products.append(bar);
+  const selected=(cartAll?all:positive).filter(v=>v.code.toLowerCase().includes(cartSkuSearch.toLowerCase()));
+  $('cartProductToolbar').classList.toggle('hidden',all.length<9);
+  if(!selected.length){
+   const empty=document.createElement('p');empty.className='muted';empty.textContent='沒有符合的 SKU';products.append(empty);
+  }
+  for(const v of selected)products.append(cartRow(v.code,cartItemQty(v.code),v.stock_rolls,true));
+  $('cartStockNote').classList.remove('hidden');
+  $('cartStockNote').textContent='STOCK 為庫存參考，尚未扣除獨立 RESERVAR；正式下單前須核對。';
+ }else{
+  $('cartProductToolbar').classList.add('hidden');
+  $('cartStockNote').classList.add('hidden');
+ }
+}
+function cartApplyRole(){
+ const guest=cartRole==='guest';
+ $('cartNav').classList.toggle('hidden',guest||cartRole!=='staff');
+ $('cartEditName').classList.toggle('hidden',guest);
+ $('workModes').classList.toggle('hidden',guest||mode==='cart');
+ if(guest){
+  $('adminLink').classList.add('hidden');
+  $('fullKindControls').classList.add('hidden');
+  $('fullResult').classList.add('hidden');
+  $('result').classList.add('hidden');
+  $('adminTab').classList.add('hidden');
+  $('cartBack').classList.add('hidden');
+  $('app').classList.remove('hidden');
+ }
+}
+async function cartBootstrap(role,guestId){
+ const changed=role!==cartRole;
+ cartRole=role;
+ if(changed){cartClearTimer();cartPending.clear();cartSending.clear();cartSaveError=false;cartData=null;cartSearch=null;cartGuestCode='';cartRecent=[];lastQrCode='';cartView='pick';cartSkuSearch='';}
+ cartApplyRole();
+ if(role==='guest'){
+  // Drop staff-only query results when a company phone becomes a guest device.
+  current=null;fullData=null;
+  $('rows').replaceChildren();$('fullDetails').replaceChildren();$('totals').replaceChildren();
+  setMode('cart'); 
+  try{
+   const d=await post('/scanner/api/cart/open',{cart_id:guestId});
+   cartView=d.cart.items?.length?'cart':'pick';cartSetData(d.cart);cartNotice('');
+  }catch(e){cartNotice(e.message,true)}
+ }else if(role==='staff'){
+  const link=new URLSearchParams(location.search).get('cart');
+  if(link&&/^[a-f0-9]{32}$/.test(link)&&(!cartData||cartData.id!==link)){
+   setMode('cart');await cartOpen(link);
+  }else if(mode==='cart'){
+   if(cartData)cartRender();else await cartLoadList();
+  }
+ }else if(role==='none'){
+  cartData=null;cartSearch=null;cartGuestCode='';cartRender();
+ }
+}
+async function cartLoadList(){
+ if(cartRole!=='staff')return;
+ try{
+  const res=await fetch('/scanner/api/cart/list',{credentials:'same-origin',cache:'no-store'});
+  const data=await res.json();
+  if(!res.ok)throw Error(data.detail||'Unable to load carts');
+  cartRecent=data.carts||[];
+  cartRenderList();
+  cartRender();
+ }catch(e){cartNotice(e.message,true)}
+}
+function cartRenderList(){
+ const host=$('cartRecent');host.replaceChildren();
+ const filter=$('cartFilter').value.trim().toLowerCase();
+ const carts=cartRecent.filter(c=>c.short_code.toLowerCase().includes(filter)||(c.customer_name||'').toLowerCase().includes(filter));
+ if(!carts.length){const p=document.createElement('p');p.className='muted';p.textContent='No carts';host.append(p)}
+ for(const item of carts){
+  const btn=document.createElement('button');btn.className='cart-history-row secondary';btn.type='button';
+  const left=document.createElement('span');left.className='cart-history-left';
+  const id=document.createElement('strong');id.textContent=item.short_code;
+  const desc=document.createElement('small');desc.textContent=(item.customer_name||'CUSTOMER')+' · '+(item.confirmed_version?'V'+item.confirmed_version+' · ':'')+cartLocalTime(item.confirmed_at||item.guest_opened_at||item.updated_at);
+  const state=document.createElement('small');state.textContent=item.state==='ready'?'READY':'DRAFT';
+  left.append(id,desc,state);
+  const right=document.createElement('span');right.textContent=item.qty_total+' ROLL';
+  btn.append(left,right);btn.onclick=()=>cartOpen(item.id);
+  host.append(btn);
+ }
+}
+async function cartOpen(id){
+ if(cartBusy)return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ cartBusy=true;lastQrCode='';
+ $('cartConfirmedBox').classList.add('hidden');$('cartConfirmedBox').replaceChildren();
+ try{const d=await post('/scanner/api/cart/open',{cart_id:id});
+  cartView=d.cart.items?.length?'cart':'pick';cartSkuSearch='';$('cartSkuFilter').value='';
+  cartGuestCode='';cartSearch=null;cartSetData(d.cart);cartMsgClean();
+  if(cartRole==='staff')history.replaceState(null,'',location.pathname+'?cart='+id);}
+ catch(e){cartNotice(e.message,true)}
+ finally{cartBusy=false;cartRender()}
+}
+async function cartCreate(){
+ if(cartBusy)return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ cartBusy=true;lastQrCode='';$('cartCreateBtn').disabled=true;
+ $('cartConfirmedBox').classList.add('hidden');$('cartConfirmedBox').replaceChildren();
+ try{
+  const d=await post('/scanner/api/cart/create',{name:$('cartNewName').value.trim()});
+  cartGuestCode=d.guest_code;cartView='pick';cartSkuSearch='';$('cartSkuFilter').value='';cartSearch=null;cartSetData(d.cart);
+  $('cartNewName').value='';cartMsgClean();
+  history.replaceState(null,'',location.pathname+'?cart='+d.cart.id);
+ }catch(e){cartNotice(e.message,true)}
+ finally{cartBusy=false;$('cartCreateBtn').disabled=false;cartRender()}
+}
+async function cartRefresh(discardPending=false){
+ if(!cartData)return;
+ if((cartPending.size||cartSending.size)&&!discardPending&&!confirm('Discard unsaved changes and reload from TiDB?'))return;
+ if(cartSaveJob)await cartSaveJob;
+ if(discardPending||cartPending.size){cartPending.clear();cartSending.clear();cartClearTimer();cartSaveError=false;}
+ try{
+  const d=await post('/scanner/api/cart/open',{cart_id:cartData.id});
+  cartSetData(d.cart);cartNotice('✓ RELOADED');
+ }catch(e){cartNotice(e.message,true)}
+}
+async function cartPostBatch(items,revision){
+ const response=await fetch('/scanner/api/cart/batch',{
+  method:'POST',credentials:'same-origin',cache:'no-store',keepalive:true,
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({cart_id:cartData.id,revision,items})
+ });
+ let data={};try{data=await response.json()}catch(_){}
+ if(!response.ok)throw Object.assign(new Error(data.detail||data.error||'SAVE FAILED'),{status:response.status});
+ return data;
+}
+async function cartFlush(){
+ cartClearTimer();
+ if(cartSaveJob){
+  const ok=await cartSaveJob;
+  return ok&&cartPending.size?cartFlush():ok;
+ }
+ if(!cartPending.size)return true;
+ if(!cartData)return false;
+ const submission=new Map(cartPending);
+ cartPending.clear();
+ cartSending=new Map(submission);
+ const cartId=cartData.id;
+ const revision=cartData.revision;
+ const task=(async()=>{
+  try{
+   const data=await cartPostBatch(Array.from(submission,([sku,qty])=>({sku,qty})),revision);
+   if(cartData?.id===cartId){
+    cartData=data.cart;
+    cartSaveError=false;
+    cartNotice('✓ SAVED');
+   }
+   return true;
+  }catch(e){
+   if(cartData?.id===cartId){
+    for(const [sku,qty] of submission)if(!cartPending.has(sku))cartPending.set(sku,qty);
+    cartSaveError=true;
+    cartNotice(e.status===409?'資料已變更或庫存不足，請檢查數量；可重新載入。':e.message,true);
+   }
+   return false;
+  }finally{
+   cartSending.clear();cartSaveJob=null;cartRender();
+  }
+ })();
+ cartSaveJob=task;
+ cartRender();
+ const ok=await task;
+ if(ok&&cartPending.size)return cartFlush();
+ return ok;
+}
+function cartPlanSave(){
+ cartSaveError=false;
+ cartClearTimer();
+ cartSaveTimer=setTimeout(()=>{void cartFlush()},CART_SAVE_DELAY);
+}
+function cartChange(sku,qty){
+ if(!cartData||cartBusy||!Number.isInteger(qty)||qty<0||qty>9999)return;
+ const existing=cartSending.has(sku)?cartSending.get(sku):
+  Number(cartData.items.find(i=>i.sku===sku)?.qty||0);
+ if(qty===existing)cartPending.delete(sku);
+ else cartPending.set(sku,qty);
+ cartPlanSave();
+ cartRender();
+}
+
+async function cartSetState(){
+ if(!cartData||cartBusy)return;
+ cartBusy=true;
+ try{
+  if(cartPending.size||cartSaveJob){
+   if(!(await cartFlush()))return;
+  }
+  if(cartData.state==='ready'&&cartData.confirmed_version>0){
+   const d=await post('/scanner/api/cart/state',{
+    cart_id:cartData.id,revision:cartData.revision,state:'open'
+   });
+   cartSetData(d.cart);cartNotice('DRAFT · previous confirmation retained');
+  }else{
+   const d=await post('/scanner/api/cart/confirm',{
+    cart_id:cartData.id,revision:cartData.revision
+   });
+   cartSetData(d.cart);
+   cartNotice('✓ CONFIRMED V'+d.cart.confirmed_version+' · NOT RESERVAR');
+   if(cartRole==='staff')void cartLoadList();
+  }
+ }catch(e){
+  cartNotice(e.message,true);
+  if(e.status===409)cartNotice('Cart changed. Please reload and check before confirming.',true);
+ }finally{cartBusy=false;cartRender()}
+}
+
+async function cartShare(){
+ if(cartRole!=='staff'||!cartData||cartBusy)return;
+ if(cartPending.size&&!(await cartFlush()))return;
+ cartBusy=true;
+ try{
+  const d=await post('/scanner/api/cart/share',{cart_id:cartData.id});
+  cartGuestCode=d.guest_code;cartSetData(d.cart);
+  cartNotice('已產生 8 小時臨時碼。舊臨時碼立即失效。');
+ }catch(e){cartNotice(e.message,true)}finally{cartBusy=false;cartRender()}
+}
+async function cartGuestHandoff(){
+ if(!cartData||cartRole!=='staff')return;
+ if(cartPending.size&&!(await cartFlush()))return;
+ if(!cartGuestCode)await cartShare();
+ if(!cartGuestCode)return;
+ if(!confirm('交給客人後會登出公司員工帳號，返回員工功能需要重新登入。確定？'))return;
+ try{
+  await stopCamera();
+  await post('/scanner/api/cart/guest-login',{code:cartGuestCode});
+  cartGuestCode='';cartRole='none';
+  await session();
+ }catch(e){cartNotice(e.message,true)}
+}
+async function cartLookup(input){
+ if(mode!=='cart'||!cartData||cartLookupPending)return;
+ const code=normalizeProductCode(input);
+ if(!valid(code)){cartNotice('Invalid QR / SKU',true);return}
+ cartLookupPending=true;busy=true;$('queryBtn').disabled=true;
+ $('code').value=code;syncSearchClear();
+ try{
+  const d=await post('/scanner/api/cart/lookup',{cart_id:cartData.id,code});
+  cartView='pick';cartSearch=d;cartAll=false;cartSkuSearch='';$('cartSkuFilter').value='';
+  cartRender();cartMsgClean();
+  if($('cameraToggle').getAttribute('aria-pressed')!=='true'){
+   $('cartProducts').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+ }catch(e){cartNotice(e.message,true)}
+ finally{cartLookupPending=false;busy=false;$('queryBtn').disabled=false}
+}
+window.cartLookup=cartLookup;
+window.cartIsReviewing=()=>cartView==='cart';
+window.cartBootstrap=cartBootstrap;
+window.cartApplyRole=cartApplyRole;
+window.cartLoadList=cartLoadList;
+$('cartNav').onclick=async()=>{
+ if(cartRole!=='staff')return;
+ if(mode==='cart'&&(cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ setMode(mode==='cart'?'sample':'cart');
+ if(mode==='cart'){if(cartData)cartRender();else void cartLoadList()}
+};
+$('cartCreateBtn').onclick=cartCreate;
+$('cartFilter').oninput=cartRenderList;
+$('cartSkuFilter').oninput=()=>{cartSkuSearch=$('cartSkuFilter').value.trim();cartRender()};
+$('cartShortCode').onclick=async()=>{
+ if(!cartData)return;
+ try{await navigator.clipboard.writeText(cartData.short_code);cartNotice('✓ CART ID COPIED')}
+ catch(_){window.prompt('Copy cart ID',cartData.short_code)}
+};
+$('cartDetailsBtn').onclick=()=>{
+ const meta=$('cartMeta'),hidden=meta.classList.toggle('hidden');
+ $('cartDetailsBtn').setAttribute('aria-expanded',String(!hidden));
+};
+$('cartSwitchView').onclick=()=>{
+ if(!cartData)return;
+ cartView=cartView==='pick'?'cart':'pick';cartRender();
+ if(cartView==='pick')$('scanPanel').scrollIntoView({behavior:'smooth',block:'start'});
+ else $('cartWorkspace').scrollIntoView({behavior:'smooth',block:'start'});
+};
+$('cartBack').onclick=async()=>{
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ cartClearTimer();cartPending.clear();cartData=null;cartSearch=null;cartGuestCode='';lastQrCode='';cartView='pick';cartSkuSearch='';
+ history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()
+};
+$('cartShareBtn').onclick=cartShare;
+$('cartGuestCode').title='Tap to copy the temporary code';
+$('cartGuestCode').onclick=async()=>{
+ if(!cartGuestCode)return;
+ try{await navigator.clipboard.writeText(cartGuestCode);cartNotice('✓ COPIED')}
+ catch(_){window.prompt('Temporary code',cartGuestCode)}
+};
+$('cartGuestHandoff').onclick=cartGuestHandoff;
+$('cartStateButton').onclick=cartSetState;
+$('cartReload').onclick=cartRefresh;
+$('cartVersionBtn').onclick=async()=>{
+ if(cartRole!=='staff'||!cartData?.confirmed_version)return;
+ const host=$('cartConfirmedBox');
+ if(!host.classList.contains('hidden')){host.classList.add('hidden');return}
+ try{
+  const d=await post('/scanner/api/cart/confirmed',{cart_id:cartData.id});
+  host.replaceChildren();
+  const title=document.createElement('strong');
+  title.textContent='V'+d.confirmed.version+' · '+cartLocalTime(d.confirmed.confirmed_at)+' · '+d.confirmed.qty_total+' ROLL';
+  host.append(title);
+  for(const item of d.confirmed.items){
+   const row=document.createElement('div');row.className='cart-spread';
+   const sku=document.createElement('span');sku.textContent=item.sku;
+   const qty=document.createElement('strong');qty.textContent=item.qty+' ROLL';
+   row.append(sku,qty);host.append(row);
+  }
+  host.classList.remove('hidden');
+ }catch(e){cartNotice(e.message,true)}
+};
+$('cartEditName').onclick=async()=>{
+ if(!cartData||cartRole!=='staff'||cartBusy)return;
+ if(cartPending.size&&!(await cartFlush()))return;
+ const name=prompt('Customer / Cliente',cartData.customer_name||'');
+ if(name===null)return;
+ cartBusy=true;
+ try{
+  const d=await post('/scanner/api/cart/name',{cart_id:cartData.id,revision:cartData.revision,name:name.trim()});
+  cartSetData(d.cart);cartNotice('✓ SAVED');
+ }catch(e){cartNotice(e.message,true);if(e.status===409)await cartRefresh()}finally{cartBusy=false}
+};
+$('cartCopy').onclick=async()=>{
+ if(!cartData)return;
+ if(cartPending.size&&!(await cartFlush()))return;
+ const text=[cartData.short_code,cartData.customer_name,
+  ...cartEffectiveItems().map(i=>i.sku+'\t'+i.qty)].filter(Boolean).join('\n');
+ try{await navigator.clipboard.writeText(text);cartNotice('✓ COPIED')}
+ catch(_){window.prompt('Copy cart',text)}
+};
+$('guestLoginBtn').onclick=async()=>{
+ const code=$('guestCode').value.trim(),button=$('guestLoginBtn');button.disabled=true;
+ try{
+  await post('/scanner/api/cart/guest-login',{code});
+  $('guestCode').value='';await session();
+ }catch(e){$('loginMessage').textContent=e.message}finally{button.disabled=false}
+};
+$('guestCode').addEventListener('keydown',e=>{if(e.key==='Enter')$('guestLoginBtn').click()});
+
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&cartPending.size)void cartFlush()});
+window.addEventListener('pagehide',()=>{if(cartPending.size&&!cartSaveJob)void cartFlush()});
+window.cartEnsureSaved=cartFlush;
+
+</script><script>session();</script></body></html>
