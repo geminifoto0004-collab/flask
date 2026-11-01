@@ -150,7 +150,7 @@ function cartRender(){
   selected=all;
   inStock=all.filter(v=>v.stock_rolls!=null&&Number(v.stock_rolls)>0);
  }
- $('cartProductToolbar').classList.toggle('hidden',!all.length);
+ $('cartProductToolbar').classList.toggle('hidden',!hasCart);
  const bar=document.createElement('div');bar.className='cart-filter cc-three-filters';
  const choices=[
   {key:'all',items:all,label:'全部',es:'Todos',icon:'<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>'},
@@ -177,7 +177,7 @@ function cartRender(){
  rows=filterRows.filter(v=>v.code.toLowerCase().includes(cartSkuSearch.toLowerCase()));
  if(!rows.length&&all.length){
   const p=document.createElement('p');p.className='muted cc-empty-filter';
-  p.textContent='没有符合的编号 / Sin resultados';products.append(p);
+  p.textContent='本组没有符合的编号，可按查询查找其他系列 / Buscar otra serie';products.append(p);
  }
  for(const item of rows)products.append(cartRow(item.code,cartItemQty(item.code),item.stock_rolls,true));
  $('cartStockNote').classList.toggle('hidden',!all.length);
@@ -444,6 +444,19 @@ $('cartNav').onclick=async()=>{
 $('cartCreateBtn').onclick=cartCreate;
 $('cartFilter').oninput=cartRenderList;
 $('cartSkuFilter').oninput=()=>{cartSkuSearch=$('cartSkuFilter').value.trim();cartRender()};
+// Keep the QR workflow unchanged; manual entry shares the existing safe stock lookup.
+$('cartSeriesLookup').onclick=()=>{
+ const typed=$('cartSkuFilter').value.trim();
+ if(!typed){$('cartSkuFilter').focus();return}
+ void cartLookup(typed);
+};
+$('cartSkuFilter').addEventListener('keydown',event=>{
+ if(event.key==='Enter'){
+  event.preventDefault();
+  $('cartSkuFilter').blur();
+  $('cartSeriesLookup').click();
+ }
+});
 $('cartShortCode').onclick=async()=>{
  if(!cartData)return;
  try{await navigator.clipboard.writeText(cartData.short_code);cartNotice('✓ CART ID COPIED')}
