@@ -91,6 +91,18 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 .sample-stat-label{font-size:11px;color:#65788e;white-space:nowrap}
 .sample-stat-value{font-size:21px;font-weight:750;letter-spacing:-.4px;color:#193e61;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .sample-stat-sub{font-size:10px;color:#778a9f}
+#result .sample-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:9px 0}
+#result .sample-stat{flex-direction:row;align-items:center;justify-content:space-between;gap:8px;padding:10px 11px;min-height:55px;background:#f4f8fc;border-color:#e1e9f2}
+#result .sample-stat-label{font-weight:750;font-size:11px}
+#result .sample-stat-value{font-size:clamp(16px,4.3vw,20px);white-space:nowrap;overflow-wrap:normal}
+#result .stock-visibility{margin:10px 0 8px}
+#result tbody td{padding:10px 7px}
+#result tbody tr{height:54px}
+#result thead th{padding:10px 7px}
+#result input[type="checkbox"]{accent-color:#1765a5}
+#result .sample-check-cell{min-width:54px;width:54px}
+#result #missingCount{margin:12px 0 8px;font-size:12px}
+@media(max-width:380px){#result .sample-stat{padding:9px 7px;gap:4px}#result .sample-stat-value{font-size:16px}}
 @media(max-width:380px){.sample-stats{gap:6px}.sample-stat{padding:9px 6px}.sample-stat-value{font-size:18px}}
 
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
@@ -175,11 +187,10 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 </section>
 <section id="result" class="panel hidden">
 <div class="sample-series-header"><h2 id="series"></h2><span class="sample-sync" title="庫存更新 / Stock updated"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><small id="asof"></small></span><span id="source" class="tag"></span></div>
-<div id="totals" class="sample-stats" aria-label="庫存統計"></div>
 <div class="stock-visibility" role="group" aria-label="布樣盤點顯示範圍">
 <button id="samplePositiveBtn" type="button" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="samplePositiveCount" class="filter-count">0</strong><span class="filter-label">&gt;0</span></button>
 <button id="sampleAllBtn" type="button" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="sampleAllCount" class="filter-count">0</strong><span class="filter-label">ALL</span></button></div>
-<p class="sample-visibility-legend">☑ = ✓ &nbsp;&nbsp; ☐ = × &nbsp; · &nbsp; SAVE = visible only</p>
+<div id="totals" class="sample-stats" aria-label="庫存統計"></div>
 <div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th id="sampleSkuSort" class="sample-sku-sort" tabindex="0" role="button" aria-label="商品編號排序" aria-sort="ascending">SKU ▲</th><th id="sampleRollsSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="匹數排序">ROLL</th><th id="sampleMetersSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="米數排序">M</th><th class="sample-check-cell"><label class="sample-headcheck">✓ <input id="sampleHeaderCheck" type="checkbox" aria-label="目前顯示商品全部有樣或無樣"></label></th></tr></thead><tbody id="rows"></tbody></table></div>
 <p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的商品編號，請確認快照中的編號。</p>
 <div id="sampleControls">
@@ -355,8 +366,24 @@ function setFullKind(kind){
 }
 let fullPositiveOnly=true;
 function hasPositivePieces(v){if(v==null||String(v).trim()==='')return false;const n=Number(v);return Number.isFinite(n)&&n>0}
+function meterForSum(value){
+ if(value==null)return 0;
+ const s=String(value).trim();
+ if(!s||s==='—'||s==='-'||s==='–')return 0;
+ const n=Number(s);
+ return Number.isFinite(n)?n:null;
+}
 function totalsForShownRows(rows,key){
  if(!rows.length)return 0;
+ if(key==='meters'||key==='stock_meters'){
+  let sum=0;
+  for(const row of rows){
+   const n=meterForSum(row[key]);
+   if(n===null)return null;
+   sum+=n;
+  }
+  return sum;
+ }
  if(rows.some(r=>r[key]==null||String(r[key]).trim()===''))return null;
  return rows.reduce((sum,r)=>sum+Number(r[key]),0);
 }
@@ -460,8 +487,7 @@ function fullRenderProduct(data){
  syncVisibilityButtons(fullPositiveOnly,'fullPositiveBtn','fullAllBtn');
  const pieces=fullTab==='stock'&&fullPositiveOnly?totalsForShownRows(visibleStock,'pieces'):
               stock.some(x=>x.pieces!=null)?stock.reduce((sum,x)=>sum+Number(x.pieces||0),0):null;
- const meters=fullTab==='stock'&&fullPositiveOnly?totalsForShownRows(visibleStock,'meters'):
-              stock.some(x=>x.meters!=null)?stock.reduce((sum,x)=>sum+Number(x.meters||0),0):null;
+ const meters=totalsForShownRows(fullTab==='stock'&&fullPositiveOnly?visibleStock:stock,'meters');
  const cards=[['商品種類',fullTab==='stock'?visibleStock.length:stock.length],['庫存匹數',pieces],['庫存米數',meters],['待到貨(匹)',data.camino_caja_total]];
  if(fullTab==='history')cards.push(['近365天',data.history_recent_count],['最近交易',data.history_last_date]);
  fullAddCards(cards);
@@ -584,17 +610,15 @@ function renderRows(){
  $('emptyMsg').classList.toggle('hidden',visible.length>0);
  $('emptyMsg').textContent=all.length?'沒有正庫存商品，請點 ALL 查看。':'沒有符合商品。';
  $('totals').replaceChildren();
- for(const [label,value,sub] of [
-  ['SKU',visible.length,all.length+' ALL'],
-  ['ROLL',samplePositiveOnly?totalsForShownRows(visible,'stock_rolls'):current.stock_rolls,''],
-  ['M',samplePositiveOnly?totalsForShownRows(visible,'stock_meters'):current.stock_meters,'']
+ for(const [label,value] of [
+  ['ROLL',totalsForShownRows(visible,'stock_rolls')],
+  ['M',totalsForShownRows(visible,'stock_meters')]
  ]){
   const card=document.createElement('div');card.className='sample-stat';
   const title=document.createElement('span');title.className='sample-stat-label';title.textContent=label;
   const number=document.createElement('strong');number.className='sample-stat-value';
   number.textContent=value==null?'—':label==='M'?fmtMeters(value):fmt(value);
-  const foot=document.createElement('small');foot.className='sample-stat-sub';foot.textContent=sub;
-  card.append(title,number,foot);$('totals').append(card);
+  card.append(title,number);$('totals').append(card);
  }
  for(const row of visible){
   const tr=document.createElement('tr');
@@ -692,7 +716,7 @@ async function lookup(input){
     if(!fresh?.fresh)throw Object.assign(new Error('庫存快照已超過 60 分鐘，請先在管理分頁更新'),{status:409});
     msg('正在查詢布樣：'+code);
     const d=await post('/scanner/api/sample',{code});
-    sharedProductCode=code;showResult(d);msg('布樣與庫存查詢完成','good');
+    sharedProductCode=code;showResult(d);msg('');
    }
   }
  }catch(e){if(mode==='sample'&&e.status===409)void checkFreshness();msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');if(e.status===401)await session()}

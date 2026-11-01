@@ -26,3 +26,13 @@ def test_series_heading_is_a_single_mobile_row():
  assert 'id="asof"' in UI and 'id="source"' in UI
  assert '.sample-series-header{display:flex;align-items:center;' in UI
  assert '.sample-series-header #source{flex:none;white-space:nowrap}' in UI
+
+def test_compact_scanner_statistics_and_missing_meter_sums():
+ assert "['SKU',visible.length" not in UI
+ assert "['ROLL',totalsForShownRows(visible,'stock_rolls')]" in UI
+ assert "['M',totalsForShownRows(visible,'stock_meters')]" in UI
+ assert 'grid-template-columns:repeat(2,minmax(0,1fr))' in UI
+ assert "function meterForSum(value)" in UI
+ assert "if(!s||s==='—'||s==='-'||s==='–')return 0" in UI
+ assert 'id="samplePositiveCount"' in UI and 'id="sampleAllCount"' in UI
+ assert 'post(\'/scanner/api/save\',{scan_id:current.scan_id,present,missing})' in UI

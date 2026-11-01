@@ -222,8 +222,11 @@ def read_fast_stock(code):
             raise ValueError("TOO_MANY_STOCK_SKUS")
         def total(index):
             values = [row[index] for row in rows]
-            # NULL is unknown, not zero.
-            return None if not values or any(x is None for x in values) else str(sum(values, 0))
+            if not values:
+                return None
+            if index == 2:  # Meter summary: NULL contributes zero, source remains NULL.
+                return str(sum((x for x in values if x is not None), 0))
+            return None if any(x is None for x in values) else str(sum(values, 0))
         return {
             "product_code": code,
             "stock_rolls": total(1), "stock_meters": total(2),
@@ -297,6 +300,8 @@ def read_sample_from_snapshot(code):
                     }
         conn.commit()
         def total(i):
+            if i == 2:  # Only arithmetic changes; do not rewrite NULL snapshot values.
+                return str(sum((row[i] for row in rows if row[i] is not None), 0))
             return None if any(row[i] is None for row in rows) else str(
                 sum((row[i] for row in rows), 0)
             )
