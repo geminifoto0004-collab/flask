@@ -250,41 +250,146 @@ async function cartLoadList(){
   cartRender();
  }catch(e){cartNotice(e.message,true)}
 }
+let cartEditingId=null,cartUndoEntry=null,cartUndoTimer=null;
+const CART_TRASH_ICON='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>';
+const CART_PENCIL_ICON='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M4 20l4.5-1 11-11a2 2 0 0 0-4-4l-11 11L4 20Z"/></svg>';
+const CART_CHECK_ICON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 12 4 4 10-10"/></svg>';
+function cartClearUndo(){
+ if(cartUndoTimer){clearTimeout(cartUndoTimer);cartUndoTimer=null}
+ cartUndoEntry=null;
+ $('cartUndoBar').classList.add('hidden');
+}
+function cartShowUndo(item,response){
+ cartClearUndo();
+ cartUndoEntry={id:item.id,revision:response.revision,until:Date.parse(response.undo_until)};
+ $('cartUndoText').textContent='已删除 '+item.short_code.split('-').pop()+' · 8 秒可恢复';
+ $('cartUndoBar').classList.remove('hidden');
+ const ms=Math.min(8000,Math.max(0,cartUndoEntry.until-Date.now()));
+ cartUndoTimer=setTimeout(cartClearUndo,ms);
+}
+async function cartUndoDelete(){
+ const entry=cartUndoEntry;
+ if(!entry||cartBusy||Date.now()>entry.until){cartClearUndo();return}
+ cartBusy=true;
+ try{
+  await post('/scanner/api/cart/undo-delete',{cart_id:entry.id,revision:entry.revision});
+  cartClearUndo();cartNotice('已恢复 / Restaurado');
+  if(mode==='cart'&&!cartData)cartDesktopAutoOpenDone=false;
+  await cartLoadList();
+ }catch(e){
+  cartClearUndo();cartNotice('无法恢复 / No se pudo restaurar: '+e.message,true);
+ }finally{cartBusy=false}
+}
+async function cartDeleteItem(item){
+ if(cartBusy||cartRole!=='staff')return;
+ if(cartData?.id===item.id&&(cartPending.size||cartSaveJob)){
+  if(!(await cartFlush()))return;
+ }
+ const revision=cartData?.id===item.id?cartData.revision:item.revision;
+ cartBusy=true;
+ try{
+  const result=await post('/scanner/api/cart/delete',{cart_id:item.id,revision});
+  cartRecent=cartRecent.filter(c=>c.id!==item.id);
+  if(cartData?.id===item.id){
+   cartData=null;cartSearch=null;cartCameraOpen=false;cartSummaryOpen=false;
+   cartDesktopAutoOpenDone=false;
+   history.replaceState(null,'',location.pathname);
+  }
+  if(cartEditingId===item.id)cartEditingId=null;
+  cartRender();cartRenderList();
+  cartShowUndo(item,result);
+  await cartLoadList();
+ }catch(e){
+  cartNotice(e.status===409?'购物车已更新，请重试 / Carrito modificado':e.message,true);
+  await cartLoadList();
+ }finally{cartBusy=false}
+}
+async function cartSaveListName(item,field){
+ if(cartBusy||cartRole!=='staff')return;
+ const name=field.value.trim();
+ if(name===(item.customer_name||'')){cartEditingId=null;cartRenderList();return}
+ if(cartData?.id===item.id&&(cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ cartBusy=true;
+ try{
+  const revision=cartData?.id===item.id?cartData.revision:item.revision;
+  const d=await post('/scanner/api/cart/name',{cart_id:item.id,revision,name});
+  if(cartData?.id===item.id)cartSetData(d.cart);
+  cartEditingId=null;
+  cartNotice('客户已保存 / Nombre guardado');
+  await cartLoadList();
+ }catch(e){
+  cartNotice(e.status===409?'资料已变动，请重新编辑 / Datos modificados':e.message,true);
+  await cartLoadList();
+ }finally{cartBusy=false}
+}
 function cartRenderList(){
  const host=$('cartRecent');host.replaceChildren();
  const filter=$('cartFilter').value.trim().toLowerCase();
- const carts=cartRecent.filter(c=>
-   c.short_code.toLowerCase().includes(filter)||(c.customer_name||'').toLowerCase().includes(filter)
- );
+ const carts=cartRecent.filter(c=>c.short_code.toLowerCase().includes(filter)||(c.customer_name||'').toLowerCase().includes(filter));
  if(!carts.length){
   const p=document.createElement('p');p.className='muted';p.textContent='暂无购物车 / Sin carritos';host.append(p);
  }
  for(const item of carts){
+  const wrapper=document.createElement('div');wrapper.className='cart-history-entry';
+  const del=document.createElement('button');del.type='button';del.className='cart-history-delete';
+  del.innerHTML=CART_TRASH_ICON;del.setAttribute('aria-label','删除购物车 / Eliminar carrito');
+  del.title='删除 / Eliminar';del.onclick=()=>void cartDeleteItem(item);
+  const main=document.createElement('div');main.className='cart-history-main';
   const btn=document.createElement('button');btn.className='cart-history-row secondary';btn.type='button';
   const left=document.createElement('span');left.className='cart-history-left';
-  const id=document.createElement('strong');
-  id.textContent=item.short_code.replace(/^C-[0-9]{6}-/,'');
-  if(item.confirmed_version){
-   const v=document.createElement('span');v.className='cc-history-version';v.textContent=' V'+item.confirmed_version;
-   id.append(v);
-  }
+  const id=document.createElement('strong');id.textContent=item.short_code.replace(/^C-[0-9]{6}-/,'');
+  if(item.confirmed_version){const v=document.createElement('span');v.className='cc-history-version';v.textContent=' V'+item.confirmed_version;id.append(v)}
+  left.append(id);
   const desc=document.createElement('small');
   desc.textContent=(item.customer_name||'—')+' · '+cartLocalTime(item.confirmed_at||item.guest_opened_at||item.updated_at);
-  btn.title=item.short_code+(item.customer_name?' · '+item.customer_name:'');
-  left.append(id,desc);
+  left.append(desc);
   const right=document.createElement('span');right.className='cc-cart-list-status';
   const qty=document.createElement('span');qty.className='cc-history-qty';
   qty.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 6c0 1.7 3.1 3 7 3s7-1.3 7-3-3.1-3-7-3-7 1.3-7 3zM5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>';
   const val=document.createElement('b');val.textContent=item.qty_total;qty.append(val);
-  const state=document.createElement('span');state.className='cc-history-state '+(item.state==='ready'?'ready':'draft');
-  state.textContent=item.state==='ready'?'✓ 就绪':'✎ 草稿';
-  right.append(qty,state);
-  btn.append(left,right);btn.onclick=()=>{cartDesktopAutoOpenDone=true;void cartOpen(item.id)};
-  if(cartData?.id===item.id){btn.classList.add('current');btn.setAttribute('aria-current','true');}
-  host.append(btn);
+  right.append(qty);btn.append(left,right);
+  btn.onclick=()=>{if(wrapper.classList.contains('swiped')){wrapper.classList.remove('swiped');return}cartDesktopAutoOpenDone=true;void cartOpen(item.id)};
+  if(cartData?.id===item.id){btn.classList.add('current');btn.setAttribute('aria-current','true')}
+  const edit=document.createElement('button');edit.type='button';
+  edit.className='cc-history-state cart-history-edit '+(item.state==='ready'?'ready':'draft');
+  edit.innerHTML=CART_PENCIL_ICON+'<span>'+(item.state==='ready'?'就绪':'草稿')+'</span>';
+  edit.title='编辑客户名称 / Editar cliente';edit.setAttribute('aria-label','编辑客户名称 / Editar cliente');
+  edit.onclick=()=>{
+   cartEditingId=cartEditingId===item.id?null:item.id;
+   cartRenderList();
+   if(cartEditingId){const input=host.querySelector('.cart-history-entry.editing input');if(input){input.focus();input.select()}}
+  };
+  main.append(btn,edit);
+  if(cartEditingId===item.id){
+   wrapper.classList.add('editing');
+   const editor=document.createElement('div');editor.className='cart-history-editor';
+   const field=document.createElement('input');field.type='text';field.maxLength=80;
+   field.placeholder='客户 / Cliente';field.value=item.customer_name||'';field.setAttribute('aria-label','客户名称 / Nombre cliente');
+   const save=document.createElement('button');save.type='button';save.innerHTML=CART_CHECK_ICON;save.setAttribute('aria-label','保存名称 / Guardar nombre');
+   save.onclick=()=>void cartSaveListName(item,field);
+   field.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();save.click()}
+    if(e.key==='Escape'){cartEditingId=null;cartRenderList()}
+   };
+   editor.append(field,save);main.append(editor);
+  }
+  wrapper.append(del,main);
+  let startX=0,startY=0;
+  wrapper.addEventListener('touchstart',e=>{
+   if(!window.matchMedia('(max-width:949px)').matches||!e.touches.length)return;
+   startX=e.touches[0].clientX;startY=e.touches[0].clientY;
+  },{passive:true});
+  wrapper.addEventListener('touchend',e=>{
+   if(!window.matchMedia('(max-width:949px)').matches||!e.changedTouches.length)return;
+   const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;
+   if(Math.abs(dx)>48&&Math.abs(dx)>Math.abs(dy)*1.25){
+    for(const open of host.querySelectorAll('.cart-history-entry.swiped'))if(open!==wrapper)open.classList.remove('swiped');
+    wrapper.classList.toggle('swiped',dx>0);
+   }
+  },{passive:true});
+  host.append(wrapper);
  }
 }
-
 async function cartOpen(id){
  if(cartBusy)return;
  if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
@@ -496,7 +601,7 @@ $('cartBack').onclick=async()=>{
  history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()
 };
 $('cartStateButton').onclick=cartSetState;
-$('cartReload').onclick=cartRefresh;
+$('cartUndoButton').onclick=()=>void cartUndoDelete();
 $('cartVersionBtn').onclick=async()=>{
  if(cartRole!=='staff'||!cartData?.confirmed_version)return;
  const host=$('cartConfirmedBox');
@@ -539,10 +644,12 @@ $('cartCustomerName').addEventListener('keydown',e=>{
 $('cartCopy').onclick=async()=>{
  if(!cartData)return;
  if(cartPending.size&&!(await cartFlush()))return;
- const text=[cartData.short_code,cartData.customer_name,
-  ...cartEffectiveItems().map(i=>i.sku+'\t'+i.qty)].filter(Boolean).join('\n');
- try{await navigator.clipboard.writeText(text);cartNotice('已复制 / Copiado')}
- catch(_){void xwCopyFallback('复制清单 / Copiar lista',text)}
+ const items=cartEffectiveItems().filter(i=>i.qty>0);
+ if(!items.length){cartNotice('没有已选商品 / Sin productos seleccionados',true);return}
+ // TSV: two columns only, safe to paste directly into Excel.
+ const text=items.map(i=>i.sku+'\t'+i.qty).join('\n');
+ try{await navigator.clipboard.writeText(text);cartNotice('已复制 '+items.length+' 个编号 / '+items.length+' SKU copiados')}
+ catch(_){void xwCopyFallback('商品编号 + 匹数 / SKU + rollos',text)}
 };
 $('guestLoginBtn').onclick=async()=>{
  const code=$('guestCode').value.trim(),button=$('guestLoginBtn');button.disabled=true;
