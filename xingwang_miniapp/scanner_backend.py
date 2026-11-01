@@ -132,6 +132,7 @@ async def _inventory_run(job_id):
     import json
 
     request_id = uuid4().hex
+    started_clock = time.perf_counter()
     future = asyncio.get_running_loop().create_future()
     try:
         async with relay.bridge_lock:
@@ -154,6 +155,7 @@ async def _inventory_run(job_id):
         finally:
             relay.waiting.pop(request_id, None)
 
+        bridge_ms = round((time.perf_counter() - started_clock) * 1000)
         if not isinstance(response, dict) or response.get("ok") is not True:
             code = response.get("code", "UNAVAILABLE") if isinstance(response, dict) else "INVALID"
             if code == "ACCESS_DENIED":
@@ -164,6 +166,7 @@ async def _inventory_run(job_id):
                 "FLASK_AUTH": "V33 登入本機 Flask 失敗，請檢查原有 Flask 設定",
                 "FLASK_HTTP": "本機 Flask 回傳 HTTP 錯誤，請檢查 Flask 日誌",
                 "FLASK_QUERY": "Flask /search SQL 查詢失敗，請檢查本機 Flask CMD",
+                "FLASK_FILTER_IGNORED": "Flask 沒有正確執行零／負庫存篩選，已拒絕不完整同步",
                 "INVENTORY_EMPTY": "Flask 回傳空庫存，已取消同步；請檢查 Access 查詢",
                 "INVENTORY_MISSING": "部分庫存數量缺失，已取消同步",
                 "INVENTORY_DUPLICATE": "庫存編號重複，已取消同步",
@@ -186,6 +189,7 @@ async def _inventory_run(job_id):
                 or hashlib.sha256(raw).hexdigest() != data.get("sha256")):
             raise RuntimeError("Corrupted or oversized stock snapshot")
         snapshot = stock_sync_api._validate(json.loads(raw))
+        read_ms = round((time.perf_counter() - started_clock) * 1000)
         async with _INVENTORY_LOCK:
             if _INVENTORY_JOB.get("id") == job_id:
                 _INVENTORY_JOB = {"state":"writing", "id":job_id,
@@ -203,16 +207,24 @@ async def _inventory_run(job_id):
                         "snapshot_count":len(snapshot),
                     })
             loop.call_soon_threadsafe(update)
+        db_start_clock = time.perf_counter()
         result = await asyncio.to_thread(
             stock_sync_api._sync_blocking, snapshot, False, publish_progress
         )
+        db_ms = round((time.perf_counter() - db_start_clock) * 1000)
+        result["timings_ms"] = {
+            "bridge":bridge_ms, "validation_and_transfer":read_ms-bridge_ms,
+            "database":db_ms,
+            "total":round((time.perf_counter()-started_clock)*1000),
+        }
         async with _INVENTORY_LOCK:
             if _INVENTORY_JOB.get("id") == job_id:
                 _INVENTORY_JOB = {"state":"success", "id":job_id, "result":result}
         logging.getLogger("uvicorn.error").info(
-            "STOCK_SYNC_OK total=%d inserted=%d updated=%d deactivated=%d",
+            "STOCK_SYNC_OK total=%d inserted=%d updated=%d deactivated=%d bridge_ms=%d db_ms=%d total_ms=%d",
             result["sku_count"], result["inserted"],
-            result["updated"], result["deactivated"])
+            result["updated"], result["deactivated"],
+            bridge_ms, db_ms, result["timings_ms"]["total"])
     except asyncio.CancelledError:
         raise
     except Exception as exc:
