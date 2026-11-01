@@ -14,8 +14,9 @@ def test_latest_completed_audit_read_only():
 def test_age_badge_and_short_inventory_timestamp():
  ui=(ROOT/'scanner.html').read_text('utf-8')
  assert "function auditAgeLabel(checkedAt)" in ui
- assert "'未盤點'" in ui
- assert "'年前盤點'" in ui
+ for label in ("'7−'", "'7+'", "'30+'", "'90+'", "'180+'", "'—'"):
+  assert label in ui
+ assert "badge.className='tag audit-badge '+auditAgeClass(age)" in ui
  assert "renderLastChecked();" in ui
  assert "current.last_checked_at=out.checked_at?" in ui
  assert "庫存更新：" in ui

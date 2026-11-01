@@ -4,7 +4,7 @@ UI=(Path(__file__).resolve().parents[1]/'scanner.html').read_text(encoding='utf-
 def test_cards_meters_and_table_sort():
  assert 'class="sample-stats"' in UI
  assert "card.className='sample-stat'" in UI
- assert "label==='庫存米數'?fmtMeters(value):fmt(value)" in UI
+ assert "label==='M'?fmtMeters(value):fmt(value)" in UI
  assert 'fmtMeters(row.stock_meters)' in UI
  for name in ('sampleSkuSort','sampleRollsSort','sampleMetersSort'):
   assert 'id="'+name+'"' in UI

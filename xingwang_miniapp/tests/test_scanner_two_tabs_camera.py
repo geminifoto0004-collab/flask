@@ -16,3 +16,14 @@ def test_cache_and_save():
  assert "post('/scanner/api/sample',{code})" in s
  assert "post('/scanner/api/save',{scan_id:current.scan_id,present,missing})" in s
  assert 'id="dbSetupBtn"' in s
+
+def test_filter_counts_and_scope_badge():
+ s=(ROOT/'scanner.html').read_text(encoding='utf-8')
+ for id in ('samplePositiveCount','sampleAllCount','fullPositiveCount','fullAllCount','saveScopeCount'):
+  assert 'id="'+id+'"' in s
+ assert "function updateVisibilityCounts(" in s
+ assert "stock.filter(row=>hasPositivePieces(row.pieces)).length" in s
+ assert "all.filter(row=>hasPositivePieces(row.stock_rolls)).length" in s
+ assert "badge.textContent='● '+age" in s
+ assert "tip.textContent='上次：'" not in s
+ assert "'7−'" in s and "'180+'" in s

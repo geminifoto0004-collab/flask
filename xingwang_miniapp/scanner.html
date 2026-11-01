@@ -47,7 +47,7 @@ button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
 .stock-stat{flex:1 1 calc(50% - 8px);min-width:118px;background:#f1f6fb;border-radius:12px;padding:12px}
 .stock-stat small{display:block;color:#627b8e;font-size:11px;margin-bottom:4px}
 .stock-stat strong{font-size:20px;font-variant-numeric:tabular-nums;color:#213a53}
-.stock-visibility{display:flex;gap:8px;margin:12px 0 8px;align-items:center}
+.stock-visibility{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 8px}
 .scanner-search-row{display:flex;align-items:center;gap:8px}.scanner-search-row input{flex:1;min-width:0}
 .search-input-wrap{display:flex;flex:1;min-width:0;position:relative;align-items:center}
 .search-input-wrap #code{width:100%;padding-right:37px;appearance:none;-webkit-appearance:none}
@@ -68,7 +68,7 @@ button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
 .sample-actions button:disabled{opacity:.55}
 
 
-.stock-visibility button{flex:1;min-width:0;background:#edf2f8;color:#294763;font-size:13px;padding:10px 8px;white-space:nowrap}
+.stock-visibility button{display:flex;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:54px;background:#edf2f8;color:#294763;border:1px solid #d7e3ef;font-size:13px;padding:9px 7px;white-space:nowrap}.stock-visibility button svg{width:21px;height:21px;flex:none}.stock-visibility .filter-count{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.5px}.stock-visibility .filter-label{font-size:12px;font-weight:700;opacity:.87}.query-icon{width:44px;height:44px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0}.query-icon svg{width:21px;height:21px}.save-action{display:flex;align-items:center;justify-content:center;gap:9px;min-height:46px}.save-action svg{width:20px;height:20px}.save-action span:last-child{font-variant-numeric:tabular-nums}.audit-badge{font-weight:800;font-size:13px;font-variant-numeric:tabular-nums;border:1px solid transparent}.audit-badge.age-green{background:#e7f8ee;color:#167447;border-color:#b6e5c8}.audit-badge.age-amber{background:#fff4dc;color:#995c00;border-color:#f3d99b}.audit-badge.age-red{background:#ffe9e9;color:#bb2c35;border-color:#f1b9bd}.audit-badge.age-deep{background:#7f2028;color:#fff;border-color:#7f2028}.audit-badge.age-none{background:#eef1f5;color:#667587;border-color:#d7dee6}.modes button svg{width:19px;height:19px;flex:none}.modes button{display:flex;align-items:center;justify-content:center;gap:8px}.sample-visibility-legend{font-size:12px}
 .stock-visibility button.active{background:#145ba4;color:#fff}
 .stock-visibility button:focus-visible{outline:2px solid #145ba4;outline-offset:2px}
 .stock-filter-row{display:flex;align-items:center;gap:8px;margin:13px 0 10px}
@@ -124,7 +124,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 </style>
 </head>
 <body><main>
-<header><div><h1>XINGWANG SCANNER</h1><small>掃描布樣 · 查詢庫存 · 確認盤點</small></div><div class="header-actions"><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden">登出</button></div></header>
+<header><div><h1>XINGWANG SCANNER</h1></div><div class="header-actions"><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden">登出</button></div></header>
 <section id="login" class="panel hidden">
 <h2>首次登入掃描器</h2>
 <p class="muted">輸入公司登入碼，這台手機將保持登入 30 天。</p>
@@ -133,7 +133,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 </section>
 <div id="app" class="hidden">
 <section class="panel" id="scanPanel">
-<div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeFull">完整查詢</button></div>
+<div class="modes"><button id="modeSample" class="active" type="button" title="布樣盤點 / Muestras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M4 12h16"/></svg><span>SAMPLE</span></button><button id="modeFull" type="button" title="完整查詢 / Consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg><span>DATA</span></button></div>
 <div id="fullKindControls" class="full-kind hidden"><button id="fullProduct" class="active" type="button">商品查詢</button><button id="fullNota" type="button">Nota 查詢</button></div>
 <div id="freshnessPanel" class="notice hidden" role="status" aria-live="polite">
 <div class="freshness-head"><span id="freshnessText">庫存快照已超過 60 分鐘，請先更新。</span><button type="button" id="freshnessDismissBtn" class="freshness-close" aria-label="關閉庫存更新提醒" title="關閉提醒">×</button></div>
@@ -148,7 +148,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <button id="cameraToggle" type="button" class="camera-toggle" aria-pressed="false" aria-label="開啟連續掃描" title="開啟連續掃描">
 <svg id="cameraOnIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
 <svg id="cameraOffIcon" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/><path d="M3 3l18 18"/></svg>
-</button><button id="queryBtn">查詢</button></div>
+</button><button id="queryBtn" type="button" class="query-icon" aria-label="查詢 / Buscar" title="查詢 / Buscar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg></button></div>
 <div id="message" aria-live="polite"></div>
 </section>
 <section id="fullResult" class="panel hidden" aria-label="完整查詢結果">
@@ -158,8 +158,8 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <button data-fulltab="stock" class="active">庫存</button><button data-fulltab="camino">待到貨</button><button data-fulltab="history">歷史購買</button><button data-fulltab="reservar">預定</button>
 </div>
 <div id="fullStockVisibility" class="stock-visibility" role="group" aria-label="完整查詢庫存顯示範圍">
-<button type="button" id="fullPositiveBtn" class="active" aria-pressed="true">有庫存（匹數 &gt; 0）</button>
-<button type="button" id="fullAllBtn" aria-pressed="false">ALL</button>
+<button type="button" id="fullPositiveBtn" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="fullPositiveCount" class="filter-count">0</strong><span class="filter-label">&gt;0</span></button>
+<button type="button" id="fullAllBtn" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="fullAllCount" class="filter-count">0</strong><span class="filter-label">ALL</span></button>
 </div>
 <div class="stock-filter-row" id="fullFilterRow"><input id="fullFilter" type="search" placeholder="篩選查詢結果" autocomplete="off" aria-label="篩選完整查詢資料"><span id="fullCount" class="muted"></span></div>
 <div id="fullDetails"></div>
@@ -170,15 +170,15 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div class="bar"><div><h2 id="series"></h2><small id="asof"></small></div><span id="source" class="tag"></span></div>
 <div id="totals" class="sample-stats" aria-label="庫存統計"></div>
 <div class="stock-visibility" role="group" aria-label="布樣盤點顯示範圍">
-<button id="samplePositiveBtn" type="button" class="active" aria-pressed="true">有庫存（匹數 &gt; 0）</button>
-<button id="sampleAllBtn" type="button" aria-pressed="false">ALL</button></div>
-<p class="sample-visibility-legend">打勾＝有樣，未勾＝無樣。按「保存」才會將目前顯示的商品確認寫入，隱藏的編號不變。</p>
-<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th id="sampleSkuSort" class="sample-sku-sort" tabindex="0" role="button" aria-label="商品編號排序" aria-sort="ascending">商品編號 ▲</th><th id="sampleRollsSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="匹數排序">匹數</th><th id="sampleMetersSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="米數排序">米數</th><th class="sample-check-cell"><label class="sample-headcheck">有樣 <input id="sampleHeaderCheck" type="checkbox" aria-label="目前顯示商品全部有樣或無樣"></label></th></tr></thead><tbody id="rows"></tbody></table></div>
+<button id="samplePositiveBtn" type="button" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="samplePositiveCount" class="filter-count">0</strong><span class="filter-label">&gt;0</span></button>
+<button id="sampleAllBtn" type="button" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="sampleAllCount" class="filter-count">0</strong><span class="filter-label">ALL</span></button></div>
+<p class="sample-visibility-legend">☑ = ✓ &nbsp;&nbsp; ☐ = × &nbsp; · &nbsp; SAVE = visible only</p>
+<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th id="sampleSkuSort" class="sample-sku-sort" tabindex="0" role="button" aria-label="商品編號排序" aria-sort="ascending">SKU ▲</th><th id="sampleRollsSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="匹數排序">ROLL</th><th id="sampleMetersSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="米數排序">M</th><th class="sample-check-cell"><label class="sample-headcheck">✓ <input id="sampleHeaderCheck" type="checkbox" aria-label="目前顯示商品全部有樣或無樣"></label></th></tr></thead><tbody id="rows"></tbody></table></div>
 <p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的商品編號，請確認快照中的編號。</p>
 <div id="sampleControls">
 <div id="dbNotice" class="notice">尚未確認 TiDB 連線；不會寫入盤點資料。</div>
 <p id="missingCount" class="muted"></p>
-<div class="row"><button id="saveBtn" class="fill hidden">確認本頁並保存</button></div>
+<div class="row"><button id="saveBtn" type="button" class="fill hidden save-action" title="僅儲存目前顯示的商品 / Solo visibles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h14l3 3v15H3V3h1Z"/><path d="M7 3v7h10V3M7 21v-7h10v7"/></svg><span id="saveBtnText">SAVE</span><span id="saveScopeCount">0</span></button></div>
 </div>
 </section>
 <section id="adminTab" class="hidden" aria-label="管理分頁"><div id="adminApp">
@@ -191,7 +191,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div class="share-copy"><p class="muted">同事開啟後仍需要公司登入碼。</p><div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">複製網址</button></div>
 <p class="muted"><a href="/s" target="_blank" rel="noopener noreferrer">xingwang-stock.onrender.com/s</a></p><div id="shareStatus" aria-live="polite"></div></div></div></section>
 </div></section>
-<footer class="muted">XINGWANG · 布樣盤點與庫存查詢</footer>
+<footer class="muted">XINGWANG</footer>
 </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
@@ -353,6 +353,10 @@ function totalsForShownRows(rows,key){
  if(rows.some(r=>r[key]==null||String(r[key]).trim()===''))return null;
  return rows.reduce((sum,r)=>sum+Number(r[key]),0);
 }
+function updateVisibilityCounts(positiveId,allId,positive,total){
+ $(positiveId).textContent=fmt(positive);
+ $(allId).textContent=fmt(total);
+}
 function syncVisibilityButtons(yes,yesId,allId){
  for(const [id,active] of [[yesId,yes],[allId,!yes]]){
   $(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));
@@ -445,6 +449,7 @@ function fullRenderProduct(data){
  const visibleStock=fullPositiveOnly?stock.filter(row=>hasPositivePieces(row.pieces)):stock;
  const all=fullTab==='stock'?visibleStock:(Array.isArray(data[fullTab])?data[fullTab]:[]);
  $('fullStockVisibility').classList.toggle('hidden',fullTab!=='stock');
+ updateVisibilityCounts('fullPositiveCount','fullAllCount',stock.filter(row=>hasPositivePieces(row.pieces)).length,stock.length);
  syncVisibilityButtons(fullPositiveOnly,'fullPositiveBtn','fullAllBtn');
  const pieces=fullTab==='stock'&&fullPositiveOnly?totalsForShownRows(visibleStock,'pieces'):
               stock.some(x=>x.pieces!=null)?stock.reduce((sum,x)=>sum+Number(x.pieces||0),0):null;
@@ -556,12 +561,13 @@ function renderRows(){
   const diff=an?0:Number(av)-Number(bv);
   return diff?diff*dir:compareSkus(a.code,b.code);
  });
- for(const [field,id,label] of [['code','sampleSkuSort','商品編號'],['stock_rolls','sampleRollsSort','匹數'],['stock_meters','sampleMetersSort','米數']]){
+ for(const [field,id,label] of [['code','sampleSkuSort','SKU'],['stock_rolls','sampleRollsSort','ROLL'],['stock_meters','sampleMetersSort','M']]){
   const th=$(id),active=field===sampleSortField;
   th.textContent=label+(active?(sampleDescending?' ▼':' ▲'):'');
   if(active)th.setAttribute('aria-sort',sampleDescending?'descending':'ascending');
   else th.removeAttribute('aria-sort');
  }
+ updateVisibilityCounts('samplePositiveCount','sampleAllCount',all.filter(row=>hasPositivePieces(row.stock_rolls)).length,all.length);
  syncVisibilityButtons(samplePositiveOnly,'samplePositiveBtn','sampleAllBtn');
  const headerCheck=$('sampleHeaderCheck');
  headerCheck.disabled=saved||!visible.length;
@@ -572,14 +578,14 @@ function renderRows(){
  $('emptyMsg').textContent=all.length?'沒有正庫存商品，請點 ALL 查看。':'沒有符合商品。';
  $('totals').replaceChildren();
  for(const [label,value,sub] of [
-  ['商品種類',visible.length,'共 '+all.length+' 筆'],
-  ['庫存匹數',samplePositiveOnly?totalsForShownRows(visible,'stock_rolls'):current.stock_rolls,'匹'],
-  ['庫存米數',samplePositiveOnly?totalsForShownRows(visible,'stock_meters'):current.stock_meters,'米']
+  ['SKU',visible.length,all.length+' ALL'],
+  ['ROLL',samplePositiveOnly?totalsForShownRows(visible,'stock_rolls'):current.stock_rolls,''],
+  ['M',samplePositiveOnly?totalsForShownRows(visible,'stock_meters'):current.stock_meters,'']
  ]){
   const card=document.createElement('div');card.className='sample-stat';
   const title=document.createElement('span');title.className='sample-stat-label';title.textContent=label;
   const number=document.createElement('strong');number.className='sample-stat-value';
-  number.textContent=value==null?'—':label==='庫存米數'?fmtMeters(value):fmt(value);
+  number.textContent=value==null?'—':label==='M'?fmtMeters(value):fmt(value);
   const foot=document.createElement('small');foot.className='sample-stat-sub';foot.textContent=sub;
   card.append(title,number,foot);$('totals').append(card);
  }
@@ -595,11 +601,6 @@ function renderRows(){
   cb.setAttribute('aria-label',row.code+' 有樣');
   cb.onchange=()=>{sampleStates.set(row.code,cb.checked);sampleDirty=true;updateMissing()};
   td.append(cb);
-  const previous=current.previous_status?.[row.code];
-  if(previous){
-   const tip=document.createElement('small');tip.className='previous-sample';
-   tip.textContent='上次：'+(previous.missing?'無樣':'有樣');td.append(tip);
-  }
   tr.append(td);body.append(tr);
  }
  updateMissing();
@@ -610,29 +611,35 @@ function updateMissing(){
  header.checked=visible.length>0&&yes===visible.length;
  header.indeterminate=yes>0&&yes<visible.length;
  const no=visible.length-yes;
- $('missingCount').textContent=saved
-  ?'已保存 '+savedScope.size+' 個編號；其他編號保持不變。可直接掃描或輸入下一個商品。'
-  :'本頁：有樣 '+yes+'，無樣 '+no+'。確認實物後按保存；隱藏的編號不會修改。';
+ $('missingCount').textContent=saved?('✓ '+fmt(savedScope.size)):('☑ '+fmt(yes)+'   ☐ '+fmt(no));
+ $('saveScopeCount').textContent=saved?'✓':fmt(visible.length);
  $('saveBtn').disabled=saved||visible.length===0;
 }
 function auditAgeLabel(checkedAt){
- if(!checkedAt)return '未盤點';
+ if(!checkedAt)return '—';
  const raw=String(checkedAt);
  const parsed=Date.parse(/[zZ]$|[+-][0-9]{2}:[0-9]{2}$/.test(raw)?raw:raw+'Z');
- if(!Number.isFinite(parsed))return '未盤點';
- const delta=Math.max(0,Date.now()-parsed);
- const hours=Math.floor(delta/3600000);
- const days=Math.floor(delta/86400000);
- if(hours<1)return '剛剛盤點';
- if(hours<24)return hours+'小時前盤點';
- if(days<30)return days+'天前盤點';
- if(days<365)return Math.floor(days/30)+'個月前盤點';
- return Math.floor(days/365)+'年前盤點';
+ if(!Number.isFinite(parsed))return '—';
+ const days=Math.floor(Math.max(0,Date.now()-parsed)/86400000);
+ if(days<7)return '7−';
+ if(days<30)return '7+';
+ if(days<90)return '30+';
+ if(days<180)return '90+';
+ return '180+';
+}
+function auditAgeClass(label){
+ if(label==='7−'||label==='7+')return 'age-green';
+ if(label==='30+')return 'age-amber';
+ if(label==='90+')return 'age-red';
+ if(label==='180+')return 'age-deep';
+ return 'age-none';
 }
 function renderLastChecked(){
  if(!current)return;
  const badge=$('source');
- badge.textContent=auditAgeLabel(current.last_checked_at);
+ const age=auditAgeLabel(current.last_checked_at);
+ badge.textContent='● '+age;
+ badge.className='tag audit-badge '+auditAgeClass(age);
  if(current.last_checked_at){
   const exact=new Date(current.last_checked_at).toLocaleString('zh-TW',{
    timeZone:'America/Santiago',hour12:false,year:'numeric',month:'2-digit',
@@ -649,8 +656,9 @@ function showResult(d){
  }
  $('result').classList.remove('hidden');
  $('saveBtn').classList.toggle('hidden',!d.db_connected);
- $('saveBtn').textContent='確認本頁並保存';$('saveBtn').classList.remove('secondary');
- $('dbNotice').textContent=d.db_connected?'核對實物後按保存：只寫入目前顯示的編號；未顯示的保持原狀。':'TiDB 不可用，暫時不能保存。';
+ $('saveBtnText').textContent='SAVE';$('saveScopeCount').textContent='0';$('saveBtn').classList.remove('secondary');
+ $('dbNotice').classList.toggle('hidden',Boolean(d.db_connected));
+ $('dbNotice').textContent=d.db_connected?'':'TiDB 不可用，暫時不能保存。';
  $('series').textContent=d.product_code;renderLastChecked();
  $('asof').textContent='庫存更新：'+(d.as_of?new Date(d.as_of).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'—');
  renderRows();
@@ -765,7 +773,7 @@ $('saveBtn').onclick=async()=>{
   for(const sku of present)current.previous_status[sku]={missing:false};
   for(const sku of missing)current.previous_status[sku]={missing:true};
   renderRows();msg('已保存 '+out.sku_count+' 個確認：有樣 '+present.length+'，無樣 '+missing.length+'。','good');
-  b.textContent='已保存';b.classList.add('secondary');
+  $('saveBtnText').textContent='SAVED';$('saveScopeCount').textContent='✓';b.classList.add('secondary');
  }catch(e){b.disabled=false;msg(e.message,'error');if(e.status===409)void checkFreshness()}
 };
 const scannerShareURL=location.origin+'/s';
