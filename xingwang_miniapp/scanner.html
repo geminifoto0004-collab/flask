@@ -1548,9 +1548,13 @@ body.cc-sample-detail #result{
   <div class="cart-times"><div><span>打开 / Abierto</span><strong id="cartOpenedAt">—</strong></div><div><span>确认 / Confirmado</span><strong id="cartConfirmedAt">—</strong></div></div>
   <div class="cart-spread"><span class="muted">版本 / Versión <strong id="cartVersionLabel">—</strong></span><button type="button" id="cartVersionBtn" class="secondary hidden">V1</button></div>
   <div id="cartConfirmedBox" class="cart-confirmed-box hidden"></div>
-  <button id="cartEditName" class="secondary" type="button">客户 / Cliente</button>
-  <div id="cartShareRow" class="cart-hint"><div class="cart-spread"><span>访客码 / Código · 8H</span><span id="cartGuestCode" class="cart-code-number"></span></div>
-   <div class="cart-stack"><button id="cartShareBtn" type="button" class="secondary">↻ 换码 / Cambiar</button><button id="cartGuestHandoff" type="button" class="secondary">访客 / Visita</button></div></div>
+  <div class="cart-customer-editor">
+   <label for="cartCustomerName">客户 / Cliente</label>
+   <div class="cart-customer-input-row">
+    <input id="cartCustomerName" type="text" maxlength="80" placeholder="客户名称 / Nombre" autocomplete="off">
+    <button id="cartEditName" type="button" aria-label="保存客户名称 / Guardar nombre" title="保存 / Guardar"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"/></svg></button>
+   </div>
+  </div>
   <div class="cart-meta-actions"><button id="cartReload" class="secondary" type="button">↻ 更新 / Actualizar</button><button id="cartCopy" class="secondary" type="button">复制 / Copiar</button></div>
   <div id="cartStockNote" class="cart-hint hidden"></div>
  </div>
