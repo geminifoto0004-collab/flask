@@ -20,8 +20,9 @@ input{min-width:0;border:1px solid #c9d4e0;background:#fff;color:#172b40;border-
 button{border:0;background:#1265bb;color:#fff;border-radius:10px;padding:12px 15px;font-weight:700;cursor:pointer}
 button.secondary{background:#eef3f8;color:#213a53}button:disabled{opacity:.55;cursor:wait}
 button.ghost{background:transparent;color:#24517a;padding:8px}
+button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
 .row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}.fill{flex:1}
-.modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}.modes button{background:#edf2f8;color:#2d4864}
+.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.modes button{background:#edf2f8;color:#2d4864;min-width:0;padding:11px 6px;font-size:13px}
 .modes button.active{background:#145ba4;color:#fff}
 #reader{max-width:460px;margin:10px auto;overflow:hidden;border-radius:10px}
 #reader video{max-width:100%}#reader button{font-size:12px}
@@ -60,10 +61,35 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .notice{background:#fff8e9;border:1px solid #f0d9a6;border-radius:10px;padding:10px;font-size:12px;color:#835a15}
 .hidden{display:none!important}@media (max-width:420px){.panel{padding:12px}.row input{width:100%}button{padding:11px}}
+.full-kind{display:flex;gap:8px;margin:10px 0 0}
+.full-kind button{flex:1;background:#edf2f8;color:#294763;font-size:13px}
+.full-kind button.active{background:#1965aa;color:white}
+.full-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:12px 0}
+.full-tabs button{flex:1;white-space:nowrap;background:#edf2f8;color:#294763;font-size:12px;padding:10px 8px}
+.full-tabs button.active{background:#1965aa;color:white}
+.full-row{padding:12px 10px;border-bottom:1px solid #e5ebf3}
+.full-doc{padding:13px;border:1px solid #e1e8f1;border-radius:12px;margin:10px 0}
+.full-doc summary{cursor:pointer;font-weight:700}
+.full-doc dl{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
+.full-doc dt{font-size:11px;color:#65778c}
+.full-doc dd{margin:1px 0 0;font-size:13px;overflow-wrap:anywhere}
+.full-table{overflow:auto;max-height:65vh;min-height:50px}
+.full-table th,.full-table td{white-space:nowrap;font-size:12px}
+.full-table th{cursor:pointer}
+.full-empty{padding:14px;color:#64748b}
+.full-customer{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.full-customer.expanded{white-space:normal;max-width:360px;overflow-wrap:anywhere}
+.headerbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pill{background:#eff5fc;color:#175da5;font-size:11px;border-radius:15px;padding:5px 9px}
+.share-layout{display:flex;align-items:center;gap:15px}.share-layout img{width:130px;height:130px;object-fit:contain;border:1px solid #d8e1eb;padding:7px;border-radius:10px}
+.share-copy{flex:1;min-width:0}.share-copy p{overflow-wrap:anywhere}.share-actions{display:flex;flex-wrap:wrap;gap:8px}
+.share-actions button{font-size:12px;padding:10px}
+#inventoryStatusText{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}
+#dbSetupMsg,#shareStatus{font-size:12px;color:#52677d;line-height:1.65;margin-top:9px}
 </style>
 </head>
 <body><main>
-<header><div><h1>XINGWANG SCANNER</h1><small>掃描布樣 · 查詢庫存 · 確認盤點</small></div><div class="header-actions"><a class="admin-icon hidden" id="adminLink" href="/scanner/admin" target="_blank" rel="noopener noreferrer" title="管理功能 · 開啟新分頁" aria-label="開啟庫存管理"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></a><button id="logout" class="ghost hidden">登出</button></div></header>
+<header><div><h1>XINGWANG SCANNER</h1><small>掃描布樣 · 查詢庫存 · 確認盤點</small></div><div class="header-actions"><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden">登出</button></div></header>
 <section id="login" class="panel hidden">
 <h2>首次登入掃描器</h2>
 <p class="muted">輸入公司登入碼，這台手機將保持登入 30 天。</p>
@@ -71,12 +97,14 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <button id="loginBtn">登入</button><p id="loginMessage" class="muted"></p>
 </section>
 <div id="app" class="hidden">
-<section class="panel">
-<div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeStock">查詢庫存</button></div>
+<section class="panel" id="scanPanel">
+<div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeStock">快速庫存</button><button id="modeFull">完整查詢</button></div>
+<div id="fullKindControls" class="full-kind hidden"><button id="fullProduct" class="active" type="button">商品查詢</button><button id="fullNota" type="button">Nota 查詢</button></div>
+<div id="fullAuthNote" class="info hidden" style="margin:10px 0">完整查詢包含客戶、待到貨、歷史購買及預定，需使用已授權的 Telegram 身分。普通瀏覽器的盤點登入碼不會自動開放客戶資料。</div>
 <div id="freshnessPanel" class="notice hidden" role="status" aria-live="polite">
 <div class="freshness-head"><span id="freshnessText">庫存快照已超過 60 分鐘，請先更新。</span><button type="button" id="freshnessDismissBtn" class="freshness-close" aria-label="關閉庫存更新提醒" title="關閉提醒">×</button></div>
 <div class="row" style="margin-top:8px;flex-wrap:wrap">
-<a class="freshnessAdmin" href="/scanner/admin" target="_blank" rel="noopener noreferrer">前往更新庫存</a>
+<button type="button" id="freshnessAdminBtn" class="freshnessAdmin">前往更新庫存</button>
 <button type="button" id="freshnessCheckBtn" class="secondary">重新檢查</button>
 </div></div>
 
@@ -92,28 +120,52 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div class="stock-stat-grid" id="stockStats"></div>
 <div class="stock-filter-row"><input id="stockFilter" type="search" placeholder="篩選目前全部庫存明細" autocomplete="off" aria-label="篩選庫存明細"><span class="muted" id="stockCount">0 / 0 筆</span></div>
 <div class="stock-tablewrap"><table><thead><tr id="stockTableHead"></tr></thead><tbody id="stockTableBody"></tbody></table></div>
-<p class="muted stock-note" id="stockNote">與 Telegram 庫存查詢同樣的統計、篩選和排序；待到貨單位為箱。</p>
+<p class="muted stock-note" id="stockNote">僅含上次同步的庫存匹數、米數。待到貨與客戶資料不在快照內；需要完整資訊請切換「完整查詢」。</p>
 <div class="row"><button id="stockNextBtn" class="fill secondary">查下一個商品</button></div>
+</section>
+<section id="fullResult" class="panel hidden" aria-label="完整查詢結果">
+<div class="bar"><div><h2 id="fullTitle">完整查詢</h2><small id="fullTime" class="muted"></small></div><span class="tag">授權資料</span></div>
+<div id="fullStats" class="stock-stat-grid"></div>
+<div id="fullTabs" class="full-tabs">
+<button data-fulltab="stock" class="active">庫存</button><button data-fulltab="camino">待到貨</button><button data-fulltab="history">歷史購買</button><button data-fulltab="reservar">預定</button>
+</div>
+<div class="stock-filter-row" id="fullFilterRow"><input id="fullFilter" type="search" placeholder="篩選查詢結果" autocomplete="off" aria-label="篩選完整查詢資料"><span id="fullCount" class="muted"></span></div>
+<div id="fullDetails"></div>
+<p id="fullNote" class="muted stock-note"></p>
+<div class="row"><button id="fullHistoryMore" class="secondary fill hidden">載入更多購買紀錄</button><button type="button" id="fullNext" class="secondary">查下一筆</button></div>
 </section>
 <section id="result" class="panel hidden">
 <div class="bar"><div><h2 id="series"></h2><small id="asof"></small></div><span id="source" class="tag"></span></div>
 <div id="totals" class="metrics"></div>
 <div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>商品編號</th><th class="num">匹數</th><th class="num">米數</th><th id="sampleHeading">無樣</th></tr></thead><tbody id="rows"></tbody></table></div>
-<p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的子商品。請確認 V33 查詢規則。</p>
+<p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的商品編號，請確認快照中的編號。</p>
 <div id="sampleControls">
 <div id="dbNotice" class="notice">尚未確認 TiDB 連線；不會寫入盤點資料。</div>
 <p id="missingCount" class="muted"></p>
 <div class="row"><button id="saveBtn" class="fill hidden">確認完成 · 保存 TiDB</button><button id="copyBtn" class="secondary">複製清單</button><button id="nextBtn" class="secondary">下一張</button></div>
 </div>
 </section>
-<footer class="muted">XINGWANG · 布樣盤點與即時庫存</footer>
+<section id="adminTab" class="hidden" aria-label="管理分頁"><div id="adminApp">
+<section class="panel"><div class="headerbar"><h2>Access 庫存同步</h2><span class="pill">手動</span></div><p class="muted">雲端通知本機系統 從本機 Flask 取得完整庫存，再更新 TiDB；布樣盤點資料不會被覆蓋。</p>
+<button id="inventoryStartBtn" class="full">更新 Access 庫存到 TiDB</button><p id="inventoryStatusText" aria-live="polite">正在讀取最後成功時間…</p></section>
+<section class="panel"><div class="headerbar"><h2>資料庫維護</h2><span class="pill">管理工具</span></div><p class="muted">首次部署或連線異常時才需要使用。</p>
+<button id="dbSetupBtn" class="secondary full">檢查 TiDB 連線並建立資料表</button><div id="dbSetupMsg" aria-live="polite"></div></section>
+<section class="panel"><h2>分享掃描器入口</h2><div class="share-layout">
+<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACUAAAAlAQAAAADt5R2uAAAAz0lEQVR42mP8z8DA8JOJgYGBgQGZZC6UFy+4w/j94S/emUx/Gzk+MTAxfJ/FwMDEwHKVgYGJuU6Tj4Hxg6rDawuG/981/v9g+O62irmC6adyeC0D428/lVeKTH/03iozMPzn6Lb7wfil5H/kDhauZBcpBqa/0UuuMjD8FNq17wfjl+OnbLcx/hUKkvnNxJBWrsnA9PXmplgGFt6l394yMH2UnX2LgYX9zLXPDAxfQjYx/WD8kvrmlyUTA4vzTwbG74+C5PUYPohGyf1gxOELAK1ESjlC+l01AAAAAElFTkSuQmCC" alt="掃描器 QR Code" width="130" height="130">
+<div class="share-copy"><p class="muted">同事開啟後仍需要公司登入碼。</p><div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">複製網址</button></div>
+<p class="muted"><a href="/s" target="_blank" rel="noopener noreferrer">xingwang-stock.onrender.com/s</a></p><div id="shareStatus" aria-live="polite"></div></div></div></section>
+</div></section>
+<footer class="muted">XINGWANG · 布樣盤點與庫存查詢</footer>
 </div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
 let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, missing=new Set(), saved=false;
+let fullKind='product',fullTab='stock',fullData=null,fullSort='',fullDesc=false,fullCode='',fullSession='';
+try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
 
 let lastFreshness=null, checkingFreshness=null;
@@ -135,8 +187,8 @@ function setFreshness(data){
  }else{
   panel.classList.add('stale');
   label.textContent=data?.has_synced
-    ?'上次成功同步已超過 60 分鐘，建議先前往管理頁更新庫存，再進行布樣盤點。'
-    :'尚無有效的庫存同步紀錄，請先前往管理頁同步庫存。';
+    ?'上次成功同步已超過 60 分鐘，建議先前往管理分頁更新庫存，再進行布樣盤點。'
+    :'尚無有效的庫存同步紀錄，請先前往管理分頁同步庫存。';
  }
  showFreshnessWarning();
 }
@@ -181,6 +233,7 @@ async function session(){
   $('app').classList.toggle('hidden',!d.signed_in);
   $('logout').classList.toggle('hidden',!d.signed_in);
   $('adminLink').classList.toggle('hidden',!d.signed_in);
+  if(d.signed_in && mode==='admin'){setMode('admin');}
   if(d.signed_in && mode==='sample')void checkFreshness();
   if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
  }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
@@ -189,26 +242,53 @@ $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await po
 $('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
 $('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
 function setMode(m){
+ if(!['sample','stock','full','admin'].includes(m))m='sample';
  if(mode!==m){
   current=null;missing.clear();locked=false;saved=false;
   $('result').classList.add('hidden');$('stockResult').classList.add('hidden');
+  $('fullResult').classList.add('hidden');
   $('stockFilter').value='';$('code').value='';
  }
  mode=m;
+ const managing=m==='admin';
+ $('adminTab').classList.toggle('hidden',!managing);
+ $('scanPanel').classList.toggle('hidden',managing);
+ $('adminLink').classList.toggle('active',managing);
+ $('fullKindControls').classList.toggle('hidden',m!=='full');
+ $('fullAuthNote').classList.toggle('hidden',m!=='full'||Boolean(window.Telegram?.WebApp?.initData));
  showFreshnessWarning();
  if(m==='sample')void checkFreshness();
+ if(managing)checkInventoryStatus();
  $('modeSample').classList.toggle('active',m==='sample');
  $('modeStock').classList.toggle('active',m==='stock');
+ $('modeFull').classList.toggle('active',m==='full');
  $('modeHelp').textContent=m==='sample'
-  ?'掃描系列 QR，查看每個庫存編號，勾選「無樣」。'
-  :'與 Telegram 相同的庫存查詢：合計、快速篩選、點欄名排序；不記錄布樣。';
- $('code').placeholder=m==='sample'?'或手動輸入 12-225':'輸入商品編號';
+  ?'掃描或輸入編號，檢查有樣／無樣。'
+  :m==='stock'?'只查庫存數量；顯示最後同步時間，不包含客戶資訊。'
+  :'查詢庫存、待到貨、購買紀錄及預定，不必切換到另一個畫面。';
+ $('code').placeholder=m==='sample'?'或手動輸入 12-225':m==='full'&&fullKind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
  $('result').classList.toggle('hidden',m!=='sample'||!current);
  $('stockResult').classList.toggle('hidden',m!=='stock'||!current);
- if(m==='stock' && current)renderStockResult();
- if(m==='sample' && current)renderRows();
+ $('fullResult').classList.toggle('hidden',m!=='full'||!fullData);
+ if(m==='stock'&&current)renderStockResult();
+ if(m==='sample'&&current)renderRows();
+ history.replaceState(null,'',location.pathname+(managing?'#admin':''));
 }
-$('modeSample').onclick=()=>setMode('sample');$('modeStock').onclick=()=>setMode('stock');
+$('modeSample').onclick=()=>setMode('sample');
+$('modeStock').onclick=()=>setMode('stock');
+$('modeFull').onclick=()=>setMode('full');
+$('adminLink').onclick=()=>setMode('admin');
+$('freshnessAdminBtn').onclick=()=>setMode('admin');
+$('fullProduct').onclick=()=>setFullKind('product');
+$('fullNota').onclick=()=>setFullKind('nota');
+function setFullKind(kind){
+ fullKind=kind;fullData=null;fullCode='';
+ $('fullProduct').classList.toggle('active',kind==='product');
+ $('fullNota').classList.toggle('active',kind==='nota');
+ $('fullResult').classList.add('hidden');
+ $('code').value='';$('code').placeholder=kind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
+ msg(kind==='nota'?'輸入 Nota 前綴、客戶名稱，或 @ 查預定':'輸入商品編號，取得全部分類');
+}
 // Inventory presentation matches the Telegram STOCK tab; scanner login stays separate.
 // We intentionally expose only allowlisted stock/incoming quantities, never customers,
 // sale prices or Telegram-authenticated history.
@@ -216,7 +296,7 @@ const stockColumns=[
  ['code','商品編號'],
  ['stock_rolls','匹數'],
  ['stock_meters','米數'],
- ['incoming_boxes','待到貨(箱)']
+ ['incoming_boxes','待到貨(未同步)']
 ];
 let stockSort='',stockDesc=false;
 function stockFormat(value){
@@ -227,7 +307,7 @@ function stockFormat(value){
 function stockRows(){
  if(!current||!Array.isArray(current.variants))return [];
  // Incoming-only codes cannot be claimed as available stock.
- return current.variants.filter(v=>Number(v.stock_rows||0)>0);
+ return current.variants;
 }
 function renderStockResult(){
  if(!current)return;
@@ -237,7 +317,7 @@ function renderStockResult(){
   ['商品種類',rows.length],
   ['庫存匹數',data.stock_rolls],
   ['庫存米數',data.stock_meters],
-  ['待到貨(箱)',data.incoming_boxes]
+  ['同步時間',data.freshness?.synced_at_utc?new Date(data.freshness.synced_at_utc).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false}):'—']
  ]){
   const el=document.createElement('div');el.className='stock-stat';
   const label=document.createElement('small');label.textContent=name;
@@ -245,8 +325,9 @@ function renderStockResult(){
   el.append(label,number);stats.append(el);
  }
  $('stockSeries').textContent=data.product_code;
- $('stockAsOf').textContent='查詢時間：'+(data.as_of||'即時');
- $('stockSource').textContent=data.source==='company'?'公司電腦':data.source==='home'?'家裡電腦':'V33';
+ $('stockAsOf').textContent='庫存同步：'+(data.as_of?new Date(data.as_of).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false}):'未同步')+
+  (data.freshness?.fresh?'':' · 快照可能已過期')+' · 查詢 '+(data.elapsed_ms??'—')+' ms';
+ $('stockSource').textContent=data.source==='tidb'?'庫存快照':'即時系統';
  const term=$('stockFilter').value.trim().toLocaleLowerCase();
  let list=rows.filter(r=>stockColumns.some(([field])=>String(r[field]??'').toLocaleLowerCase().includes(term)));
  if(stockSort){
@@ -293,6 +374,166 @@ function renderStockResult(){
 }
 $('stockFilter').addEventListener('input',renderStockResult);
 
+
+const fullFields={
+ stock:[['code','商品編號'],['pieces','匹數'],['meters','米數'],['reserved','預定狀態']],
+ camino:[['code','商品編號'],['container','貨櫃'],['caja','匹數'],['units','米數'],['unit_type','單位'],['eta','到貨日期']],
+ history:[['date','日期'],['nota','Nota'],['customer','客戶'],['code','商品編號'],['quantity','CAJA']],
+ reservar:[['date','日期'],['code','商品編號'],['customer','客戶'],['nota','預定單號']]
+};
+const fullTitles={stock:'庫存',camino:'待到貨',history:'歷史購買',reservar:'預定'};
+function fullTxt(v){return v==null||v===''?'—':typeof v==='number'?v.toLocaleString('en-US',{maximumFractionDigits:2}):String(v)}
+function fullSessionRemember(data){
+ if(typeof data?.miniapp_session==='string' && /^xw_[A-Za-z0-9_-]{40,80}$/.test(data.miniapp_session)){
+  fullSession=data.miniapp_session;
+  try{sessionStorage.setItem('xw_full_miniapp_session',fullSession)}catch(_){}
+ }
+}
+async function fullRequest(action,q,extra={}){
+ const initData=window.Telegram?.WebApp?.initData||'';
+ if(!initData)throw Error('完整查詢需要已授權的 Telegram 身分。一般網頁登入碼只允許盤點和快速庫存；客戶、Nota 與交易資料不能直接開放。');
+ const response=await fetch('/api/query',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  bot:'STOCK',action,q,init_data:initData,miniapp_session:fullSession,...extra
+ })});
+ const data=await response.json();fullSessionRemember(data);
+ if(!response.ok||data.ok!==true)throw Error(data.error||data.detail||'完整查詢失敗');
+ return data.data||{};
+}
+async function queryFull(code){
+ const start=performance.now();
+ const data=await fullRequest(fullKind==='nota'?'nota':'stock',code);
+ fullData=data;fullCode=code;fullTab='stock';fullSort='';fullDesc=false;
+ $('fullFilter').value='';
+ $('fullTime').textContent='本次查詢耗時 '+((performance.now()-start)/1000).toFixed(2)+' 秒';
+ return data;
+}
+function fullAddCards(cards){
+ const host=$('fullStats');host.replaceChildren();
+ for(const [label,value] of cards){
+  const box=document.createElement('div');box.className='stock-stat';
+  const small=document.createElement('small');small.textContent=label;
+  const large=document.createElement('strong');large.textContent=fullTxt(value);
+  box.append(small,large);host.append(box);
+ }
+}
+function fullTable(rows,columns){
+ const outer=document.createElement('div');outer.className='full-table';
+ const table=document.createElement('table'),thead=document.createElement('thead'),trh=document.createElement('tr');
+ for(const [key,label] of columns){
+  const th=document.createElement('th');th.textContent=label+(fullSort===key?(fullDesc?' ▼':' ▲'):'');
+  th.onclick=()=>{if(fullSort===key)fullDesc=!fullDesc;else{fullSort=key;fullDesc=false}renderFullResult(fullData)};
+  trh.append(th);
+ }
+ thead.append(trh);table.append(thead);
+ const tbody=document.createElement('tbody');
+ if(!rows.length){
+  const tr=document.createElement('tr'),cell=document.createElement('td');
+  cell.colSpan=columns.length;cell.className='full-empty';cell.textContent='沒有符合的資料';tr.append(cell);tbody.append(tr);
+ }
+ for(const row of rows){
+  const tr=document.createElement('tr');
+  for(const [key] of columns){
+   const td=document.createElement('td');
+   const value=key==='reserved'?(row.reserved?'有預定':'')
+     :key==='eta'?String(fullTxt(row.eta)).replace(/Iquique\s*,\s*Chile$/i,'').trim()
+     :fullTxt(row[key]);
+   if(key==='customer'){
+    const b=document.createElement('button');b.type='button';b.className='secondary full-customer';
+    b.textContent=value;b.title=value;b.onclick=()=>b.classList.toggle('expanded');
+    td.append(b);
+   }else td.textContent=value;
+   tr.append(td);
+  }
+  tbody.append(tr);
+ }
+ table.append(tbody);outer.append(table);return outer;
+}
+function fullRenderProduct(data){
+ const stock=Array.isArray(data.rows)?data.rows:[];
+ const all=fullTab==='stock'?stock:(Array.isArray(data[fullTab])?data[fullTab]:[]);
+ const p=stock.some(x=>x.pieces!=null)?stock.reduce((sum,x)=>sum+Number(x.pieces||0),0):null;
+ const m=stock.some(x=>x.meters!=null)?stock.reduce((sum,x)=>sum+Number(x.meters||0),0):null;
+ const cards=[['商品種類',stock.length],['庫存匹數',p],['庫存米數',m],['待到貨(匹)',data.camino_caja_total]];
+ if(fullTab==='history')cards.push(['近365天',data.history_recent_count],['最近交易',data.history_last_date]);
+ fullAddCards(cards);
+ let rows=all.filter(row=>Object.values(row).some(value=>String(value??'').toLowerCase().includes($('fullFilter').value.trim().toLowerCase())));
+ if(fullSort)rows=rows.slice().sort((x,y)=>{
+  const a=x[fullSort],b=y[fullSort],num=(typeof a==='number'&&typeof b==='number');
+  const diff=num?a-b:String(a??'').localeCompare(String(b??''),undefined,{numeric:true});
+  return fullDesc?-diff:diff;
+ });
+ $('fullCount').textContent=rows.length+' / '+all.length+' 筆';
+ const cols=fullTab==='history'&&data.price_allowed?[...fullFields.history,['price','成交單價']]:fullFields[fullTab];
+ $('fullDetails').replaceChildren(fullTable(rows,cols));
+ $('fullHistoryMore').classList.toggle('hidden',fullTab!=='history'||!Number.isInteger(data.history_next_cursor)||data.history_next_cursor >= Number(data.history_retrievable_count??data.history_total_count??0));
+ $('fullNote').textContent=fullTab==='history'&&!data.price_allowed?'成交單價僅授權管理員可見。':''; 
+}
+function fullRenderNota(data){
+ const docs=Array.isArray(data.documents)?data.documents:(data.nota?[data]:[]);
+ fullAddCards([['符合單據',docs.length],['查詢條件',fullCode]]);
+ $('fullFilterRow').classList.add('hidden');$('fullHistoryMore').classList.add('hidden');
+ const host=$('fullDetails');host.replaceChildren();
+ if(!docs.length){const div=document.createElement('div');div.className='full-empty';div.textContent='沒有符合的單據';host.append(div)}
+ for(const doc of docs){
+  const box=document.createElement('details');box.className='full-doc';
+  const summary=document.createElement('summary');
+  summary.textContent=(doc.nota?'Nota '+doc.nota:fullCode)+' · '+(doc.customer||'');
+  box.append(summary);
+  const info=document.createElement('dl');
+  for(const [label,value] of [['日期',doc.date],['客戶',doc.customer],['出貨日期',doc.shipped_at],['司機',doc.pilotero]]){
+   const wrap=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');
+   dt.textContent=label;dd.textContent=fullTxt(value);wrap.append(dt,dd);info.append(wrap);
+  }
+  box.append(info);
+  const content=document.createElement('div');
+  const rows=doc.rows||[];
+  if(rows.length)content.append(fullTable(rows,[['code','商品編號'],['caja','CAJA'],['quantity','UNT']]));
+  else{
+   const tip=document.createElement('p');tip.className='muted';tip.textContent='展開後可載入 Nota 商品明細。';
+   const btn=document.createElement('button');btn.className='secondary';btn.textContent='載入商品明細';
+   btn.onclick=async()=>{
+    btn.disabled=true;btn.textContent='讀取中…';
+    try{
+     const more=await fullRequest('nota_details',String(doc.nota||''),{customer:String(doc.customer||'').slice(0,130)});
+     if(more.nota!==String(doc.nota)||more.customer!==String(doc.customer))throw Error('單據資料不一致');
+     doc.rows=Array.isArray(more.rows)?more.rows:[];
+     content.replaceChildren(fullTable(doc.rows,[['code','商品編號'],['caja','CAJA'],['quantity','UNT']]));
+    }catch(e){tip.textContent=e.message;btn.disabled=false;btn.textContent='重試讀取'}
+   };
+   content.append(tip,btn);
+  }
+  box.append(content);host.append(box);
+ }
+ $('fullNote').textContent='顯示已授權的 Nota 資料；詳細圖片與重量可保留在原完整查詢功能中。';
+}
+function renderFullResult(data){
+ if(!data)return;
+ $('fullResult').classList.remove('hidden');
+ $('fullTitle').textContent=(fullKind==='nota'?'Nota / 客戶查詢：':'商品查詢：')+fullCode;
+ $('fullTabs').classList.toggle('hidden',fullKind==='nota');
+ $('fullFilterRow').classList.toggle('hidden',fullKind==='nota');
+ if(fullKind==='nota'){fullRenderNota(data);return}
+ for(const b of $('fullTabs').querySelectorAll('button[data-fulltab]'))b.classList.toggle('active',b.dataset.fulltab===fullTab);
+ fullRenderProduct(data);
+}
+$('fullTabs').addEventListener('click',e=>{
+ const b=e.target.closest('button[data-fulltab]');
+ if(!b)return;fullTab=b.dataset.fulltab;fullSort='';fullDesc=false;$('fullFilter').value='';
+ renderFullResult(fullData);
+});
+$('fullFilter').oninput=()=>renderFullResult(fullData);
+$('fullHistoryMore').onclick=async()=>{
+ if(!fullData||fullKind!=='product')return;
+ const cursor=Number(fullData.history_next_cursor||0);
+ const b=$('fullHistoryMore');b.disabled=true;
+ try{
+  const more=await fullRequest('history_more',fullCode,{cursor,include_older:cursor>=Number(fullData.history_recent_count||0)});
+  fullData.history=[...(fullData.history||[]),...(more.rows||[])];
+  fullData.history_next_cursor=more.next_cursor??(cursor+(more.rows||[]).length);
+  renderFullResult(fullData);
+ }catch(e){msg(e.message,'error')}finally{b.disabled=false}
+};
+
 function renderRows(){
  const body=$('rows');body.replaceChildren();
  if(!current)return;
@@ -321,7 +562,7 @@ function showResult(d){
  stockSort='';stockDesc=false;$('stockFilter').value='';
  $('dbNotice').textContent=d.db_connected?'來自 TiDB 的上次完整庫存快照；可確認保存「有樣／無樣」狀態。':(d.db_error?'TiDB 連線失敗，不能保存盤點。':'尚無可用庫存快照，不能保存盤點。');
  $('series').textContent=d.product_code;
- $('source').textContent=d.source==='tidb'?'TiDB 快照':d.source==='company'?'公司電腦':d.source==='home'?'家裡電腦':'V33';
+ $('source').textContent=d.source==='tidb'?'庫存快照':'即時系統';
  $('asof').textContent='上次成功同步（UTC）：'+(d.as_of||'未提供');
  $('totals').replaceChildren();
  for(const [name,val] of [['庫存匹數',d.stock_rolls],['庫存米數',d.stock_meters],['商品明細',(d.variants||[]).length]]){
@@ -331,19 +572,29 @@ function showResult(d){
  if(mode==='stock')renderStockResult();
 }
 async function lookup(input){
- const code=(input||'').trim();if(!valid(code)){msg('QR 內容不是有效商品編號，請檢查後重試','error');return}
+ const code=(input||'').trim();
+ const validInput=mode==='full'&&fullKind==='nota'
+   ?(code==='@'||/^\d{1,5}$/.test(code)||/^[\p{L}\p{N} .,'&/\-]{2,40}$/u.test(code))
+   :valid(code);
+ if(!validInput){msg('查詢編號或條件格式不正確，請檢查後重試','error');return}
  if(busy)return;
  busy=true;locked=true;$('code').value=code;$('queryBtn').disabled=true;
  try{
-  if(mode==='sample'){
-   const fresh=await checkFreshness();
-   if(!fresh?.fresh)throw Object.assign(new Error('庫存快照已超過 1 小時或無法確認。請先到管理頁更新庫存，再重新檢查。'),{status:409});
+  if(mode==='full'){
+   const data=await queryFull(code);
+   renderFullResult(data);
+   msg('完整查詢完成：'+code,'good');
+  }else{
+   if(mode==='sample'){
+    const fresh=await checkFreshness();
+    if(!fresh?.fresh)throw Object.assign(new Error('庫存快照已超過 1 小時或無法確認。請先到管理分頁更新庫存。'),{status:409});
+   }
+   msg(mode==='sample'?'正在查詢布樣盤點：'+code:'正在快速查詢庫存：'+code);
+   const d=await post(mode==='sample'?'/scanner/api/sample':'/scanner/api/quick',{code});
+   showResult(d);msg('查詢完成：'+code+(mode==='stock'?' · 速度 '+d.elapsed_ms+' ms':''),'good');
   }
-  msg(mode==='sample'?'正在查詢 TiDB 布樣與庫存快照：'+code:'正在透過 V33 查即時庫存：'+code);
-  const d=await post(mode==='sample'?'/scanner/api/sample':'/scanner/api/stock',{code});
-  showResult(d);msg('查詢完成：'+code,'good');
- }catch(e){current=null;$('result').classList.add('hidden');$('stockResult').classList.add('hidden');locked=false;
-  if(mode==='sample' && e.status===409)void checkFreshness();
+ }catch(e){current=null;fullData=null;$('result').classList.add('hidden');$('stockResult').classList.add('hidden');$('fullResult').classList.add('hidden');locked=false;
+  if(mode==='sample'&&e.status===409)void checkFreshness();
   msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');
   if(e.status===401)await session();
  }finally{busy=false;$('queryBtn').disabled=false}
@@ -367,9 +618,9 @@ async function stopCamera(){
 }
 $('cameraStart').onclick=startCamera;$('cameraStop').onclick=stopCamera;
 function nextScan(){
- current=null;missing.clear();locked=false;saved=false;$('code').value='';$('result').classList.add('hidden');$('stockResult').classList.add('hidden');$('stockFilter').value='';msg(running?'可以繼續掃下一張，鏡頭不用關閉。':'請掃描下一張或手動輸入編號。'); 
+ current=null;fullData=null;missing.clear();locked=false;saved=false;$('code').value='';$('result').classList.add('hidden');$('stockResult').classList.add('hidden');$('fullResult').classList.add('hidden');$('stockFilter').value='';msg(running?'可以繼續掃下一張，鏡頭不用關閉。':'請掃描下一張或手動輸入編號。'); 
 }
-$('nextBtn').onclick=nextScan;$('stockNextBtn').onclick=nextScan;
+$('nextBtn').onclick=nextScan;$('stockNextBtn').onclick=nextScan;$('fullNext').onclick=nextScan;
 $('saveBtn').onclick=async()=>{
  if(!current?.db_connected||!current?.scan_id||saved)return;
  const b=$('saveBtn');b.disabled=true;
@@ -384,5 +635,87 @@ $('copyBtn').onclick=async()=>{
  try{await navigator.clipboard.writeText(lines.join('\n'));msg('清單已複製；'+(saved?'已保存 TiDB。':'尚未保存 TiDB。'),'good')}
  catch(_){msg(lines.join('\n'),'good')}
 };
+const scannerShareURL=location.origin+'/s';
+async function copyScannerURL(){try{await navigator.clipboard.writeText(scannerShareURL);$('shareStatus').textContent='已複製網址';}catch(_){window.prompt('複製這個入口網址',scannerShareURL)}}
+$('copyScannerBtn').onclick=copyScannerURL;
+$('shareScannerBtn').onclick=async()=>{if(navigator.share){try{await navigator.share({title:'XINGWANG 掃描器',url:scannerShareURL});$('shareStatus').textContent='已開啟分享選單';}catch(e){if(e?.name!=='AbortError')await copyScannerURL()}}else await copyScannerURL()};
+$('dbSetupBtn').onclick=async()=>{
+ const b=$('dbSetupBtn');b.disabled=true;$('dbSetupMsg').textContent='正在檢查 TiDB...';
+ try {
+  const data=await post('/scanner/api/db/setup');
+  $('dbSetupMsg').textContent='TiDB 已連線，資料表 '+data.tables.length+' 張。庫存 '+data.stock_count+' 筆；布樣記錄 '+data.sample_count+' 筆。';
+ } catch(e) {$('dbSetupMsg').textContent=e.message}
+ finally {b.disabled=false}
+};
+
+
+let inventoryPolling=false;
+async function inventoryRefresh(){
+ if(!inventoryPolling)return;
+ try {
+  const r=await fetch('/scanner/api/inventory/status',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)throw new Error('Unable to read inventory sync status');
+  const d=await r.json(), j=d.job||{}, last=d.last_success||{};
+  let state='';
+  if(j.state==='reading')state='正在透過 本機 讀取本機 Flask 庫存…';
+  else if(j.state==='writing'){
+    const done=Number(j.processed||0),total=Number(j.total_changes||0);
+    const phase=j.phase||'connecting';
+    const phaseText={
+      connecting:'正在連接 TiDB',
+      comparing:'正在準備庫存快照',
+      writing:'正在批次寫入 TiDB',
+      committing:'新庫存已全部驗證，正在切換正式資料表',
+      finished:'寫入完成'
+    };
+    state=(phaseText[phase]||'正在同步')+
+      (phase==='writing'&&total?'：'+done+' / '+total+'（'+Math.floor(done/total*100)+'%）':'')+
+      (j.snapshot_count?'｜總商品 '+j.snapshot_count+' 筆':'');
+  }
+  else if(j.state==='failed')state='同步失敗：'+(j.error||'請檢查 Render 日誌');
+  else if(j.state==='success'){
+    const result=j.result||{};
+    state=result.mode==='replace'
+      ?'本次完整庫存已成功替換：'+result.sku_count+' 筆（舊快照 '+result.replaced_old+' 筆）'
+      :'本次同步成功。';
+    const t=result.timings_ms;
+    if(t)state+='\n耗時：本機讀取與傳送 '+(t.bridge/1000).toFixed(1)+
+      ' 秒｜TiDB 寫入 '+(t.database/1000).toFixed(1)+
+      ' 秒｜總計 '+(t.total/1000).toFixed(1)+' 秒';
+  }
+  const b=$('inventoryStartBtn');b.disabled=j.state==='reading'||j.state==='writing';
+  let previous=last.pending?'本次寫入尚未提交；成功時間將在完成後更新':'尚無成功紀錄';
+  if(last.has_synced){
+   const time=new Date(last.synced_at_utc);
+   const dt=isNaN(time.getTime())?last.synced_at_utc:
+     time.toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false});
+   previous='最後成功：'+dt+'（智利時間）｜'+last.sku_count+' 筆｜新增 '+last.inserted+
+             '｜更新 '+last.updated+'｜停用 '+last.deactivated;
+  }
+  const breakdown=last.stock_breakdown;
+  if(last.has_synced && breakdown && Number.isFinite(breakdown.active)){
+    previous+='\n實際庫存分類（依 SUM(STOCK)）：正數 '+breakdown.positive+
+      '｜零庫存 '+breakdown.zero+
+      '｜負庫存 '+breakdown.negative+
+      '｜NULL '+breakdown.null+
+      '｜有效總筆數 '+breakdown.active;
+  }
+  $('inventoryStatusText').textContent=(state?state+'\n':'')+previous;
+  if(j.state==='reading'||j.state==='writing')setTimeout(inventoryRefresh,3000);
+  else inventoryPolling=false;
+ }catch(e){inventoryPolling=false;$('inventoryStatusText').textContent='無法取得同步狀態：'+e.message}
+}
+function checkInventoryStatus(){
+ inventoryPolling=true;inventoryRefresh();
+}
+$('inventoryStartBtn').onclick=async()=>{
+ const b=$('inventoryStartBtn');b.disabled=true;
+ $('inventoryStatusText').textContent='正在向 本機 發出庫存同步指令…';
+ try{await post('/scanner/api/inventory/start');checkInventoryStatus()}
+ catch(e){b.disabled=false;$('inventoryStatusText').textContent='無法開始：'+e.message}
+};
+
+
+if(location.hash==='#admin')mode='admin';
 session();
 </script></body></html>
