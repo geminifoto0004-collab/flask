@@ -704,9 +704,9 @@ body:has(#cartWorkspace:not(.hidden)) main{padding:0 0 calc(93px + env(safe-area
  position:fixed;inset:auto;left:50%;top:50%;transform:translate(-50%,-50%);
  z-index:90;box-sizing:border-box;width:min(430px,calc(100vw - 24px));
  max-width:none;max-height:calc(100dvh - 28px);min-height:0;
- display:flex!important;flex-direction:column;align-items:stretch;overflow:auto;
- padding:52px 12px 12px;margin:0;border:1px solid var(--stroke);
- border-radius:16px;background:var(--paper);box-shadow:0 16px 50px #24101733;
+ display:flex!important;flex-direction:column;align-items:stretch;overflow:auto!important;
+ padding:52px 12px 12px!important;margin:0;border:1px solid var(--stroke)!important;
+ border-radius:16px!important;background:var(--paper)!important;box-shadow:0 16px 50px #24101733!important;
 }
 #scanPanel.cc-cart-camera-active .cc-scan-controls,
 #scanPanel.cc-cart-camera-active #message{display:none!important}
