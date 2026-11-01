@@ -179,11 +179,15 @@ def get_full_mirror_state() -> dict:
 
     state['active_target'] = active_target
     state['mirror_needs_sync'] = False
+    state['mirror_verified'] = False
+    state['mirror_status'] = 'disabled'
     if not mirror_enabled():
         return state
 
     mirror_target = other_target(active_target)
+    state['mirror_target'] = mirror_target
     if not target_configured(mirror_target, require_database=False):
+        state['mirror_status'] = 'not_configured'
         return state
 
     try:
@@ -195,12 +199,15 @@ def get_full_mirror_state() -> dict:
     except Exception as exc:
         state['mirror_target'] = mirror_target
         state['mirror_reachable'] = False
+        state['mirror_status'] = 'unavailable'
         state['mirror_error'] = f'{type(exc).__name__}: {exc}'[:240]
         return state
 
     state['mirror_target'] = mirror_target
     state['mirror_reachable'] = True
     state['mirror_snapshot_hash'] = mirror_state.get('snapshot_hash')
+    state['mirror_verified'] = bool(state.get('snapshot_hash') and state.get('snapshot_hash') == mirror_state.get('snapshot_hash'))
+    state['mirror_status'] = 'verified' if state['mirror_verified'] else 'different'
     if mirror_state.get('snapshot_hash') != state.get('snapshot_hash'):
         state['active_snapshot_hash'] = state.get('snapshot_hash')
         state['mirror_needs_sync'] = True
@@ -457,3 +464,4 @@ def replace_full_mirror(tables: Any, snapshot_hash: str, source_watermark=None,
         raise
     finally:
         conn.close()
+

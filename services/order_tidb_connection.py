@@ -109,15 +109,32 @@ def get_order_tidb_connection_for_target(target):
 
 
 def _select_active_connection():
-    preferred = preferred_target()
+    import tidb_integrity as integrity
+    preferred = integrity.preferred('order', preferred_target())
     errors = []
     allow = failover_enabled() or selected_target() == 'AUTO'
     for target in target_candidates(preferred, allow_failover=allow):
         if not target_configured(target, require_database=False):
             continue
+        if integrity.target_blocked(target):
+            errors.append((target, RuntimeError('quota_cooldown: ORDER target temporarily unavailable')))
+            continue
+        if target != preferred and not integrity.can_promote(target, 'order'):
+            errors.append((target, RuntimeError('standby_not_verified: ORDER backup is unconfirmed')))
+            continue
+        connection = None
         try:
-            return get_order_tidb_connection_for_target(target), target
+            connection = get_order_tidb_connection_for_target(target)
+            cursor = connection.cursor()
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+            connection.rollback()
+            return connection, target
         except Exception as exc:
+            integrity.target_failed(target, exc)
+            if connection is not None:
+                try: connection.close()
+                except Exception: pass
             errors.append((target, exc))
     if errors:
         target, exc = errors[-1]
@@ -134,16 +151,27 @@ class _DualOrderCursor:
         return getattr(self._active, name)
 
     def execute(self, sql, params=None):
-        if params is None:
-            result = self._active.execute(sql)
-        else:
-            result = self._active.execute(sql, params)
+        try:
+            if params is None:
+                result = self._active.execute(sql)
+            else:
+                result = self._active.execute(sql, params)
+        except Exception as error:
+            import tidb_integrity
+            tidb_integrity.target_failed(self._connection.active_target, error)
+            raise
         if _is_mutation(sql):
+            import tidb_integrity
+            tidb_integrity.invalidate()
+            self._connection._written = True
             self._connection._mirror_execute(sql, params, many=False)
         return result
 
     def executemany(self, sql, params_list):
         if _is_mutation(sql):
+            import tidb_integrity
+            tidb_integrity.invalidate()
+            self._connection._written = True
             rows = params_list if isinstance(params_list, (list, tuple)) else list(params_list)
             result = self._active.executemany(sql, rows)
             self._connection._mirror_execute(sql, rows, many=True)
@@ -153,6 +181,7 @@ class _DualOrderCursor:
 
 class _DualOrderConnection:
     def __init__(self, active, active_target, mirror_target):
+        self._written = False
         self._active = active
         self.active_target = str(active_target or '').upper()
         self.mirror_target = str(mirror_target or '').upper()
@@ -215,12 +244,21 @@ class _DualOrderConnection:
             self._mark_failed(exc)
 
     def commit(self):
-        result = self._active.commit()
+        try:
+            result = self._active.commit()
+        except Exception as error:
+            import tidb_integrity
+            tidb_integrity.target_failed(self.active_target, error)
+            raise
         if self._mirror is not None and not self._mirror_failed:
             try:
                 self._mirror.commit()
             except Exception as exc:
                 self._mark_failed(exc)
+        if self._written:
+            import tidb_integrity
+            tidb_integrity.note_writer(self.active_target, 'order')
+            self._written = False
         return result
 
     def rollback(self):
@@ -261,3 +299,4 @@ def get_order_tidb_connection():
 
 def order_database_name():
     return _DB_NAME
+

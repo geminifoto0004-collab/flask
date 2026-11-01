@@ -188,7 +188,14 @@ def _ensure_order_cloud_tables():
 def order_cloud_health():
     try:
         _ensure_order_cloud_tables()
-        return jsonify({"ok": True, "service": "order-cloud", "phase": 4, "assets": "direct-b2-batch-with-prebuilt-thumbnails"})
+        import tidb_integrity
+        from tidb_targets import selected_target, target_configured, mirror_enabled
+        integrity = tidb_integrity.snapshot()
+        return jsonify({"ok": True, "service": "order-cloud", "phase": 4, "assets": "direct-b2-batch-with-prebuilt-thumbnails",
+                        "tidb": {"selected_target": selected_target(), "mirror_enabled": mirror_enabled(),
+                                 "configured_targets": [target for target in ('TIDB1','TIDB2') if target_configured(target)],
+                                 "state": integrity.get('state'), "verified": integrity.get('verified'),
+                                 "checked_at_epoch": integrity.get('checked_at_epoch')}})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -492,3 +499,4 @@ def order_cloud_sync_orders_fast_finish():
     except Exception as exc:
         print("[ORDER Fast Restore] finalization failure: " + type(exc).__name__ + ": " + str(exc), flush=True)
         return jsonify({"ok": False, "error": str(exc)}), 500
+
