@@ -137,6 +137,221 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 .full-empty{padding:14px;color:#64748b}
 .full-customer{max-width:120px;overflow:hidden;text-overflow:ellipsis}
 .full-customer.expanded{white-space:normal;max-width:360px;overflow-wrap:anywhere}
+
+/* UNSLOP: compact, readable responsive transaction rows.
+   Only UI for HISTORY / RESERVAR. Desktop stays the original sortable table. */
+@media(max-width:700px){
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table{
+    max-height:none;
+    overflow:visible;
+    min-width:0;
+    width:100%;
+    background:transparent;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table table,
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table thead,
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table tbody{
+    display:block;
+    width:100%;
+    min-width:0;
+  }
+  /* Keep every original clickable table heading available for sorting. */
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table thead tr{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:5px 2px 10px;
+    overflow-x:auto;
+    scrollbar-width:thin;
+    -webkit-overflow-scrolling:touch;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table thead th{
+    display:inline-flex;
+    align-items:center;
+    flex:none;
+    box-sizing:border-box;
+    min-height:32px;
+    padding:6px 9px;
+    background:#fff;
+    border:1px solid #D9CDD2;
+    border-radius:16px;
+    font-size:12px;
+    font-weight:700;
+    color:#4A3840;
+    line-height:1.2;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table tbody tr{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:9px 12px;
+    align-items:center;
+    width:100%;
+    box-sizing:border-box;
+    padding:13px 14px;
+    background:#fff;
+    border-bottom:1px solid #EBE2E5;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table tbody td{
+    box-sizing:border-box;
+    display:flex;
+    align-items:center;
+    min-width:0;
+    width:auto;
+    border:0;
+    padding:0;
+    color:#241017;
+    font-size:13px;
+    line-height:1.3;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    font-variant-numeric:tabular-nums;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table tbody td.full-empty{
+    grid-column:1 / -1;
+    grid-row:1;
+    padding:14px 0;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table tbody td:nth-child(3){
+    grid-column:1 / -1;
+    grid-row:2;
+    display:flex;
+    align-items:center;
+    gap:9px;
+    min-width:0;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table tbody td:nth-child(3)::before{
+    content:"客戶";
+    flex:0 0 auto;
+    color:#806E77;
+    font-size:12px;
+    font-weight:600;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table .full-customer,
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table .full-customer.expanded{
+    box-sizing:border-box;
+    display:block;
+    min-width:0;
+    width:100%;
+    max-width:none;
+    min-height:38px;
+    margin:0;
+    padding:8px 11px;
+    border:1px solid #D9CDD2;
+    border-radius:10px;
+    background:#F8F4F5;
+    color:#241017;
+    font-size:14px;
+    font-weight:700;
+    text-align:left;
+    line-height:1.4;
+    white-space:normal;
+    text-overflow:clip;
+    overflow:visible;
+    overflow-wrap:anywhere;
+    word-break:normal;
+    box-shadow:none;
+  }
+  /* History: SKU + CAJA / customer full width / date + Nota. */
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(4){
+    grid-row:1;grid-column:1;
+    font-size:17px;font-weight:800;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(5){
+    grid-row:1;grid-column:2;
+    font-size:16px;font-weight:800;
+    white-space:nowrap;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(5)::before{
+    content:"CAJA";
+    margin-right:6px;
+    font-size:11px;
+    color:#806E77;
+    font-weight:600;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(1){
+    grid-row:3;grid-column:1;
+    color:#76656D;
+    font-size:12px;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(2){
+    grid-row:3;grid-column:2;
+    color:#76656D;
+    font-size:12px;
+    justify-content:flex-end;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(2)::before{
+    content:"Nota";
+    margin-right:5px;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(6){
+    grid-column:1 / -1;
+    grid-row:4;
+    font-size:12px;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(6)::before{
+    content:"成交單價";
+    margin-right:8px;
+    color:#806E77;
+  }
+  /* Reservations: SKU + date / customer full width / reservation note. */
+  #fullResult[data-full-tab="reservar"] .full-table tbody td:nth-child(2){
+    grid-row:1;grid-column:1;
+    font-size:17px;font-weight:800;
+  }
+  #fullResult[data-full-tab="reservar"] .full-table tbody td:nth-child(1){
+    grid-row:1;grid-column:2;
+    color:#76656D;
+    font-size:12px;
+    white-space:nowrap;
+  }
+  #fullResult[data-full-tab="reservar"] .full-table tbody td:nth-child(4){
+    grid-row:3;grid-column:1 / -1;
+    color:#76656D;
+    font-size:12px;
+  }
+  #fullResult[data-full-tab="reservar"] .full-table tbody td:nth-child(4)::before{
+    content:"預訂單號";
+    margin-right:8px;
+    color:#806E77;
+  }
+  /* Existing stat cards are extra content not present in CC's static Stock mockup. */
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) #fullStats{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+    padding:0 14px;
+    margin:10px 0;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) #fullStats .stock-stat{
+    min-width:0;
+    margin:0;
+    padding:9px 11px;
+    background:#fff;
+    border-radius:12px;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) #fullStats .stock-stat small{
+    color:#806E77;
+    margin-bottom:4px;
+    font-size:12px;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) #fullStats .stock-stat strong{
+    font-size:19px;
+    line-height:1.25;
+    color:#4E1127;
+    overflow-wrap:anywhere;
+  }
+  /* Preserve the existing empty-result message without creating blank grid rows. */
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table tbody tr:has(> td.full-empty){
+    display:block;
+  }
+  #fullResult:is([data-full-tab="history"],[data-full-tab="reservar"]) .full-table tbody td.full-empty{
+    display:block;
+    width:100%;
+    padding:14px 0;
+    color:#806E77;
+  }
+}
+
 .headerbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .pill{background:#eff5fc;color:#175da5;font-size:11px;border-radius:15px;padding:5px 9px}
 .share-layout{display:flex;align-items:center;gap:15px}.share-layout img{width:130px;height:130px;object-fit:contain;border:1px solid #d8e1eb;padding:7px;border-radius:10px}
