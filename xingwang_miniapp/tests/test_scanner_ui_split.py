@@ -11,7 +11,7 @@ def test_two_tabs_and_inpage_management():
             "inventoryStartBtn","shareScannerBtn"):
   assert 'id="'+id+'"' in s
  assert 'id="modeStock"' not in s
- assert "('adminLink').onclick=()=>setMode('admin')" in s
+ assert "('adminLink').onclick=()=>setMode(mode==='admin'?lastWorkMode:'admin')" in s
 def test_admin_old_alias():
  b=(ROOT/"scanner_backend.py").read_text("utf-8")
  assert 'RedirectResponse(url="/scanner#admin"' in b

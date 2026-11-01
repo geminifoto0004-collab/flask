@@ -35,4 +35,4 @@ def test_compact_scanner_statistics_and_missing_meter_sums():
  assert "function meterForSum(value)" in UI
  assert "if(!s||s==='—'||s==='-'||s==='–')return 0" in UI
  assert 'id="samplePositiveCount"' in UI and 'id="sampleAllCount"' in UI
- assert 'post(\'/scanner/api/save\',{scan_id:current.scan_id,present,missing})' in UI
+ assert 'post(\'/scanner/api/save\',{scan_id:current.scan_id,present,missing,allow_stale:staleAccepted()})' in UI

@@ -16,5 +16,5 @@ def test_continuous_scanning_after_saving():
  assert "code===current?.product_code" in ui
  assert "lastQrCode=code;" in ui
  assert "void lookup(code);" in ui
- assert "if(mode==='sample'&&current&&current.product_code!==code&&sampleDirty&&!saved&&!confirm(" in ui
+ assert "if(mode==='sample'&&current&&current.product_code!==code&&sampleDirty&&!saved&&!(await xwConfirm(" in ui
  assert '完成一張後按下一張' not in ui

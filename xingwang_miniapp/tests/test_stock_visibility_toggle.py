@@ -10,11 +10,11 @@ def test_sample_positive_and_all():
  assert "aria-pressed" in s
 def test_save_only_visible():
  s=(ROOT/"scanner.html").read_text("utf-8")
- assert "post('/scanner/api/save',{scan_id:current.scan_id,present,missing})" in s
+ assert "post('/scanner/api/save',{scan_id:current.scan_id,present,missing,allow_stale:staleAccepted()})" in s
  assert "const visible=visibleSampleRows();" in s
  assert "cb.onchange=" in s
  backend=(ROOT/"scanner_backend.py").read_text("utf-8")
  assert "tuple(v for v in skus if v in confirmed)" in backend
 def test_snapshot_still_has_all_skus():
  s=(ROOT/"scanner_tidb.py").read_text("utf-8")
- assert 'def read_sample_from_snapshot(code):' in s
+ assert 'def read_sample_from_snapshot(code, allow_stale=False):' in s

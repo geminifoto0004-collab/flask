@@ -13,8 +13,8 @@ def test_cache_and_save():
  s=(ROOT/'scanner.html').read_text(encoding='utf-8')
  assert "current.product_code===sharedProductCode" in s
  assert "fullCode===(fullKind==='nota'?notaInput:sharedProductCode)" in s
- assert "post('/scanner/api/sample',{code})" in s
- assert "post('/scanner/api/save',{scan_id:current.scan_id,present,missing})" in s
+ assert "post('/scanner/api/sample',{code,allow_stale:staleAccepted(fresh)})" in s
+ assert "post('/scanner/api/save',{scan_id:current.scan_id,present,missing,allow_stale:staleAccepted()})" in s
  assert 'id="dbSetupBtn"' in s
 
 def test_filter_counts_and_scope_badge():
