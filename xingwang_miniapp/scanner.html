@@ -1498,14 +1498,7 @@ body.cc-sample-detail #result{
   <div class="cart-times"><div><span>打开 / Abierto</span><strong id="cartOpenedAt">—</strong></div><div><span>确认 / Confirmado</span><strong id="cartConfirmedAt">—</strong></div></div>
   <div class="cart-spread"><span class="muted">版本 / Versión <strong id="cartVersionLabel">—</strong></span><button type="button" id="cartVersionBtn" class="secondary hidden">V1</button></div>
   <div id="cartConfirmedBox" class="cart-confirmed-box hidden"></div>
-  <div class="cart-customer-editor">
-   <label for="cartCustomerName">客户 / Cliente</label>
-   <div class="cart-customer-input-row">
-    <input id="cartCustomerName" type="text" maxlength="80" placeholder="客户名称 / Nombre" autocomplete="off">
-    <button id="cartEditName" type="button" aria-label="保存客户名称 / Guardar nombre" title="保存 / Guardar"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4 10-10"/></svg></button>
-   </div>
-  </div>
-  <div class="cart-meta-actions"><button id="cartReload" class="secondary" type="button">↻ 更新 / Actualizar</button><button id="cartCopy" class="secondary" type="button">复制 / Copiar</button></div>
+  <div class="cart-meta-actions"><button id="cartCopy" class="secondary" type="button" aria-label="复制商品编号和匹数两列 / Copiar SKU y rollos en dos columnas"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg> <span>复制 Excel / Copiar</span></button></div>
   <div id="cartStockNote" class="cart-hint hidden"></div>
  </div>
  <div id="cartScanAction"><button id="cartScanNow" type="button" aria-label="继续扫码 / Seguir escaneando"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M4 12h16"/></svg></button></div>
@@ -1533,6 +1526,10 @@ body.cc-sample-detail #result{
  </div>
 </div>
  <div id="cartMessage" aria-live="polite"></div>
+ <div id="cartUndoBar" class="hidden" role="status" aria-live="polite">
+  <span id="cartUndoText">已删除 / Eliminado</span>
+  <button id="cartUndoButton" type="button">恢复 / Deshacer</button>
+ </div>
 </section>
 <section id="fullResult" class="panel hidden" aria-label="完整查詢結果">
 <button id="ccStockBack" class="cc-detail-back" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button>
