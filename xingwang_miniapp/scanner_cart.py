@@ -1038,7 +1038,7 @@ async def cart_note_get(request: Request):
 async def cart_note_save(request: Request):
     staff._check_origin(request)
     staff._require(request)
-    body = await _body(request, limit=4096)
+    body = await _body(request, limit=8192)
     note, rev = body.get("note"), body.get("revision")
     if (not isinstance(note, str) or len(note) > 1200 or
         type(rev) is not int or rev < 0 or chr(0) in note):
