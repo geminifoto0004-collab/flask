@@ -659,6 +659,8 @@ body:has(#cartWorkspace:not(.hidden)) main{padding:0 0 calc(93px + env(safe-area
 .cc-cart-create{background:#fff;border-radius:14px;padding:14px;margin:11px 0 16px}
 .cc-cart-create-input,.cc-cart-filter{display:flex;align-items:center;gap:7px;padding:0 12px;height:48px;border-radius:12px;background:#fff;border:1px solid var(--stroke)}
 .cc-cart-create-input input,.cc-cart-filter input{padding:0;border:0;background:transparent;flex:1;height:44px;min-width:0;box-shadow:none}
+.cc-cart-create-input:focus-within,.cc-cart-filter:focus-within{border-color:var(--wine);box-shadow:0 0 0 2px #6A1B3619}
+.cc-cart-create-input input:focus,.cc-cart-filter input:focus,.cc-cart-create-input input:focus-visible,.cc-cart-filter input:focus-visible{outline:none;box-shadow:none;border:0}
 .cc-cart-create-input svg,.cc-cart-filter svg{color:var(--muted);flex:none}
 #cartWorkspace #cartCreateBtn{;margin:10px 0 0!important;display:flex;align-items:center;justify-content:center;gap:7px}
 #cartStaffList{padding-top:5px!important}
