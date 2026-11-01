@@ -92,6 +92,8 @@ _CART_COLUMNS = {
     "confirmed_at": "DATETIME(6) NULL",
     "confirmed_revision": "INT NOT NULL DEFAULT 0",
     "confirmed_version": "INT NOT NULL DEFAULT 0",
+    "deleted_prev_state": "VARCHAR(12) NULL",
+    "deleted_until": "DATETIME(6) NULL",
 }
 
 
@@ -301,6 +303,7 @@ def _list_carts():
                 "COUNT(i.sku),COALESCE(SUM(i.qty),0),c.guest_opened_at,c.confirmed_at,"
                 "c.confirmed_version "
                 "FROM xw_carts c LEFT JOIN xw_cart_items i ON i.cart_id=c.id "
+                "WHERE c.state<>\'cancelled\' "
                 "GROUP BY c.id,c.short_code,c.customer_name,c.state,c.revision,"
                 "c.updated_at,c.guest_opened_at,c.confirmed_at,c.confirmed_version "
                 "ORDER BY c.updated_at DESC LIMIT 60"
@@ -314,6 +317,72 @@ def _list_carts():
                  "confirmed_at": row[9].isoformat()+"Z" if row[9] else None,
                  "confirmed_version": int(row[10])}
                 for row in rows]
+    finally:
+        conn.close()
+
+
+
+def _soft_delete_cart(cart_id, revision):
+    """Tombstone a cart without deleting items, confirmations or history."""
+    conn = _db()
+    try:
+        now = utcnow()
+        deadline = now + timedelta(seconds=8)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT revision,state FROM xw_carts WHERE id=%s FOR UPDATE", (cart_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Cart not found")
+            if int(row[0]) != revision or row[1] == "cancelled":
+                raise HTTPException(409, "Cart modified or already deleted")
+            if row[1] not in ("open", "ready"):
+                raise HTTPException(409, "This cart cannot be deleted")
+            cur.execute(
+                "UPDATE xw_carts SET state='cancelled',revision=revision+1,"
+                "deleted_prev_state=%s,deleted_until=%s,updated_at=%s,"
+                "guest_generation=guest_generation+1,guest_hash=NULL,guest_expires=NULL "
+                "WHERE id=%s",
+                (row[1], deadline, now, cart_id)
+            )
+        conn.commit()
+        return {"cart_id": cart_id, "revision": revision + 1,
+                "undo_until": deadline.isoformat() + "Z"}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _undo_delete_cart(cart_id, revision):
+    """Undo only inside the server-enforced 8-second window."""
+    conn = _db()
+    try:
+        now = utcnow()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT revision,state,deleted_prev_state,deleted_until "
+                "FROM xw_carts WHERE id=%s FOR UPDATE", (cart_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Cart not found")
+            if int(row[0]) != revision or row[1] != "cancelled":
+                raise HTTPException(409, "Cart changed since deletion")
+            if row[2] not in ("open", "ready") or not row[3] or now > row[3]:
+                raise HTTPException(410, "Undo window expired")
+            cur.execute(
+                "UPDATE xw_carts SET state=%s,revision=revision+1,"
+                "deleted_prev_state=NULL,deleted_until=NULL,updated_at=%s WHERE id=%s",
+                (row[2], now, cart_id)
+            )
+        conn.commit()
+        return _load(conn, cart_id)
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -732,7 +801,7 @@ async def open_cart(request: Request):
         else:
             cart_id, _ = await asyncio.to_thread(_authorize, conn, request, target)
         cart = await asyncio.to_thread(_load, conn, cart_id)
-        if not cart:
+        if not cart or cart["state"] == "cancelled":
             raise HTTPException(404, "Cart not found")
         return {"ok": True, "cart": cart}
     except Exception as exc:
@@ -868,6 +937,36 @@ async def cart_item(request: Request):
     finally:
         if conn:
             conn.close()
+
+
+@router.post("/scanner/api/cart/delete")
+async def cart_delete(request: Request):
+    staff._check_origin(request)
+    staff._require(request)
+    body = await _body(request)
+    revision = body.get("revision")
+    if type(revision) is not int or revision < 0:
+        raise HTTPException(400, "Invalid revision")
+    try:
+        result = await asyncio.to_thread(_soft_delete_cart, _id(body), revision)
+        return {"ok": True, **result}
+    except Exception as exc:
+        _error_safe(exc, "DELETE")
+
+
+@router.post("/scanner/api/cart/undo-delete")
+async def cart_undo_delete(request: Request):
+    staff._check_origin(request)
+    staff._require(request)
+    body = await _body(request)
+    revision = body.get("revision")
+    if type(revision) is not int or revision < 0:
+        raise HTTPException(400, "Invalid revision")
+    try:
+        cart = await asyncio.to_thread(_undo_delete_cart, _id(body), revision)
+        return {"ok": True, "cart": cart}
+    except Exception as exc:
+        _error_safe(exc, "UNDO_DELETE")
 
 
 @router.post("/scanner/api/cart/name")
