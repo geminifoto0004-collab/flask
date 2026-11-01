@@ -116,7 +116,7 @@ function cartApplyRole(){
 async function cartBootstrap(role,guestId){
  const changed=role!==cartRole;
  cartRole=role;
- if(changed){cartData=null;cartSearch=null;cartGuestCode='';cartRecent=[];}
+ if(changed){cartData=null;cartSearch=null;cartGuestCode='';cartRecent=[];lastQrCode='';}
  cartApplyRole();
  if(role==='guest'){
   // Drop staff-only query results when a company phone becomes a guest device.
@@ -166,14 +166,14 @@ function cartRenderList(){
  }
 }
 async function cartOpen(id){
- if(cartBusy)return;cartBusy=true;
+ if(cartBusy)return;cartBusy=true;lastQrCode='';
  try{const d=await post('/scanner/api/cart/open',{cart_id:id});cartGuestCode='';cartSearch=null;cartSetData(d.cart);cartMsgClean();
   if(cartRole==='staff')history.replaceState(null,'',location.pathname+'?cart='+id);}
  catch(e){cartNotice(e.message,true)}
  finally{cartBusy=false;cartRender()}
 }
 async function cartCreate(){
- if(cartBusy)return;cartBusy=true;$('cartCreateBtn').disabled=true;
+ if(cartBusy)return;cartBusy=true;lastQrCode='';$('cartCreateBtn').disabled=true;
  try{
   const d=await post('/scanner/api/cart/create',{name:$('cartNewName').value.trim()});
   cartGuestCode=d.guest_code;cartSearch=null;cartSetData(d.cart);
@@ -255,7 +255,7 @@ $('cartNav').onclick=()=>{
 };
 $('cartCreateBtn').onclick=cartCreate;
 $('cartFilter').oninput=cartRenderList;
-$('cartBack').onclick=()=>{cartData=null;cartSearch=null;cartGuestCode='';history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()};
+$('cartBack').onclick=()=>{cartData=null;cartSearch=null;cartGuestCode='';lastQrCode='';history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()};
 $('cartShareBtn').onclick=cartShare;
 $('cartGuestCode').title='Tap to copy the temporary code';
 $('cartGuestCode').onclick=async()=>{

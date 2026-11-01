@@ -364,7 +364,9 @@ function setMode(m){
  if(cartRole==='guest'&&m!=='cart')m='cart';
  if(mode==='full'&&fullKind==='nota')notaInput=$('code').value;
  else if(valid($('code').value.trim()))sharedProductCode=normalizeProductCode($('code').value);
+ const wasMode=mode;
  mode=m;
+ if(m==='cart'&&wasMode!=='cart')lastQrCode='';
  const managing=m==='admin';
  if(!managing)lastWorkMode=m;
  const nav=$('adminLink');nav.dataset.back=String(managing);
