@@ -173,7 +173,7 @@ def install(blueprint):
         _, error = _order_cloud_auth_source()
         if error: return error
         from services.order_desktop_grant import authorized
-        if not authorized():
+        if not authorized('replicas:verify-repair'):
             return jsonify({'ok': False, 'error': 'desktop_pairing_required'}), 401
         repair = request.method == 'POST' and (request.get_json(silent=True) or {}).get('repair') is True
         expected = (request.get_json(silent=True) or {}).get('expected') if request.method == 'POST' else None

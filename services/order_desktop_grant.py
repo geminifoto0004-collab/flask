@@ -6,20 +6,23 @@ import secrets
 SALT = 'order-desktop-read-share-links-v1'
 
 
-def issue():
+def issue(scope='share-links:read'):
+    if scope not in {'share-links:read','replicas:verify-repair'}: raise ValueError('invalid desktop scope')
     return URLSafeTimedSerializer(current_app.secret_key, salt=SALT).dumps(
-        {'scope': 'share-links:read', 'device': secrets.token_hex(16)})
+        {'scope': scope, 'device': secrets.token_hex(16)})
 
 
-def authorized():
-    token = str(request.headers.get('X-Order-Desktop-Grant') or '')
+def authorized(scope='share-links:read'):
+    if scope not in {'share-links:read','replicas:verify-repair'}: return False
+    header='X-Order-Desktop-Grant' if scope=='share-links:read' else 'X-Order-Desktop-Sync-Grant'
+    token = str(request.headers.get(header) or '')
     if not token or len(token) > 2048:
         return False
     try:
         value = URLSafeTimedSerializer(current_app.secret_key, salt=SALT).loads(token, max_age=365*86400)
     except (BadSignature, SignatureExpired):
         return False
-    return isinstance(value, dict) and value.get('scope') == 'share-links:read' and bool(value.get('device'))
+    return isinstance(value, dict) and value.get('scope') == scope and bool(value.get('device'))
 
 
 def install(blueprint):

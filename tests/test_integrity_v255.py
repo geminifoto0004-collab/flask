@@ -85,6 +85,16 @@ def test_grant_requires_valid_signature_and_scope():
     with app.test_request_context(headers={'X-Order-Desktop-Grant':wrong}): assert not grant.authorized()
 
 
+def test_link_grant_cannot_authorize_replica_repair():
+    grant=module('scoped_grants',REMOTE/'services/order_desktop_grant.py')
+    app=Flask('scope');app.secret_key='test'
+    with app.app_context():
+        read=grant.issue();sync=grant.issue('replicas:verify-repair')
+    with app.test_request_context(headers={'X-Order-Desktop-Sync-Grant':read}):assert not grant.authorized('replicas:verify-repair')
+    with app.test_request_context(headers={'X-Order-Desktop-Sync-Grant':sync}):assert grant.authorized('replicas:verify-repair')
+    with app.test_request_context(headers={'X-Order-Desktop-Grant':sync}):assert not grant.authorized()
+
+
 def test_digest_order_independent_and_detects_permission_difference():
     audit=module('audit_test',REMOTE/'services/order_sync_integrity.py')
     class Cursor:
@@ -202,3 +212,36 @@ def test_content_proof_preserves_null_and_row_multiplicity():
     columns=[{'name':'n','type':'INTEGER'}]
     assert digest_rows(columns,[[None]])!=digest_rows(columns,[[0]])
     assert digest_rows(columns,[[1]])!=digest_rows(columns,[[1],[1]])
+
+
+@pytest.mark.parametrize('second_value,changed,enabled,ok',[(1,False,True,True),(2,False,True,False),(1,True,True,False),(1,False,False,False)])
+def test_complete_verifier_checks_local_contents_stability_and_enabled_state(monkeypatch,second_value,changed,enabled,ok):
+    from order_content_digest import digest_rows
+    audit=module('verification_matrix',REMOTE/'services/order_sync_integrity.py')
+    class Connection:
+        def __init__(self,target):self.target=target;self.done=False
+        def cursor(self):return self
+        def execute(self,sql,*args):self.sql=sql;self.done=False
+        def fetchone(self):return {'snapshot_hash':'same','table_count':1,'row_count':1}
+        def fetchall(self):return [{'table':'orders'}]
+        def fetchmany(self,count):
+            if self.done:return []
+            self.done=True;return [{'n':second_value if self.target=='TIDB2' else 1}]
+        def close(self):pass
+    database=types.ModuleType('database');database.get_db_connection_for_target=lambda target,**kw:Connection(target)
+    targets=types.ModuleType('tidb_targets');targets.target_configured=lambda x:True;targets.mirror_enabled=lambda:enabled
+    repair=types.ModuleType('services.order_tidb_cloud_reconcile');repair._TABLES=['cloud_orders','cloud_share_order_visibility','cloud_tidb_mirror_state'];repair._STATE_TABLE='cloud_tidb_mirror_state'
+    count={'value':0}
+    def version(target):
+        count['value']+=1
+        return 6 if changed and count['value']>=3 else 5
+    repair._mirror_version=version
+    connections=types.ModuleType('services.order_tidb_connection');connections._connect_target=lambda target,**kw:Connection(target);connections.order_database_name=lambda:'order_tracking'
+    mirror=types.ModuleType('services.order_full_mirror_service');mirror._STATE_TABLE='__order_mirror_state'
+    for mod in [database,targets,repair,connections,mirror]:monkeypatch.setitem(sys.modules,mod.__name__,mod)
+    audit.table_digest=lambda *a,**k:{'exists':True,'rows':1,'digest':'same'}
+    columns=[{'name':'n','type':'INTEGER'}]
+    expected={'orders':{'columns':columns,**digest_rows(columns,[[1]])}}
+    result=audit.verify_once(expected)
+    assert result['verified'] is ok
+    assert result['local_equal'] is (second_value==1)
