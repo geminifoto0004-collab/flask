@@ -1521,6 +1521,11 @@ body.cc-sample-detail #result{
   <div class="cart-times"><div><span>打开 / Abierto</span><strong id="cartOpenedAt">—</strong></div><div><span>确认 / Confirmado</span><strong id="cartConfirmedAt">—</strong></div></div>
   <div class="cart-spread"><span class="muted">版本 / Versión <strong id="cartVersionLabel">—</strong></span><button type="button" id="cartVersionBtn" class="secondary hidden">V1</button></div>
   <div id="cartConfirmedBox" class="cart-confirmed-box hidden"></div>
+  <section id="cartNoteSection" class="cart-note-panel hidden" aria-label="购物车备注 / Notas">
+   <div class="cart-note-header"><label for="cartNoteText">备注 / Nota</label><small>价格、交期及要求 / Precio, entrega y detalles</small></div>
+   <textarea id="cartNoteText" maxlength="1200" rows="4" placeholder="例：12-225D USD 1.80 / MT&#10;交期：下星期" aria-label="购物车备注 / Notas del carrito"></textarea>
+   <div class="cart-note-actions"><span id="cartNoteStatus" role="status" aria-live="polite"></span><button id="cartNoteSave" type="button" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg><span>保存 / Guardar</span></button></div>
+  </section>
   <div class="cart-meta-actions"><button id="cartCopy" class="secondary" type="button" aria-label="复制商品编号和匹数两列 / Copiar SKU y rollos en dos columnas"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg> <span>复制 Excel / Copiar</span></button></div>
   <div id="cartStockNote" class="cart-hint hidden"></div>
  </div>
