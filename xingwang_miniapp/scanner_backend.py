@@ -480,7 +480,10 @@ async def sample_from_tidb(request: Request):
         "as_of": fresh["synced_at_utc"],
         "freshness": fresh,
         "db_connected": True, "db_error": False,
-        "scan_id": scan_id, "previous_status": data["previous_status"]
+        "scan_id": scan_id, "previous_status": data["previous_status"],
+        "last_checked_at": data["last_checked_at"],
+        "last_checked_count": data["last_checked_count"],
+        "last_missing_count": data["last_missing_count"],
     })
 
 

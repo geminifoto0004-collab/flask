@@ -274,6 +274,14 @@ def read_sample_from_snapshot(code):
                 raise ValueError("TOO_MANY_SAMPLE_SKUS")
             if any(len(str(row[0])) > 40 for row in rows):
                 raise ValueError("INVALID_SAMPLE_SKU")
+            # A saved scan is an actual audit event; merely looking up this
+            # series must never update its audit timestamp.
+            cur.execute(
+                "SELECT checked_at, sku_count, missing_count "
+                "FROM xw_sample_scans WHERE series=%s "
+                "ORDER BY checked_at DESC LIMIT 1", (code,)
+            )
+            latest_scan = cur.fetchone()
             statuses = {}
             if rows:
                 keys = [row[0] for row in rows]
@@ -302,6 +310,12 @@ def read_sample_from_snapshot(code):
                 for sku, rolls, meters in rows
             ],
             "previous_status": statuses,
+            "last_checked_at": (
+                latest_scan[0].isoformat(timespec="seconds") + "Z"
+                if latest_scan else None
+            ),
+            "last_checked_count": latest_scan[1] if latest_scan else None,
+            "last_missing_count": latest_scan[2] if latest_scan else None,
             "stock_rolls": total(1) if rows else None,
             "stock_meters": total(2) if rows else None,
         }
