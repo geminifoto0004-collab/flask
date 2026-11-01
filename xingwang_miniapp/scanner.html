@@ -822,7 +822,7 @@ async function inventoryRefresh(){
    const time=new Date(last.synced_at_utc);
    const dt=isNaN(time.getTime())?last.synced_at_utc:
      time.toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false});
-   previous='最後成功：'+dt+'（智利時間）｜'+last.sku_count+' 筆｜新增 '+last.inserted+
+   previous='最後成功：'+dt+'｜'+last.sku_count+' 筆｜新增 '+last.inserted+
              '｜更新 '+last.updated+'｜停用 '+last.deactivated;
   }
   const breakdown=last.stock_breakdown;
