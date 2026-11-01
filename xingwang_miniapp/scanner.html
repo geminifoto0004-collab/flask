@@ -22,7 +22,7 @@ button.secondary{background:#eef3f8;color:#213a53}button:disabled{opacity:.55;cu
 button.ghost{background:transparent;color:#24517a;padding:8px}
 button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
 .row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}.fill{flex:1}
-.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.modes button{background:#edf2f8;color:#2d4864;min-width:0;padding:11px 6px;font-size:13px}
+.modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.modes button{background:#edf2f8;color:#2d4864;min-width:0;padding:11px 6px;font-size:13px}
 .modes button.active{background:#145ba4;color:#fff}
 #reader{max-width:460px;margin:10px auto;overflow:hidden;border-radius:10px}
 #reader video{max-width:100%}#reader button{font-size:12px}
@@ -43,6 +43,15 @@ button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
 .stock-stat small{display:block;color:#627b8e;font-size:11px;margin-bottom:4px}
 .stock-stat strong{font-size:20px;font-variant-numeric:tabular-nums;color:#213a53}
 .stock-visibility{display:flex;gap:8px;margin:12px 0 8px;align-items:center}
+.scanner-search-row{display:flex;align-items:center;gap:8px}.scanner-search-row input{flex:1;min-width:0}
+.camera-toggle{flex:0 0 44px;width:44px;height:44px;border:1px solid #bdd0e2;border-radius:11px;background:#edf3fa;color:#165a94;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.camera-toggle svg{width:22px;height:22px;display:block}.camera-toggle[aria-pressed="true"]{background:#b74439;color:white;border-color:#b74439}
+.camera-toggle:focus-visible{outline:2px solid #165da5;outline-offset:2px}
+.sample-choice{min-width:103px;max-width:115px;padding:8px 5px;font-size:12px;border:1px solid #bdcede;border-radius:8px;background:#fff;color:#233e56}
+.sample-choice[data-state="present"]{background:#eef9f2;border-color:#5b9f79}.sample-choice[data-state="missing"]{background:#fff4f2;border-color:#c5675d}
+.previous-sample{display:block;color:#788699;font-size:10px;margin-top:3px;white-space:nowrap}
+.sample-check-cell{text-align:right}.sample-visibility-legend{font-size:11px;color:#64748b;margin:7px 0 0}
+
 .stock-visibility button{flex:1;min-width:0;background:#edf2f8;color:#294763;font-size:13px;padding:10px 8px;white-space:nowrap}
 .stock-visibility button.active{background:#145ba4;color:#fff}
 .stock-visibility button:focus-visible{outline:2px solid #145ba4;outline-offset:2px}
@@ -102,7 +111,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 </section>
 <div id="app" class="hidden">
 <section class="panel" id="scanPanel">
-<div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeStock">快速庫存</button><button id="modeFull">完整查詢</button></div>
+<div class="modes"><button id="modeSample" class="active">布樣盤點</button><button id="modeFull">完整查詢</button></div>
 <div id="fullKindControls" class="full-kind hidden"><button id="fullProduct" class="active" type="button">商品查詢</button><button id="fullNota" type="button">Nota 查詢</button></div>
 <div id="fullAuthNote" class="info hidden" style="margin:10px 0">完整查詢包含客戶、待到貨、歷史購買及預定，需使用已授權的 Telegram 身分。普通瀏覽器的盤點登入碼不會自動開放客戶資料。</div>
 <div id="freshnessPanel" class="notice hidden" role="status" aria-live="polite">
@@ -114,22 +123,13 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 
 <p class="muted" id="modeHelp">掃描系列 QR，查看每個庫存編號，勾選「無樣」。</p>
 <div id="reader"></div>
-<div class="row"><button id="cameraStart" class="fill">開啟相機連續掃描</button><button id="cameraStop" class="secondary hidden">停止相機</button></div>
-<p id="cameraHint" class="muted">第一次使用請允許相機權限；不必切換到手機原生相機。</p>
-<div class="row"><input id="code" class="fill" placeholder="或手動輸入 12-225" autocomplete="off" enterkeyhint="search"><button id="queryBtn">查詢</button></div>
+<div class="scanner-search-row"><input id="code" placeholder="掃描或輸入 12-225" autocomplete="off" enterkeyhint="search">
+<button id="cameraToggle" type="button" class="camera-toggle" aria-pressed="false" aria-label="開啟連續掃描" title="開啟連續掃描">
+<svg id="cameraOnIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
+<svg id="cameraOffIcon" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/><path d="M3 3l18 18"/></svg>
+</button><button id="queryBtn">查詢</button></div>
+<p id="cameraHint" class="muted">點相機圖示開啟／停止連續掃描；第一次請允許相機權限。</p>
 <div id="message" aria-live="polite">請掃描或輸入商品系列編號。</div>
-</section>
-<section id="stockResult" class="panel hidden" aria-label="庫存查詢結果">
-<div class="bar"><div><h2 id="stockSeries"></h2><small id="stockAsOf" class="muted"></small></div><span id="stockSource" class="tag"></span></div>
-<div class="stock-stat-grid" id="stockStats"></div>
-<div class="stock-visibility" role="group" aria-label="快速庫存顯示範圍">
-<button type="button" id="stockPositiveBtn" class="active" aria-pressed="true">有庫存（匹數 &gt; 0）</button>
-<button type="button" id="stockAllBtn" aria-pressed="false">ALL</button>
-</div>
-<div class="stock-filter-row"><input id="stockFilter" type="search" placeholder="篩選目前全部庫存明細" autocomplete="off" aria-label="篩選庫存明細"><span class="muted" id="stockCount">0 / 0 筆</span></div>
-<div class="stock-tablewrap"><table><thead><tr id="stockTableHead"></tr></thead><tbody id="stockTableBody"></tbody></table></div>
-<p class="muted stock-note" id="stockNote">僅含上次同步的庫存匹數、米數。待到貨與客戶資料不在快照內；需要完整資訊請切換「完整查詢」。</p>
-<div class="row"><button id="stockNextBtn" class="fill secondary">查下一個商品</button></div>
 </section>
 <section id="fullResult" class="panel hidden" aria-label="完整查詢結果">
 <div class="bar"><div><h2 id="fullTitle">完整查詢</h2><small id="fullTime" class="muted"></small></div><span class="tag">授權資料</span></div>
@@ -149,7 +149,11 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <section id="result" class="panel hidden">
 <div class="bar"><div><h2 id="series"></h2><small id="asof"></small></div><span id="source" class="tag"></span></div>
 <div id="totals" class="metrics"></div>
-<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>商品編號</th><th class="num">匹數</th><th class="num">米數</th><th id="sampleHeading">無樣</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="stock-visibility" role="group" aria-label="布樣盤點顯示範圍">
+<button id="samplePositiveBtn" type="button" class="active" aria-pressed="true">有庫存（匹數 &gt; 0）</button>
+<button id="sampleAllBtn" type="button" aria-pressed="false">ALL</button></div>
+<p class="sample-visibility-legend">只影響顯示：未檢查或被隱藏的商品不會當成有樣保存。</p>
+<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>商品編號</th><th class="num">匹數</th><th class="num">米數</th><th class="num">樣品狀態</th></tr></thead><tbody id="rows"></tbody></table></div>
 <p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的商品編號，請確認快照中的編號。</p>
 <div id="sampleControls">
 <div id="dbNotice" class="notice">尚未確認 TiDB 連線；不會寫入盤點資料。</div>
@@ -175,8 +179,9 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, missing=new Set(), saved=false;
-let fullKind='product',fullTab='stock',fullData=null,fullSort='',fullDesc=false,fullCode='',fullSession='';
+let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, saved=false;
+let sampleStates=new Map(),samplePositiveOnly=true,sharedProductCode='',notaInput='';
+let fullKind='product',fullTab='stock',fullData=null,fullDataKind='product',fullSort='',fullDesc=false,fullCode='',fullSession='';
 try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
 
@@ -254,13 +259,9 @@ $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await po
 $('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
 $('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
 function setMode(m){
- if(!['sample','stock','full','admin'].includes(m))m='sample';
- if(mode!==m){
-  current=null;missing.clear();locked=false;saved=false;
-  $('result').classList.add('hidden');$('stockResult').classList.add('hidden');
-  $('fullResult').classList.add('hidden');
-  $('stockFilter').value='';$('code').value='';
- }
+ if(!['sample','full','admin'].includes(m))m='sample';
+ if(mode==='full'&&fullKind==='nota')notaInput=$('code').value;
+ else if(valid($('code').value.trim()))sharedProductCode=$('code').value.trim();
  mode=m;
  const managing=m==='admin';
  $('adminTab').classList.toggle('hidden',!managing);
@@ -272,144 +273,53 @@ function setMode(m){
  if(m==='sample')void checkFreshness();
  if(managing)checkInventoryStatus();
  $('modeSample').classList.toggle('active',m==='sample');
- $('modeStock').classList.toggle('active',m==='stock');
  $('modeFull').classList.toggle('active',m==='full');
- $('modeHelp').textContent=m==='sample'
-  ?'掃描或輸入編號，檢查有樣／無樣。'
-  :m==='stock'?'只查庫存數量；顯示最後同步時間，不包含客戶資訊。'
-  :'查詢庫存、待到貨、購買紀錄及預定，不必切換到另一個畫面。';
- $('code').placeholder=m==='sample'?'或手動輸入 12-225':m==='full'&&fullKind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
- $('result').classList.toggle('hidden',m!=='sample'||!current);
- $('stockResult').classList.toggle('hidden',m!=='stock'||!current);
- $('fullResult').classList.toggle('hidden',m!=='full'||!fullData);
- if(m==='stock'&&current)renderStockResult();
- if(m==='sample'&&current)renderRows();
+ $('modeHelp').textContent=m==='sample'?'掃描布樣並確認有樣／無樣；只保存本次實際確認的編號。':'查詢庫存、待到貨、購買與預定（需要原有授權）。';
+ $('code').placeholder=m==='full'&&fullKind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
+ $('code').value=m==='full'&&fullKind==='nota'?notaInput:sharedProductCode;
+ const sampleMatch=m==='sample'&&current&&current.product_code===sharedProductCode;
+ const fullMatch=m==='full'&&fullData&&fullDataKind===fullKind&&fullCode===(fullKind==='nota'?notaInput:sharedProductCode);
+ $('result').classList.toggle('hidden',!sampleMatch);
+ $('fullResult').classList.toggle('hidden',!fullMatch);
+ if(sampleMatch)renderRows();
+ if(fullMatch)renderFullResult(fullData);
  history.replaceState(null,'',location.pathname+(managing?'#admin':''));
 }
 $('modeSample').onclick=()=>setMode('sample');
-$('modeStock').onclick=()=>setMode('stock');
 $('modeFull').onclick=()=>setMode('full');
 $('adminLink').onclick=()=>setMode('admin');
 $('freshnessAdminBtn').onclick=()=>setMode('admin');
 $('fullProduct').onclick=()=>setFullKind('product');
 $('fullNota').onclick=()=>setFullKind('nota');
 function setFullKind(kind){
- fullKind=kind;fullData=null;fullCode='';
+ if(kind===fullKind)return;
+ if(fullKind==='nota')notaInput=$('code').value;
+ else if(valid($('code').value.trim()))sharedProductCode=$('code').value.trim();
+ fullKind=kind;
  $('fullProduct').classList.toggle('active',kind==='product');
  $('fullNota').classList.toggle('active',kind==='nota');
- $('fullResult').classList.add('hidden');
- $('code').value='';$('code').placeholder=kind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
- msg(kind==='nota'?'輸入 Nota 前綴、客戶名稱，或 @ 查預定':'輸入商品編號，取得全部分類');
+ $('code').placeholder=kind==='nota'?'Nota 前綴、客戶名稱或 @ 預定':'輸入商品編號';
+ $('code').value=kind==='nota'?notaInput:sharedProductCode;
+ const match=fullData&&fullDataKind===kind&&fullCode===(kind==='nota'?notaInput:sharedProductCode);
+ $('fullResult').classList.toggle('hidden',!match);
+ if(match)renderFullResult(fullData);
 }
-// Inventory presentation matches the Telegram STOCK tab; scanner login stays separate.
-// We intentionally expose only allowlisted stock/incoming quantities, never customers,
-// sale prices or Telegram-authenticated history.
-const stockColumns=[
- ['code','商品編號'],
- ['stock_rolls','匹數'],
- ['stock_meters','米數'],
- ['incoming_boxes','待到貨(未同步)']
-];
-let stockSort='',stockDesc=false,stockPositiveOnly=true,fullPositiveOnly=true;
-function hasPositivePieces(value){
- if(value===null||value===undefined||String(value).trim()==='')return false;
- const amount=Number(value);
- return Number.isFinite(amount)&&amount>0;
-}
+let fullPositiveOnly=true;
+function hasPositivePieces(v){if(v==null||String(v).trim()==='')return false;const n=Number(v);return Number.isFinite(n)&&n>0}
 function totalsForShownRows(rows,key){
  if(!rows.length)return 0;
- const values=rows.map(row=>row[key]);
- if(values.some(value=>value===null||value===undefined||String(value).trim()===''||!Number.isFinite(Number(value))))return null;
- return values.reduce((sum,value)=>sum+Number(value),0);
+ if(rows.some(r=>r[key]==null||String(r[key]).trim()===''))return null;
+ return rows.reduce((sum,r)=>sum+Number(r[key]),0);
 }
-function syncVisibilityButtons(positive,positiveId,allId){
- for(const [id,active] of [[positiveId,positive],[allId,!positive]]){
-  const button=$(id);button.classList.toggle('active',active);
-  button.setAttribute('aria-pressed',String(active));
+function syncVisibilityButtons(yes,yesId,allId){
+ for(const [id,active] of [[yesId,yes],[allId,!yes]]){
+  $(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));
  }
 }
-$('stockPositiveBtn').onclick=()=>{stockPositiveOnly=true;renderStockResult()};
-$('stockAllBtn').onclick=()=>{stockPositiveOnly=false;renderStockResult()};
+$('samplePositiveBtn').onclick=()=>{samplePositiveOnly=true;renderRows()};
+$('sampleAllBtn').onclick=()=>{samplePositiveOnly=false;renderRows()};
 $('fullPositiveBtn').onclick=()=>{fullPositiveOnly=true;renderFullResult(fullData)};
 $('fullAllBtn').onclick=()=>{fullPositiveOnly=false;renderFullResult(fullData)};
-function stockFormat(value){
- if(value===null||value===undefined||value==='')return '—';
- if(typeof value==='number')return value.toLocaleString('en-US',{maximumFractionDigits:3});
- return String(value);
-}
-function stockRows(){
- if(!current||!Array.isArray(current.variants))return [];
- // Incoming-only codes cannot be claimed as available stock.
- return current.variants;
-}
-function renderStockResult(){
- if(!current)return;
- const data=current, allRows=stockRows();
- const rows=stockPositiveOnly?allRows.filter(r=>hasPositivePieces(r.stock_rolls)):allRows;
- syncVisibilityButtons(stockPositiveOnly,'stockPositiveBtn','stockAllBtn');
- const stats=$('stockStats');
- stats.replaceChildren();
- for(const [name,value] of [
-  ['商品種類',rows.length],
-  ['庫存匹數',stockPositiveOnly?totalsForShownRows(rows,'stock_rolls'):data.stock_rolls],
-  ['庫存米數',stockPositiveOnly?totalsForShownRows(rows,'stock_meters'):data.stock_meters],
-  ['同步時間',data.freshness?.synced_at_utc?new Date(data.freshness.synced_at_utc).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false}):'—']
- ]){
-  const el=document.createElement('div');el.className='stock-stat';
-  const label=document.createElement('small');label.textContent=name;
-  const number=document.createElement('strong');number.textContent=stockFormat(value);
-  el.append(label,number);stats.append(el);
- }
- $('stockSeries').textContent=data.product_code;
- $('stockAsOf').textContent='庫存同步：'+(data.as_of?new Date(data.as_of).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false}):'未同步')+
-  (data.freshness?.fresh?'':' · 快照可能已過期')+' · 查詢 '+(data.elapsed_ms??'—')+' ms';
- $('stockSource').textContent=data.source==='tidb'?'庫存快照':'即時系統';
- const term=$('stockFilter').value.trim().toLocaleLowerCase();
- let list=rows.filter(r=>stockColumns.some(([field])=>String(r[field]??'').toLocaleLowerCase().includes(term)));
- if(stockSort){
-  list=list.slice().sort((a,b)=>{
-   const x=a[stockSort],y=b[stockSort];
-   if(x==null&&y!=null)return 1;
-   if(y==null&&x!=null)return -1;
-   const cmp=(stockSort==='code')
-      ?String(x??'').localeCompare(String(y??''),undefined,{numeric:true,sensitivity:'base'})
-      :Number(x??0)-Number(y??0);
-   return stockDesc?-cmp:cmp;
-  });
- }
- $('stockCount').textContent=list.length+' / '+allRows.length+' 筆';
- const head=$('stockTableHead');head.replaceChildren();
- for(const [field,title] of stockColumns){
-  const th=document.createElement('th');
-  th.textContent=title+(stockSort===field?(stockDesc?' ▼':' ▲'):'');
-  if(field!=='code')th.className='num';
-  th.tabIndex=0;th.setAttribute('role','button');
-  th.setAttribute('aria-sort',stockSort===field?(stockDesc?'descending':'ascending'):'none');
-  const apply=()=>{if(stockSort===field)stockDesc=!stockDesc;else{stockSort=field;stockDesc=false;}renderStockResult()};
-  th.onclick=apply;
-  th.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();apply()}};
-  head.append(th);
- }
- const body=$('stockTableBody');body.replaceChildren();
- if(!list.length){
-  const tr=document.createElement('tr'),td=document.createElement('td');
-  td.colSpan=stockColumns.length;td.textContent='沒有符合條件的庫存資料';td.className='muted';
-  tr.append(td);body.append(tr);
- }else{
-  for(const entry of list){
-   const tr=document.createElement('tr');
-   for(const [field] of stockColumns){
-    const td=document.createElement('td');
-    td.textContent=stockFormat(entry[field]);
-    if(field!=='code')td.className='num';
-    tr.append(td);
-   }
-   body.append(tr);
-  }
- }
-}
-$('stockFilter').addEventListener('input',renderStockResult);
-
 
 const fullFields={
  stock:[['code','商品編號'],['pieces','匹數'],['meters','米數'],['reserved','預定狀態']],
@@ -438,7 +348,7 @@ async function fullRequest(action,q,extra={}){
 async function queryFull(code){
  const start=performance.now();
  const data=await fullRequest(fullKind==='nota'?'nota':'stock',code);
- fullData=data;fullCode=code;fullTab='stock';fullSort='';fullDesc=false;
+ fullData=data;fullDataKind=fullKind;fullCode=code;fullTab='stock';fullSort='';fullDesc=false;
  $('fullFilter').value='';
  $('fullTime').textContent='本次查詢耗時 '+((performance.now()-start)/1000).toFixed(2)+' 秒';
  return data;
@@ -577,105 +487,134 @@ $('fullHistoryMore').onclick=async()=>{
 };
 
 function renderRows(){
- const body=$('rows');body.replaceChildren();
- if(!current)return;
- const arr=Array.isArray(current.variants)?current.variants:[];
- $('emptyMsg').classList.toggle('hidden',arr.length!==0);
- for(const x of arr){
+ const body=$('rows');body.replaceChildren();if(!current)return;
+ const all=Array.isArray(current.variants)?current.variants:[];
+ const visible=samplePositiveOnly?all.filter(r=>hasPositivePieces(r.stock_rolls)):all;
+ syncVisibilityButtons(samplePositiveOnly,'samplePositiveBtn','sampleAllBtn');
+ $('emptyMsg').classList.toggle('hidden',visible.length>0);
+ $('emptyMsg').textContent=all.length?'沒有正庫存商品，請點 ALL 查看。':'沒有符合商品。';
+ $('totals').replaceChildren();
+ for(const [name,value] of [
+  ['庫存匹數',samplePositiveOnly?totalsForShownRows(visible,'stock_rolls'):current.stock_rolls],
+  ['庫存米數',samplePositiveOnly?totalsForShownRows(visible,'stock_meters'):current.stock_meters],
+  ['顯示',visible.length+' / '+all.length]]){
+  const el=document.createElement('span');el.textContent=name+'：'+(value==null?'—':value);
+  $('totals').append(el);
+ }
+ for(const x of visible){
   const tr=document.createElement('tr');
-  for(const val of [x.code,fmt(x.stock_rolls),fmt(x.stock_meters)]){
-   const td=document.createElement('td');td.textContent=val;if(val!==x.code)td.className='num';tr.append(td)
+  for(const value of [x.code,fmt(x.stock_rolls),fmt(x.stock_meters)]){
+   const td=document.createElement('td');td.textContent=value;if(value!==x.code)td.className='num';tr.append(td);
   }
-  {
-   const td=document.createElement('td');const cb=document.createElement('input');cb.type='checkbox';cb.checked=missing.has(x.code);cb.disabled=saved;cb.setAttribute('aria-label',x.code+' 無樣');
-   cb.onchange=()=>{if(cb.checked)missing.add(x.code);else missing.delete(x.code);updateMissing()};td.append(cb);tr.append(td)
+  const td=document.createElement('td');td.className='sample-check-cell';
+  const select=document.createElement('select');select.className='sample-choice';
+  select.setAttribute('aria-label',x.code+' 本次盤點');
+  select.dataset.state=sampleStates.get(x.code)||'';
+  for(const [value,label] of [['','未檢查'],['present','有樣'],['missing','無樣']]){
+   const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option);
   }
-  body.append(tr);
+  select.value=sampleStates.get(x.code)||'';select.disabled=saved;
+  select.onchange=()=>{
+   if(select.value)sampleStates.set(x.code,select.value);else sampleStates.delete(x.code);
+   select.dataset.state=select.value;updateMissing();
+  };
+  td.append(select);
+  const old=current.previous_status?.[x.code];
+  if(old){const tip=document.createElement('small');tip.className='previous-sample';tip.textContent='上次：'+(old.missing?'無樣':'有樣');td.append(tip)}
+  tr.append(td);body.append(tr);
  }
  updateMissing();
 }
-function updateMissing(){$('missingCount').textContent='已標記無樣 '+missing.size+' 個；'+(saved?'本次結果已保存。':'其他編號在確認保存後會視為有樣。')}
+function updateMissing(){
+ const values=[...sampleStates.values()],yes=values.filter(x=>x==='present').length,no=values.filter(x=>x==='missing').length;
+ $('missingCount').textContent=saved?'已保存：有樣 '+yes+'／無樣 '+no+'，其他紀錄不變。':'已確認：有樣 '+yes+'／無樣 '+no+'；未檢查的商品不會保存。';
+ $('saveBtn').disabled=saved||sampleStates.size===0;
+}
 function showResult(d){
- current=d;missing=new Set(Object.entries(d.previous_status||{}).filter(([k,v])=>v.missing).map(([k])=>k));saved=false;
- $('result').classList.toggle('hidden',mode!=='sample');
- $('stockResult').classList.toggle('hidden',mode!=='stock');
+ current=d;sampleStates=new Map();saved=false;
+ $('result').classList.remove('hidden');
  $('saveBtn').classList.toggle('hidden',!d.db_connected);
- $('saveBtn').disabled=false;$('saveBtn').textContent='確認完成 · 保存 TiDB';$('saveBtn').classList.remove('secondary');
- stockSort='';stockDesc=false;$('stockFilter').value='';
- $('dbNotice').textContent=d.db_connected?'來自 TiDB 的上次完整庫存快照；可確認保存「有樣／無樣」狀態。':(d.db_error?'TiDB 連線失敗，不能保存盤點。':'尚無可用庫存快照，不能保存盤點。');
- $('series').textContent=d.product_code;
- $('source').textContent=d.source==='tidb'?'庫存快照':'即時系統';
- $('asof').textContent='上次成功同步（UTC）：'+(d.as_of||'未提供');
- $('totals').replaceChildren();
- for(const [name,val] of [['庫存匹數',d.stock_rolls],['庫存米數',d.stock_meters],['商品明細',(d.variants||[]).length]]){
-  const el=document.createElement('span');el.textContent=name+'：'+fmt(val);$('totals').append(el)
- }
+ $('saveBtn').textContent='保存本次確認';$('saveBtn').classList.remove('secondary');
+ $('dbNotice').textContent=d.db_connected?'只保存這次確認的編號；未檢查的保持原狀。':'TiDB 不可用，暫時不能保存。';
+ $('series').textContent=d.product_code;$('source').textContent='庫存快照';
+ $('asof').textContent='上次同步（智利時間）：'+(d.as_of?new Date(d.as_of).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false}):'未提供');
  renderRows();
- if(mode==='stock')renderStockResult();
 }
 async function lookup(input){
- const code=(input||'').trim();
- const validInput=mode==='full'&&fullKind==='nota'
-   ?(code==='@'||/^\d{1,5}$/.test(code)||/^[\p{L}\p{N} .,'&/\-]{2,40}$/u.test(code))
-   :valid(code);
- if(!validInput){msg('查詢編號或條件格式不正確，請檢查後重試','error');return}
- if(busy)return;
- busy=true;locked=true;$('code').value=code;$('queryBtn').disabled=true;
+ const code=(input||'').trim(),nota=mode==='full'&&fullKind==='nota';
+ const validInput=nota?(code==='@'||/^[0-9]{1,5}$/.test(code)||code.length>=2&&code.length<=40):valid(code);
+ if(!validInput){msg('查詢條件不正確，請檢查後重試','error');return}
+ if(busy||mode==='admin')return;
+ if(mode==='sample'&&current&&current.product_code!==code&&sampleStates.size&&!saved&&!confirm('尚有未保存的布樣確認，確定查其他編號嗎？'))return;
+ busy=true;locked=true;$('queryBtn').disabled=true;
  try{
   if(mode==='full'){
-   const data=await queryFull(code);
-   renderFullResult(data);
-   msg('完整查詢完成：'+code,'good');
+   if(nota)notaInput=code;else sharedProductCode=code;
+   if(fullData&&fullCode===code&&fullDataKind===fullKind){renderFullResult(fullData);msg('顯示已查詢的完整資料','good')}
+   else{msg('查詢完整資料：'+code);const data=await queryFull(code);renderFullResult(data);msg('查詢完成','good')}
   }else{
-   if(mode==='sample'){
+   if(current?.product_code===code&&!saved&&current.scan_id){
+    sharedProductCode=code;renderRows();$('result').classList.remove('hidden');msg('原本的盤點選擇仍保留','good');
+   }else{
     const fresh=await checkFreshness();
-    if(!fresh?.fresh)throw Object.assign(new Error('庫存快照已超過 1 小時或無法確認。請先到管理分頁更新庫存。'),{status:409});
+    if(!fresh?.fresh)throw Object.assign(new Error('庫存快照已超過 60 分鐘，請先在管理分頁更新'),{status:409});
+    msg('正在查詢布樣：'+code);
+    const d=await post('/scanner/api/sample',{code});
+    sharedProductCode=code;showResult(d);msg('布樣與庫存查詢完成','good');
    }
-   msg(mode==='sample'?'正在查詢布樣盤點：'+code:'正在快速查詢庫存：'+code);
-   const d=await post(mode==='sample'?'/scanner/api/sample':'/scanner/api/quick',{code});
-   showResult(d);msg('查詢完成：'+code+(mode==='stock'?' · 速度 '+d.elapsed_ms+' ms':''),'good');
   }
- }catch(e){current=null;fullData=null;$('result').classList.add('hidden');$('stockResult').classList.add('hidden');$('fullResult').classList.add('hidden');locked=false;
-  if(mode==='sample'&&e.status===409)void checkFreshness();
-  msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');
-  if(e.status===401)await session();
- }finally{busy=false;$('queryBtn').disabled=false}
+ }catch(e){locked=false;if(mode==='sample'&&e.status===409)void checkFreshness();msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');if(e.status===401)await session()}
+ finally{busy=false;$('queryBtn').disabled=false}
 }
 $('queryBtn').onclick=()=>lookup($('code').value);
 $('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
 function onScan(raw){if(locked||busy)return;let code=String(raw||'').trim();if(valid(code))lookup(code);else msg('QR 不是商品編號，請掃描純編號 QR','error')}
 async function startCamera(){
  if(running)return;
- if(!window.Html5Qrcode){msg('相機元件未載入，請檢查網路並重新整理。','error');return}
+ if(!window.Html5Qrcode){msg('相機元件尚未載入，請重新整理。','error');return}
  try{
   reader=new Html5Qrcode('reader',{verbose:false});
   await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});
-  running=true;$('cameraStart').classList.add('hidden');$('cameraStop').classList.remove('hidden');msg('相機已開啟，請對準 QR Code。');
- }catch(e){reader=null;msg('無法開啟相機：請使用 HTTPS、允許相機權限。'+String(e),'error')}
+  running=true;syncCameraButton();msg('連續掃描已開啟，完成一張後按下一張，鏡頭不用關閉。');
+ }catch(e){reader=null;running=false;syncCameraButton();msg('相機權限或開啟失敗：'+String(e),'error')}
 }
 async function stopCamera(){
  if(reader&&running){try{await reader.stop()}catch(_){}}
  if(reader){try{reader.clear()}catch(_){}}
- reader=null;running=false;$('cameraStart').classList.remove('hidden');$('cameraStop').classList.add('hidden')
+ reader=null;running=false;syncCameraButton();
 }
-$('cameraStart').onclick=startCamera;$('cameraStop').onclick=stopCamera;
+function syncCameraButton(){
+ const b=$('cameraToggle');
+ b.setAttribute('aria-pressed',String(running));b.setAttribute('aria-label',running?'停止連續掃描':'開啟連續掃描');
+ b.title=running?'停止連續掃描':'開啟連續掃描';
+ $('cameraOnIcon').classList.toggle('hidden',running);$('cameraOffIcon').classList.toggle('hidden',!running);
+}
+$('cameraToggle').onclick=async()=>{if(running)await stopCamera();else await startCamera()};
 function nextScan(){
- current=null;fullData=null;missing.clear();locked=false;saved=false;$('code').value='';$('result').classList.add('hidden');$('stockResult').classList.add('hidden');$('fullResult').classList.add('hidden');$('stockFilter').value='';msg(running?'可以繼續掃下一張，鏡頭不用關閉。':'請掃描下一張或手動輸入編號。'); 
+ if(sampleStates.size&&!saved&&!confirm('尚有未保存的布樣確認，確定放棄嗎？'))return;
+ current=null;fullData=null;sampleStates.clear();saved=false;locked=false;sharedProductCode='';fullCode='';
+ $('code').value='';$('result').classList.add('hidden');$('fullResult').classList.add('hidden');
+ msg(running?'鏡頭持續開啟，可以掃下一張。':'請掃下一張或輸入編號。');
 }
-$('nextBtn').onclick=nextScan;$('stockNextBtn').onclick=nextScan;$('fullNext').onclick=nextScan;
+$('nextBtn').onclick=nextScan;$('fullNext').onclick=nextScan;
 $('saveBtn').onclick=async()=>{
- if(!current?.db_connected||!current?.scan_id||saved)return;
+ if(!current?.db_connected||!current?.scan_id||saved||!sampleStates.size)return;
  const b=$('saveBtn');b.disabled=true;
- try{const out=await post('/scanner/api/save',{scan_id:current.scan_id,missing:[...missing]});
- saved=true;renderRows();msg('已保存 TiDB：'+out.sku_count+' 個花色，無樣 '+out.missing_count+' 個。可以掃下一張。','good');
- b.textContent='已保存';b.classList.add('secondary');
+ const present=[...sampleStates].filter(([sku,state])=>state==='present').map(([sku])=>sku);
+ const missing=[...sampleStates].filter(([sku,state])=>state==='missing').map(([sku])=>sku);
+ try{
+  const out=await post('/scanner/api/save',{scan_id:current.scan_id,present,missing});
+  saved=true;
+  for(const [sku,state] of sampleStates)current.previous_status[sku]={missing:state==='missing'};
+  renderRows();msg('已保存 '+out.sku_count+' 個確認：有樣 '+present.length+'，無樣 '+missing.length+'。','good');
+  b.textContent='已保存';b.classList.add('secondary');
  }catch(e){b.disabled=false;msg(e.message,'error');if(e.status===409)void checkFreshness()}
 };
 $('copyBtn').onclick=async()=>{
  if(!current)return;
- const lines=['布樣 '+current.product_code,'缺樣（'+(saved?'已保存 TiDB':'未保存')+'）：',...(missing.size?[...missing].sort():['無'])];
- try{await navigator.clipboard.writeText(lines.join('\n'));msg('清單已複製；'+(saved?'已保存 TiDB。':'尚未保存 TiDB。'),'good')}
- catch(_){msg(lines.join('\n'),'good')}
+ const absent=[...sampleStates].filter(([sku,state])=>state==='missing').map(([sku])=>sku).sort();
+ const lines=['布樣 '+current.product_code,'本次確認無樣：',...(absent.length?absent:['無'])];
+ try{await navigator.clipboard.writeText(lines.join('\n'));msg('清單已複製','good')}catch(_){msg(lines.join('\n'),'good')}
 };
 const scannerShareURL=location.origin+'/s';
 async function copyScannerURL(){try{await navigator.clipboard.writeText(scannerShareURL);$('shareStatus').textContent='已複製網址';}catch(_){window.prompt('複製這個入口網址',scannerShareURL)}}
