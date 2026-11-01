@@ -84,6 +84,11 @@ CART_SCHEMA = (
         qty INT NOT NULL,
         PRIMARY KEY (cart_id, version, sku)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS xw_cart_notes (
+        cart_id CHAR(32) NOT NULL PRIMARY KEY,
+        note TEXT NOT NULL,
+        updated_at DATETIME(6) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 )
 
 # Re-runnable upgrades. Existing stock and sample tables remain untouched.
@@ -967,6 +972,82 @@ async def cart_undo_delete(request: Request):
         return {"ok": True, "cart": cart}
     except Exception as exc:
         _error_safe(exc, "UNDO_DELETE")
+
+
+
+def _cart_note_get(cart_id):
+    conn = _db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT state FROM xw_carts WHERE id=%s", (cart_id,))
+            cart = cur.fetchone()
+            if not cart or cart[0] == "cancelled":
+                raise HTTPException(404, "Cart not found")
+            cur.execute("SELECT note FROM xw_cart_notes WHERE cart_id=%s", (cart_id,))
+            row = cur.fetchone()
+            return row[0] if row else ""
+    finally:
+        conn.close()
+
+
+def _cart_note_save(cart_id, revision, note):
+    # Separate staff-only note storage keeps quoted prices away from guest API data.
+    conn = _db()
+    try:
+        now = utcnow()
+        with conn.cursor() as cur:
+            cur.execute("SELECT revision,state FROM xw_carts WHERE id=%s FOR UPDATE", (cart_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Cart not found")
+            if row[1] == "cancelled":
+                raise HTTPException(409, "Cart is cancelled")
+            if int(row[0]) != revision:
+                raise HTTPException(409, "Cart changed on another device. Reload before editing.")
+            cur.execute(
+                "INSERT INTO xw_cart_notes(cart_id,note,updated_at) VALUES(%s,%s,%s) "
+                "ON DUPLICATE KEY UPDATE note=VALUES(note),updated_at=VALUES(updated_at)",
+                (cart_id, note, now)
+            )
+            cur.execute(
+                "UPDATE xw_carts SET revision=revision+1,updated_at=%s WHERE id=%s",
+                (now, cart_id)
+            )
+        conn.commit()
+        return revision + 1
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/scanner/api/cart/note/get")
+async def cart_note_get(request: Request):
+    staff._check_origin(request)
+    staff._require(request)
+    body = await _body(request)
+    try:
+        note = await asyncio.to_thread(_cart_note_get, _id(body))
+        return {"ok": True, "note": note}
+    except Exception as exc:
+        _error_safe(exc, "NOTE_GET")
+
+
+@router.post("/scanner/api/cart/note/save")
+async def cart_note_save(request: Request):
+    staff._check_origin(request)
+    staff._require(request)
+    body = await _body(request, limit=4096)
+    note, rev = body.get("note"), body.get("revision")
+    if (not isinstance(note, str) or len(note) > 1200 or
+        type(rev) is not int or rev < 0 or "\\x00" in note):
+        raise HTTPException(400, "Invalid cart note")
+    try:
+        revision = await asyncio.to_thread(_cart_note_save, _id(body), rev, note.strip())
+        return {"ok": True, "revision": revision, "note": note.strip()}
+    except Exception as exc:
+        _error_safe(exc, "NOTE_SAVE")
 
 
 @router.post("/scanner/api/cart/name")
