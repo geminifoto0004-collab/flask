@@ -5,6 +5,7 @@ Run exactly one worker.
 """
 import asyncio
 import hmac
+import hashlib
 import json
 import os
 import time
@@ -312,6 +313,93 @@ async def query(request:Request):
     if isinstance(session_return, str) and len(session_return) <= 100 and session_return.startswith("xw_"):
         result["miniapp_session"] = session_return
     return result
+
+
+# Scanner browser uses the existing signed company passcode cookie. This
+# endpoint NEVER accepts Telegram initData, bot aliases, or user-supplied
+# source fields. The local worker recognizes the privileged source ONLY over
+# the authenticated Render -> local WebSocket. No write actions are allowed.
+_scanner_full_queries = []
+_scanner_full_lock = asyncio.Lock()
+
+@app.post("/scanner/api/full")
+async def scanner_full_query(request: Request):
+    from xingwang_miniapp import scanner_backend
+    scanner_backend._check_origin(request)
+    scanner_backend._require(request)
+    raw = await request.body()
+    if len(raw) > 2000:
+        raise HTTPException(413, "Request too large")
+    try:
+        data = json.loads(raw)
+    except (ValueError, UnicodeError):
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "Invalid query")
+    action, q = data.get("action"), data.get("q")
+    if action not in ("stock", "nota", "history_more", "nota_details"):
+        raise HTTPException(400, "Unsupported read-only query")
+    if not isinstance(q,str) or not 1<=len(q)<=40:
+        raise HTTPException(400, "Invalid query")
+    if action in ("stock","history_more") and not scanner_backend.CODE.fullmatch(q):
+        raise HTTPException(400, "Invalid product code")
+    if action=="nota" and not (q=="@" or q.isdecimal() and len(q)<=5 or len(q)>=2):
+        raise HTTPException(400, "Invalid Nota criteria")
+    extra={}
+    if action=="history_more":
+        cursor, include_older=data.get("cursor"), data.get("include_older")
+        if type(cursor) is not int or not 0<=cursor<=5000 or type(include_older) is not bool:
+            raise HTTPException(400, "Invalid pagination")
+        extra={"cursor":cursor,"include_older":include_older}
+    elif action=="nota_details":
+        customer=data.get("customer")
+        if not q.isdecimal() or not 2<=len(q)<=12 or not isinstance(customer,str) or not 1<=len(customer)<=130:
+            raise HTTPException(400, "Invalid Nota detail")
+        extra={"customer":customer}
+    elif action=="nota":
+        span=data.get("date_span","2y")
+        if span not in ("1y","2y","all"):
+            raise HTTPException(400, "Invalid date range")
+        extra={"date_span":span}
+    async with _scanner_full_lock:
+        now=time.monotonic()
+        _scanner_full_queries[:]=[t for t in _scanner_full_queries if now-t<60]
+        if len(_scanner_full_queries)>=45:
+            raise HTTPException(429, "查詢太頻繁")
+        _scanner_full_queries.append(now)
+    # A 128-bit opaque stable identity for per-session local history paging.
+    token=request.cookies.get(scanner_backend.COOKIE,"")
+    actor=hmac.new(scanner_backend._key(),token.encode("utf-8"),hashlib.sha256).hexdigest()[:32]
+    async with bridge_lock:
+        ws=active_bridge
+        role=active_role
+        if ws is None or role is None:
+            raise HTTPException(503, "本機查詢系統未連線")
+        if len(waiting)>=MAX_INFLIGHT:
+            raise HTTPException(429, "查詢過多")
+        req_id=uuid4().hex
+        fut=asyncio.get_running_loop().create_future()
+        waiting[req_id]=(fut,ws)
+        try:
+            await send_peer(role,{"type":"query","id":req_id,"source":"scanner_full",
+                                  "bot":"STOCK","action":action,"q":q,
+                                  "scanner_actor":actor,**extra})
+        except (RuntimeError,WebSocketDisconnect,OSError):
+            waiting.pop(req_id,None)
+            raise HTTPException(503,"本機連線中斷")
+    try:
+        response=await asyncio.wait_for(fut,45)
+    except asyncio.TimeoutError:
+        raise HTTPException(504,"查詢逾時")
+    finally:
+        waiting.pop(req_id,None)
+    if not response.get("ok"):
+        code=response.get("code") or "QUERY_FAILED"
+        status=503 if code in ("STANDBY","SWITCHING") else 409 if code=="HISTORY_EXPIRED" else 400 if code=="INPUT" else 502
+        message=("本機程式可能尚未更新，請確認使用新版 XINGWANG 後重啟。" if code=="INPUT"
+                 else str(response.get("error") or "查詢未完成")[:140])
+        return JSONResponse({"ok":False,"error":message,"code":code},status_code=status)
+    return {"ok":True,"data":response.get("data")}
 
 @app.websocket("/bridge")
 async def bridge(ws:WebSocket):
