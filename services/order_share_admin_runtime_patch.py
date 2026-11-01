@@ -918,7 +918,7 @@ def _cloud_share_desktop_sync():
     except ValueError:
         return jsonify({'ok': False, 'error': 'invalid local destination'}), 400
 
-    sent, rows = False, []
+    sent, rows, desktop_grant = False, [], ''
     if request.method == 'POST':
         saved = dict(session.get('order_desktop_link_export') or {})
         valid = (saved.get('origin') == origin and saved.get('request_id') == request_id
@@ -929,6 +929,8 @@ def _cloud_share_desktop_sync():
         session.pop('order_desktop_link_export', None)
         rows = [{'id': item['id'], 'share_url': item['share_url']}
                 for item in _cloud_admin_share_rows(active_only=True) if item.get('share_url')]
+        from services.order_desktop_grant import issue
+        desktop_grant = issue()
         sent = True
         csrf = ''
     else:
@@ -938,8 +940,8 @@ def _cloud_share_desktop_sync():
     script_nonce = secrets.token_urlsafe(20)
     response = make_response(render_template_string('''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>同步分享网址</title>
 <style>body{font:15px system-ui;color:#263044;background:#f6f7fa;margin:0;padding:28px}.box{max-width:480px;margin:auto;background:white;border:1px solid #e1e5ed;border-radius:16px;padding:24px}h1{font-size:22px}code{display:block;overflow-wrap:anywhere;background:#f1f4f8;padding:12px;border-radius:8px}button{font:600 15px system-ui;background:#ff2442;color:white;border:0;border-radius:9px;padding:12px 18px;cursor:pointer}p{line-height:1.6}</style><div class="box"><h1>同步已有分享网址</h1>
-{% if sent %}<p id="result">已发送 {{ rows|length }} 条有效分享网址到本机。</p><script nonce="{{ script_nonce }}">if(window.opener){window.opener.postMessage({type:'order-share-links:v1',request_id:{{ request_id|tojson }},shares:{{ rows|tojson }}},{{ origin|tojson }});setTimeout(()=>window.close(),1200);}else{document.getElementById('result').textContent='本机窗口已关闭，请从本机重新打开同步。';}</script>
-{% else %}<p>将有效分享的网址与 QR 同步到以下本机管理页：</p><code>{{ origin }}</code><p>请确认这是你正在使用的本机地址。</p><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">同步到此本机</button></form>{% endif %}</div></html>''', origin=origin, request_id=request_id, rows=rows, sent=sent, csrf=csrf, script_nonce=script_nonce))
+{% if sent %}<p id="result">已发送 {{ rows|length }} 条有效分享网址到本机。</p><script nonce="{{ script_nonce }}">if(window.opener){window.opener.postMessage({type:'order-share-links:v1',request_id:{{ request_id|tojson }},shares:{{ rows|tojson }},grant:{{ desktop_grant|tojson }}},{{ origin|tojson }});setTimeout(()=>window.close(),1200);}else{document.getElementById('result').textContent='本机窗口已关闭，请从本机重新打开同步。';}</script>
+{% else %}<p>将有效分享的网址与 QR 同步到以下本机管理页：</p><code>{{ origin }}</code><p>请确认这是你正在使用的本机地址。</p><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">同步到此本机</button></form>{% endif %}</div></html>''', origin=origin, request_id=request_id, rows=rows, sent=sent, csrf=csrf, script_nonce=script_nonce, desktop_grant=desktop_grant))
     response.headers['Cache-Control'] = 'no-store, private, max-age=0'
     response.headers['Referrer-Policy'] = 'no-referrer'
     response.headers['X-Frame-Options'] = 'DENY'
@@ -954,3 +956,9 @@ except Exception as exc:
     print(f"[WARN] ORDER share admin migration deferred: {type(exc).__name__}: {exc}")
 
 
+
+
+from services.order_desktop_grant import install as _install_desktop_grant
+from services.order_sync_integrity import install as _install_sync_integrity
+_install_desktop_grant(b2_test_bp)
+_install_sync_integrity(b2_test_bp)

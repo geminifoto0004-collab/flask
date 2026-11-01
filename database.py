@@ -215,7 +215,8 @@ def get_db_connection_for_target(target, *, pooled=True):
 
 
 def _select_mysql_connection():
-    preferred = tidb_preferred_target()
+    import tidb_integrity as integrity
+    preferred = get_cloud_mirror_source_hint() or tidb_preferred_target()
     errors = []
     for target in tidb_target_candidates(
         preferred,
@@ -223,9 +224,26 @@ def _select_mysql_connection():
     ):
         if not tidb_target_configured(target):
             continue
+        if integrity.target_blocked(target):
+            errors.append((target, RuntimeError('quota_cooldown: target temporarily unavailable')))
+            continue
+        if target != preferred and not integrity.can_promote(target, 'cloud'):
+            errors.append((target, RuntimeError('standby_not_verified: backup consistency is unconfirmed')))
+            continue
+        connection = None
         try:
-            return AdaptedConnection(_raw_mysql_connection_for_target(target, pooled=True)), target
+            connection = AdaptedConnection(_raw_mysql_connection_for_target(target, pooled=True))
+            cursor = connection.cursor()
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+            connection.rollback()
+            connection.active_target = target
+            return connection, target
         except Exception as exc:
+            integrity.target_failed(target, exc)
+            if connection is not None:
+                try: connection.close()
+                except Exception: pass
             errors.append((target, exc))
             continue
     if errors:
@@ -412,10 +430,15 @@ class CloudMirroredCursor:
         return getattr(self._active_cursor, name)
 
     def execute(self, sql, params=None):
-        if params is None:
-            result = self._active_cursor.execute(sql)
-        else:
-            result = self._active_cursor.execute(sql, params)
+        try:
+            if params is None:
+                result = self._active_cursor.execute(sql)
+            else:
+                result = self._active_cursor.execute(sql, params)
+        except Exception as error:
+            import tidb_integrity
+            tidb_integrity.target_failed(self._connection.active_target, error)
+            raise  # Never replay a partially executed transaction on another DB.
         if _is_cloud_write(sql):
             self._connection._cloud_written = True
             self._connection._mirror_execute(sql, params, many=False)
@@ -529,6 +552,8 @@ class CloudMirroredConnection:
 
     def commit(self):
         if self._cloud_written:
+            import tidb_integrity
+            tidb_integrity.invalidate()
             version = time.time_ns()
             try:
                 self._write_mirror_state(self._active, version)
@@ -1461,3 +1486,4 @@ if __name__ == '__main__':
         print(f"  {key}: {value}")
     
     print("\n" + "=" * 50)
+

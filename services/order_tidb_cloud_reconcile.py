@@ -31,6 +31,7 @@ _TABLES = (
     'cloud_workflows',
     'cloud_workflow_history',
     'cloud_share_tokens',
+    'cloud_share_order_visibility',
     'cloud_assets',
     'cloud_order_snapshot_state',
     'cloud_order_users',
@@ -44,6 +45,7 @@ _PRIMARY_KEYS = {
     'cloud_workflows': 'workflow_key',
     'cloud_workflow_history': 'history_key',
     'cloud_share_tokens': 'token_hash',
+    'cloud_share_order_visibility': ('token_hash', 'order_number'),
     'cloud_assets': 'asset_key',
     'cloud_order_snapshot_state': 'snapshot_key',
     'cloud_order_users': 'username',
@@ -53,6 +55,7 @@ _PRIMARY_KEYS = {
 _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 _started = False
 _start_lock = threading.Lock()
+_reconcile_lock = threading.Lock()
 
 
 def _qi(name):
@@ -129,44 +132,40 @@ def _ensure_destination_schema(source_cur, dest_cur, table):
 
 
 def _upsert_table(source_conn, dest_conn, table):
-    source_cur = source_conn.cursor()
-    dest_cur = dest_conn.cursor()
+    import hashlib, json
+    source_cur, dest_cur = source_conn.cursor(), dest_conn.cursor()
     if not _table_exists(source_cur, table):
-        return {'table': table, 'rows': 0, 'skipped': 'source_missing'}
-
+        return {'table': table, 'rows': 0, 'changed': 0, 'skipped': 'source_missing'}
     _ensure_destination_schema(source_cur, dest_cur, table)
     dest_conn.commit()
-
+    pk = _PRIMARY_KEYS.get(table)
+    keys = (pk,) if isinstance(pk, str) else tuple(pk or ())
+    if not keys: raise ValueError('mirror key is missing')
+    def key(row): return tuple(row.get(col) for col in keys)
+    def digest(row):
+        return hashlib.sha256(json.dumps(row, sort_keys=True, default=str, ensure_ascii=False).encode()).digest()
+    dest_cur.execute(f'SELECT * FROM {_qi(table)}')
+    existing = {}
+    while True:
+        batch = dest_cur.fetchmany(250)
+        if not batch: break
+        for row in batch: existing[key(row)] = digest(row)
     source_cur.execute(f'SELECT * FROM {_qi(table)}')
-    first = source_cur.fetchmany(250)
-    if not first:
-        return {'table': table, 'rows': 0, 'changed': 0}
-
-    sample = first[0]
-    if not isinstance(sample, dict):
-        raise RuntimeError(f'{table} did not return DictCursor rows')
-    columns = [str(x) for x in sample.keys() if _IDENT.fullmatch(str(x))]
-    if not columns:
-        raise RuntimeError(f'{table} has no mirrorable columns')
-
-    placeholders = ','.join(['?'] * len(columns))
-    quoted = ','.join(_qi(x) for x in columns)
-    updates = ','.join(f'{_qi(x)}=VALUES({_qi(x)})' for x in columns)
-    sql = (f'INSERT INTO {_qi(table)} ({quoted}) VALUES ({placeholders}) '
-           f'ON DUPLICATE KEY UPDATE {updates}')
-
-    total = 0
-    changed = 0
-    batch = first
-    while batch:
-        values = [tuple(row.get(col) for col in columns) for row in batch]
-        dest_cur.executemany(sql, values)
-        changed += max(int(dest_cur.rowcount or 0), 0)
-        total += len(values)
-        if total % 1000 == 0:
-            dest_conn.commit()
+    total = changed = 0
+    while True:
         batch = source_cur.fetchmany(250)
-    dest_conn.commit()
+        if not batch: break
+        columns = [col for col in batch[0] if _IDENT.fullmatch(col)]
+        if not columns: raise ValueError('mirror columns are missing')
+        quoted = ','.join(_qi(col) for col in columns)
+        updates = ','.join(f'{_qi(col)}=VALUES({_qi(col)})' for col in columns)
+        values = [tuple(row.get(col) for col in columns) for row in batch if existing.get(key(row)) != digest(row)]
+        if values:
+            sql = f'INSERT INTO {_qi(table)} ({quoted}) VALUES (' + ','.join('?' for _ in columns) + f') ON DUPLICATE KEY UPDATE {updates}'
+            dest_cur.executemany(sql, values)
+            changed += len(values)
+            dest_conn.commit()
+        total += len(batch)
     return {'table': table, 'rows': total, 'changed': changed}
 
 
@@ -196,27 +195,20 @@ def _invalidate_process_views():
 
 
 def _standby_only_counts(source_conn, dest_conn):
-    """Report divergent keys without resurrecting a removed image or share."""
     counts = {}
     source_cur, dest_cur = source_conn.cursor(), dest_conn.cursor()
     for table in _TABLES:
-        if table in ('cloud_customer_share_snapshot', _STATE_TABLE):
-            continue
+        if table in ('cloud_customer_share_snapshot', _STATE_TABLE): continue
         pk = _PRIMARY_KEYS.get(table)
-        if not pk or not _table_exists(source_cur, table) or not _table_exists(dest_cur, table):
-            continue
-        source_cur.execute(f'SELECT {_qi(pk)} FROM {_qi(table)}')
-        source_keys = {
-            row.get(pk) if isinstance(row, dict) else row[0]
-            for row in source_cur.fetchall() or []
-        }
-        dest_cur.execute(f'SELECT {_qi(pk)} FROM {_qi(table)}')
-        count = sum(
-            1 for row in dest_cur.fetchall() or []
-            if (row.get(pk) if isinstance(row, dict) else row[0]) not in source_keys
-        )
-        if count:
-            counts[table] = count
+        keys = (pk,) if isinstance(pk, str) else tuple(pk or ())
+        if not keys or not _table_exists(source_cur, table) or not _table_exists(dest_cur, table): continue
+        fields = ','.join(_qi(col) for col in keys)
+        def key(row): return tuple(row.get(col) for col in keys) if isinstance(row,dict) else tuple(row)
+        source_cur.execute(f'SELECT {fields} FROM {_qi(table)}')
+        source_keys = {key(row) for row in source_cur.fetchall() or []}
+        dest_cur.execute(f'SELECT {fields} FROM {_qi(table)}')
+        count = sum(1 for row in dest_cur.fetchall() or [] if key(row) not in source_keys)
+        if count: counts[table] = count
     return counts
 
 
@@ -269,6 +261,11 @@ def _choose_source_target():
 
 
 def reconcile_once(source_target=None):
+    with _reconcile_lock:
+        return _reconcile_once(source_target)
+
+
+def _reconcile_once(source_target=None):
     if config.DATABASE_TYPE not in ('mysql', 'tidb') or not mirror_enabled():
         clear_cloud_mirror_dirty()
         return {'ok': True, 'skipped': 'mirror_disabled'}
@@ -283,20 +280,28 @@ def reconcile_once(source_target=None):
         return {'ok': False, 'skipped': 'target_not_configured'}
 
     source = get_db_connection_for_target(source_target, pooled=False)
+    import tidb_integrity
+    tidb_integrity.invalidate()
     destination = None
     results = []
+    source_version_before = _mirror_version(source_target)
     try:
         destination = get_db_connection_for_target(destination_target, pooled=False)
         # Never infer a DELETE from absence. The standby may have a still-valid
         # order, or an intentionally deleted image. Keep it and report the drift.
         standby_only = _standby_only_counts(source, destination)
         for table in _TABLES:
-            results.append(_upsert_table(source, destination, table))
+            if table != _STATE_TABLE:
+                results.append(_upsert_table(source, destination, table))
+        if _mirror_version(source_target) != source_version_before:
+            raise RuntimeError('source_changed_during_reconcile: retry incrementally')
+        results.append(_upsert_table(source, destination, _STATE_TABLE))
         if standby_only or any(item.get('changed') for item in results if item['table'] not in
                                ('cloud_customer_share_snapshot', _STATE_TABLE)):
             _invalidate_derived_views(destination)
             _invalidate_process_views()
-        clear_cloud_mirror_dirty()
+        if not standby_only:
+            clear_cloud_mirror_dirty()
         print(
             f'[ORDER] TiDB cloud reconcile {source_target}->{destination_target} complete: '
             + ', '.join(
@@ -306,7 +311,7 @@ def reconcile_once(source_target=None):
         if standby_only:
             print(f'[WARN] TiDB standby-only ORDER rows retained for audit: {standby_only}')
         return {
-            'ok': True,
+            'ok': not bool(standby_only),
             'source': source_target,
             'destination': destination_target,
             'versions_before': versions,
@@ -341,9 +346,15 @@ def _worker():
     time.sleep(30.0 if (os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_NAME')) else 4.0)
     event = cloud_mirror_dirty_event()
     first = True
+    last_pass = 0.0
     while True:
         if not first:
-            event.wait(timeout=1800.0)
+            event.wait(timeout=600.0)
+        if not first:
+            remaining = 300 - (time.monotonic() - last_pass)
+            if remaining > 0:
+                time.sleep(min(remaining, 30))
+                continue
         dirty = event.is_set()
         was_first = first
         first = False
@@ -355,8 +366,15 @@ def _worker():
                 # should not copy every ORDER row every five minutes just to check.
                 versions = (_mirror_version('TIDB1'), _mirror_version('TIDB2'))
                 if versions[0] is not None and versions[0] == versions[1] and versions[0] > 0:
-                    continue
+                    import tidb_integrity
+                    prior = tidb_integrity.snapshot()
+                    if prior.get('verified') and prior.get('versions') == dict(zip(('TIDB1','TIDB2'), versions)):
+                        tidb_integrity.publish(prior, tidb_integrity.generation())
+                        continue
+            last_pass = time.monotonic()
             reconcile_once()
+            from services.order_sync_integrity import verify_once
+            verify_once()
         except Exception as exc:
             print(f'[WARN] TiDB cloud reconcile pending: {type(exc).__name__}: {exc}')
             event.set()
@@ -376,3 +394,4 @@ def install():
 
 
 install()
+
