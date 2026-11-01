@@ -182,10 +182,20 @@ def _load(conn, cart_id):
         cart = _row_dict(cur.fetchone())
         if not cart:
             return None
+        # Read the latest stock for this cart in the EXISTING items query.
+        # This avoids one network request per SKU, and guests only receive
+        # the quantities for SKUs already in their authorized cart.
         cur.execute(
-            "SELECT sku,qty FROM xw_cart_items WHERE cart_id=%s ORDER BY sku", (cart_id,)
+            "SELECT i.sku,i.qty,s.stock_rolls "
+            "FROM xw_cart_items i "
+            "LEFT JOIN xw_stock_snapshot s ON s.sku=i.sku AND s.is_active=1 "
+            "WHERE i.cart_id=%s ORDER BY i.sku", (cart_id,)
         )
-        cart["items"] = [{"sku": sku, "qty": int(qty)} for sku, qty in cur.fetchall()]
+        cart["items"] = [
+            {"sku": sku, "qty": int(qty),
+             "stock_rolls": str(rolls) if rolls is not None else None}
+            for sku, qty, rolls in cur.fetchall()
+        ]
     cart["guest_expires"] = cart["guest_expires"].isoformat() + "Z" if cart["guest_expires"] else None
     cart["created_at"] = cart["created_at"].isoformat() + "Z"
     cart["updated_at"] = cart["updated_at"].isoformat() + "Z"

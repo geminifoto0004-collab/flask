@@ -131,11 +131,14 @@ function cartRender(){
  $('cartPickEmpty').classList.toggle('hidden',Boolean(cartSearch)||(cartEffectiveItems().length>0));
  const host=$('cartItems');host.replaceChildren();
  const items=cartEffectiveItems();
+ // Stock is returned with the saved cart from the TiDB snapshot.
+ // Don't require the customer to scan the series again after re-opening.
+ const knownStock=new Map((cartData.items||[]).map(i=>[i.sku,i.stock_rolls]));
  if(!items.length){
   const p=document.createElement('p');p.className='muted';
   p.textContent='尚未选择商品 / Sin productos';host.append(p);
  }
- for(const item of items)host.append(cartRow(item.sku,item.qty,null,false));
+ for(const item of items)host.append(cartRow(item.sku,item.qty,knownStock.get(item.sku)??null,true));
  const products=$('cartProducts');products.replaceChildren();
  let rows=[],selected=[],inStock=[],all=[];
  if(cartSearch){
@@ -143,9 +146,9 @@ function cartRender(){
   selected=all.filter(v=>cartItemQty(v.code)>0);
   inStock=all.filter(v=>Number(v.stock_rolls)>0);
  }else{
-  all=items.map(i=>({code:i.sku,stock_rolls:null}));
+  all=items.map(i=>({code:i.sku,stock_rolls:knownStock.get(i.sku)??null}));
   selected=all;
-  inStock=[];
+  inStock=all.filter(v=>v.stock_rolls!=null&&Number(v.stock_rolls)>0);
  }
  $('cartProductToolbar').classList.toggle('hidden',!all.length);
  const bar=document.createElement('div');bar.className='cart-filter cc-three-filters';
@@ -176,7 +179,7 @@ function cartRender(){
   const p=document.createElement('p');p.className='muted cc-empty-filter';
   p.textContent='没有符合的编号 / Sin resultados';products.append(p);
  }
- for(const item of rows)products.append(cartRow(item.code,cartItemQty(item.code),item.stock_rolls,Boolean(cartSearch)));
+ for(const item of rows)products.append(cartRow(item.code,cartItemQty(item.code),item.stock_rolls,true));
  $('cartStockNote').classList.toggle('hidden',!all.length);
  $('cartStockNote').textContent='库存为参考值，正式订货前须核对 RESERVAR';
 }
