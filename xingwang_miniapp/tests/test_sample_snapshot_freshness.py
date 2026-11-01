@@ -12,7 +12,7 @@ def test_sample_and_full_mode_routes():
  assert 'fresh["synced_at_utc"] != snapshot_version' in back
 
 
-def test_stale_stock_has_explicit_opt_in_and_persistent_reminder():
+def test_stale_stock_has_explicit_opt_in_and_page_scoped_dismissal():
  front=(ROOT/"scanner.html").read_text("utf-8")
  back=(ROOT/"scanner_backend.py").read_text("utf-8")
  db=(ROOT/"scanner_tidb.py").read_text("utf-8")
@@ -20,7 +20,10 @@ def test_stale_stock_has_explicit_opt_in_and_persistent_reminder():
  assert "staleAcceptedVersion=lastFreshness.synced_at_utc;" in front
  assert "staleAcceptedVersion=null;" in front
  assert "mode!=='sample'||!stale" in front
- assert "freshnessDismissed" not in front
+ assert 'id="freshnessDismissBtn"' in front
+ assert "freshnessDismissedKey=freshnessKey(lastFreshness);" in front
+ assert "mode!=='sample'||!stale||dismissed" in front
+ assert "staleAcceptedVersion=lastFreshness.synced_at_utc;" in front
  assert "'⚠ 庫存未更新 · '" in front
  assert 'if(!fresh?.has_synced)' in front
  assert "if(!fresh.fresh&&!staleAccepted(fresh))" in front

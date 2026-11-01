@@ -257,6 +257,9 @@ small,.muted{color:var(--muted)}
 .stock-visibility button .filter-count{font-size:17px}
 #freshnessPanel.stale{background:#FFF3D6;border-color:#f0d9a6;color:#6B4200}
 #freshnessPanel.acknowledged{background:#FFF3D6;border-color:#efd9a5}
+#freshnessPanel .freshness-head{align-items:center}
+#freshnessPanel #freshnessDismissBtn{display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;width:34px;height:34px;min-height:34px;min-width:34px;margin:-5px -6px -5px 0;padding:0;border:0;border-radius:8px;background:transparent;color:#6B4200;font-size:26px;line-height:1;opacity:1}
+#freshnessPanel #freshnessDismissBtn:hover,#freshnessPanel #freshnessDismissBtn:focus-visible{background:#f5dfb6}
 #freshnessAdminBtn{background:#fff;color:#6B4200;border-color:#dfbd77}
 .sample-stat,#result .sample-stat,.stock-stat{background:#FBF7F9;border-color:var(--hair)}
 .sample-stat-value,#result .sample-stat-value,.stock-stat strong{color:var(--wine-deep)}
@@ -375,7 +378,7 @@ small,.muted{color:var(--muted)}
 <div id="workModes" class="modes"><button id="modeSample" class="active" type="button" title="布樣盤點 / Muestras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M4 12h16"/></svg><span>样布 <small>Muestras</small></span></button><button id="modeFull" type="button" title="完整查詢 / Consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg><span>库存 <small>Stock</small></span></button></div>
 <div id="fullKindControls" class="full-kind hidden"><button id="fullProduct" class="active" type="button">商品查詢</button><button id="fullNota" type="button">Nota 查詢</button></div>
 <div id="freshnessPanel" class="notice hidden" role="status" aria-live="polite">
-<div class="freshness-head"><span id="freshnessText">庫存已超過 60 分鐘，請確認是否使用舊資料。</span></div>
+<div class="freshness-head"><span id="freshnessText">庫存已超過 60 分鐘，請確認是否使用舊資料。</span><button id="freshnessDismissBtn" type="button" aria-label="關閉提醒並繼續使用舊庫存" title="關閉提醒（本次開啟不再顯示）">×</button></div>
 <div class="row" style="margin-top:8px;flex-wrap:wrap">
 <button type="button" id="freshnessContinueBtn" class="secondary hidden">繼續使用舊庫存</button>
 <button type="button" id="freshnessAdminBtn" class="freshnessAdmin">更新庫存</button>
@@ -568,7 +571,11 @@ for(const [id,field] of [['sampleSkuSort','code'],['sampleRollsSort','stock_roll
 let lastFreshness=null, checkingFreshness=null;
 // Per-page explicit choice. Never turn a stale snapshot into "fresh", and
 // never reuse the choice after a different stock snapshot is published.
-let staleAcceptedVersion=null;
+let staleAcceptedVersion=null, freshnessDismissedKey=null;
+function freshnessKey(data){
+ if(data?.has_synced&&data.synced_at_utc)return 'snapshot:'+data.synced_at_utc;
+ return data?'unavailable-snapshot':'unknown-freshness';
+}
 function staleAccepted(data=lastFreshness){
  return !!(data?.has_synced&&!data.fresh&&data.synced_at_utc&&
    staleAcceptedVersion===data.synced_at_utc);
@@ -586,7 +593,8 @@ function showFreshnessWarning(){
  const stale=data?.fresh!==true;
  const acknowledged=staleAccepted(data);
  const panel=$('freshnessPanel');
- panel.classList.toggle('hidden',mode!=='sample'||!stale);
+ const dismissed=freshnessDismissedKey===freshnessKey(data);
+ panel.classList.toggle('hidden',mode!=='sample'||!stale||dismissed);
  panel.classList.toggle('acknowledged',acknowledged);
  $('freshnessContinueBtn').classList.toggle('hidden',!data?.has_synced||acknowledged);
  $('freshnessContinueBtn').disabled=!data?.has_synced||acknowledged;
@@ -598,6 +606,9 @@ function showFreshnessWarning(){
 function setFreshness(data){
  if(!data?.has_synced||data.synced_at_utc!==staleAcceptedVersion&&staleAcceptedVersion){
   staleAcceptedVersion=null;
+ }
+ if(freshnessDismissedKey&&(data?.fresh||freshnessDismissedKey!==freshnessKey(data))){
+  freshnessDismissedKey=null;
  }
  lastFreshness=data;
  const panel=$('freshnessPanel');
@@ -622,6 +633,15 @@ async function checkFreshness(){
  return checkingFreshness;
 }
 $('freshnessCheckBtn').onclick=checkFreshness;
+$('freshnessDismissBtn').onclick=()=>{
+ // The X means "skip refresh for this page". Acknowledging the unchanged
+ // snapshot preserves server authorization for sample query/save.
+ if(lastFreshness?.has_synced&&!lastFreshness.fresh){
+  staleAcceptedVersion=lastFreshness.synced_at_utc;
+ }
+ freshnessDismissedKey=freshnessKey(lastFreshness);
+ showFreshnessWarning();
+};
 $('freshnessContinueBtn').onclick=()=>{
  if(!lastFreshness?.has_synced||lastFreshness.fresh)return;
  staleAcceptedVersion=lastFreshness.synced_at_utc;

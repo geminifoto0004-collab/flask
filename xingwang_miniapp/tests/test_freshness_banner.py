@@ -9,7 +9,10 @@ def test_fresh_snapshot_does_not_display_expiry_banner():
     assert 'id="freshnessContinueBtn"' in ui
     assert "mode!=='sample'||!stale" in ui
     assert "staleAcceptedVersion=lastFreshness.synced_at_utc" in ui
-    assert "freshnessDismissed" not in ui
+    assert 'id="freshnessDismissBtn"' in ui
+    assert "freshnessDismissedKey=freshnessKey(lastFreshness);" in ui
+    assert "freshnessDismissedKey=null;" in ui
+    assert "staleAcceptedVersion=lastFreshness.synced_at_utc;" in ui
 
 def test_stale_permission_is_explicit_and_snapshot_is_version_bound():
     ui=(BASE/"scanner.html").read_text(encoding="utf-8")
