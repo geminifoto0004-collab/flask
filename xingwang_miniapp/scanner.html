@@ -671,7 +671,12 @@ body:has(#cartWorkspace:not(.hidden)) main{padding:0 0 calc(93px + env(safe-area
 #cartWorkspace #cartScanNow{;background:var(--wine);display:flex;align-items:center;justify-content:center;width:100%;padding:0;color:#fff}
 #cartWorkspace #cartScanNow>span{display:none}
 #cartWorkspace #cartProductToolbar{}
-.cc-search{width:100%;height:48px;display:flex;align-items:center;gap:8px;border:1px solid var(--stroke);border-radius:12px;padding:0 13px;background:#fff}
+.cc-search{width:100%;height:48px;display:flex;align-items:center;gap:8px;border:1px solid var(--stroke);border-radius:12px;padding:0 4px 0 13px;background:#fff}
+.cc-search:focus-within{border-color:var(--wine);box-shadow:0 0 0 2px rgba(106,27,54,.10)}
+.cc-search #cartSkuFilter:focus,.cc-search #cartSkuFilter:focus-visible{outline:none;box-shadow:none;border:0}
+.cc-search #cartSeriesLookup{display:inline-flex;flex:none;align-items:center;justify-content:center;gap:5px;min-height:44px;min-width:52px;padding:0 10px;border:0;border-radius:10px;background:var(--wine);color:#fff;font-size:12px;font-weight:700}
+.cc-search #cartSeriesLookup svg{color:currentColor}
+@media(max-width:360px){.cc-search #cartSeriesLookup{min-width:44px;padding:0 8px}.cc-search #cartSeriesLookup span{display:none}}
 .cc-search svg{flex:none;color:var(--muted)}
 #cartSkuFilter{height:45px;width:100%;min-width:0;border:0!important;background:transparent;padding:0;font-size:16px;box-shadow:none}
 #cartWorkspace .cart-filter{margin:0;display:flex}
@@ -1538,9 +1543,9 @@ body.cc-sample-detail #result{
  </div>
  <div id="cartScanAction"><button id="cartScanNow" type="button" aria-label="继续扫码 / Seguir escaneando"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M4 12h16"/></svg></button></div>
  <div id="cartPickView">
-  <div id="cartProductToolbar" class="cart-product-toolbar hidden"><div class="cc-search"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="cartSkuFilter" type="search" placeholder="搜索 / Buscar" autocomplete="off"></div></div>
+  <div id="cartProductToolbar" class="cart-product-toolbar hidden"><div class="cc-search"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="cartSkuFilter" type="search" placeholder="系列 / SKU · Buscar" aria-label="输入系列或商品编号 / Buscar serie o SKU" enterkeyhint="search" autocomplete="off"><button id="cartSeriesLookup" type="button" aria-label="按编号查询商品 / Buscar productos" title="按编号查询 / Buscar"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg><span>查询</span></button></div></div>
   <div id="cartProducts"></div>
-  <div id="cartPickEmpty" class="cart-pick-empty"><strong>扫码 / Escanear</strong><span>扫描系列编号 / Escanear código</span></div>
+  <div id="cartPickEmpty" class="cart-pick-empty"><strong>扫码或输入编号</strong><span>Escanear o buscar una serie</span></div>
  </div>
  <div id="cartItemView" class="cc-cart-summary-sheet hidden">
   <div id="ccSummaryShade" class="cc-summary-shade"></div>
