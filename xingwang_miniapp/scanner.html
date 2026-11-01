@@ -152,11 +152,24 @@ async function inventoryRefresh(){
   const d=await r.json(), j=d.job||{}, last=d.last_success||{};
   let state='';
   if(j.state==='reading')state='正在透過 V33 讀取本機 Flask 庫存…';
-  else if(j.state==='writing')state='讀取完成，正在寫入 TiDB…';
+  else if(j.state==='writing'){
+    const done=Number(j.processed||0),total=Number(j.total_changes||0);
+    const phase=j.phase||'connecting';
+    const phaseText={
+      connecting:'正在連接 TiDB',
+      comparing:'正在比較既有庫存',
+      writing:'正在批次寫入 TiDB',
+      committing:'資料已送出，等待 TiDB 提交（尚未完成）',
+      finished:'寫入完成'
+    };
+    state=(phaseText[phase]||'正在同步')+
+      (phase==='writing'&&total?'：'+done+' / '+total+'（'+Math.floor(done/total*100)+'%）':'')+
+      (j.snapshot_count?'｜總商品 '+j.snapshot_count+' 筆':'');
+  }
   else if(j.state==='failed')state='同步失敗：'+(j.error||'請檢查 Render 日誌');
   else if(j.state==='success')state='本次同步成功。';
   const b=$('inventoryStartBtn');b.disabled=j.state==='reading'||j.state==='writing';
-  let previous='尚無成功紀錄';
+  let previous=last.pending?'本次寫入尚未提交；成功時間將在完成後更新':'尚無成功紀錄';
   if(last.has_synced){
    const time=new Date(last.synced_at_utc);
    const dt=isNaN(time.getTime())?last.synced_at_utc:

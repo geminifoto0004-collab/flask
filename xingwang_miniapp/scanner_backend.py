@@ -190,7 +190,22 @@ async def _inventory_run(job_id):
             if _INVENTORY_JOB.get("id") == job_id:
                 _INVENTORY_JOB = {"state":"writing", "id":job_id,
                                   "started_at":_INVENTORY_JOB["started_at"]}
-        result = await asyncio.to_thread(stock_sync_api._sync_blocking, snapshot)
+        loop = asyncio.get_running_loop()
+        def publish_progress(phase, completed, total):
+            # Store progress on the event loop, never mutate response state
+            # from the database worker thread.
+            def update():
+                if _INVENTORY_JOB.get("id") == job_id:
+                    _INVENTORY_JOB.update({
+                        "phase":phase,
+                        "processed":int(completed),
+                        "total_changes":int(total),
+                        "snapshot_count":len(snapshot),
+                    })
+            loop.call_soon_threadsafe(update)
+        result = await asyncio.to_thread(
+            stock_sync_api._sync_blocking, snapshot, False, publish_progress
+        )
         async with _INVENTORY_LOCK:
             if _INVENTORY_JOB.get("id") == job_id:
                 _INVENTORY_JOB = {"state":"success", "id":job_id, "result":result}
@@ -264,11 +279,17 @@ async def inventory_start(request: Request):
 async def inventory_status(request: Request):
     _require(request)
     from xingwang_miniapp import stock_sync_api
+    job = dict(_INVENTORY_JOB)
+    if job.get("state") in ("reading", "writing"):
+        # A TiDB connection on each 3-second poll slowed down small Starter
+        # instances. Do not query the database while a write is running.
+        return {"ok":True, "job":job,
+                "last_success":{"success":True,"has_synced":False,"pending":True}}
     try:
         last = await asyncio.to_thread(stock_sync_api._status_blocking)
     except Exception:
         last = {"success":False, "has_synced":False}
-    return {"ok":True, "job":dict(_INVENTORY_JOB), "last_success":last}
+    return {"ok":True, "job":job, "last_success":last}
 
 
 @router.post("/scanner/api/login")
