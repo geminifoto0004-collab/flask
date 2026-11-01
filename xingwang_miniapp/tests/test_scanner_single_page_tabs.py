@@ -12,7 +12,7 @@ def test_internal_tabs_and_management():
  assert 'function fullRenderProduct(data)' in html
  assert "'/api/query'" in html
  assert "if(!initData)throw Error(" in html
- assert 'mode=\\'admin\\'' in html
+ assert "mode='admin'" in html
 def test_telegram_query_not_leaked_through_quick():
  source=(p.parent/"scanner_backend.py").read_text(encoding="utf-8")
  start=source.index('@router.post("/scanner/api/quick")')
