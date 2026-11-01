@@ -173,7 +173,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div id="sampleControls">
 <div id="dbNotice" class="notice">尚未確認 TiDB 連線；不會寫入盤點資料。</div>
 <p id="missingCount" class="muted"></p>
-<div class="row"><button id="saveBtn" class="fill hidden">確認完成 · 保存 TiDB</button><button id="copyBtn" class="secondary">複製清單</button><button id="nextBtn" class="secondary">下一張</button></div>
+<div class="row"><button id="saveBtn" class="fill hidden">確認本頁並保存</button></div>
 </div>
 </section>
 <section id="adminTab" class="hidden" aria-label="管理分頁"><div id="adminApp">
@@ -194,7 +194,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, saved=false;
+let mode='sample', reader=null, running=false, busy=false, current=null, saved=false, lastQrCode='';
 let sampleStates=new Map(),samplePositiveOnly=true,sampleDescending=false,sampleDirty=false,savedScope=new Set(),sharedProductCode='',notaInput='';
 let fullKind='product',fullTab='stock',fullData=null,fullDataKind='product',fullSort='',fullDesc=false,fullCode='',fullSession='';
 try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
@@ -570,7 +570,7 @@ function updateMissing(){
  const visible=visibleSampleRows(),yes=visible.filter(x=>sampleStates.get(x.code)===true).length;
  const no=visible.length-yes;
  $('missingCount').textContent=saved
-  ?'本次已保存 '+savedScope.size+' 個編號（保存時顯示的清單）；其餘未修改。如需繼續盤點其他編號，請重新查詢。'
+  ?'已保存 '+savedScope.size+' 個編號；其他編號保持不變。可直接掃描或輸入下一個商品。'
   :'本頁：有樣 '+yes+'，無樣 '+no+'。確認實物後按保存；隱藏的編號不會修改。';
  $('saveBtn').disabled=saved||visible.length===0;
 }
@@ -595,7 +595,7 @@ async function lookup(input){
  if(!validInput){msg('查詢條件不正確，請檢查後重試','error');return}
  if(busy||mode==='admin')return;
  if(mode==='sample'&&current&&current.product_code!==code&&sampleDirty&&!saved&&!confirm('尚有未保存的布樣修改，確定查其他編號嗎？'))return;
- busy=true;locked=true;$('queryBtn').disabled=true;
+ busy=true;$('queryBtn').disabled=true;
  $('code').value=code;syncSearchClear();
  try{
   if(mode==='full'){
@@ -613,7 +613,7 @@ async function lookup(input){
     sharedProductCode=code;showResult(d);msg('布樣與庫存查詢完成','good');
    }
   }
- }catch(e){locked=false;if(mode==='sample'&&e.status===409)void checkFreshness();msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');if(e.status===401)await session()}
+ }catch(e){if(mode==='sample'&&e.status===409)void checkFreshness();msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');if(e.status===401)await session()}
  finally{busy=false;$('queryBtn').disabled=false}
 }
 function syncSearchClear(){
@@ -640,14 +640,25 @@ $('codeClearBtn').onclick=()=>{
 };
 $('queryBtn').onclick=()=>lookup($('code').value);
 $('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
-function onScan(raw){if(locked||busy)return;const code=normalizeProductCode(raw);if(valid(code))lookup(code);else msg('QR 不是商品編號，請掃描純編號 QR','error')}
+function onScan(raw){
+ if(busy||mode==='admin')return;
+ const code=normalizeProductCode(raw);
+ if(!valid(code)){msg('QR 不是商品編號，請掃描純編號 QR','error');return}
+ // The camera reports the same visible QR many times per second.
+ // Skip duplicates; a DIFFERENT QR can be scanned immediately, with the
+ // unsaved-change confirmation already enforced inside lookup().
+ if(code===lastQrCode||(mode==='sample'&&code===current?.product_code)||
+    (mode==='full'&&code===fullCode&&fullData))return;
+ lastQrCode=code;
+ void lookup(code);
+}
 async function startCamera(){
  if(running)return;
  if(!window.Html5Qrcode){msg('相機元件尚未載入，請重新整理。','error');return}
  try{
   reader=new Html5Qrcode('reader',{verbose:false});
   await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});
-  running=true;syncCameraButton();msg('連續掃描已開啟，完成一張後按下一張，鏡頭不用關閉。');
+  running=true;lastQrCode='';syncCameraButton();msg('相機已開啟，可連續掃描商品編號。');
  }catch(e){reader=null;running=false;syncCameraButton();msg('相機權限或開啟失敗：'+String(e),'error')}
 }
 async function stopCamera(){
@@ -662,13 +673,15 @@ function syncCameraButton(){
  $('cameraOnIcon').classList.toggle('hidden',running);$('cameraOffIcon').classList.toggle('hidden',!running);
 }
 $('cameraToggle').onclick=async()=>{if(running)await stopCamera();else await startCamera()};
-function nextScan(){
- if(sampleDirty&&!saved&&!confirm('尚有未保存的布樣修改，確定放棄嗎？'))return;
- current=null;fullData=null;sampleStates.clear();sampleDirty=false;savedScope.clear();saved=false;locked=false;sharedProductCode='';fullCode='';
- $('code').value='';syncSearchClear();$('result').classList.add('hidden');$('fullResult').classList.add('hidden');
- msg(running?'鏡頭持續開啟，可以掃下一張。':'請掃下一張或輸入編號。');
+function clearFullQuery(){
+ // The existing "查下一筆" action belongs only to the full-inquiry tab.
+ fullData=null;fullCode='';lastQrCode='';
+ $('code').value='';syncSearchClear();
+ $('fullResult').classList.add('hidden');
+ msg('');
+ $('code').focus();
 }
-$('nextBtn').onclick=nextScan;$('fullNext').onclick=nextScan;
+$('fullNext').onclick=clearFullQuery;
 $('saveBtn').onclick=async()=>{
  if(!current?.db_connected||!current?.scan_id||saved||!visibleSampleRows().length)return;
  const b=$('saveBtn');b.disabled=true;
@@ -683,12 +696,6 @@ $('saveBtn').onclick=async()=>{
   renderRows();msg('已保存 '+out.sku_count+' 個確認：有樣 '+present.length+'，無樣 '+missing.length+'。','good');
   b.textContent='已保存';b.classList.add('secondary');
  }catch(e){b.disabled=false;msg(e.message,'error');if(e.status===409)void checkFreshness()}
-};
-$('copyBtn').onclick=async()=>{
- if(!current)return;
- const absent=visibleSampleRows().filter(row=>sampleStates.get(row.code)!==true).map(row=>row.code).sort();
- const lines=['布樣 '+current.product_code,'本次確認無樣：',...(absent.length?absent:['無'])];
- try{await navigator.clipboard.writeText(lines.join('\n'));msg('清單已複製','good')}catch(_){msg(lines.join('\n'),'good')}
 };
 const scannerShareURL=location.origin+'/s';
 async function copyScannerURL(){try{await navigator.clipboard.writeText(scannerShareURL);$('shareStatus').textContent='已複製網址';}catch(_){window.prompt('複製這個入口網址',scannerShareURL)}}
