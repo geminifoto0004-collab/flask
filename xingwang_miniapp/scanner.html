@@ -556,7 +556,7 @@ body.cc-sample-detail #result{position:relative}
 #result .sample-series-header .sample-sync{margin-left:auto;color:#7A4B00;font-size:12px}
 #result .sample-series-header .sample-sync small{color:#7A4B00;font-size:12px}
 #result .sample-series-header #source{max-width:52px;font-size:10px;min-height:24px;padding:3px}
-#result .stock-visibility,#fullResult .stock-visibility{display:flex!important;gap:8px;border:0;padding:0 14px 8px;background:transparent}
+#result .stock-visibility,#fullResult .stock-visibility{display:flex;gap:8px;border:0;padding:0 14px 8px;background:transparent}
 #result .stock-visibility button,#fullResult .stock-visibility button{;min-height:36px!important;min-width:0!important;flex:0 0 auto!important;display:inline-flex;align-items:center;border-radius:18px;border:1px solid var(--stroke);background:#fff;color:#4A3840;font-size:12px;padding:0 11px!important;line-height:1}
 #result .stock-visibility button.active,#fullResult .stock-visibility button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
 #result .stock-visibility .filter-count,#fullResult .stock-visibility .filter-count{font-size:12px;font-weight:800}
@@ -604,10 +604,23 @@ body.cc-sample-detail #result{position:relative}
 #fullResult .bar .tag{display:none}
 #fullResult[data-full-tab="stock"] #fullStats{display:none!important}
 #fullResult[data-full-tab="stock"] #fullFilterRow{display:none}
-#fullResult #fullTabs{display:flex;gap:8px;padding:8px 14px;background:var(--paper);flex-wrap:wrap}
-#fullResult #fullTabs button{min-height:34px;padding:7px 10px;font-size:12px;border-radius:18px;background:#fff;color:#4A3840;border:1px solid var(--stroke)}
-#fullResult #fullTabs button.active{background:var(--wine);color:#fff}
-#fullResult[data-full-tab="stock"] #fullTabs{display:none}
+/* Existing real queries: stock / camino / history / reservar.
+   CC burgundy style + Telegram's four always-visible functional tabs. */
+#fullResult #fullTabs{
+ display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+ gap:7px;margin:0;padding:8px 14px 10px;background:var(--paper);
+ overflow:visible;
+}
+#fullResult #fullTabs button{
+ box-sizing:border-box;min-width:0;min-height:39px;
+ padding:7px 3px;font-size:clamp(11px,2.95vw,14px);
+ line-height:1.15;white-space:nowrap;
+ border-radius:12px;background:#fff;color:#4A3840;
+ border:1px solid var(--stroke);font-weight:700;
+}
+#fullResult #fullTabs button.active{
+ background:var(--wine);border-color:var(--wine);color:#fff;
+}
 #fullResult[data-full-tab="stock"] #fullDetails{background:#fff}
 .cc-stock-list{background:#fff}
 .cc-stock-row{height:56px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--hair);padding:0 16px;background:#fff}
@@ -646,8 +659,8 @@ body:has(#adminTab:not(.hidden)) main{max-width:none;padding:0 0 30px}
 #ccStockWarnText{flex:1;font-weight:800;font-size:14px}
 #ccStockWarnContinue{height:40px;min-height:40px;white-space:nowrap;background:#fff;border:1px solid #D9B25F;border-radius:10px;color:#6B4200;font-size:12px;padding:0 12px}
 #ccStockWarnDismiss{height:38px;min-height:38px;width:38px;flex:none;padding:0;background:transparent;color:#6B4200;font-size:23px}
-#fullResult[data-full-tab="stock"] #fullTabs{display:none}
-body.cc-show-stock-options #fullResult[data-full-tab="stock"] #fullTabs{display:flex!important}
+/* Tabs are never collapsed behind a secondary menu for product results.
+   NOTE lookups continue to hide this row with the existing .hidden class. */
 
 
 /* Continuous scanner and sample stocktaking in ONE view. The QR camera may
@@ -903,10 +916,7 @@ body.cc-sample-detail #scanPanel #reader video,body.cc-stock-detail #scanPanel #
 .cc-history-version{font-size:12px!important;color:#6E5A62!important;font-weight:700!important}
 /* Existing extra DATA views (camino, history, reservar) must be reachable
    without placing an ellipsis on top of CC Stock.html's clock. */
-#ccStockOptions{position:fixed!important;top:auto!important;right:16px!important;
- bottom:calc(16px + env(safe-area-inset-bottom,0px))!important;z-index:23!important;
- border:1px solid #D9CDD2!important;background:#fff!important;color:#6A1B36!important;
- border-radius:12px!important;box-shadow:0 2px 9px #24101720!important}
+#ccStockOptions{display:none!important}
 #fullResult[data-full-tab="stock"] .stock-visibility{padding:0 16px 8px!important}
 
 
@@ -1345,10 +1355,10 @@ body.cc-sample-detail #result{
  <button id="ccStockWarnRefresh" type="button" aria-label="更新库存 / Actualizar" title="更新库存 / Actualizar"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2 6M20 5v6h-6"/></svg></button>
  <button id="ccStockWarnDismiss" type="button" aria-label="关闭提醒 / Cerrar">×</button>
 </div>
-<div id="fullStats" class="stock-stat-grid"></div>
-<div id="fullTabs" class="full-tabs">
-<button data-fulltab="stock" class="active">庫存</button><button data-fulltab="camino">待到貨</button><button data-fulltab="history">歷史購買</button><button data-fulltab="reservar">預定</button>
+<div id="fullTabs" class="full-tabs" role="group" aria-label="商品查询分类 / Consultas">
+<button type="button" data-fulltab="stock" class="active">庫存</button><button type="button" data-fulltab="camino">待到貨</button><button type="button" data-fulltab="history">歷史購買</button><button type="button" data-fulltab="reservar">預訂</button>
 </div>
+<div id="fullStats" class="stock-stat-grid"></div>
 <div id="fullStockVisibility" class="stock-visibility" role="group" aria-label="完整查詢庫存顯示範圍">
 <button type="button" id="fullPositiveBtn" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="fullPositiveCount" class="filter-count">0</strong><span class="filter-label">有库存 Con stock</span></button>
 <button type="button" id="fullAllBtn" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="fullAllCount" class="filter-count">0</strong><span class="filter-label">全部 Todos</span></button>
