@@ -193,7 +193,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 'use strict';
 const $=id=>document.getElementById(id);
 let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, saved=false;
-let sampleStates=new Map(),samplePositiveOnly=true,sampleDirty=false,sharedProductCode='',notaInput='';
+let sampleStates=new Map(),samplePositiveOnly=true,sampleDirty=false,savedScope=new Set(),sharedProductCode='',notaInput='';
 let fullKind='product',fullTab='stock',fullData=null,fullDataKind='product',fullSort='',fullDesc=false,fullCode='',fullSession='';
 try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
@@ -557,12 +557,12 @@ function updateMissing(){
  const visible=visibleSampleRows(),yes=visible.filter(x=>sampleStates.get(x.code)===true).length;
  const no=visible.length-yes;
  $('missingCount').textContent=saved
-  ?'本次已保存：有樣 '+yes+'，無樣 '+no+'；其他編號不變。'
+  ?'本次已保存 '+savedScope.size+' 個編號（保存時顯示的清單）；其餘未修改。如需繼續盤點其他編號，請重新查詢。'
   :'本頁：有樣 '+yes+'，無樣 '+no+'。確認實物後按保存；隱藏的編號不會修改。';
  $('saveBtn').disabled=saved||visible.length===0;
 }
 function showResult(d){
- current=d;sampleStates=new Map();saved=false;sampleDirty=false;
+ current=d;sampleStates=new Map();saved=false;sampleDirty=false;savedScope.clear();
  for(const row of d.variants||[]){
   const prior=d.previous_status?.[row.code];
   sampleStates.set(row.code,prior?prior.missing===false:true);
@@ -582,6 +582,7 @@ async function lookup(input){
  if(busy||mode==='admin')return;
  if(mode==='sample'&&current&&current.product_code!==code&&sampleDirty&&!saved&&!confirm('尚有未保存的布樣修改，確定查其他編號嗎？'))return;
  busy=true;locked=true;$('queryBtn').disabled=true;
+ $('code').value=code;syncSearchClear();
  try{
   if(mode==='full'){
    if(nota)notaInput=code;else sharedProductCode=code;
@@ -636,7 +637,7 @@ function syncCameraButton(){
 $('cameraToggle').onclick=async()=>{if(running)await stopCamera();else await startCamera()};
 function nextScan(){
  if(sampleDirty&&!saved&&!confirm('尚有未保存的布樣修改，確定放棄嗎？'))return;
- current=null;fullData=null;sampleStates.clear();sampleDirty=false;saved=false;locked=false;sharedProductCode='';fullCode='';
+ current=null;fullData=null;sampleStates.clear();sampleDirty=false;savedScope.clear();saved=false;locked=false;sharedProductCode='';fullCode='';
  $('code').value='';syncSearchClear();$('result').classList.add('hidden');$('fullResult').classList.add('hidden');
  msg(running?'鏡頭持續開啟，可以掃下一張。':'請掃下一張或輸入編號。');
 }
@@ -649,7 +650,7 @@ $('saveBtn').onclick=async()=>{
  const missing=visible.filter(row=>sampleStates.get(row.code)!==true).map(row=>row.code);
  try{
   const out=await post('/scanner/api/save',{scan_id:current.scan_id,present,missing});
-  saved=true;sampleDirty=false;
+  saved=true;sampleDirty=false;savedScope=new Set(visible.map(row=>row.code));
   for(const sku of present)current.previous_status[sku]={missing:false};
   for(const sku of missing)current.previous_status[sku]={missing:true};
   renderRows();msg('已保存 '+out.sku_count+' 個確認：有樣 '+present.length+'，無樣 '+missing.length+'。','good');
