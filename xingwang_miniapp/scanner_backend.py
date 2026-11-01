@@ -434,6 +434,7 @@ def attach_stock_lookup(stock_lookup):
         return JSONResponse({"ok": True, "product_code": code,
             "stock_rolls": clean.get("stock_rolls"),
             "stock_meters": clean.get("stock_meters"),
+            "incoming_boxes": clean.get("incoming_boxes"),
             "variants": variants,
             "source": clean.get("source"), "as_of": clean.get("as_of"),
             "db_connected": bool(scan_id), "db_error": db_error,

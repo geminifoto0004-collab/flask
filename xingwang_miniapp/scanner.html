@@ -8,6 +8,11 @@
 *{box-sizing:border-box}body{margin:0}button,input{font:inherit}
 main{max-width:780px;margin:auto;padding:18px 14px 65px}
 header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:16px}
+.header-actions{display:flex;align-items:center;gap:5px;flex:none}
+.admin-icon{width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;flex:none;border:1px solid #d1dfec;border-radius:10px;background:#edf3fa;color:#21527e;text-decoration:none}
+.admin-icon:hover{background:#ddebf9;color:#1265bb}
+.admin-icon:focus-visible{outline:2px solid #1265bb;outline-offset:2px}
+.admin-icon svg{width:22px;height:22px;display:block}
 h1{font-size:21px;margin:0}h2{font-size:16px;margin:0 0 10px}
 small,.muted{color:#64748b;font-size:12px;line-height:1.5}
 .panel{background:white;border:1px solid #dce4ee;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 6px #0b25400b}
@@ -22,6 +27,20 @@ button.ghost{background:transparent;color:#24517a;padding:8px}
 #reader video{max-width:100%}#reader button{font-size:12px}
 #message{font-size:13px;margin-top:9px;line-height:1.65;white-space:pre-wrap}
 #message.error{color:#ad2a2a}#message.good{color:#147b4e}
+.stock-stat-grid{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.stock-stat{flex:1 1 calc(50% - 8px);min-width:118px;background:#f1f6fb;border-radius:12px;padding:12px}
+.stock-stat small{display:block;color:#627b8e;font-size:11px;margin-bottom:4px}
+.stock-stat strong{font-size:20px;font-variant-numeric:tabular-nums;color:#213a53}
+.stock-filter-row{display:flex;align-items:center;gap:8px;margin:13px 0 10px}
+.stock-filter-row input{flex:1;min-width:0;width:100%;padding:10px;font-size:16px}
+.stock-filter-row .muted{white-space:nowrap}
+.stock-tablewrap{overflow:auto;max-height:65vh;min-height:90px;border:1px solid #ecf0f4;border-radius:12px}
+.stock-tablewrap table{min-width:100%;width:100%;font-size:13px}
+.stock-tablewrap th,.stock-tablewrap td{padding:11px 10px;white-space:nowrap}
+.stock-tablewrap th{position:sticky;top:0;background:#f7fafd;cursor:pointer;user-select:none}
+.stock-tablewrap th:focus-visible{outline:2px solid #1265bb;outline-offset:-2px}
+.stock-tablewrap td{font-variant-numeric:tabular-nums}
+.stock-note{margin:10px 0 0}
 #login{max-width:420px;margin:30px auto}#login input{width:100%;margin:12px 0}
 #login button{width:100%}.info{background:#f5f8fc;border-radius:10px;padding:11px;color:#52677d;font-size:12px;line-height:1.6}
 table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;border-bottom:1px solid #ecf0f4;text-align:left}th{font-size:12px;color:#667b8a}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
@@ -34,7 +53,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 </style>
 </head>
 <body><main>
-<header><div><h1>XINGWANG SCANNER</h1><small>掃描布樣 · 查詢庫存 · 確認盤點</small></div><button id="logout" class="ghost hidden">登出</button></header>
+<header><div><h1>XINGWANG SCANNER</h1><small>掃描布樣 · 查詢庫存 · 確認盤點</small></div><div class="header-actions"><a class="admin-icon hidden" id="adminLink" href="/scanner/admin" target="_blank" rel="noopener noreferrer" title="管理功能 · 開啟新分頁" aria-label="開啟庫存管理"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></a><button id="logout" class="ghost hidden">登出</button></div></header>
 <section id="login" class="panel hidden">
 <h2>首次登入掃描器</h2>
 <p class="muted">輸入公司登入碼，這台手機將保持登入 30 天。</p>
@@ -51,6 +70,14 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div class="row"><input id="code" class="fill" placeholder="或手動輸入 12-225" autocomplete="off" enterkeyhint="search"><button id="queryBtn">查詢</button></div>
 <div id="message" aria-live="polite">請掃描或輸入商品系列編號。</div>
 </section>
+<section id="stockResult" class="panel hidden" aria-label="庫存查詢結果">
+<div class="bar"><div><h2 id="stockSeries"></h2><small id="stockAsOf" class="muted"></small></div><span id="stockSource" class="tag"></span></div>
+<div class="stock-stat-grid" id="stockStats"></div>
+<div class="stock-filter-row"><input id="stockFilter" type="search" placeholder="篩選目前全部庫存明細" autocomplete="off" aria-label="篩選庫存明細"><span class="muted" id="stockCount">0 / 0 筆</span></div>
+<div class="stock-tablewrap"><table><thead><tr id="stockTableHead"></tr></thead><tbody id="stockTableBody"></tbody></table></div>
+<p class="muted stock-note" id="stockNote">與 Telegram 庫存查詢同樣的統計、篩選和排序；待到貨單位為箱。</p>
+<div class="row"><button id="stockNextBtn" class="fill secondary">查下一個商品</button></div>
+</section>
 <section id="result" class="panel hidden">
 <div class="bar"><div><h2 id="series"></h2><small id="asof"></small></div><span id="source" class="tag"></span></div>
 <div id="totals" class="metrics"></div>
@@ -61,7 +88,6 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <p id="missingCount" class="muted"></p>
 <div class="row"><button id="saveBtn" class="fill hidden">確認完成 · 保存 TiDB</button><button id="copyBtn" class="secondary">複製清單</button><button id="nextBtn" class="secondary">下一張</button></div>
 </div>
-<div id="stockControls" class="hidden"><button id="nextStock" class="fill">掃下一張</button></div>
 </section>
 <footer class="muted">XINGWANG · 布樣盤點與即時庫存</footer>
 </div>
@@ -86,6 +112,7 @@ async function session(){
   $('login').classList.toggle('hidden',d.signed_in);
   $('app').classList.toggle('hidden',!d.signed_in);
   $('logout').classList.toggle('hidden',!d.signed_in);
+  $('adminLink').classList.toggle('hidden',!d.signed_in);
   if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
  }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
 }
@@ -94,14 +121,102 @@ $('passcode').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').cl
 $('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout');await session()};
 function setMode(m){
  mode=m;
- $('modeSample').classList.toggle('active',m==='sample');$('modeStock').classList.toggle('active',m==='stock');
- $('modeHelp').textContent=m==='sample'?'掃描系列 QR，查看每個庫存編號，勾選「無樣」。':'掃描同一個 QR，查看 V33 即時庫存；不記錄布樣。';
- $('sampleHeading').classList.toggle('hidden',m!=='sample');
- $('sampleControls').classList.toggle('hidden',m!=='sample');
- $('stockControls').classList.toggle('hidden',m==='sample');
- renderRows();
+ $('modeSample').classList.toggle('active',m==='sample');
+ $('modeStock').classList.toggle('active',m==='stock');
+ $('modeHelp').textContent=m==='sample'
+  ?'掃描系列 QR，查看每個庫存編號，勾選「無樣」。'
+  :'與 Telegram 相同的庫存查詢：合計、快速篩選、點欄名排序；不記錄布樣。';
+ $('code').placeholder=m==='sample'?'或手動輸入 12-225':'輸入商品編號';
+ $('result').classList.toggle('hidden',m!=='sample'||!current);
+ $('stockResult').classList.toggle('hidden',m!=='stock'||!current);
+ if(m==='stock' && current)renderStockResult();
+ if(m==='sample' && current)renderRows();
 }
 $('modeSample').onclick=()=>setMode('sample');$('modeStock').onclick=()=>setMode('stock');
+// Inventory presentation matches the Telegram STOCK tab; scanner login stays separate.
+// We intentionally expose only allowlisted stock/incoming quantities, never customers,
+// sale prices or Telegram-authenticated history.
+const stockColumns=[
+ ['code','商品編號'],
+ ['stock_rolls','匹數'],
+ ['stock_meters','米數'],
+ ['incoming_boxes','待到貨(箱)']
+];
+let stockSort='',stockDesc=false;
+function stockFormat(value){
+ if(value===null||value===undefined||value==='')return '—';
+ if(typeof value==='number')return value.toLocaleString('en-US',{maximumFractionDigits:3});
+ return String(value);
+}
+function stockRows(){
+ if(!current||!Array.isArray(current.variants))return [];
+ // Incoming-only codes cannot be claimed as available stock.
+ return current.variants.filter(v=>Number(v.stock_rows||0)>0);
+}
+function renderStockResult(){
+ if(!current)return;
+ const data=current, rows=stockRows(), stats=$('stockStats');
+ stats.replaceChildren();
+ for(const [name,value] of [
+  ['商品種類',rows.length],
+  ['庫存匹數',data.stock_rolls],
+  ['庫存米數',data.stock_meters],
+  ['待到貨(箱)',data.incoming_boxes]
+ ]){
+  const el=document.createElement('div');el.className='stock-stat';
+  const label=document.createElement('small');label.textContent=name;
+  const number=document.createElement('strong');number.textContent=stockFormat(value);
+  el.append(label,number);stats.append(el);
+ }
+ $('stockSeries').textContent=data.product_code;
+ $('stockAsOf').textContent='查詢時間：'+(data.as_of||'即時');
+ $('stockSource').textContent=data.source==='company'?'公司電腦':data.source==='home'?'家裡電腦':'V33';
+ const term=$('stockFilter').value.trim().toLocaleLowerCase();
+ let list=rows.filter(r=>stockColumns.some(([field])=>String(r[field]??'').toLocaleLowerCase().includes(term)));
+ if(stockSort){
+  list=list.slice().sort((a,b)=>{
+   const x=a[stockSort],y=b[stockSort];
+   if(x==null&&y!=null)return 1;
+   if(y==null&&x!=null)return -1;
+   const cmp=(stockSort==='code')
+      ?String(x??'').localeCompare(String(y??''),undefined,{numeric:true,sensitivity:'base'})
+      :Number(x??0)-Number(y??0);
+   return stockDesc?-cmp:cmp;
+  });
+ }
+ $('stockCount').textContent=list.length+' / '+rows.length+' 筆';
+ const head=$('stockTableHead');head.replaceChildren();
+ for(const [field,title] of stockColumns){
+  const th=document.createElement('th');
+  th.textContent=title+(stockSort===field?(stockDesc?' ▼':' ▲'):'');
+  if(field!=='code')th.className='num';
+  th.tabIndex=0;th.setAttribute('role','button');
+  th.setAttribute('aria-sort',stockSort===field?(stockDesc?'descending':'ascending'):'none');
+  const apply=()=>{if(stockSort===field)stockDesc=!stockDesc;else{stockSort=field;stockDesc=false;}renderStockResult()};
+  th.onclick=apply;
+  th.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();apply()}};
+  head.append(th);
+ }
+ const body=$('stockTableBody');body.replaceChildren();
+ if(!list.length){
+  const tr=document.createElement('tr'),td=document.createElement('td');
+  td.colSpan=stockColumns.length;td.textContent='沒有符合條件的庫存資料';td.className='muted';
+  tr.append(td);body.append(tr);
+ }else{
+  for(const entry of list){
+   const tr=document.createElement('tr');
+   for(const [field] of stockColumns){
+    const td=document.createElement('td');
+    td.textContent=stockFormat(entry[field]);
+    if(field!=='code')td.className='num';
+    tr.append(td);
+   }
+   body.append(tr);
+  }
+ }
+}
+$('stockFilter').addEventListener('input',renderStockResult);
+
 function renderRows(){
  const body=$('rows');body.replaceChildren();
  if(!current)return;
@@ -112,7 +227,7 @@ function renderRows(){
   for(const val of [x.code,fmt(x.stock_rolls),fmt(x.stock_meters)]){
    const td=document.createElement('td');td.textContent=val;if(val!==x.code)td.className='num';tr.append(td)
   }
-  if(mode==='sample'){
+  {
    const td=document.createElement('td');const cb=document.createElement('input');cb.type='checkbox';cb.checked=missing.has(x.code);cb.disabled=saved;cb.setAttribute('aria-label',x.code+' 無樣');
    cb.onchange=()=>{if(cb.checked)missing.add(x.code);else missing.delete(x.code);updateMissing()};td.append(cb);tr.append(td)
   }
@@ -123,8 +238,11 @@ function renderRows(){
 function updateMissing(){$('missingCount').textContent='已標記無樣 '+missing.size+' 個；'+(saved?'本次結果已保存。':'其他編號在確認保存後會視為有樣。')}
 function showResult(d){
  current=d;missing=new Set(Object.entries(d.previous_status||{}).filter(([k,v])=>v.missing).map(([k])=>k));saved=false;
- $('result').classList.remove('hidden');
- $('saveBtn').classList.toggle('hidden',!d.db_connected);$('saveBtn').disabled=false;
+ $('result').classList.toggle('hidden',mode!=='sample');
+ $('stockResult').classList.toggle('hidden',mode!=='stock');
+ $('saveBtn').classList.toggle('hidden',!d.db_connected);
+ $('saveBtn').disabled=false;$('saveBtn').textContent='確認完成 · 保存 TiDB';$('saveBtn').classList.remove('secondary');
+ stockSort='';stockDesc=false;$('stockFilter').value='';
  $('dbNotice').textContent=d.db_connected?'已連上 TiDB：可確認保存。曾標記「無樣」的花色會自動勾選；只有按「保存」才會覆蓋狀態。':(d.db_error?'TiDB 連線失敗；可查庫存，但目前不能保存盤點。':'尚未設定 TiDB；可測試掃碼及庫存，但不能保存盤點。');
  $('series').textContent=d.product_code;$('source').textContent=d.source==='company'?'公司電腦':d.source==='home'?'家裡電腦':'V33';
  $('asof').textContent='庫存時間：'+(d.as_of||'即時回應');
@@ -133,6 +251,7 @@ function showResult(d){
   const el=document.createElement('span');el.textContent=name+'：'+fmt(val);$('totals').append(el)
  }
  renderRows();
+ if(mode==='stock')renderStockResult();
 }
 async function lookup(input){
  const code=(input||'').trim();if(!valid(code)){msg('QR 內容不是有效商品編號，請檢查後重試','error');return}
@@ -141,7 +260,7 @@ async function lookup(input){
  try{
   const d=await post('/scanner/api/stock',{code});
   showResult(d);msg('查詢完成：'+code,'good');
- }catch(e){current=null;$('result').classList.add('hidden');locked=false;
+ }catch(e){current=null;$('result').classList.add('hidden');$('stockResult').classList.add('hidden');locked=false;
   msg(e.status===401?'登入已過期，請重新登入。':e.message,'error');
   if(e.status===401)await session();
  }finally{busy=false;$('queryBtn').disabled=false}
@@ -165,9 +284,9 @@ async function stopCamera(){
 }
 $('cameraStart').onclick=startCamera;$('cameraStop').onclick=stopCamera;
 function nextScan(){
- current=null;missing.clear();locked=false;saved=false;$('code').value='';$('result').classList.add('hidden');msg(running?'可以繼續掃下一張，鏡頭不用關閉。':'請掃描下一張或手動輸入編號。'); 
+ current=null;missing.clear();locked=false;saved=false;$('code').value='';$('result').classList.add('hidden');$('stockResult').classList.add('hidden');$('stockFilter').value='';msg(running?'可以繼續掃下一張，鏡頭不用關閉。':'請掃描下一張或手動輸入編號。'); 
 }
-$('nextBtn').onclick=nextScan;$('nextStock').onclick=nextScan;
+$('nextBtn').onclick=nextScan;$('stockNextBtn').onclick=nextScan;
 $('saveBtn').onclick=async()=>{
  if(!current?.db_connected||!current?.scan_id||saved)return;
  const b=$('saveBtn');b.disabled=true;
