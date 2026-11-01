@@ -484,7 +484,7 @@ $('cartSkuFilter').addEventListener('keydown',event=>{
 });
 $('cartShortCode').onclick=async()=>{
  if(!cartData)return;
- try{await navigator.clipboard.writeText(cartData.short_code);cartNotice('✓ CART ID COPIED')}
+ try{await navigator.clipboard.writeText(cartData.short_code);cartNotice('已复制编号 / ID copiado')}
  catch(_){void xwCopyFallback('复制购物车编号 / Copiar ID',cartData.short_code)}
 };
 $('cartDetailsBtn').onclick=()=>{
@@ -519,7 +519,7 @@ $('cartShareBtn').onclick=cartShare;
 $('cartGuestCode').title='Tap to copy the temporary code';
 $('cartGuestCode').onclick=async()=>{
  if(!cartGuestCode)return;
- try{await navigator.clipboard.writeText(cartGuestCode);cartNotice('✓ COPIED')}
+ try{await navigator.clipboard.writeText(cartGuestCode);cartNotice('已复制 / Copiado')}
  catch(_){void xwCopyFallback('访客码 / Código visita',cartGuestCode)}
 };
 $('cartGuestHandoff').onclick=cartGuestHandoff;
@@ -560,7 +560,7 @@ $('cartCopy').onclick=async()=>{
  if(cartPending.size&&!(await cartFlush()))return;
  const text=[cartData.short_code,cartData.customer_name,
   ...cartEffectiveItems().map(i=>i.sku+'\t'+i.qty)].filter(Boolean).join('\n');
- try{await navigator.clipboard.writeText(text);cartNotice('✓ COPIED')}
+ try{await navigator.clipboard.writeText(text);cartNotice('已复制 / Copiado')}
  catch(_){void xwCopyFallback('复制清单 / Copiar lista',text)}
 };
 $('guestLoginBtn').onclick=async()=>{
