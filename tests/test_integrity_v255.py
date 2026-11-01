@@ -251,3 +251,64 @@ def test_complete_verifier_checks_local_contents_stability_and_enabled_state(mon
     result=audit.verify_once(expected)
     assert result['verified'] is ok
     assert result['local_equal'] is (second_value==1)
+
+
+@pytest.mark.parametrize('changed',[False,True])
+def test_backup_alignment_preserves_old_tables_and_aborts_source_changes(monkeypatch,changed):
+    statements=[]
+    class Cursor:
+        def __init__(self,target):self.target=target;self.done=False
+        def execute(self,sql,*a):self.done=False;statements.append((self.target,sql))
+        def fetchmany(self,n):
+            if self.done:return []
+            self.done=True;return [{'id':1}]
+        def executemany(self,sql,rows):statements.append((self.target,sql))
+    class Connection:
+        def __init__(self,target):self.target=target
+        def cursor(self):return Cursor(self.target)
+        def commit(self):pass
+        def close(self):pass
+    counter={'n':0}
+    def version(target):counter['n']+=1;return 2 if changed and counter['n']>1 else 1
+    helper=types.ModuleType('services.order_sync_integrity');helper.table_digest=lambda *a:{'exists':True,'rows':1,'digest':'same'}
+    monkeypatch.setitem(sys.modules,helper.__name__,helper)
+    ns={'_reconcile_lock':threading.Lock(),'get_db_connection_for_target':lambda target,**kw:Connection(target),
+        'other_target':lambda target:'TIDB1','_mirror_version':version,'_TABLES':['cloud_orders'],
+        '_table_exists':lambda *a:True,'_show_create':lambda *a:'CREATE TABLE `cloud_orders` (`id` bigint)',
+        '_qi':lambda x:'`'+x+'`','re':__import__('re'),'_invalidate_derived_views':lambda *a:None,'_invalidate_process_views':lambda:None}
+    fn=function(REMOTE/'services/order_tidb_cloud_reconcile.py','align_verified_backup',ns)
+    if changed:
+        with pytest.raises(RuntimeError,match='source_changed'):fn('TIDB2')
+        assert not any(sql.startswith('RENAME TABLE') for _,sql in statements)
+    else:
+        result=fn('TIDB2');assert result['preserved'] and 'cloud_orders' in result['archives']
+        renames=[sql for _,sql in statements if sql.startswith('RENAME TABLE')]
+        assert len(renames)==1 and '`cloud_orders` TO `__v255_archive_' in renames[0]
+    assert not any('DROP TABLE IF EXISTS `cloud_orders`' in sql or 'DROP TABLE IF EXISTS `__v255_archive_' in sql for _,sql in statements)
+
+
+def test_order_backup_archives_tables_outside_current_manifest(monkeypatch):
+    statements=[]
+    class Connection:
+        def __init__(self,target):self.target=target;self.done=False
+        def cursor(self):return self
+        def execute(self,sql,*a):self.sql=sql;self.done=False;statements.append(sql)
+        def fetchone(self):return {'snapshot_hash':'same'}
+        def fetchall(self):return [{'table':'orders'},{'table':'legacy_only'},{'table':'__order_mirror_state'}]
+        def fetchmany(self,n):
+            if self.done:return []
+            self.done=True;return [{'id':1}]
+        def executemany(self,sql,rows):statements.append(sql)
+        def commit(self):pass
+        def close(self):pass
+    database=types.ModuleType('database');database.AdaptedConnection=lambda conn:conn
+    connection=types.ModuleType('services.order_tidb_connection');connection._connect_target=lambda target,**kw:Connection(target);connection.order_database_name=lambda:'order_tracking'
+    state=types.ModuleType('services.order_full_mirror_service');state._STATE_TABLE='__order_mirror_state'
+    helper=types.ModuleType('services.order_sync_integrity');helper.table_digest=lambda *a:{'exists':True,'rows':1,'digest':'same'}
+    for mod in [database,connection,state,helper]:monkeypatch.setitem(sys.modules,mod.__name__,mod)
+    ns={'_reconcile_lock':threading.Lock(),'other_target':lambda target:'TIDB1','_show_create':lambda c,t:'CREATE TABLE `'+t+'` (`id` bigint)', '_qi':lambda x:'`'+x+'`','re':__import__('re')}
+    fn=function(REMOTE/'services/order_tidb_cloud_reconcile.py','align_order_backup',ns)
+    result=fn('TIDB2',{'orders':{}})
+    assert result['preserved'] and 'legacy_only' in result['archives']
+    assert sum(sql.startswith('RENAME TABLE') for sql in statements)==1
+    assert not any(sql.startswith('DROP TABLE') for sql in statements)

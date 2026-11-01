@@ -120,6 +120,7 @@ def _verify_once(expected=None):
                     except Exception: pass
     after = {target: _mirror_version(target) for target in ('TIDB1', 'TIDB2')}
     result['versions'] = after
+    result['local_matches'] = local_matches
     result['local_equal'] = all(local_matches.values()) if len(local_matches)==2 else False if expected is not None else None
     if len(values) == 2:
         left, right = values['TIDB1'], values['TIDB2']
@@ -152,10 +153,21 @@ def read_job(start=False, repair=False, expected=None):
             _job = job
             def run():
                 try:
+                    reconciliation = {}
                     if repair:
                         from services.order_tidb_cloud_reconcile import reconcile_once
-                        reconcile_once()
+                        reconciliation = reconcile_once()
                     result = verify_once(expected)
+                    if repair and expected is not None and not result.get('verified'):
+                        from tidb_targets import preferred_target
+                        from services.order_tidb_cloud_reconcile import align_verified_backup, align_order_backup
+                        source = preferred_target()
+                        if result.get('local_matches',{}).get(source) is True:
+                            archived = {}
+                            if not result.get('cloud_equal'):archived['cloud']=align_verified_backup(source)
+                            if not result.get('order_equal') or not result.get('local_equal'):archived['order']=align_order_backup(source,expected)
+                            result = verify_once(expected)
+                            result['backup_archive'] = archived
                     with _lock: job.update(state='completed', result=result, generation=evidence.generation())
                 except Exception as error:
                     with _lock: job.update(state='failed', error_type=type(error).__name__)

@@ -265,6 +265,142 @@ def reconcile_once(source_target=None):
         return _reconcile_once(source_target)
 
 
+def align_verified_backup(source_target):
+    """Caller must hold local-content proof; retain every old standby table."""
+    import secrets
+    import tidb_integrity
+    from services.order_sync_integrity import table_digest
+    with _reconcile_lock:
+        source = get_db_connection_for_target(source_target, pooled=False)
+        destination_target = other_target(source_target)
+        destination = None
+        shadows, archives = {}, {}
+        swapped = False
+        token = secrets.token_hex(5)
+        try:
+            destination = get_db_connection_for_target(destination_target, pooled=False)
+            tidb_integrity.invalidate()
+            generation = tidb_integrity.generation()
+            version = _mirror_version(source_target)
+            if version is None: raise RuntimeError('source version unavailable')
+            for index, table in enumerate(_TABLES):
+                if table == 'cloud_customer_share_snapshot': continue
+                shadow = '__v255_sync_' + str(index) + '_' + token
+                archive = '__v255_archive_' + str(index) + '_' + token
+                source_cursor, dest_cursor = source.cursor(), destination.cursor()
+                if not _table_exists(source_cursor, table):
+                    raise RuntimeError('required source table missing: '+table)
+                ddl = _show_create(source_cursor, table)
+                if 'FOREIGN KEY' in ddl.upper():
+                    raise RuntimeError('backup table has foreign keys; manual schema audit required')
+                ddl, count = re.subn(r'^(CREATE\s+TABLE\s+)(?:`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)',
+                                     lambda match: match.group(1)+_qi(shadow), ddl, count=1, flags=re.I)
+                if count != 1: raise RuntimeError('invalid source table definition')
+                dest_cursor.execute(ddl)
+                shadows[table] = shadow
+                source_cursor.execute('SELECT * FROM '+_qi(table))
+                while True:
+                    rows = source_cursor.fetchmany(250)
+                    if not rows: break
+                    columns = list(rows[0])
+                    sql = 'INSERT INTO '+_qi(shadow)+' ('+','.join(_qi(col) for col in columns)+') VALUES ('+','.join('?' for _ in columns)+')'
+                    dest_cursor.executemany(sql,[tuple(row.get(col) for col in columns) for row in rows])
+                destination.commit()
+                if table_digest(source, table) != table_digest(destination, shadow):
+                    raise RuntimeError('backup shadow content mismatch: '+table)
+                if _table_exists(dest_cursor, table): archives[table] = archive
+            if _mirror_version(source_target) != version or tidb_integrity.generation() != generation:
+                raise RuntimeError('source_changed_during_backup_alignment')
+            renames = []
+            for table, shadow in shadows.items():
+                if table in archives: renames.append(_qi(table)+' TO '+_qi(archives[table]))
+                renames.append(_qi(shadow)+' TO '+_qi(table))
+            destination.cursor().execute('RENAME TABLE '+','.join(renames))
+            destination.commit()
+            swapped = True
+            _invalidate_derived_views(destination)
+            _invalidate_process_views()
+            print('[ORDER Backup Archive] target='+destination_target+' preserved_tables='+str(len(archives)),flush=True)
+            return {'source':source_target,'destination':destination_target,'archives':archives,'preserved':True}
+        finally:
+            # Only unfinished temporary shadows are removed. Archive tables remain.
+            if destination is not None:
+                if not swapped:
+                    for shadow in shadows.values():
+                        try: destination.cursor().execute('DROP TABLE IF EXISTS '+_qi(shadow))
+                        except Exception: pass
+                destination.close()
+            source.close()
+
+
+def align_order_backup(source_target, expected):
+    """Repair the dedicated ORDER backup from locally verified live tables."""
+    import secrets
+    import tidb_integrity
+    from database import AdaptedConnection
+    from services.order_tidb_connection import _connect_target, order_database_name
+    from services.order_full_mirror_service import _STATE_TABLE as state_table
+    from services.order_sync_integrity import table_digest
+    with _reconcile_lock:
+        destination_target = other_target(source_target)
+        source = AdaptedConnection(_connect_target(source_target, database=order_database_name()))
+        destination = None
+        shadows, archives = {}, {}
+        swapped = False
+        token = secrets.token_hex(5)
+        def current_hash():
+            connection = _connect_target(source_target, database=order_database_name())
+            try:
+                cursor = connection.cursor()
+                cursor.execute('SELECT snapshot_hash FROM '+_qi(state_table)+' WHERE id=1')
+                row=cursor.fetchone() or {}
+                return row.get('snapshot_hash')
+            finally: connection.close()
+        try:
+            destination = AdaptedConnection(_connect_target(destination_target, database=order_database_name()))
+            tidb_integrity.invalidate()
+            generation = tidb_integrity.generation()
+            version = current_hash()
+            if not version: raise RuntimeError('source ORDER version unavailable')
+            cursor = destination.cursor()
+            cursor.execute('SHOW TABLES')
+            old_names = {str(next(iter(row.values()))) for row in cursor.fetchall()}
+            old_names = {name for name in old_names if not name.startswith('__') or name==state_table}
+            names = list(expected) + [state_table]
+            for index, table in enumerate(names):
+                shadow = '__v255_order_' + str(index) + '_' + token
+                source_cursor, dest_cursor = source.cursor(), destination.cursor()
+                ddl = _show_create(source_cursor, table)
+                if 'FOREIGN KEY' in ddl.upper(): raise RuntimeError('ORDER foreign key requires manual schema audit')
+                ddl,count=re.subn(r'^(CREATE\s+TABLE\s+)(?:`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)',lambda match:match.group(1)+_qi(shadow),ddl,count=1,flags=re.I)
+                if count!=1: raise RuntimeError('invalid ORDER table definition')
+                dest_cursor.execute(ddl);shadows[table]=shadow
+                source_cursor.execute('SELECT * FROM '+_qi(table))
+                while True:
+                    rows=source_cursor.fetchmany(250)
+                    if not rows:break
+                    columns=list(rows[0]);sql='INSERT INTO '+_qi(shadow)+' ('+','.join(_qi(col) for col in columns)+') VALUES ('+','.join('?' for _ in columns)+')'
+                    dest_cursor.executemany(sql,[tuple(row.get(col) for col in columns) for row in rows])
+                destination.commit()
+                if table_digest(source,table)!=table_digest(destination,shadow):raise RuntimeError('ORDER shadow mismatch: '+table)
+            if current_hash()!=version or tidb_integrity.generation()!=generation:raise RuntimeError('source_ORDER_changed_during_backup_alignment')
+            renames=[]
+            for index,table in enumerate(sorted(old_names)):
+                archive='__v255_old_order_'+str(index)+'_'+token
+                archives[table]=archive;renames.append(_qi(table)+' TO '+_qi(archive))
+            for table,shadow in shadows.items():renames.append(_qi(shadow)+' TO '+_qi(table))
+            destination.cursor().execute('RENAME TABLE '+','.join(renames));destination.commit();swapped=True
+            return {'source':source_target,'destination':destination_target,'archives':archives,'preserved':True}
+        finally:
+            if destination is not None:
+                if not swapped:
+                    for shadow in shadows.values():
+                        try:destination.cursor().execute('DROP TABLE IF EXISTS '+_qi(shadow))
+                        except Exception:pass
+                destination.close()
+            source.close()
+
+
 def _reconcile_once(source_target=None):
     if config.DATABASE_TYPE not in ('mysql', 'tidb') or not mirror_enabled():
         clear_cloud_mirror_dirty()

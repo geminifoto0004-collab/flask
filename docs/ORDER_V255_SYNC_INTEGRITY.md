@@ -20,6 +20,10 @@ The deployed active database was observed to be TiDB2 before this change. Preser
 
 ## Validation
 
-Targeted local suite: 19 passed. Cloud-only suite: 12 passed. Includes fail-closed promotion, late verification invalidation, no ambiguous write replay, composite permission rows, changed-only writes, grant validation and scoped API access, canonical numeric/binary/NULL comparison, skipped-order results and failed task history.
+Targeted local suite: 29 passed. Cloud-only suite: 21 passed. Includes fail-closed promotion, late verification invalidation, no ambiguous write replay, composite permission rows, changed-only writes, grant validation and scoped API access, canonical numeric/binary/NULL comparison, skipped-order results and failed task history.
 
 Official quota behavior: https://docs.pingcap.com/tidbcloud/serverless-limitations/ — new connections can be denied at quota while established connections are throttled. Application preflight is not proof that a real exhaustion failover has been exercised.
+
+## Preserved backup repair
+
+A paired administrator explicitly authorizes replica repair separately from the read-only link grant. If the current live ORDER contents match the supplied local manifest, a repair job may build and verify shadow tables, atomically replace the standby tables, and retain the previous tables under __v255_archive_* / __v255_old_order_* names. Unknown standby-only records are therefore preserved rather than deleted or resurrected into the active customer pages. Source changes abort before the swap. Normal periodic repair never invokes this path without local content evidence. Archive tables are not automatically deleted and can consume additional standby storage; no spending limit is changed.
