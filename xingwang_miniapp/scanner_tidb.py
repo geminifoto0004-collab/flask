@@ -202,6 +202,7 @@ def read_fast_stock(code):
     """
     if not isinstance(code, str) or not 1 <= len(code) <= 40:
         raise ValueError("INVALID_PRODUCT_CODE")
+    code = code.strip().upper()
     conn = _connect()
     try:
         _ensure(conn)
@@ -249,6 +250,7 @@ def read_sample_from_snapshot(code):
     """
     if not isinstance(code, str) or len(code) > 40:
         raise ValueError("INVALID_PRODUCT_CODE")
+    code = code.strip().upper()
     conn = _connect()
     try:
         _ensure(conn)

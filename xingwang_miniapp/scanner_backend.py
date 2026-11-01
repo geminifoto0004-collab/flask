@@ -397,7 +397,7 @@ async def scanner_quick_stock(request: Request):
         REQUEST_TIMES.append(now)
     start = time.perf_counter()
     try:
-        data = await asyncio.to_thread(scanner_tidb.read_fast_stock, code.strip())
+        data = await asyncio.to_thread(scanner_tidb.read_fast_stock, code.strip().upper())
     except ValueError:
         raise HTTPException(422, "商品編號範圍太大，請輸入更完整編號")
     except Exception:
@@ -438,7 +438,7 @@ async def sample_from_tidb(request: Request):
     code = body.get("code") if isinstance(body, dict) else None
     if not isinstance(code, str) or not CODE.fullmatch(code.strip()):
         raise HTTPException(400, "商品編號格式不正確")
-    code = code.strip()
+    code = code.strip().upper()
     async with LOCK:
         now = time.monotonic()
         REQUEST_TIMES[:] = [t for t in REQUEST_TIMES if now - t < 60]
@@ -499,7 +499,7 @@ def attach_stock_lookup(stock_lookup):
         code = body.get("code") if isinstance(body, dict) else None
         if not isinstance(code, str) or not CODE.fullmatch(code.strip()):
             raise HTTPException(400, "Invalid product code")
-        code = code.strip()
+        code = code.strip().upper()
         async with LOCK:
             now = time.monotonic()
             REQUEST_TIMES[:] = [v for v in REQUEST_TIMES if now - v < 60]

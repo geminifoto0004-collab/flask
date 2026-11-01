@@ -27,6 +27,9 @@ button.admin-icon{background:#edf3fa;color:#21527e;padding:0;font-weight:400}
 #reader{max-width:460px;margin:10px auto;overflow:hidden;border-radius:10px}
 #reader video{max-width:100%}#reader button{font-size:12px}
 #message{font-size:13px;margin-top:9px;line-height:1.65;white-space:pre-wrap}
+#message:empty{display:none}
+.sample-sku-sort{cursor:pointer;user-select:none;white-space:nowrap}
+.sample-sku-sort:focus-visible{outline:2px solid #155fa5;outline-offset:3px}
 #message.error{color:#ad2a2a}#message.good{color:#147b4e}
 #freshnessPanel{margin:12px 0 9px;background:#f4f7fb;border-color:#dce4ee;color:#465c73}
 #freshnessPanel.stale{background:#fff8e9;border-color:#efce8c;color:#865a13}
@@ -140,8 +143,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <svg id="cameraOnIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
 <svg id="cameraOffIcon" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/><path d="M3 3l18 18"/></svg>
 </button><button id="queryBtn">查詢</button></div>
-<p id="cameraHint" class="muted">點相機圖示開啟／停止連續掃描；第一次請允許相機權限。</p>
-<div id="message" aria-live="polite">請掃描或輸入商品系列編號。</div>
+<div id="message" aria-live="polite"></div>
 </section>
 <section id="fullResult" class="panel hidden" aria-label="完整查詢結果">
 <div class="bar"><div><h2 id="fullTitle">完整查詢</h2><small id="fullTime" class="muted"></small></div><span class="tag">授權資料</span></div>
@@ -166,7 +168,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <button id="sampleAllBtn" type="button" aria-pressed="false">ALL</button></div>
 <p class="sample-visibility-legend">打勾＝有樣，未勾＝無樣。按「保存」才會將目前顯示的商品確認寫入，隱藏的編號不變。</p>
 <div class="sample-actions"><button type="button" id="sampleSelectAll">全選（有樣）</button><button type="button" id="sampleSelectNone">全取消（無樣）</button></div>
-<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>商品編號</th><th class="num">匹數</th><th class="num">米數</th><th class="num">有樣</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th id="sampleSkuSort" class="sample-sku-sort" tabindex="0" role="button" aria-label="商品編號，切換升序或降序" aria-sort="ascending" title="點擊切換排序">商品編號 ▲</th><th class="num">匹數</th><th class="num">米數</th><th class="num">有樣</th></tr></thead><tbody id="rows"></tbody></table></div>
 <p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的商品編號，請確認快照中的編號。</p>
 <div id="sampleControls">
 <div id="dbNotice" class="notice">尚未確認 TiDB 連線；不會寫入盤點資料。</div>
@@ -193,10 +195,17 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 'use strict';
 const $=id=>document.getElementById(id);
 let mode='sample', reader=null, running=false, locked=false, busy=false, current=null, saved=false;
-let sampleStates=new Map(),samplePositiveOnly=true,sampleDirty=false,savedScope=new Set(),sharedProductCode='',notaInput='';
+let sampleStates=new Map(),samplePositiveOnly=true,sampleDescending=false,sampleDirty=false,savedScope=new Set(),sharedProductCode='',notaInput='';
 let fullKind='product',fullTab='stock',fullData=null,fullDataKind='product',fullSort='',fullDesc=false,fullCode='',fullSession='';
 try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
+const normalizeProductCode=s=>String(s||'').trim().toUpperCase();
+const skuCollator=new Intl.Collator('en',{numeric:true,sensitivity:'base'});
+const compareSkus=(a,b)=>skuCollator.compare(String(a||''),String(b||''));
+function toggleSampleSort(){sampleDescending=!sampleDescending;renderRows()}
+$('sampleSkuSort').onclick=toggleSampleSort;
+$('sampleSkuSort').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleSampleSort()}};
+
 
 let lastFreshness=null, checkingFreshness=null;
 let freshnessDismissed=false;
@@ -274,7 +283,7 @@ $('logout').onclick=async()=>{await stopCamera();await post('/scanner/api/logout
 function setMode(m){
  if(!['sample','full','admin'].includes(m))m='sample';
  if(mode==='full'&&fullKind==='nota')notaInput=$('code').value;
- else if(valid($('code').value.trim()))sharedProductCode=$('code').value.trim();
+ else if(valid($('code').value.trim()))sharedProductCode=normalizeProductCode($('code').value);
  mode=m;
  const managing=m==='admin';
  $('adminTab').classList.toggle('hidden',!managing);
@@ -308,7 +317,7 @@ $('fullNota').onclick=()=>setFullKind('nota');
 function setFullKind(kind){
  if(kind===fullKind)return;
  if(fullKind==='nota')notaInput=$('code').value;
- else if(valid($('code').value.trim()))sharedProductCode=$('code').value.trim();
+ else if(valid($('code').value.trim()))sharedProductCode=normalizeProductCode($('code').value);
  fullKind=kind;
  $('fullProduct').classList.toggle('active',kind==='product');
  $('fullNota').classList.toggle('active',kind==='nota');
@@ -363,7 +372,7 @@ async function fullRequest(action,q,extra={}){
 async function queryFull(code){
  const start=performance.now();
  const data=await fullRequest(fullKind==='nota'?'nota':'stock',code);
- fullData=data;fullDataKind=fullKind;fullCode=code;fullTab='stock';fullSort='';fullDesc=false;
+ fullData=data;fullDataKind=fullKind;fullCode=code;fullTab='stock';fullSort=fullKind==='product'?'code':'';fullDesc=false;
  $('fullFilter').value='';
  $('fullTime').textContent='本次查詢耗時 '+((performance.now()-start)/1000).toFixed(2)+' 秒';
  return data;
@@ -518,7 +527,11 @@ $('sampleSelectNone').onclick=()=>setSampleVisibleState(false);
 function renderRows(){
  const body=$('rows');body.replaceChildren();if(!current)return;
  const all=Array.isArray(current.variants)?current.variants:[];
- const visible=visibleSampleRows();
+ const visible=visibleSampleRows().slice().sort((a,b)=>
+  compareSkus(a.code,b.code)*(sampleDescending?-1:1));
+ const sortTitle=$('sampleSkuSort');
+ sortTitle.textContent='商品編號 '+(sampleDescending?'▼':'▲');
+ sortTitle.setAttribute('aria-sort',sampleDescending?'descending':'ascending');
  syncVisibilityButtons(samplePositiveOnly,'samplePositiveBtn','sampleAllBtn');
  $('sampleSelectAll').disabled=saved||visible.length===0;
  $('sampleSelectNone').disabled=saved||visible.length===0;
@@ -576,7 +589,8 @@ function showResult(d){
  renderRows();
 }
 async function lookup(input){
- const code=(input||'').trim(),nota=mode==='full'&&fullKind==='nota';
+ const nota=mode==='full'&&fullKind==='nota';
+ const code=nota?String(input||'').trim():normalizeProductCode(input);
  const validInput=nota?(code==='@'||/^[0-9]{1,5}$/.test(code)||code.length>=2&&code.length<=40):valid(code);
  if(!validInput){msg('查詢條件不正確，請檢查後重試','error');return}
  if(busy||mode==='admin')return;
@@ -605,7 +619,20 @@ async function lookup(input){
 function syncSearchClear(){
  $('codeClearBtn').classList.toggle('hidden',!$('code').value);
 }
-$('code').addEventListener('input',syncSearchClear);
+function normalizeCodeInput(){
+ if(mode!=='sample'&&!(mode==='full'&&fullKind==='product')){
+  syncSearchClear();return;
+ }
+ const input=$('code'),value=input.value.toUpperCase();
+ if(input.value!==value){
+  const start=input.selectionStart,end=input.selectionEnd;
+  input.value=value;
+  try{input.setSelectionRange(start,end)}catch(_){}
+ }
+ syncSearchClear();
+}
+$('code').addEventListener('input',normalizeCodeInput);
+$('code').addEventListener('compositionend',normalizeCodeInput);
 $('codeClearBtn').onclick=()=>{
  $('code').value='';
  syncSearchClear();
@@ -613,7 +640,7 @@ $('codeClearBtn').onclick=()=>{
 };
 $('queryBtn').onclick=()=>lookup($('code').value);
 $('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
-function onScan(raw){if(locked||busy)return;let code=String(raw||'').trim();if(valid(code))lookup(code);else msg('QR 不是商品編號，請掃描純編號 QR','error')}
+function onScan(raw){if(locked||busy)return;const code=normalizeProductCode(raw);if(valid(code))lookup(code);else msg('QR 不是商品編號，請掃描純編號 QR','error')}
 async function startCamera(){
  if(running)return;
  if(!window.Html5Qrcode){msg('相機元件尚未載入，請重新整理。','error');return}
