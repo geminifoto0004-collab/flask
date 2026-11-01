@@ -12,6 +12,7 @@ For matching keys the newer stream version selects the source of truth.
 """
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
@@ -137,37 +138,44 @@ def _upsert_table(source_conn, dest_conn, table):
     _ensure_destination_schema(source_cur, dest_cur, table)
     dest_conn.commit()
 
-    source_cur.execute(f'SELECT * FROM {_qi(table)}')
-    first = source_cur.fetchmany(250)
-    if not first:
-        return {'table': table, 'rows': 0, 'changed': 0}
+    # Ordinary PyMySQL DictCursor buffers the *entire* SELECT result before
+    # fetchmany(). SSDictCursor streams from TiDB and bounds our process RSS.
+    import pymysql.cursors
+    reader = source_conn._conn.cursor(pymysql.cursors.SSDictCursor)
+    try:
+        reader.execute(f'SELECT * FROM {_qi(table)}')
+        first = reader.fetchmany(100)
+        if not first:
+            return {'table': table, 'rows': 0, 'changed': 0}
 
-    sample = first[0]
-    if not isinstance(sample, dict):
-        raise RuntimeError(f'{table} did not return DictCursor rows')
-    columns = [str(x) for x in sample.keys() if _IDENT.fullmatch(str(x))]
-    if not columns:
-        raise RuntimeError(f'{table} has no mirrorable columns')
+        sample = first[0]
+        if not isinstance(sample, dict):
+            raise RuntimeError(f'{table} did not return DictCursor rows')
+        columns = [str(x) for x in sample.keys() if _IDENT.fullmatch(str(x))]
+        if not columns:
+            raise RuntimeError(f'{table} has no mirrorable columns')
 
-    placeholders = ','.join(['?'] * len(columns))
-    quoted = ','.join(_qi(x) for x in columns)
-    updates = ','.join(f'{_qi(x)}=VALUES({_qi(x)})' for x in columns)
-    sql = (f'INSERT INTO {_qi(table)} ({quoted}) VALUES ({placeholders}) '
-           f'ON DUPLICATE KEY UPDATE {updates}')
+        placeholders = ','.join(['?'] * len(columns))
+        quoted = ','.join(_qi(x) for x in columns)
+        updates = ','.join(f'{_qi(x)}=VALUES({_qi(x)})' for x in columns)
+        sql = (f'INSERT INTO {_qi(table)} ({quoted}) VALUES ({placeholders}) '
+               f'ON DUPLICATE KEY UPDATE {updates}')
 
-    total = 0
-    changed = 0
-    batch = first
-    while batch:
-        values = [tuple(row.get(col) for col in columns) for row in batch]
-        dest_cur.executemany(sql, values)
-        changed += max(int(dest_cur.rowcount or 0), 0)
-        total += len(values)
-        if total % 1000 == 0:
-            dest_conn.commit()
-        batch = source_cur.fetchmany(250)
-    dest_conn.commit()
-    return {'table': table, 'rows': total, 'changed': changed}
+        total = 0
+        changed = 0
+        batch = first
+        while batch:
+            values = [tuple(row.get(col) for col in columns) for row in batch]
+            dest_cur.executemany(sql, values)
+            changed += max(int(dest_cur.rowcount or 0), 0)
+            total += len(values)
+            if total % 1000 == 0:
+                dest_conn.commit()
+            batch = reader.fetchmany(100)
+        dest_conn.commit()
+        return {'table': table, 'rows': total, 'changed': changed}
+    finally:
+        reader.close()
 
 
 def _invalidate_derived_views(conn):
@@ -289,7 +297,11 @@ def reconcile_once(source_target=None):
         destination = get_db_connection_for_target(destination_target, pooled=False)
         # Never infer a DELETE from absence. The standby may have a still-valid
         # order, or an intentionally deleted image. Keep it and report the drift.
-        standby_only = _standby_only_counts(source, destination)
+        # A full PK audit previously fetched two entire key sets into RAM and
+        # spent TiDB RU on every repair. Upserts never delete standby-only rows;
+        # opt in to that expensive diagnostic only for a deliberate audit.
+        standby_only = (_standby_only_counts(source, destination)
+                        if os.getenv('TIDB_MIRROR_AUDIT_KEYS', '0') == '1' else {})
         for table in _TABLES:
             results.append(_upsert_table(source, destination, table))
         if standby_only or any(item.get('changed') for item in results if item['table'] not in
@@ -341,26 +353,36 @@ def _worker():
     time.sleep(30.0 if (os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_NAME')) else 4.0)
     event = cloud_mirror_dirty_event()
     first = True
+    last_attempt = 0.0
+    # No full-table repair more often than this, even if a busy local client
+    # keeps marking the standby dirty on every successful cloud metadata write.
+    min_interval = max(60, int(os.getenv('TIDB_MIRROR_REPAIR_MIN_SECONDS', '900')))
     while True:
         if not first:
             event.wait(timeout=1800.0)
-        dirty = event.is_set()
-        was_first = first
         first = False
         event.clear()
         try:
-            if not dirty and not was_first:
-                # The first pass repairs preexisting drift. After that, two equal
-                # stream versions mean no write was missed. Free TiDB instances
-                # should not copy every ORDER row every five minutes just to check.
-                versions = (_mirror_version('TIDB1'), _mirror_version('TIDB2'))
-                if versions[0] is not None and versions[0] == versions[1] and versions[0] > 0:
-                    continue
+            versions = (_mirror_version('TIDB1'), _mirror_version('TIDB2'))
+            # Skip expensive upserts on startup too, when both copies have the
+            # same non-zero durable stream marker.
+            if versions[0] is not None and versions[0] == versions[1] and versions[0] > 0:
+                continue
+            # A depleted TiDB account is not recoverable by retrying every minute.
+            # Keep serving the live database and retry its standby later.
+            if None in versions:
+                event.set()
+                time.sleep(300.0)
+                continue
+            elapsed = time.monotonic() - last_attempt
+            if last_attempt and elapsed < min_interval:
+                time.sleep(min_interval - elapsed)
+            last_attempt = time.monotonic()
             reconcile_once()
         except Exception as exc:
             print(f'[WARN] TiDB cloud reconcile pending: {type(exc).__name__}: {exc}')
             event.set()
-            time.sleep(60.0)
+            time.sleep(300.0)
 
 
 def install():
