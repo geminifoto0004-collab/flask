@@ -409,7 +409,8 @@ async def _guard_query(request):
 async def cart_session(request: Request):
     if staff._authorized(request):
         return {"role": "staff"}
-    if not stockdb.configured():
+    if not stockdb.configured() or _parse_session(request) is None:
+        # Anonymous page loads must never open TiDB or run schema checks.
         return {"role": "none"}
     try:
         conn = await asyncio.to_thread(_db)
