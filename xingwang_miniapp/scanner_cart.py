@@ -303,7 +303,7 @@ def _list_carts():
                 "COUNT(i.sku),COALESCE(SUM(i.qty),0),c.guest_opened_at,c.confirmed_at,"
                 "c.confirmed_version "
                 "FROM xw_carts c LEFT JOIN xw_cart_items i ON i.cart_id=c.id "
-                "WHERE c.state<>\'cancelled\' "
+                "WHERE c.state<>'cancelled' "
                 "GROUP BY c.id,c.short_code,c.customer_name,c.state,c.revision,"
                 "c.updated_at,c.guest_opened_at,c.confirmed_at,c.confirmed_version "
                 "ORDER BY c.updated_at DESC LIMIT 60"
