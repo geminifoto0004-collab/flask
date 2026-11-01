@@ -382,15 +382,15 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 #cartUndoBar button{background:#fff;border:0;color:var(--wine);border-radius:9px;padding:9px 12px;min-height:42px;flex:none;font-weight:800}
 #cartMeta .cart-meta-actions{margin-top:14px}
 #cartMeta .cart-meta-actions #cartCopy{display:inline-flex;justify-content:center;align-items:center;gap:8px;min-height:44px;font-weight:700}
-@media(max-width:949px){
 
-
-
-
-}
 @media(prefers-reduced-motion:reduce){#cartStaffList .cart-history-main{transition:none}}
 
 
+@media(min-width:950px){
+ #cartWorkspace:not(.cart-has-active) #cartStaffList .cart-history-main{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 20px;align-items:center}
+ #cartWorkspace:not(.cart-has-active) #cartStaffList .cart-history-row{grid-column:1;grid-row:1}
+ #cartWorkspace:not(.cart-has-active) #cartStaffList .cart-history-footer{grid-column:2;grid-row:1;min-width:170px;gap:12px}
+}
 /* CART HISTORY: canonical two-level row layout. No status text on edit action. */
 #cartStaffList .cart-history-entry{position:relative;display:block;box-sizing:border-box;min-width:0;margin:0 0 10px;border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:#fff}
 #cartStaffList .cart-history-entry.current{border-color:#D8A4B5;background:#F9F0F3}
@@ -710,7 +710,7 @@ body:has(#cartWorkspace:not(.hidden)) main{padding:0 0 calc(93px + env(safe-area
 
 #cartWorkspace .cart-compact-head{display:flex;gap:8px;align-items:center}
 #cartWorkspace .cart-back,#cartWorkspace .cart-details-btn{min-width:44px;width:44px;height:44px;padding:0!important;color:var(--ink);background:#fff;border:0;border-radius:12px}
-#cartWorkspace .cart-compact-title strong{color:var(--ink);white-space:nowrap}
+#cartWorkspace .cart-compact-title strong{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #cartWorkspace .cart-compact-title span{color:var(--muted)}
 #cartWorkspace #cartStateLabel{display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:28px;background:#FFEBC2;color:#7A4B00;font-size:12px;font-weight:700;border-radius:8px;padding:0 7px}
 #cartWorkspace #cartStateLabel[data-state="ready"]{background:#D8F1E4;color:#0B5B3A}
@@ -816,7 +816,7 @@ body:has(#cartWorkspace:not(.hidden)) #scanPanel:not(.cc-cart-camera-active){dis
  #cartWorkspace.cart-has-active[data-cart-role="staff"] .cart-compact-head{grid-column:2;grid-row:1;padding:14px;align-self:start}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartScanAction{grid-column:2;grid-row:1;margin-top:70px;padding:0 16px;align-self:start}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartPickView{grid-column:2;grid-row:1;margin-top:137px;padding:0;max-height:calc(100vh - 225px);overflow:auto}
- #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartMeta{grid-column:3;grid-row:1;display:block!important;position:sticky;top:0;border-radius:0;border-left:1px solid var(--hair);margin:0;align-self:start;height:100vh}
+ #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartMeta{grid-column:3;grid-row:1;display:block!important;position:sticky;top:0;border-radius:0;border-left:1px solid var(--hair);margin:0;align-self:start;height:100dvh;box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartDetailsBtn{visibility:hidden}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartDock{grid-column:2;grid-row:1;width:auto;max-width:none}
  
