@@ -19,5 +19,7 @@ def test_age_badge_and_short_inventory_timestamp():
  assert "badge.className='tag audit-badge '+auditAgeClass(age)" in ui
  assert "renderLastChecked();" in ui
  assert "current.last_checked_at=out.checked_at?" in ui
- assert "庫存更新：" in ui
+ assert '<div class="sample-series-header">' in ui
+ assert 'class="sample-sync"' in ui
+ assert "'asof').textContent=d.as_of?" in ui
  assert "智利時間" not in ui

@@ -94,6 +94,13 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 @media(max-width:380px){.sample-stats{gap:6px}.sample-stat{padding:9px 6px}.sample-stat-value{font-size:18px}}
 
 .bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.sample-series-header{display:flex;align-items:center;gap:9px;min-width:0;white-space:nowrap}
+.sample-series-header #series{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(16px,4vw,21px);margin:0;line-height:1.35}
+.sample-series-header .sample-sync{display:inline-flex;align-items:center;gap:4px;flex:none;min-width:0;color:#64748b;white-space:nowrap}
+.sample-series-header .sample-sync svg{width:14px;height:14px;flex:none}
+.sample-series-header #asof{font-size:12px;line-height:1.2;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sample-series-header #source{flex:none;white-space:nowrap}
+@media(max-width:360px){.sample-series-header{gap:5px}.sample-series-header .sample-sync{gap:2px}.sample-series-header #asof{font-size:11px}.sample-series-header .sample-sync svg{width:12px;height:12px}.sample-series-header #source{padding:5px 6px;font-size:12px}}
 .notice{background:#fff8e9;border:1px solid #f0d9a6;border-radius:10px;padding:10px;font-size:12px;color:#835a15}
 .hidden{display:none!important}@media (max-width:420px){.panel{padding:12px}.row input{width:100%}button{padding:11px}}
 .full-kind{display:flex;gap:8px;margin:10px 0 0}
@@ -167,7 +174,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 <div class="row"><button id="fullHistoryMore" class="secondary fill hidden">載入更多購買紀錄</button><button type="button" id="fullNext" class="secondary">查下一筆</button></div>
 </section>
 <section id="result" class="panel hidden">
-<div class="bar"><div><h2 id="series"></h2><small id="asof"></small></div><span id="source" class="tag"></span></div>
+<div class="sample-series-header"><h2 id="series"></h2><span class="sample-sync" title="庫存更新 / Stock updated"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><small id="asof"></small></span><span id="source" class="tag"></span></div>
 <div id="totals" class="sample-stats" aria-label="庫存統計"></div>
 <div class="stock-visibility" role="group" aria-label="布樣盤點顯示範圍">
 <button id="samplePositiveBtn" type="button" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="samplePositiveCount" class="filter-count">0</strong><span class="filter-label">&gt;0</span></button>
@@ -660,7 +667,7 @@ function showResult(d){
  $('dbNotice').classList.toggle('hidden',Boolean(d.db_connected));
  $('dbNotice').textContent=d.db_connected?'':'TiDB 不可用，暫時不能保存。';
  $('series').textContent=d.product_code;renderLastChecked();
- $('asof').textContent='庫存更新：'+(d.as_of?new Date(d.as_of).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'—');
+ $('asof').textContent=d.as_of?new Date(d.as_of).toLocaleString('zh-TW',{timeZone:'America/Santiago',hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit'}):'—';
  renderRows();
 }
 async function lookup(input){

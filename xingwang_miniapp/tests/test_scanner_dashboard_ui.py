@@ -19,3 +19,10 @@ def test_header_bulk_and_admin_back():
  assert 'nav.dataset.back=String(managing)' in UI
 def test_no_filler():
  assert 'id="modeHelp"' not in UI
+
+def test_series_heading_is_a_single_mobile_row():
+ assert '<div class="sample-series-header"><h2 id="series"></h2>' in UI
+ assert 'class="sample-sync"' in UI
+ assert 'id="asof"' in UI and 'id="source"' in UI
+ assert '.sample-series-header{display:flex;align-items:center;' in UI
+ assert '.sample-series-header #source{flex:none;white-space:nowrap}' in UI
