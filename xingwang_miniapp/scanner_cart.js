@@ -484,7 +484,10 @@ async function cartRefresh(discardPending=false){
  if(discardPending||cartPending.size){cartPending.clear();cartSending.clear();cartClearTimer();cartSaveError=false;}
  try{
   const d=await post('/scanner/api/cart/open',{cart_id:cartData.id});
-  cartSetData(d.cart);void cartLoadNote(d.cart.id);cartNotice('已刷新 / Actualizado');
+  const noteHasUncommittedText=Boolean(cartNoteDirty());
+  cartSetData(d.cart);
+  if(!noteHasUncommittedText)void cartLoadNote(d.cart.id);
+  cartNotice('已刷新 / Actualizado');
  }catch(e){cartNotice(e.message,true)}
 }
 async function cartPostBatch(items,revision){
