@@ -169,6 +169,56 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 #cartVersionBtn{font-size:12px;padding:7px 11px}
 #login .guest-divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:#8693a2;font-size:12px}.guest-divider:before,.guest-divider:after{content:"";height:1px;background:#e0e8f1;flex:1}
 @media(max-width:350px){.cart-qty-controls{gap:3px}.cart-qty-controls button{width:35px;height:35px}.cart-line-title strong{font-size:12px}.cart-qty-controls strong{width:23px}}
+
+/* Cart: dense mobile pick / review with the main action always in reach */
+body:has(#cartWorkspace:not(.hidden) #cartActive:not(.hidden)) main{padding-bottom:calc(105px + env(safe-area-inset-bottom,0px))}
+#cartWorkspace:has(#cartActive:not(.hidden)){padding:11px 12px;border-radius:14px}
+.cart-compact-head{display:flex;align-items:center;gap:8px;min-height:40px}
+.cart-back,.cart-details-btn{flex:none;width:38px;height:38px;padding:0!important;font-size:19px;border-radius:10px}
+.cart-details-btn{font-size:17px;letter-spacing:1px}
+.cart-compact-title{display:flex;flex:1;min-width:0;flex-direction:column;gap:2px}
+.cart-compact-title strong{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.cart-compact-title span{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cart-compact-head .tag{padding:5px 6px;font-size:10px;flex:none}
+.cart-meta{margin-top:10px;padding:10px;background:#f5f8fc;border:1px solid #e0e9f3;border-radius:12px}
+.cart-meta .cart-times{margin:0 0 8px}
+.cart-meta #cartEditName{padding:8px 11px;font-size:12px;margin-top:8px}
+.cart-meta-actions{display:flex;gap:7px}.cart-meta-actions button{flex:1;padding:9px;font-size:12px}
+.cart-meta .cart-hint{background:white;border:1px solid #e7edf5}
+.cart-meta .cart-code-number{font-size:19px}
+.cart-product-toolbar{margin:10px 0 6px}
+.cart-product-toolbar input{width:100%;padding:9px 11px;font-size:16px}
+.cart-pick-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:#73859b;padding:25px 10px;min-height:150px;text-align:center;font-size:12px}
+.cart-pick-empty strong{color:#213b54;font-size:16px}
+.cart-pick-empty-icon{font-size:28px;line-height:1}
+.cart-item-heading{display:flex;align-items:center;justify-content:space-between;padding:12px 2px 7px;color:#344b64;font-size:12px}
+#cartWorkspace .cart-line{min-height:47px;padding:5px 0;gap:5px}
+#cartWorkspace .cart-line-title strong{font-size:14px}
+#cartWorkspace .cart-line-title small{font-size:11px}
+#cartWorkspace .cart-qty-controls{gap:3px}
+#cartWorkspace .cart-qty-controls button{height:38px;width:38px;background:#edf3f9;color:#205480;font-size:22px}
+#cartWorkspace .cart-qty-controls button:disabled{opacity:.4}
+#cartWorkspace .cart-qty-controls input.cart-qty{height:38px;width:48px;padding:0 3px;text-align:center;font-size:16px;border:1px solid #dbe4ee;background:#fff;border-radius:8px;color:#152e45;font-weight:700;appearance:textfield;-moz-appearance:textfield}
+#cartWorkspace .cart-qty-controls input.cart-qty::-webkit-inner-spin-button,#cartWorkspace .cart-qty-controls input.cart-qty::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#cartWorkspace .cart-qty-controls input.cart-qty:focus{outline:2px solid #2e76c1;outline-offset:0}
+#cartWorkspace .cart-products-head{margin:8px 0 0;padding:8px 0 2px;border-top:1px solid #eef2f8}
+#cartWorkspace .cart-filter{margin:7px 0}
+#cartWorkspace .cart-filter button{padding:7px}
+.cart-inventory-disclaimer{font-size:11px;color:#77869a;margin:15px 0 6px}
+.cart-dock{position:fixed;z-index:25;bottom:calc(9px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);width:min(750px,calc(100% - 20px));background:#fff;box-shadow:0 4px 22px #152b4650;border:1px solid #dce6f2;border-radius:15px;padding:8px 10px;display:flex;align-items:center;gap:8px;min-height:66px}
+.cart-dock-count{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;white-space:nowrap}
+.cart-dock-count strong{font-size:20px;color:#122e47;font-variant-numeric:tabular-nums}
+.cart-dock-count strong small{font-size:10px;font-weight:700;color:#5f7185}
+.cart-save-status{font-size:10px;color:#39825c;overflow:hidden;text-overflow:ellipsis}
+.cart-save-status[data-error="true"]{color:#b4343d;font-weight:700}
+.cart-dock-switch,.cart-dock-confirm{height:46px;border-radius:10px;padding:0 13px;font-size:13px;white-space:nowrap}
+.cart-dock-switch{background:#1567ad;color:#fff;min-width:108px}
+.cart-dock-confirm{background:#18815d;color:#fff;min-width:112px}
+#cartWorkspace .cart-confirmed-box{max-height:220px}
+#scanPanel.cart-scanner-parked{position:absolute!important;left:-9999px!important;top:0!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important;pointer-events:none!important;padding:0!important;margin:0!important}
+#cartWorkspace:has(#cartActive:not(.hidden)) #cartMessage:not(:empty){position:fixed;z-index:26;bottom:calc(82px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);width:min(700px,calc(100% - 30px));border:1px solid #bfd7ea;background:#f4f9ff;color:#1b587c;box-shadow:0 4px 18px #1c324124;border-radius:9px;padding:8px 12px;font-size:12px;max-height:100px;overflow:auto}
+#cartWorkspace:has(#cartActive:not(.hidden)) #cartMessage.error{border-color:#ffc6c4;background:#fff4f4;color:#a32931}
+@media(max-width:370px){.cart-dock{gap:5px;padding:7px}.cart-dock-count strong{font-size:17px}.cart-dock-switch,.cart-dock-confirm{min-width:0;padding:0 9px;font-size:12px}#cartWorkspace .cart-qty-controls button{width:35px}#cartWorkspace .cart-qty-controls input.cart-qty{width:42px}}
 </style>
 </head>
 <body><main>
@@ -209,19 +259,39 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
  </div>
  <div id="cartStaffList"><h3>RECENT</h3><input id="cartFilter" type="search" placeholder="ID / Customer" autocomplete="off"><div id="cartRecent" style="margin-top:9px"></div></div>
  <div id="cartActive" class="hidden">
-  <div class="cart-header"><button id="cartBack" class="secondary" type="button" aria-label="所有購物車">←</button><h2 id="cartShortCode"></h2><span id="cartStateLabel" class="tag">DRAFT</span></div>
-  <div class="cart-times"><div><span>OPENED</span><strong id="cartOpenedAt">—</strong></div><div><span>CONFIRMED</span><strong id="cartConfirmedAt">—</strong></div></div>
-  <div class="cart-spread"><small class="muted">LAST VERSION <strong id="cartVersionLabel">—</strong></small><button type="button" id="cartVersionBtn" class="secondary hidden" title="查看最後已確認清單">V1</button></div>
-  <div id="cartConfirmedBox" class="cart-confirmed-box hidden" aria-label="已確認版本商品清單"></div>
-  <div class="cart-spread" style="margin:10px 0"><span id="cartCustomerLabel" class="muted">CUSTOMER</span><button id="cartEditName" class="ghost" type="button" title="編輯客戶名稱" aria-label="編輯客戶名稱">✎</button></div>
-  <div id="cartShareRow" class="cart-hint"><div class="cart-spread"><span>GUEST CODE · 8H</span><span id="cartGuestCode" class="cart-code-number"></span></div><div class="cart-stack" style="margin-top:8px"><button id="cartShareBtn" type="button" class="secondary">↻ CODE</button><button id="cartGuestHandoff" type="button" class="secondary">GUEST MODE</button></div></div>
-  <div id="cartStockNote" class="cart-hint hidden"></div>
-  <div id="cartProducts"></div>
-  <div class="cart-spread" style="margin-top:14px"><h3 style="margin:0">CART ITEMS</h3><strong><span id="cartTotal">0</span> ROLL</strong></div>
-  <div id="cartItems"></div>
-  <div class="cart-spread" style="margin:10px 0"><small id="cartSavedAt" class="muted"></small><button id="cartReload" class="ghost" type="button" title="重新載入購物車">↻</button></div>
-  <div class="cart-stack"><button id="cartStateButton" type="button">✓ CONFIRM</button><button id="cartCopy" type="button" class="secondary" aria-label="複製選貨清單">COPY</button></div>
-  <p class="muted" style="margin:8px 0 0">READY ≠ RESERVAR · 正式開單前需確認庫存</p>
+  <div class="cart-compact-head">
+   <button id="cartBack" class="cart-back secondary" type="button" aria-label="返回所有購物車">←</button>
+   <div class="cart-compact-title"><strong id="cartShortCode" title="點選複製 Cart ID"></strong><span id="cartCustomerLabel" class="muted"></span></div>
+   <span id="cartStateLabel" class="tag">DRAFT</span>
+   <button id="cartDetailsBtn" class="cart-details-btn secondary" type="button" aria-expanded="false" aria-controls="cartMeta" aria-label="購物車詳細資料與訪客">•••</button>
+  </div>
+  <div id="cartMeta" class="cart-meta hidden">
+   <div class="cart-times"><div><span>OPENED</span><strong id="cartOpenedAt">—</strong></div><div><span>CONFIRMED</span><strong id="cartConfirmedAt">—</strong></div></div>
+   <div class="cart-spread"><span class="muted">LAST VERSION <strong id="cartVersionLabel">—</strong></span><button type="button" id="cartVersionBtn" class="secondary hidden" title="查看最後已確認清單">V1</button></div>
+   <div id="cartConfirmedBox" class="cart-confirmed-box hidden" aria-label="已確認版本商品清單"></div>
+   <button id="cartEditName" class="secondary" type="button">✎ CUSTOMER</button>
+   <div id="cartShareRow" class="cart-hint">
+    <div class="cart-spread"><span>GUEST CODE · 8H</span><span id="cartGuestCode" class="cart-code-number"></span></div>
+    <div class="cart-stack" style="margin-top:8px"><button id="cartShareBtn" type="button" class="secondary">↻ CODE</button><button id="cartGuestHandoff" type="button" class="secondary">GUEST MODE</button></div>
+   </div>
+   <div class="cart-meta-actions"><button id="cartReload" class="secondary" type="button">↻ RELOAD</button><button id="cartCopy" class="secondary" type="button">COPY LIST</button></div>
+  </div>
+  <div id="cartPickView">
+   <div id="cartProductToolbar" class="cart-product-toolbar hidden"><input id="cartSkuFilter" type="search" placeholder="搜尋此系列色號 / SKU" autocomplete="off" aria-label="搜尋此系列商品"/></div>
+   <div id="cartProducts"></div>
+   <div id="cartStockNote" class="cart-hint hidden"></div>
+   <div id="cartPickEmpty" class="cart-pick-empty"><div class="cart-pick-empty-icon">▣</div><strong>SCAN QR</strong><span>掃描或輸入布料編號，選擇需要的匹數</span></div>
+  </div>
+  <div id="cartItemView" class="hidden">
+   <div class="cart-item-heading"><strong>CART ITEMS</strong><span id="cartSkuCount"></span></div>
+   <div id="cartItems"></div>
+   <p class="cart-inventory-disclaimer">選貨清單 ≠ RESERVAR，正式開單前需要確認庫存</p>
+  </div>
+  <div id="cartDock" class="cart-dock">
+   <div class="cart-dock-count"><strong><span id="cartTotal">0</span> <small>ROLL</small></strong><span id="cartSavedAt" class="cart-save-status">✓ SAVED</span></div>
+   <button id="cartSwitchView" class="cart-dock-switch" type="button">CART <span id="cartDockSkuCount"></span></button>
+   <button id="cartStateButton" class="cart-dock-confirm hidden" type="button">✓ CONFIRM</button>
+  </div>
  </div>
  <div id="cartMessage" aria-live="polite"></div>
 </section>
@@ -405,6 +475,7 @@ function setMode(m){
  nav.title=managing?'返回上一頁':'管理分頁';
  $('adminTab').classList.toggle('hidden',!managing);
  $('scanPanel').classList.toggle('hidden',managing);
+ if(m!=='cart')$('scanPanel').classList.remove('cart-scanner-parked');
  $('workModes').classList.toggle('hidden',m==='cart');
  $('cartWorkspace').classList.toggle('hidden',m!=='cart');
  $('adminLink').classList.toggle('active',managing);
@@ -837,6 +908,7 @@ function onScan(raw){
  const code=normalizeProductCode(raw);
  if(!valid(code)){msg('QR 不是商品編號，請掃描純編號 QR','error');return}
  if(mode==='cart'){
+  if(window.cartIsReviewing?.())return;
   if(code===lastQrCode||cartSearch?.product_code===code)return;
   lastQrCode=code;
   if(window.cartLookup)void window.cartLookup(code);

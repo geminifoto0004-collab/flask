@@ -191,3 +191,29 @@ def test_batch_saves_multiple_skus_with_one_cart_revision():
     assert "DELETE FROM xw_cart_items" in sql
     assert "INSERT INTO xw_cart_events" in sql
     assert sql.count("UPDATE xw_carts SET revision=revision+1") == 1
+
+
+def test_cart_mobile_pick_review_ux_is_compact_and_role_safe():
+    ui=(ROOT/"scanner.html").read_text("utf-8")
+    js=(ROOT/"scanner_cart.js").read_text("utf-8")
+    assert 'id="cartDetailsBtn"' in ui
+    assert 'id="cartMeta" class="cart-meta hidden"' in ui
+    assert 'id="cartSwitchView"' in ui
+    assert 'id="cartDock"' in ui
+    assert 'id="cartPickView"' in ui
+    assert 'id="cartItemView" class="hidden"' in ui
+    assert 'id="cartSkuFilter"' in ui
+    assert 'id="cartShareRow"' in ui  # employee code still available
+    assert 'cart-scanner-parked' in ui  # do not close camera on review
+    assert 'if(window.cartIsReviewing?.())return;' in ui
+    assert "window.cartIsReviewing=()=>cartView==='cart'" in js
+    assert "value.type='number'" in js
+    assert "value.inputMode='numeric'" in js
+    assert "cartChange(sku,n)" in js
+    assert "cartView='pick'" in js
+    assert "cartView=d.cart.items?.length?'cart':'pick'" in js
+    assert "'cartDetailsBtn').onclick" in js
+    assert "'cartSwitchView').onclick" in js
+    assert "window.cartLookup=cartLookup" in js
+    assert "cartPending=new Map()" in js
+    assert "cartStateButton" in js
