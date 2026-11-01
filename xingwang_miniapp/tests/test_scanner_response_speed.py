@@ -4,22 +4,23 @@ import re
 ROOT=Path(__file__).resolve().parents[1]
 def ui(): return (ROOT/"scanner.html").read_text("utf-8")
 
-def test_live_camera_same_height_after_sample_lookup():
+def test_pre_cc_video_uses_native_geometry_after_sample_lookup():
     s=ui()
-    css=s[s.index("/* LIVE QR camera:"):s.index("/* Preview comparison fixes:")]
-    assert "height:320px!important;min-height:320px!important;max-height:320px!important" in css
+    css=s[s.index("/* CC-pre-redesign camera restoration"):s.index("</style>",s.index("/* CC-pre-redesign camera restoration"))]
+    assert "height:auto!important;min-height:0!important;max-height:none!important;" in css
     assert "body.cc-sample-detail #scanPanel #reader.camera-active" in css
     assert "body.cc-stock-detail #scanPanel #reader.camera-active" in css
-    assert "object-fit:contain!important" in css
+    assert "max-width:460px!important" in css
+    assert "object-fit:initial!important" in css
     assert "#scanPanel #reader:not(.camera-active)" in css
     assert "display:none!important" in css
 
-def test_qrbox_fits_viewfinder_instead_of_220_fixed():
+def test_exact_pre_cc_working_scanner_decoding_parameters():
     s=ui()
     start=s[s.index("async function startCamera(){"):s.index("async function stopCamera(){")]
-    assert "{fps:12,qrbox:(width,height)=>{" in start
-    assert "Math.min(width,height)*0.78" in start
-    assert "return {width:side,height:side}" in start
+    assert "await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});" in start
+    assert "fps:12" not in start
+    assert "qrbox:(width,height)" not in start
     assert "classList.add('camera-active')" in start
 
 def test_no_busy_qr_drop_and_keep_unsaved_sample():

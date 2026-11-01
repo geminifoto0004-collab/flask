@@ -977,6 +977,40 @@ body.cc-stock-detail #scanPanel #reader.camera-active video{
   height:40px!important;
  }
 }
+
+/* CC-pre-redesign camera restoration (baseline bfe927c5):
+   Let Html5Qrcode size the native live video/scan overlay. Never crop or
+   shrink it as the SAMPLE result appears. Keep the container collapsed when
+   the camera is stopped, without rendering a design-only placeholder. */
+#scanPanel #reader.camera-active,
+body.cc-sample-detail #scanPanel #reader.camera-active,
+body.cc-stock-detail #scanPanel #reader.camera-active,
+#scanPanel.cc-cart-camera-active #reader.camera-active{
+ display:block!important;
+ box-sizing:border-box!important;
+ height:auto!important;min-height:0!important;max-height:none!important;
+ width:100%!important;max-width:460px!important;
+ margin:10px auto!important;padding:0!important;
+ overflow:hidden!important;border-radius:10px!important;
+ background:transparent!important;
+}
+#scanPanel #reader.camera-active video,
+body.cc-sample-detail #scanPanel #reader.camera-active video,
+body.cc-stock-detail #scanPanel #reader.camera-active video,
+#scanPanel.cc-cart-camera-active #reader.camera-active video{
+ width:auto!important;max-width:100%!important;
+ height:auto!important;min-height:0!important;max-height:none!important;
+ object-fit:initial!important;
+}
+#scanPanel #reader.camera-active::before,
+#scanPanel #reader.camera-active::after{content:none!important;display:none!important}
+#scanPanel #reader:not(.camera-active),
+body.cc-sample-detail #scanPanel #reader:not(.camera-active),
+body.cc-stock-detail #scanPanel #reader:not(.camera-active){
+ display:none!important;height:0!important;min-height:0!important;
+ padding:0!important;margin:0!important;border:0!important;
+}
+
 </style>
 </head>
 <body><main>
@@ -1942,14 +1976,7 @@ async function startCamera(){
  $('reader').classList.add('camera-active');
  try{
   reader=new Html5Qrcode('reader',{verbose:false});
-  await reader.start(
-   {facingMode:'environment'},
-   {fps:12,qrbox:(width,height)=>{
-    const side=Math.max(64,Math.min(240,Math.floor(Math.min(width,height)*0.78)));
-    return {width:side,height:side};
-   }},
-   onScan,()=>{}
-  );
+  await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});
   running=true;lastQrCode='';scanQueuedCode='';scanRetryCode='';syncCameraButton();msg('相機已開啟，可連續掃描商品編號。');
  }catch(e){
   if(reader){try{reader.clear()}catch(_){}}
