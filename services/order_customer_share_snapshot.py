@@ -347,13 +347,16 @@ def _refresh_worker(customer_key):
                     timer.start()
 
 
-def queue_snapshot_refresh(customer_key, delay=1.5):
+def queue_snapshot_refresh(customer_key, delay=1.5, *, only_if_idle=False):
     """Debounce batch ORDER/image writes so hundreds of image registers rebuild once."""
     customer_key = str(customer_key or "").strip()
     if not customer_key:
         return
-    _invalidate_local_cache(customer_key)
+    if not only_if_idle:
+        _invalidate_local_cache(customer_key)
     with _TIMER_LOCK:
+        if only_if_idle and customer_key in _REFRESH_TIMERS:
+            return False
         previous = _REFRESH_TIMERS.pop(customer_key, None)
         if previous is not None:
             try:
@@ -364,6 +367,7 @@ def queue_snapshot_refresh(customer_key, delay=1.5):
         timer.daemon = True
         _REFRESH_TIMERS[customer_key] = timer
         timer.start()
+        return True
 
 
 def _snapshot_load_page_data(token):
@@ -521,36 +525,78 @@ def _patch_asset_writers():
             direct_multi._upsert_registered_asset = wrapped_direct_upsert
 
 
-def _backfill_active_shares():
-    time.sleep(0.75)
+def _snapshot_timestamp(value):
+    from datetime import datetime, timezone
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
     try:
-        _ensure_table()
-        conn = get_db_connection()
-        cur = get_cursor(conn)
-        try:
-            cur.execute(
-                """SELECT DISTINCT customer_key
-                   FROM cloud_share_tokens
-                   WHERE status='active' AND customer_key IS NOT NULL"""
-            )
-            keys = []
-            for row in cur.fetchall():
-                data = get_row_dict(row, cur) or {}
-                key = str(data.get("customer_key") or "").strip()
-                if key:
-                    keys.append(key)
-        finally:
-            conn.close()
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        return parsed.replace(tzinfo=timezone.utc).timestamp() if parsed.tzinfo is None else parsed.timestamp()
+    except (ValueError, TypeError, OverflowError):
+        return 0.0
 
-        for key in keys:
-            try:
-                rebuild_snapshot(key)
-            except Exception as exc:
-                print(
-                    f"[WARN] ORDER share snapshot backfill failed for {key}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-                queue_snapshot_refresh(key, delay=5)
+
+def _startup_snapshot_plan():
+    """Read metadata only; existing snapshots do not need another full payload build."""
+    _ensure_table()
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        cur.execute(f"""SELECT s.customer_key, p.updated_at AS snapshot_updated_at,
+                               LENGTH(p.payload) AS payload_size
+                        FROM (SELECT DISTINCT customer_key FROM cloud_share_tokens
+                              WHERE status='active' AND customer_key IS NOT NULL
+                                AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)) s
+                        LEFT JOIN {_TABLE} p ON p.customer_key=s.customer_key""")
+        rows = [get_row_dict(row, cur) or {} for row in cur.fetchall()]
+        keys = [str(row.get('customer_key') or '').strip() for row in rows]
+        sources = {'cloud_orders': {}, 'cloud_assets': {}}
+        for offset in range(0, len(keys), 100):
+            batch = keys[offset:offset + 100]
+            placeholders = ','.join('?' for _ in batch)
+            for table in sources:
+                cur.execute(f"""SELECT customer_key, MAX(updated_at) AS source_updated_at,
+                                       COUNT(*) AS source_count
+                                FROM {table} WHERE customer_key IN ({placeholders})
+                                GROUP BY customer_key""", tuple(batch))
+                for raw in cur.fetchall():
+                    item = get_row_dict(raw, cur) or {}
+                    sources[table][str(item.get('customer_key') or '')] = item
+        pending, reused = [], 0
+        for row, key in zip(rows, keys):
+            if not key:
+                continue
+            stamp = _snapshot_timestamp(row.get('snapshot_updated_at'))
+            order = sources['cloud_orders'].get(key) or {}
+            source_rows = [sources[table].get(key) or {} for table in sources]
+            known = all(not item.get('source_count') or _snapshot_timestamp(item.get('source_updated_at')) > 0 for item in source_rows)
+            latest = max((_snapshot_timestamp(item.get('source_updated_at')) for item in source_rows), default=0)
+            fresh = (stamp > 0 and int(row.get('payload_size') or 0) > 2
+                     and int(order.get('source_count') or 0) > 0 and known and latest <= stamp)
+            if fresh:
+                reused += 1
+            else:
+                pending.append(key)
+        return pending, reused, len(keys)
+    finally:
+        conn.close()
+
+
+def _backfill_active_shares():
+    # Give foreground reads a startup grace period. Mutations keep their normal
+    # immediate/debounced refresh path, and missing public snapshots still fall back.
+    time.sleep(15)
+    try:
+        started = time.monotonic()
+        keys, reused, total = _startup_snapshot_plan()
+        queued = 0
+        for index, key in enumerate(keys):
+            # Do not postpone a refresh already requested by an actual mutation.
+            queued += bool(queue_snapshot_refresh(key, delay=1.5 + index * 3, only_if_idle=True))
+        print(f'[ORDER Snapshot] startup metadata plan total={total} reused={reused} '
+              f'needs_refresh={len(keys)} queued={queued} elapsed_s={time.monotonic()-started:.2f}', flush=True)
     except Exception as exc:
         print(f"[WARN] ORDER share snapshot startup skipped: {type(exc).__name__}: {exc}")
 
@@ -569,3 +615,4 @@ def install():
 
 
 install()
+
