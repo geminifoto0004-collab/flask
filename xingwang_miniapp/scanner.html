@@ -545,7 +545,8 @@ body:has(#cartWorkspace:not(.hidden)) #scanPanel:not(.cc-cart-camera-active){dis
 #ccCartCameraClose{position:absolute;top:10px;left:12px;z-index:75;background:#fff;border:1px solid var(--stroke);border-radius:12px;color:var(--ink);width:44px;height:44px;padding:0;align-items:center;justify-content:center}
 #scanPanel.cc-cart-camera-active #ccCartCameraClose{display:flex!important}
 body.cc-sample-detail header,body.cc-stock-detail header{display:none!important}
-body.cc-sample-detail #scanPanel,body.cc-stock-detail #scanPanel{display:none!important}
+/* Camera and results must coexist: never hide the decoder after reading QR. */
+body.cc-sample-detail #scanPanel,body.cc-stock-detail #scanPanel{display:block!important}
 body.cc-sample-detail main,body.cc-stock-detail main{max-width:none;padding:0 0 calc(90px + env(safe-area-inset-bottom,0px))}
 body.cc-sample-detail #result,body.cc-stock-detail #fullResult{display:block!important;background:var(--paper);border:0;border-radius:0;margin:0;padding:0;box-shadow:none;min-height:100dvh}
 #result .cc-sample-top{position:absolute;top:12px;left:14px;z-index:5}
@@ -648,6 +649,25 @@ body:has(#adminTab:not(.hidden)) main{max-width:none;padding:0 0 30px}
 #fullResult[data-full-tab="stock"] #fullTabs{display:none}
 body.cc-show-stock-options #fullResult[data-full-tab="stock"] #fullTabs{display:flex!important}
 
+
+/* Continuous scanner and sample stocktaking in ONE view. The QR camera may
+   keep running while the employee checks or saves the visible stock rows. */
+body.cc-sample-detail header,body.cc-stock-detail header{display:flex!important}
+body.cc-sample-detail main,body.cc-stock-detail main{
+  max-width:1100px!important;
+  padding:12px 14px calc(105px + env(safe-area-inset-bottom,0px))!important;
+}
+body.cc-sample-detail #scanPanel,body.cc-stock-detail #scanPanel{
+  display:block!important;position:relative;width:100%;overflow:visible;
+  background:var(--paper);
+}
+body.cc-sample-detail #result,body.cc-stock-detail #fullResult{
+  min-height:0!important;margin-top:10px;
+}
+body.cc-sample-detail #result .cc-sample-top{display:none}
+body.cc-sample-detail #result .sample-series-header{padding-left:14px}
+body.cc-stock-detail #ccStockBack{display:none}
+body.cc-stock-detail #fullResult .bar{padding-left:14px}
 </style>
 </head>
 <body><main>
@@ -875,7 +895,7 @@ async function xwCopyFallback(title,value){
 }
 
 let mode='sample', reader=null, running=false, busy=false, current=null, saved=false, lastQrCode='';
-let ccResultView=null;
+let ccResultView=null,scanBlockedCode='',scanBlockedAt=0;
 function ccReturnToScan(){
  ccResultView=null;
  document.body.classList.remove('cc-sample-detail','cc-stock-detail');
@@ -1527,7 +1547,7 @@ $('codeClearBtn').onclick=()=>{
 $('queryBtn').onclick=()=>lookup($('code').value);
 $('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
 function onScan(raw){
- if(busy||mode==='admin'||(ccResultView&&mode!=='cart'))return;
+ if(busy||mode==='admin')return;
  const code=normalizeProductCode(raw);
  if(!valid(code)){msg('QR 不是商品編號，請掃描純編號 QR','error');return}
  if(mode==='cart'){
@@ -1542,6 +1562,14 @@ function onScan(raw){
  // unsaved-change confirmation already enforced inside lookup().
  if(code===lastQrCode||(mode==='sample'&&code===current?.product_code)||
     (mode==='full'&&code===fullCode&&fullData))return;
+ if(mode==='sample'&&current&&current.product_code!==code&&sampleDirty&&!saved){
+  // Scanning must not prompt, navigate away or discard uncommitted checks.
+  if(scanBlockedCode!==code||Date.now()-scanBlockedAt>4000){
+   scanBlockedCode=code;scanBlockedAt=Date.now();
+   msg('目前系列尚未保存，請先按保存。相機仍然保持開啟。','error');
+  }
+  return;
+ }
  lastQrCode=code;
  void lookup(code);
 }
@@ -1583,7 +1611,7 @@ $('saveBtn').onclick=async()=>{
  const missing=visible.filter(row=>sampleStates.get(row.code)!==true).map(row=>row.code);
  try{
   const out=await post('/scanner/api/save',{scan_id:current.scan_id,present,missing,allow_stale:staleAccepted()});
-  saved=true;sampleDirty=false;savedScope=new Set(visible.map(row=>row.code));
+  saved=true;sampleDirty=false;scanBlockedCode='';lastQrCode='';savedScope=new Set(visible.map(row=>row.code));
   current.last_checked_at=out.checked_at?out.checked_at+'Z':new Date().toISOString();
   current.last_checked_count=out.sku_count;
   current.last_missing_count=out.missing_count;
