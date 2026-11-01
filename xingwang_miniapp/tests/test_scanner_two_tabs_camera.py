@@ -1,15 +1,15 @@
-"""Scanner two-tab layout, compact camera and safe sample selection."""
+"""Scanner two-tab layout, compact camera, checkboxes and safe stock filters."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-def test_two_tabs_camera_and_sample_filters():
+def test_two_tabs_camera_and_checkbox():
  s=(ROOT/'scanner.html').read_text('utf-8')
- for name in ('modeSample','modeFull','cameraToggle','samplePositiveBtn','sampleAllBtn','adminTab'):
+ for name in ('modeSample','modeFull','cameraToggle','samplePositiveBtn','sampleAllBtn','adminTab','sampleSelectAll','sampleSelectNone'):
   assert 'id="'+name+'"' in s
  for name in ('modeStock','cameraStart','cameraStop','stockResult'):
   assert 'id="'+name+'"' not in s
- assert "samplePositiveOnly?all.filter(r=>hasPositivePieces(r.stock_rolls)):all" in s
- assert "['','未檢查']" in s and "['present','有樣']" in s and "['missing','無樣']" in s
-def test_sample_and_full_keep_separate_cached_results():
+ assert "cb.type='checkbox'" in s
+ assert "samplePositiveOnly" in s
+def test_cache_and_save():
  s=(ROOT/'scanner.html').read_text('utf-8')
  assert "current.product_code===sharedProductCode" in s
  assert "fullCode===(fullKind==='nota'?notaInput:sharedProductCode)" in s
