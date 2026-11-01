@@ -909,6 +909,18 @@ body.cc-sample-detail #scanPanel #reader video,body.cc-stock-detail #scanPanel #
  border-radius:12px!important;box-shadow:0 2px 9px #24101720!important}
 #fullResult[data-full-tab="stock"] .stock-visibility{padding:0 16px 8px!important}
 
+
+/* Empty reader placeholder must not occupy space before Scan is pressed.
+   SAMPLE and STOCK keep the camera visible *only when actually started*. */
+#scanPanel #reader:not(.camera-active),
+body.cc-sample-detail #scanPanel #reader:not(.camera-active),
+body.cc-stock-detail #scanPanel #reader:not(.camera-active),
+#scanPanel.cc-cart-camera-active #reader:not(.camera-active){
+ display:none!important;height:0!important;min-height:0!important;
+ margin:0!important;padding:0!important;border:0!important;
+}
+#scanPanel #reader:not(.camera-active):before,
+#scanPanel #reader:not(.camera-active):after{content:none!important;display:none!important}
 </style>
 </head>
 <body><main>
@@ -1828,16 +1840,26 @@ function onScan(raw){
 async function startCamera(){
  if(running)return;
  if(!window.Html5Qrcode){msg('相機元件尚未載入，請重新整理。','error');return}
+ // HTML5 QR must measure a visible container before initialising video.
+ // No empty design-preview box until the user actively opens the scanner.
+ $('reader').classList.add('camera-active');
  try{
   reader=new Html5Qrcode('reader',{verbose:false});
   await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});
   running=true;lastQrCode='';syncCameraButton();msg('相機已開啟，可連續掃描商品編號。');
- }catch(e){reader=null;running=false;syncCameraButton();msg('相機權限或開啟失敗：'+String(e),'error')}
+ }catch(e){
+  if(reader){try{reader.clear()}catch(_){}}
+  reader=null;running=false;
+  $('reader').classList.remove('camera-active');
+  syncCameraButton();msg('相機權限或開啟失敗：'+String(e),'error');
+ }
 }
 async function stopCamera(){
  if(reader&&running){try{await reader.stop()}catch(_){}}
  if(reader){try{reader.clear()}catch(_){}}
- reader=null;running=false;syncCameraButton();
+ reader=null;running=false;
+ $('reader').classList.remove('camera-active');
+ syncCameraButton();
 }
 function syncCameraButton(){
  const b=$('cameraToggle');
