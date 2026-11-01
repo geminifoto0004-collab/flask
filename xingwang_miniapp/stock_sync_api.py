@@ -73,8 +73,11 @@ async def _verify(request, body):
 
 
 def _value(raw):
-    if isinstance(raw, bool) or raw is None:
-        raise ValueError("Missing or invalid inventory quantity")
+    # SQL SUM() may return NULL; keep it distinct from zero.
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        raise ValueError("Invalid inventory quantity")
     try:
         amount = Decimal(str(raw))
         if not amount.is_finite() or abs(amount) > _AMOUNT:
@@ -114,8 +117,10 @@ def _validate(payload):
         if key in folded_codes:
             raise ValueError("Duplicate SKU in inventory")
         folded_codes.add(key)
-        values[code] = (_series(code), _value(item.get("stock_rolls")),
-                         _value(item.get("stock_meters")))
+        if "stock_rolls" not in item or "stock_meters" not in item:
+            raise ValueError("Missing stock quantity field")
+        values[code] = (_series(code), _value(item["stock_rolls"]),
+                         _value(item["stock_meters"]))
     return values
 
 
