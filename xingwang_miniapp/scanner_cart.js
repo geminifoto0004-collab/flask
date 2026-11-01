@@ -372,6 +372,11 @@ function cartRenderList(){
   }
   wrapper.append(del,main);
   let startX=0,startY=0;
+  wrapper.addEventListener('click',event=>{
+   if(Date.now()<Number(wrapper.dataset.swipeClickUntil||0)&&event.target!==del&&!del.contains(event.target)){
+    event.preventDefault();event.stopPropagation();
+   }
+  },true);
   wrapper.addEventListener('touchstart',e=>{
    if(!window.matchMedia('(max-width:949px)').matches||!e.touches.length)return;
    startX=e.touches[0].clientX;startY=e.touches[0].clientY;
@@ -382,6 +387,7 @@ function cartRenderList(){
    if(Math.abs(dx)>48&&Math.abs(dx)>Math.abs(dy)*1.25){
     for(const open of host.querySelectorAll('.cart-history-entry.swiped'))if(open!==wrapper)open.classList.remove('swiped');
     wrapper.classList.toggle('swiped',dx>0);
+    wrapper.dataset.swipeClickUntil=String(Date.now()+450);
    }
   },{passive:true});
   host.append(wrapper);
@@ -620,7 +626,7 @@ $('cartVersionBtn').onclick=async()=>{
 };
 $('cartCopy').onclick=async()=>{
  if(!cartData)return;
- if(cartPending.size&&!(await cartFlush()))return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
  const items=cartEffectiveItems().filter(i=>i.qty>0);
  if(!items.length){cartNotice('没有已选商品 / Sin productos seleccionados',true);return}
  // TSV: two columns only, safe to paste directly into Excel.
