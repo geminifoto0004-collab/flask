@@ -31,6 +31,21 @@ _space_cache = {}
 _cache_lock = threading.RLock()
 
 
+def _cache_limit(cache):
+    """Bound each cache independently; cold share links always fall back to TiDB."""
+    if cache is _space_cache:
+        default, name = 12, "ORDER_SHARE_SPACE_CACHE_ENTRIES"
+    elif cache is _token_cache:
+        default, name = 256, "ORDER_SHARE_TOKEN_CACHE_ENTRIES"
+    else:
+        # Includes the hashed-token cache in order_customer_share_hot_cache.
+        default, name = 256, "ORDER_SHARE_HASH_CACHE_ENTRIES"
+    try:
+        return max(1, min(2048, int(os.getenv(name, str(default)))))
+    except (TypeError, ValueError):
+        return default
+
+
 def _cache_get(cache, key):
     now = time.monotonic()
     with _cache_lock:
@@ -41,12 +56,24 @@ def _cache_get(cache, key):
         if expires_at <= now:
             cache.pop(key, None)
             return None
+        # Dict insertion order provides an inexpensive LRU policy.
+        cache.pop(key, None)
+        cache[key] = item
         return value
 
 
 def _cache_put(cache, key, value, ttl):
+    now = time.monotonic()
     with _cache_lock:
-        cache[key] = (time.monotonic() + float(ttl), value)
+        cache.pop(key, None)
+        cache[key] = (now + float(ttl), value)
+        limit = _cache_limit(cache)
+        if len(cache) > limit:
+            for stale_key, (expires_at, _) in list(cache.items()):
+                if expires_at <= now:
+                    cache.pop(stale_key, None)
+        while len(cache) > limit:
+            cache.pop(next(iter(cache)), None)
     return value
 
 
