@@ -217,3 +217,40 @@ def test_cart_mobile_pick_review_ux_is_compact_and_role_safe():
     assert "window.cartLookup=cartLookup" in js
     assert "cartPending=new Map()" in js
     assert "cartStateButton" in js
+
+
+def test_cc_ui_redesign_keeps_real_apis_and_camera():
+    html=(ROOT/"scanner.html").read_text("utf-8")
+    js=(ROOT/"scanner_cart.js").read_text("utf-8")
+    assert "--wine:#6A1B36" in html
+    assert 'id="cartScanNow"' in html
+    assert 'id="cartMeta"' in html
+    assert 'id="cartDetailsBtn"' in html
+    assert 'id="xwDialog"' in html
+    assert 'id="xwDialogInput"' in html
+    assert 'id="xwDialogCopy"' in html
+    assert 'async function xwConfirm' in html
+    assert "await xwConfirm(" in html
+    assert "window.prompt(" not in html
+    assert "window.prompt(" not in js
+    assert "const name=await xwPrompt(" in js
+    assert "await xwConfirm(" in js
+    assert "cartScanNow').onclick=cartScanNow;" in js
+    assert "await startCamera()" in js
+    assert "if(!running)" in js
+    assert "compareSkus(a.code,b.code)" in js
+    assert "compareSkus(a.sku,b.sku)" in js
+    assert "selectedSkus" in js
+    assert "cartPending=new Map()" in js
+    assert "post('/scanner/api/cart/confirm'" in js
+    assert 'id="modeSample"' in html
+    assert 'id="modeFull"' in html
+    assert 'id="saveBtn"' in html
+    assert "post('/scanner/api/save'" in html
+
+
+def test_cc_ui_no_duplicate_dom_ids():
+    import re
+    html=(ROOT/"scanner.html").read_text("utf-8")
+    ids=re.findall(r'\bid="([^"]+)"',html)
+    assert len(ids)==len(set(ids)), sorted({i for i in ids if ids.count(i)>1})
