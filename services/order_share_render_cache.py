@@ -19,6 +19,8 @@ from services.order_share_links import share_token_hash
 import copy
 import hashlib
 import json
+import os
+import sys
 import threading
 import time
 import traceback
@@ -45,6 +47,13 @@ _HTML_CUSTOMERS = {}
 _HTML_CHECKED_AT = {}
 _TOKEN_HTML = {}
 _PERSISTED_RECHECK_SECONDS = 3.0
+# Memory budgets for the 512-MiB Render instance; cold links remain usable.
+_MAX_HTML_ENTRIES = 12
+_MAX_HTML_BYTES = 32 * 1024 * 1024
+_MAX_SINGLE_HTML_BYTES = 8 * 1024 * 1024
+_MAX_TOKEN_ENTRIES = 32
+_MAX_STARTUP_HTML_ENTRIES = 8
+_MAX_CONCURRENT_RECHECKS = 4
 _REFRESHING = set()
 _LOCK = threading.RLock()
 _TABLE_LOCK = threading.Lock()
@@ -161,15 +170,34 @@ def _compute_template_hash(app):
         return ""
 
 
+def _memory_store(key, customer_key, html):
+    """Store a HTML skeleton with a bounded count and byte budget."""
+    if not key or not isinstance(html, str) or not html:
+        return False
+    if sys.getsizeof(html) > _MAX_SINGLE_HTML_BYTES:
+        return False
+    with _LOCK:
+        _HTML.pop(key, None)
+        _HTML[key] = html
+        _HTML_CUSTOMERS[key] = str(customer_key or "").strip()
+        _HTML_CHECKED_AT[key] = time.monotonic()
+        while (len(_HTML) > _MAX_HTML_ENTRIES or
+               sum(sys.getsizeof(value) for value in _HTML.values()) > _MAX_HTML_BYTES):
+            oldest = next(iter(_HTML))
+            _HTML.pop(oldest, None)
+            _HTML_CUSTOMERS.pop(oldest, None)
+            _HTML_CHECKED_AT.pop(oldest, None)
+            for token, item in list(_TOKEN_HTML.items()):
+                if item.get("variant_key") == oldest:
+                    _TOKEN_HTML.pop(token, None)
+    return True
+
+
 def _memory_put(share, html):
     key = _variant_key(share)
-    if not key or not isinstance(html, str) or not html:
+    if not key:
         return ""
-    with _LOCK:
-        _HTML[key] = html
-        _HTML_CUSTOMERS[key] = str((share or {}).get("customer_key") or "").strip()
-        _HTML_CHECKED_AT[key] = time.monotonic()
-    return key
+    return key if _memory_store(key, (share or {}).get("customer_key"), html) else ""
 
 
 def _persist(share, html):
@@ -222,22 +250,20 @@ def _load_all_persisted():
     cur = get_cursor(conn)
     try:
         cur.execute(
-            f"SELECT cache_key, customer_key, html FROM {_TABLE} WHERE template_hash=?",
-            (_TEMPLATE_HASH,),
+            f"""SELECT cache_key, customer_key, html FROM {_TABLE}
+                WHERE template_hash=? AND LENGTH(html)<=?
+                ORDER BY updated_at DESC LIMIT ?""",
+            (_TEMPLATE_HASH, _MAX_SINGLE_HTML_BYTES, _MAX_STARTUP_HTML_ENTRIES),
         )
         rows = [get_row_dict(row, cur) for row in cur.fetchall()]
     finally:
         conn.close()
     loaded = 0
-    with _LOCK:
-        for row in rows:
-            key = str((row or {}).get("cache_key") or "").strip().lower()
-            html = (row or {}).get("html")
-            if key and isinstance(html, str) and html:
-                _HTML[key] = html
-                _HTML_CUSTOMERS[key] = str((row or {}).get("customer_key") or "").strip()
-                _HTML_CHECKED_AT[key] = time.monotonic()
-                loaded += 1
+    for row in rows:
+        key = str((row or {}).get("cache_key") or "").strip().lower()
+        html = (row or {}).get("html")
+        if _memory_store(key, (row or {}).get("customer_key"), html):
+            loaded += 1
     return loaded
 
 
@@ -261,10 +287,7 @@ def _load_one_persisted(share):
             conn.close()
         html = (data or {}).get("html")
         if isinstance(html, str) and html:
-            with _LOCK:
-                _HTML[key] = html
-                _HTML_CUSTOMERS[key] = str((share or {}).get("customer_key") or "").strip()
-                _HTML_CHECKED_AT[key] = time.monotonic()
+            _memory_store(key, (share or {}).get("customer_key"), html)
             return html
     except Exception as exc:
         print(
@@ -280,7 +303,7 @@ def _queue_persisted_recheck(share):
     if not key:
         return
     with _LOCK:
-        if key in _REFRESHING:
+        if key in _REFRESHING or len(_REFRESHING) >= _MAX_CONCURRENT_RECHECKS:
             return
         _REFRESHING.add(key)
 
@@ -687,12 +710,16 @@ def _cached_render_template(template_name, *args, **kwargs):
 
     if html:
         with _LOCK:
-            _TOKEN_HTML[token_hash] = {
-                "customer_key": str((share or {}).get("customer_key") or "").strip(),
-                "variant_key": variant_key,
-                "html": html,
-                "checked_at": time.monotonic(),
-            }
+            if sys.getsizeof(html) <= _MAX_SINGLE_HTML_BYTES:
+                _TOKEN_HTML.pop(token_hash, None)
+                _TOKEN_HTML[token_hash] = {
+                    "customer_key": str((share or {}).get("customer_key") or "").strip(),
+                    "variant_key": variant_key,
+                    "html": html,
+                    "checked_at": time.monotonic(),
+                }
+                while len(_TOKEN_HTML) > _MAX_TOKEN_ENTRIES:
+                    _TOKEN_HTML.pop(next(iter(_TOKEN_HTML)), None)
         rendered = html.replace(_TOKEN_PLACEHOLDER, token)
 
         # first-paint may deliberately pass an empty request bundle because the HTML
@@ -754,7 +781,11 @@ def _order_share_html_startup(state):
             f"{type(exc).__name__}: {exc}"
         )
 
-    result = _prebuild_all()
+    # Eagerly rendering every active share loads all snapshots into memory.
+    if os.getenv("ORDER_SHARE_PREBUILD_AT_STARTUP", "0").strip().lower() in ("1", "true", "yes"):
+        result = _prebuild_all()
+    else:
+        result = {"shares": 0, "built": 0, "missing": 0}
     print(
         "[ORDER] share HTML startup ready: "
         f"persisted={loaded} active={result['shares']} "

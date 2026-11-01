@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import re
+import threading
+import time
 from typing import Any
 
 from services.order_tidb_connection import (
@@ -24,6 +26,12 @@ _STATE_TABLE = '__order_mirror_state'
 _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 MAX_TABLES = 256
 MAX_ROWS = 500000
+
+# Desktop full-mirror status polls only need fresh standby health every 30s.
+# Always fetch active state; changes there invalidate this tiny cache.
+_STANDBY_STATE_LOCK = threading.Lock()
+_STANDBY_STATE_CACHE = {}
+_STANDBY_STATE_TTL = 30.0
 
 
 def _qi(name: str) -> str:
@@ -186,25 +194,43 @@ def get_full_mirror_state() -> dict:
     if not target_configured(mirror_target, require_database=False):
         return state
 
+    cache_key = (active_target, str(state.get('snapshot_hash') or ''), mirror_target)
+    now = time.monotonic()
+    with _STANDBY_STATE_LOCK:
+        cached = _STANDBY_STATE_CACHE.get(cache_key)
+        if cached and now - cached[0] < _STANDBY_STATE_TTL:
+            state.update(cached[1])
+            return state
+
+    active_hash = state.get('snapshot_hash')
     try:
         mirror_conn = get_order_tidb_connection_for_target(mirror_target)
         try:
             mirror_state = _read_full_mirror_state(mirror_conn)
         finally:
             mirror_conn.close()
+        extra = {
+            'mirror_target': mirror_target,
+            'mirror_reachable': True,
+            'mirror_snapshot_hash': mirror_state.get('snapshot_hash'),
+        }
+        if mirror_state.get('snapshot_hash') != active_hash:
+            extra.update({
+                'active_snapshot_hash': active_hash,
+                'mirror_needs_sync': True,
+                'snapshot_hash': None,
+            })
     except Exception as exc:
-        state['mirror_target'] = mirror_target
-        state['mirror_reachable'] = False
-        state['mirror_error'] = f'{type(exc).__name__}: {exc}'[:240]
-        return state
+        extra = {
+            'mirror_target': mirror_target,
+            'mirror_reachable': False,
+            'mirror_error': f'{type(exc).__name__}: {exc}'[:240],
+        }
 
-    state['mirror_target'] = mirror_target
-    state['mirror_reachable'] = True
-    state['mirror_snapshot_hash'] = mirror_state.get('snapshot_hash')
-    if mirror_state.get('snapshot_hash') != state.get('snapshot_hash'):
-        state['active_snapshot_hash'] = state.get('snapshot_hash')
-        state['mirror_needs_sync'] = True
-        state['snapshot_hash'] = None
+    with _STANDBY_STATE_LOCK:
+        _STANDBY_STATE_CACHE.clear()
+        _STANDBY_STATE_CACHE[cache_key] = (time.monotonic(), extra)
+    state.update(extra)
     return state
 
 

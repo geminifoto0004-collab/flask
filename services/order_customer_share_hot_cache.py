@@ -1,7 +1,7 @@
 """Keep active ORDER share snapshots hot before customers arrive.
 
 The public share path is intentionally kept away from TiDB on normal customer GETs.
-Startup preloads active token hashes + persisted customer snapshots, snapshot rebuilds
+Startup preloads a bounded set of token hashes + customer snapshots, snapshot rebuilds
 immediately repopulate the same process cache, and cache entries live for one day so
 Gunicorn pre-fork workers do not fall back to TiDB merely because a background thread
 was lost after fork.
@@ -15,6 +15,7 @@ from services.order_share_links import share_token_hash
 
 import copy
 import hashlib
+import os
 import time
 
 from blueprints.b2_test_bp import b2_test_bp
@@ -97,8 +98,13 @@ def _warm_once():
                 FROM cloud_share_tokens s
                 LEFT JOIN {_snapshot._TABLE} p ON p.customer_key=s.customer_key
                 WHERE s.status='active'
-                  AND s.customer_key IS NOT NULL"""
+                  AND s.customer_key IS NOT NULL
+                ORDER BY s.created_at DESC
+                LIMIT ?""",
+            (max(1, min(48, int(os.getenv("ORDER_SHARE_STARTUP_PREWARM_LIMIT", "12")))),),
         )
+        # A bounded startup preload avoids putting every customer's JSON snapshot
+        # into a 512-MiB web worker. Other valid links use the ordinary cold path.
         rows = [get_row_dict(row, cur) for row in cur.fetchall()]
     finally:
         conn.close()
