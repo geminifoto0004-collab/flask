@@ -58,7 +58,7 @@ def configured():
     return _settings() is not None
 
 
-def _connect(*, bootstrap=False):
+def _connect(*, bootstrap=False, read_timeout=15, write_timeout=15):
     cfg = _settings()
     if cfg is None:
         raise RuntimeError("TiDB URL or settings not configured")
@@ -72,8 +72,8 @@ def _connect(*, bootstrap=False):
         **cfg,
         charset="utf8mb4",
         connect_timeout=8,
-        read_timeout=15,
-        write_timeout=15,
+        read_timeout=read_timeout,
+        write_timeout=write_timeout,
         autocommit=False,
         ssl_ca=certifi.where(),
         ssl_verify_cert=True,

@@ -125,11 +125,21 @@ def _validate(payload):
     return values
 
 
-def _sync_blocking(snapshot, allow_large_deactivation=False):
-    conn = scanner_tidb._connect()
+def _sync_blocking(snapshot, allow_large_deactivation=False, progress=None):
+    """Single atomic TiDB stock delta, with optional progress(stage,done,total)."""
+    started = time.perf_counter()
+    def report(stage, done=0, total=0):
+        if progress is not None:
+            try:
+                progress(stage, done, total)
+            except Exception:
+                LOGGER.warning("STOCK_SYNC_PROGRESS_CALLBACK_FAILED")
+    report("connecting")
+    conn = scanner_tidb._connect(read_timeout=90, write_timeout=90)
     try:
         scanner_tidb._ensure(conn)
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        report("comparing")
         with conn.cursor() as cur:
             # Serialize across Render processes and concurrent local senders.
             cur.execute("INSERT IGNORE INTO xw_stock_sync_state "
@@ -164,31 +174,51 @@ def _sync_blocking(snapshot, allow_large_deactivation=False):
                     "More than 20% of SKUs disappeared; no inventory changes saved. "
                     "Confirm the Access query is complete before retrying."
                 )
-            query = (
+            # Plain multi-row INSERT is substantially cheaper for new SKUs.
+            # Existing SKUs still use UPSERT; one transaction covers all rows.
+            insert_sql = (
                 "INSERT INTO xw_stock_snapshot "
                 "(sku,series,stock_rolls,stock_meters,is_active,changed_at) "
-                "VALUES (%s,%s,%s,%s,1,%s) "
-                "ON DUPLICATE KEY UPDATE series=VALUES(series),"
+                "VALUES (%s,%s,%s,%s,1,%s)"
+            )
+            update_sql = (
+                insert_sql
+                + " ON DUPLICATE KEY UPDATE series=VALUES(series),"
                 "stock_rolls=VALUES(stock_rolls),stock_meters=VALUES(stock_meters),"
                 "is_active=1,changed_at=VALUES(changed_at)"
             )
-            for group in (inserted, updated):
-                for j in range(0, len(group), 400):
-                    cur.executemany(query, group[j:j + 400])
-            for j in range(0, len(gone), 400):
-                batch = gone[j:j + 400]
+            total_changes = len(inserted) + len(updated) + len(gone)
+            processed = 0
+            report("writing", 0, total_changes)
+            for rows, sql in ((inserted, insert_sql), (updated, update_sql)):
+                for j in range(0, len(rows), 200):
+                    batch = rows[j:j + 200]
+                    cur.executemany(sql, batch)
+                    processed += len(batch)
+                    report("writing", processed, total_changes)
+            for j in range(0, len(gone), 200):
+                batch = gone[j:j + 200]
                 placeholders = ",".join(["%s"] * len(batch))
                 cur.execute(
                     "UPDATE xw_stock_snapshot SET is_active=0,changed_at=%s "
                     "WHERE sku IN (" + placeholders + ")",
                     [now, *batch]
                 )
+                processed += len(batch)
+                report("writing", processed, total_changes)
             cur.execute(
                 "UPDATE xw_stock_sync_state "
                 "SET last_success_utc=%s,sku_count=%s,inserted=%s,updated=%s,deactivated=%s WHERE id=1",
                 (now, len(snapshot), len(inserted), len(updated), len(gone))
             )
+        report("committing", total_changes, total_changes)
         conn.commit()
+        LOGGER.info(
+            "STOCK_SYNC_DB_FINISHED total=%d new=%d updated=%d inactive=%d duration_ms=%d",
+            len(snapshot), len(inserted), len(updated), len(gone),
+            round((time.perf_counter() - started) * 1000),
+        )
+        report("finished", total_changes, total_changes)
         return {
             "success": True, "synced_at_utc": now.isoformat(timespec="seconds") + "Z",
             "sku_count": len(snapshot), "inserted": len(inserted),
