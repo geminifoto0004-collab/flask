@@ -706,8 +706,8 @@ async function cartSetState(){
 async function cartLookup(input){
  if(mode!=='cart'||!cartData||cartLookupPending)return;
  if(!(await cartSaveEditingNote()))return;
- const code=normalizeProductCode(input);
- if(!valid(code)){cartNotice('无效二维码或编号 / Código QR o SKU no válido',true);return}
+ const code=parseScannerQR(input);
+ if(!code){cartNotice('无效二维码或编号 / Código QR o SKU no válido',true);return}
  cartLookupPending=true;busy=true;$('queryBtn').disabled=true;
  $('code').value=code;syncSearchClear();
  try{
@@ -1007,8 +1007,8 @@ function publicStartReady(){
 }
 async function publicStartFind(input){
  if(publicStartBusy)return;
- const code=String(input||$('cartPublicCode').value).trim().toUpperCase();
- if(!/^[A-Z0-9][A-Z0-9_.()/-]{1,39}$/.test(code)){
+ const code=parseScannerQR(input||$('cartPublicCode').value);
+ if(!code){
   publicStartStatus('請輸入有效系列或 SKU / Introduzca una serie válida');return;
  }
  $('cartPublicCode').value=code;publicStartBusy=true;
@@ -1091,12 +1091,10 @@ $('cartPublicCameraBtn').onclick=async()=>{
   await publicStartCamera.start({facingMode:'environment'},
    {fps:10,qrbox:{width:220,height:220}},decoded=>{
     if(publicStartBusy)return;
-    const code=String(decoded||'').trim().toUpperCase();
-    if(code===publicLastScan&&Date.now()-publicLastScanAt<15000)return;
-    if(/^[A-Z0-9][A-Z0-9_.()/-]{1,39}$/.test(code)){
-     publicLastScan=code;publicLastScanAt=Date.now();
-     void publicStartFind(code);
-    }
+    const code=parseScannerQR(decoded);
+    if(!code||code===publicLastScan&&Date.now()-publicLastScanAt<15000)return;
+    publicLastScan=code;publicLastScanAt=Date.now();
+    void publicStartFind(code);
    },()=>{});
   publicStartScanning=true;$('cartPublicCameraBtn').disabled=false;
  }catch(e){publicStartStatus('相機無法開啟 / Cámara no disponible');
