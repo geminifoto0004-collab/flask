@@ -11,7 +11,9 @@ def test_cart_has_staff_only_back_to_scanner_without_reloading():
     html = (ROOT / "scanner.html").read_text(encoding="utf-8")
     js = (ROOT / "scanner_cart.js").read_text(encoding="utf-8")
     assert html.count('id="cartExitBtn"') == 1
-    assert '返回 / Volver' in html
+    section = html[html.index('id="cartExitBtn"'):html.index('</button>', html.index('id="cartExitBtn"'))]
+    assert 'aria-label="回主頁 / Inicio"' in section
+    assert '<path d="m3 10 9-7 9 7v10H3z"' in section
     assert "$('cartExitBtn').onclick=cartExitToScanner;" in js
     assert "if(cartRole!=='staff'||mode!=='cart'||cartBusy)return" in js
     assert "setMode('sample');" in js[js.index("async function cartExitToScanner()"):js.index("$('cartExitBtn').onclick")]
