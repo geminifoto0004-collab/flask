@@ -724,15 +724,34 @@ small,.muted{color:var(--muted)}
 .xw-dialog-actions{display:flex;gap:9px;margin-top:12px}
 .xw-dialog-actions button{flex:1;min-height:48px}
 .xw-dialog-actions #xwDialogOk{background:var(--wine)}
+/* CUSTOMER MODE: single authorized cart. Never show employee list or
+   inherit staff three-column grid, sticky sidebar, or viewport-wide footer. */
+#cartWorkspace[data-cart-role="guest"] #cartStaffList{display:none!important}
+#cartWorkspace[data-cart-role="guest"] #cartActive{display:block;min-width:0}
+#cartWorkspace[data-cart-role="guest"] #cartGuestExitBtn{display:inline-flex;align-items:center;justify-content:center;flex:none;box-sizing:border-box;width:44px;height:44px;min-width:44px;padding:0;border-radius:10px;color:var(--wine)}
+#cartWorkspace[data-cart-role="guest"] #cartDetailsBtn{display:none}
+#cartWorkspace[data-cart-role="guest"] #cartMeta{display:none!important}
+#cartWorkspace[data-cart-role="guest"] #cartPickView{min-width:0;max-height:none;overflow:visible}
+#cartWorkspace[data-cart-role="guest"] #cartDock{left:50%;right:auto;transform:translateX(-50%);width:min(780px,calc(100vw - 24px));max-width:780px;border:1px solid var(--stroke);border-radius:12px 12px 0 0;box-sizing:border-box}
+@media(min-width:950px){
+ body:has(#cartWorkspace:not(.hidden)[data-cart-role="guest"]) main{max-width:840px;margin:0 auto;padding:20px 16px 110px}
+ #cartWorkspace[data-cart-role="guest"]{display:block;width:100%;max-width:800px;min-height:calc(100dvh - 130px);margin:0 auto;background:#fff}
+ #cartWorkspace[data-cart-role="guest"] .cart-compact-head{padding:12px 16px}
+ #cartWorkspace[data-cart-role="guest"] #cartScanAction{padding:0 16px}
+ #cartWorkspace[data-cart-role="guest"] #cartPickView{padding:0 16px 24px}
+}
+@media(max-width:949px){
+ #cartWorkspace[data-cart-role="guest"] #cartDock{width:100%;max-width:none;left:0;right:0;transform:none;border-radius:0}
+}
 /* Desktop CC design: left cart index, center editing, right details. */
 @media(min-width:950px){
- #app:has(#cartWorkspace:not(.hidden)) #cartWorkspace{display:grid;grid-template-columns:245px minmax(0,1fr);column-gap:23px;align-items:start}
- #cartWorkspace:has(#cartActive:not(.hidden)) #cartStaffList{display:block!important;grid-column:1;grid-row:1 / span 3;padding-right:15px;border-right:1px solid var(--hair);position:sticky;top:10px;max-height:83vh;overflow:auto}
+ #app:has(#cartWorkspace:not(.hidden)[data-cart-role="staff"]) #cartWorkspace{display:grid;grid-template-columns:245px minmax(0,1fr);column-gap:23px;align-items:start}
+ #cartWorkspace[data-cart-role="staff"]:has(#cartActive:not(.hidden)) #cartStaffList{display:block!important;grid-column:1;grid-row:1 / span 3;padding-right:15px;border-right:1px solid var(--hair);position:sticky;top:10px;max-height:83vh;overflow:auto}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartActive{grid-template-columns:minmax(0,1fr) 270px;column-gap:18px;align-items:start}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartPickView,#cartWorkspace.cart-has-active[data-cart-role="staff"] #cartItemView{grid-column:1;grid-row:3;min-width:0}
  #cartWorkspace.cart-has-active[data-cart-role="staff"] #cartScanNow{min-height:50px}
- #cartWorkspace:has(#cartActive:not(.hidden)) #cartActive{grid-column:2;min-width:0}
- #cartWorkspace:not(:has(#cartActive:not(.hidden))) #cartStaffList{grid-column:1 / -1}
+ #cartWorkspace[data-cart-role="staff"]:has(#cartActive:not(.hidden)) #cartActive{grid-column:2;min-width:0}
+ #cartWorkspace[data-cart-role="staff"]:not(:has(#cartActive:not(.hidden))) #cartStaffList{grid-column:1 / -1}
  #cartDock{width:min(760px,calc(100% - 320px));left:auto;right:25px;transform:none}
  
 }
@@ -1667,6 +1686,7 @@ body.cc-sample-detail #result{
  </div>
 <div id="cartActive" class="hidden">
  <div class="cart-compact-head">
+  <button id="cartGuestExitBtn" class="secondary hidden" type="button" aria-label="離開訪客購物車，返回登入 / Salir del carrito y volver al inicio" title="Home / Inicio"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/></svg></button>
   <button id="cartBack" class="cart-back secondary" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button>
   <div class="cart-compact-title"><strong id="cartShortCode"></strong><span id="cartCustomerLabel" class="muted"></span></div>
   <span id="cartStateLabel" class="tag" aria-label="草稿 / Borrador">草稿</span>
