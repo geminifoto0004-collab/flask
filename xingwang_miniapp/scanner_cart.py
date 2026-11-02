@@ -96,7 +96,8 @@ CART_SCHEMA = (
         rate_key CHAR(64) NOT NULL PRIMARY KEY,
         hour_bucket BIGINT NOT NULL,
         hits INT NOT NULL,
-        updated_at DATETIME(6) NOT NULL
+        updated_at DATETIME(6) NOT NULL,
+        KEY idx_cart_start_limits_updated (updated_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS xw_cart_item_notes (
         cart_id CHAR(32) NOT NULL,
@@ -822,6 +823,12 @@ def _create_public_cart(start_data, sku, qty, ip):
                 if int(cur.fetchone()[0]) > maximum:
                     raise HTTPException(429, "Too many new carts. Please contact staff")
 
+            # Expired per-IP counters have no value after the last few
+            # windows; prune rarely to keep public-QR table small on TiDB.
+            if secrets.randbelow(40) == 0:
+                cur.execute("DELETE FROM xw_cart_start_limits "
+                            "WHERE updated_at < %s LIMIT 200",
+                            (now - timedelta(days=7),))
             cart_id = uuid4().hex
             short_code = "C-" + now.strftime("%y%m%d") + "-" + secrets.token_hex(4).upper()
             expires = now + timedelta(seconds=GUEST_LIFETIME)
