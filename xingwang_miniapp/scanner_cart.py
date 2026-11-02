@@ -26,6 +26,8 @@ from xingwang_miniapp import scanner_backend as staff
 
 router = APIRouter()
 GUEST_COOKIE = "xw_cart_guest"
+START_COOKIE = "xw_cart_start"
+START_TTL = 30 * 60
 GUEST_LIFETIME = 8 * 3600
 MAX_QTY = 9999
 _CART_LOCK = threading.Lock()
@@ -45,6 +47,7 @@ CART_SCHEMA = (
         guest_hash CHAR(64) NULL UNIQUE,
         guest_expires DATETIME(6) NULL,
         guest_generation INT NOT NULL DEFAULT 0,
+        start_hash CHAR(64) NULL UNIQUE,
         created_at DATETIME(6) NOT NULL,
         updated_at DATETIME(6) NOT NULL,
         KEY idx_carts_updated (updated_at)
@@ -89,6 +92,12 @@ CART_SCHEMA = (
         note TEXT NOT NULL,
         updated_at DATETIME(6) NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS xw_cart_start_limits (
+        rate_key CHAR(64) NOT NULL PRIMARY KEY,
+        hour_bucket BIGINT NOT NULL,
+        hits INT NOT NULL,
+        updated_at DATETIME(6) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     """CREATE TABLE IF NOT EXISTS xw_cart_item_notes (
         cart_id CHAR(32) NOT NULL,
         sku VARCHAR(128) NOT NULL,
@@ -107,6 +116,7 @@ _CART_COLUMNS = {
     "confirmed_version": "INT NOT NULL DEFAULT 0",
     "deleted_prev_state": "VARCHAR(12) NULL",
     "deleted_until": "DATETIME(6) NULL",
+    "start_hash": "CHAR(64) NULL UNIQUE",
 }
 
 
@@ -148,6 +158,48 @@ def _code_hash(code):
     if not key:
         raise HTTPException(503, "Staff login is not configured")
     return hmac.new(key, ("cart-code-v1:" + code).encode("ascii"), hashlib.sha256).hexdigest()
+
+
+def _sign_start_token(token=None):
+    """A bounded anonymous selection ticket; issuing one does not touch TiDB."""
+    nonce = token or secrets.token_hex(16)
+    created = int(time.time())
+    data = str(created) + "." + nonce
+    mac = hmac.new(staff._key(), ("cart-start-v1:" + data).encode("ascii"),
+                   hashlib.sha256).hexdigest()
+    return data + "." + mac
+
+
+def _parse_start_token(token):
+    if not isinstance(token, str) or len(token) > 140 or not staff._key():
+        return None
+    try:
+        stamp, nonce, signature = token.split(".")
+        if not re.fullmatch(r"[0-9]{10}", stamp) or not re.fullmatch(r"[0-9a-f]{32}", nonce):
+            return None
+        age = int(time.time()) - int(stamp)
+        if age < -30 or age > START_TTL:
+            return None
+        data = stamp + "." + nonce
+        mac = hmac.new(staff._key(), ("cart-start-v1:" + data).encode("ascii"),
+                       hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(mac, signature):
+            return None
+        return data
+    except (ValueError, AttributeError):
+        return None
+
+
+def issue_start_cookie(request):
+    token = request.cookies.get(START_COOKIE)
+    if _parse_start_token(token):
+        return token
+    return _sign_start_token()
+
+
+def _start_hash(start_data):
+    return hmac.new(staff._key(), ("cart-start-key-v1:" + start_data).encode("ascii"),
+                    hashlib.sha256).hexdigest()
 
 
 def _sign_session(cart_id, generation, expires):
@@ -724,6 +776,125 @@ async def cart_session(request: Request):
         LOG.exception("CART_SESSION_FAILED")
         return {"role": "none"}
     return {"role": "guest", "cart_id": cart_id} if cart_id else {"role": "none"}
+
+
+def _create_public_cart(start_data, sku, qty, ip):
+    """Create exactly one cart with its first requested SKU, atomically.
+
+    A repeated request with the same HttpOnly start ticket returns the
+    existing cart instead of adding another cart or incrementing quantity.
+    """
+    conn = _db()
+    try:
+        now = utcnow()
+        token_hash = _start_hash(start_data)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id,guest_generation,guest_expires FROM xw_carts "
+                "WHERE start_hash=%s FOR UPDATE", (token_hash,)
+            )
+            existing = cur.fetchone()
+            if existing:
+                if not existing[2] or existing[2] <= now:
+                    raise HTTPException(410, "Selection session expired; reopen the QR")
+                return _load(conn, existing[0]), int(existing[1]), existing[2]
+
+            # This quantity is requested by a customer, not reserved stock.
+            # Only active known SKU values can create customer carts.
+            cur.execute("SELECT 1 FROM xw_stock_snapshot "
+                        "WHERE sku=%s AND is_active=1 LIMIT 1", (sku,))
+            if not cur.fetchone():
+                raise HTTPException(404, "SKU is not in current stock reference")
+
+            bucket = int(time.time()) // 3600
+            ip_key = hmac.new(staff._key(), ("cart-start-ip:" + ip).encode(),
+                              hashlib.sha256).hexdigest()
+            # Global row first, then IP row: stable lock order across workers.
+            for key, maximum in (("public-cart-global", 300), (ip_key, 45)):
+                cur.execute(
+                    "INSERT INTO xw_cart_start_limits(rate_key,hour_bucket,hits,updated_at) "
+                    "VALUES(%s,%s,1,%s) ON DUPLICATE KEY UPDATE "
+                    "hits=IF(hour_bucket=VALUES(hour_bucket),hits+1,1),"
+                    "hour_bucket=VALUES(hour_bucket),updated_at=VALUES(updated_at)",
+                    (key,bucket,now)
+                )
+                cur.execute("SELECT hits FROM xw_cart_start_limits WHERE rate_key=%s", (key,))
+                if int(cur.fetchone()[0]) > maximum:
+                    raise HTTPException(429, "Too many new carts. Please contact staff")
+
+            cart_id = uuid4().hex
+            short_code = "C-" + now.strftime("%y%m%d") + "-" + secrets.token_hex(4).upper()
+            expires = now + timedelta(seconds=GUEST_LIFETIME)
+            cur.execute(
+                "INSERT INTO xw_carts "
+                "(id,short_code,customer_name,state,revision,guest_hash,guest_expires,"
+                "guest_generation,start_hash,created_at,updated_at) "
+                "VALUES(%s,%s,'','open',1,NULL,%s,1,%s,%s,%s)",
+                (cart_id, short_code, expires, token_hash, now, now)
+            )
+            cur.execute(
+                "INSERT INTO xw_cart_items(cart_id,sku,qty,updated_at) VALUES(%s,%s,%s,%s)",
+                (cart_id, sku, qty, now)
+            )
+            cur.execute(
+                "INSERT INTO xw_cart_events(cart_id,revision,sku,old_qty,new_qty,actor,changed_at)"
+                " VALUES(%s,1,%s,0,%s,'guest',%s)",
+                (cart_id,sku,qty,now)
+            )
+        conn.commit()
+        return _load(conn, cart_id), 1, expires
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@router.post("/scanner/api/cart/start/lookup")
+async def public_start_lookup(request: Request):
+    staff._check_origin(request)
+    if not _parse_start_token(request.cookies.get(START_COOKIE)):
+        raise HTTPException(401, "Open the start QR again")
+    await _guard_query(request)
+    body = await _body(request)
+    code = body.get("code")
+    if not isinstance(code,str) or not staff.CODE.fullmatch(code.strip()):
+        raise HTTPException(400, "Invalid series or SKU")
+    try:
+        result = await asyncio.to_thread(_lookup, code.strip().upper())
+        if not result["variants"]:
+            raise HTTPException(404, "No matching SKU")
+        return {"ok":True, **result}
+    except Exception as exc:
+        _error_safe(exc, "PUBLIC_LOOKUP")
+
+
+@router.post("/scanner/api/cart/start/add")
+async def public_start_add(request: Request):
+    staff._check_origin(request)
+    start_data = _parse_start_token(request.cookies.get(START_COOKIE))
+    if not start_data:
+        raise HTTPException(401, "Open the start QR again")
+    body = await _body(request)
+    sku, qty = body.get("sku"), body.get("qty")
+    if (not isinstance(sku,str) or not staff.CODE.fullmatch(sku) or
+        type(qty) is not int or not 1 <= qty <= MAX_QTY):
+        raise HTTPException(400, "Invalid selected SKU or quantity")
+    try:
+        ip = request.client.host if request.client else "unknown"
+        cart, generation, expires = await asyncio.to_thread(
+            _create_public_cart, start_data, sku, qty, ip
+        )
+    except Exception as exc:
+        _error_safe(exc, "PUBLIC_CREATE")
+    ttl = min(GUEST_LIFETIME,max(1,int((expires-utcnow()).total_seconds())))
+    reply = JSONResponse({"ok":True,"cart_id":cart["id"],"cart":cart})
+    reply.set_cookie(GUEST_COOKIE, _sign_session(cart["id"],generation,int(time.time())+ttl),
+                     max_age=ttl,httponly=True,secure=True,samesite="lax",
+                     path="/scanner/api/cart")
+    reply.delete_cookie(START_COOKIE, path="/scanner/api/cart",
+                        secure=True,httponly=True,samesite="lax")
+    return reply
 
 
 @router.post("/scanner/api/cart/guest-login")
