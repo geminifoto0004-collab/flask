@@ -433,6 +433,10 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 
 /* Cart list toolbar: search and + on a single row, optional inline create. */
 #cartWorkspace #cartStaffList{padding:0 16px}
+#cartStaffList .cart-list-return{display:flex;align-items:center;justify-content:flex-start;margin:0 0 10px;padding:0}
+#cartStaffList #cartExitBtn{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:0 9px 0 3px;border:0;border-radius:9px;background:transparent;color:var(--wine);font-size:13px;font-weight:700;cursor:pointer}
+#cartStaffList #cartExitBtn:hover{background:#F5EAEE}
+#cartStaffList #cartExitBtn:focus-visible{outline:2px solid var(--wine);outline-offset:2px}
 #cartStaffList .cart-list-toolbar{display:flex;align-items:center;box-sizing:border-box;width:100%;height:48px;gap:8px;padding:4px 5px 4px 12px;margin:0 0 12px;border:1px solid var(--stroke);border-radius:12px;background:#fff}
 #cartStaffList .cart-list-toolbar>svg{flex:none;color:var(--muted)}
 #cartStaffList .cart-list-toolbar input{flex:1;min-width:0;width:100%;height:38px;border:0;outline:0;box-shadow:none;background:transparent;font-size:14px}
@@ -1611,7 +1615,7 @@ body.cc-sample-detail #result{
 <div class="row" style="margin-top:8px;flex-wrap:wrap">
 <button type="button" id="freshnessContinueBtn" class="secondary hidden">繼續使用舊庫存</button>
 <button type="button" id="freshnessAdminBtn" class="freshnessAdmin">更新庫存</button>
-<button type="button" id="freshnessCheckBtn" class="secondary" aria-label="重新檢查同步時間" title="重新檢查同步時間">↻</button>
+
 </div></div>
 
 <div class="scanner-search-row">
@@ -1625,6 +1629,7 @@ body.cc-sample-detail #result{
 </section>
 <section id="cartWorkspace" class="panel hidden" aria-label="購物車">
  <div id="cartStaffList" class="cc-cart-list">
+  <div class="cart-list-return"><button id="cartExitBtn" type="button" aria-label="返回样布及库存主页面 / Volver a muestras y stock" title="返回主页面 / Volver"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span>返回 / Volver</span></button></div>
   <div class="cc-cart-filter cart-list-toolbar">
    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
    <input id="cartFilter" type="search" placeholder="搜索客户 / Buscar cliente" aria-label="搜索客户或购物车 / Buscar clientes o carritos" autocomplete="off">
@@ -1738,7 +1743,7 @@ body.cc-sample-detail #result{
 <div class="share-copy"><p class="muted">同事開啟後仍需要公司登入碼。</p><div class="share-actions"><button type="button" id="shareScannerBtn">分享連結</button><button type="button" id="copyScannerBtn" class="secondary">复制 <small>Copiar</small></button></div>
 <p class="muted"><a href="/s" target="_blank" rel="noopener noreferrer">xingwang-stock.onrender.com/s</a></p><div id="shareStatus" aria-live="polite"></div></div></div></section>
 </div></section>
-<footer class="muted">XINGWANG</footer>
+
 </div>
 </main>
 <div id="xwDialog" class="xw-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="xwDialogTitle">
