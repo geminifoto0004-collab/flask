@@ -113,33 +113,65 @@ function cartSetData(data){
  if(data)cartRender();
 }
 function cartRow(sku,qty,stockValue,fromSearch){
- const row=document.createElement('div');row.className='cart-line'+(qty>0?' selected':'');
+ const n=stockValue==null||String(stockValue).trim()===''?null:Number(stockValue);
+ const available=n!=null&&Number.isFinite(n)?Math.max(0,Math.floor(n)):null;
+ const shortfall=available===null?0:Math.max(0,qty-available);
+ const row=document.createElement('div');row.className='cart-line'+(qty>0?' selected':'')+(shortfall>0?' insufficient':'');
  const left=document.createElement('div');left.className='cart-line-title';
  const name=document.createElement('strong');name.textContent=sku;
  const stock=document.createElement('small');stock.className='cc-stock-line';
- const box='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m3 8 9-5 9 5v8l-9 5-9-5V8ZM3 8l9 5 9-5M12 13v8"/></svg>';
- const warn='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m12 3 9 17H3L12 3zM12 9v5M12 17v.5"/></svg>';
- const n=stockValue==null||String(stockValue).trim()===''?null:Number(stockValue);
- const available=n!=null&&Number.isFinite(n)?Math.max(0,Math.floor(n)):null;
+ const box='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m3 8 9-5 9 5v8l-9 5-9-5V8ZM3 8l9 5 9-5M12 13v8"/></svg>';
+ const warn='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m12 3 9 17H3L12 3zM12 9v5M12 17v.5"/></svg>';
  if(fromSearch){
-  stock.innerHTML=(available!==null&&available<=2?warn:box);
-  const count=document.createElement('span');count.textContent=available===null?'—':fmt(available);
+  stock.innerHTML=shortfall>0?warn:box;
+  const count=document.createElement('span');
+  count.textContent=available===null?'库存未知 / Stock —':'库存 '+fmt(available);
   stock.append(count);
+  if(shortfall>0){
+   stock.classList.add('cart-out');
+   const missing=document.createElement('b');missing.className='cart-shortfall';
+   missing.textContent='缺 '+fmt(shortfall)+' / Faltan '+fmt(shortfall);
+   stock.append(missing);
+   row.title='需求 '+qty+'，参考库存 '+available+'；须向仓库核对';
+  }
  }
- if(fromSearch&&available!==null&&available<=2)stock.classList.add('cart-out');
- left.append(name,stock);row.append(left);
+ const savedNote=cartItemNotes.get(sku)?.note||'';
+ if(savedNote&&cartRole==='staff'){
+  const preview=document.createElement('small');preview.className='cart-sku-note-preview';
+  preview.textContent=savedNote;preview.title=savedNote;
+  left.append(name,stock,preview);
+ }else left.append(name,stock);
+ row.append(left);
  const controls=document.createElement('div');controls.className='cart-qty-controls';
- const minus='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>';
- const plus='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+ const minus='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>';
+ const plus='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+ if(cartRole==='staff'){
+  const noteBtn=document.createElement('button');noteBtn.type='button';
+  noteBtn.className='cart-item-note-button'+(savedNote?' has-note':'');
+  noteBtn.innerHTML=CART_NOTE_ICON;
+  noteBtn.title='SKU 价格 / 备注';noteBtn.setAttribute('aria-label',sku+' 价格和备注 / Precio o nota');
+  noteBtn.setAttribute('aria-expanded',String(cartEditingSku===sku));
+  noteBtn.onclick=async()=>{
+   if(cartItemSaving)return;
+   if(cartEditingSku&&cartEditingSku!==sku&&!(await cartSaveEditingNote()))return;
+   cartEditingSku=cartEditingSku===sku?null:sku;
+   cartRender();
+   if(cartEditingSku){
+    const field=[...document.querySelectorAll('.cart-item-note-editor input')].find(el=>el.dataset.sku===sku);
+    if(field){field.focus();field.select()}
+   }
+  };
+  controls.append(noteBtn);
+ }
  const dec=document.createElement('button');dec.type='button';dec.className='secondary';dec.innerHTML=minus;dec.setAttribute('aria-label',sku+' 减 / Menos');
  const value=document.createElement('input');value.type='text';value.inputMode='numeric';
- value.className='cart-qty';value.value=String(qty);value.setAttribute('aria-label',sku+' 匹 / Rollos');value.title='点击输入匹数';
+ value.className='cart-qty';value.value=String(qty);value.setAttribute('aria-label',sku+' 匹 / Rollos');value.title='输入客人要求匹数';
  const inc=document.createElement('button');inc.type='button';inc.className='secondary';inc.innerHTML=plus;inc.setAttribute('aria-label',sku+' 加 / Más');
  dec.disabled=cartBusy||qty===0;
- inc.disabled=cartBusy||(fromSearch?available===null||qty>=available:qty>=9999);
+ inc.disabled=cartBusy||qty>=9999;
  const update=number=>{
-  if(!Number.isInteger(number)||number>9999||number<0||(fromSearch&&(available===null||number>available))){
-   cartNotice('数量不可超过参考库存 / Cantidad inválida',true);
+  if(!Number.isInteger(number)||number>9999||number<0){
+   cartNotice('匹数必须在 0–9999 / Cantidad inválida',true);
    value.value=String(cartItemQty(sku));return;
   }
   if(number!==cartItemQty(sku))cartChange(sku,number);
@@ -154,6 +186,21 @@ function cartRow(sku,qty,stockValue,fromSearch){
  dec.onclick=()=>update(Math.max(0,cartItemQty(sku)-1));
  inc.onclick=()=>update(cartItemQty(sku)+1);
  controls.append(dec,value,inc);row.append(controls);
+ if(cartRole==='staff'&&cartEditingSku===sku){
+  const form=document.createElement('div');form.className='cart-item-note-editor';
+  const field=document.createElement('input');field.type='text';field.maxLength=180;field.dataset.sku=sku;
+  field.placeholder='单价 / 单位 / 备注 · Precio / Nota';
+  field.value=cartDraftNote(sku);field.setAttribute('aria-label',sku+' 备注');
+  field.oninput=()=>cartItemDrafts.set(sku,field.value);
+  field.onkeydown=e=>{
+   if(e.key==='Enter'){e.preventDefault();void cartSaveItemNote(sku)}
+   if(e.key==='Escape'){cartItemDrafts.delete(sku);cartEditingSku=null;cartRender()}
+  };
+  const save=document.createElement('button');save.type='button';
+  save.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 12 4 4 10-10"/></svg>';
+  save.setAttribute('aria-label','保存 '+sku+' 备注');save.onclick=()=>void cartSaveItemNote(sku);
+  form.append(field,save);row.append(form);
+ }
  return row;
 }
 let cartNoteCartId=null,cartNoteOriginal='',cartNoteSaveJob=null;
