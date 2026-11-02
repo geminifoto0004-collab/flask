@@ -4,7 +4,7 @@
 let cartRole='none', cartData=null, cartSearch=null,cartBusy=false;
 let cartFilterMode='all',cartRecent=[],cartLookupPending=false;
 let cartView='pick',cartSkuSearch='',cartCameraOpen=false,cartSummaryOpen=false;
-let cartToastTimer=null;
+let cartToastTimer=null,cartCreateEditorOpen=false;
 let cartItemNotes=new Map(),cartItemDrafts=new Map(),cartEditingSku=null,cartItemNotesId=null,cartItemSaving=false;
 const CART_NOTE_ICON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16 4l4 4L9 19l-5 1 1-5L16 4z"/></svg>';
 async function cartLoadItemNotes(id){
@@ -86,6 +86,7 @@ function cartUpdateHeader(){
  const ready=!(cartPending.size||cartSending.size)&&cartData.state==='ready';
  cartText('cartStateLabel',ready?'就绪':'草稿');
  $('cartStateLabel').dataset.state=ready?'ready':'draft';
+ $('cartStateLabel').classList.toggle('hidden',!ready);
  cartText('cartOpenedAt',cartLocalTime(cartData.guest_opened_at));
  cartText('cartConfirmedAt',cartLocalTime(cartData.confirmed_at));
  cartText('cartVersionLabel',cartData.confirmed_version?'V'+cartData.confirmed_version:'—');
@@ -258,7 +259,8 @@ $('cartNoteText').addEventListener('input',()=>{
 $('cartNoteSave').onclick=()=>void cartSaveNote();
 function cartRender(){
  const isGuest=cartRole==='guest',hasCart=Boolean(cartData);
- $('cartStart').classList.toggle('hidden',isGuest||hasCart);
+ $('cartStart').classList.toggle('hidden',isGuest||!cartCreateEditorOpen);
+ $('cartSidebarCreateBtn').setAttribute('aria-expanded',String(!isGuest&&cartCreateEditorOpen));
  $('cartActive').classList.toggle('hidden',!hasCart);
  $('cartStaffList').classList.toggle('hidden',isGuest);
  $('cartWorkspace').classList.toggle('cart-has-active',hasCart);
@@ -486,7 +488,7 @@ function cartRenderList(){
   count.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M5 6c0 1.7 3.1 3 7 3s7-1.3 7-3-3.1-3-7-3-7 1.3-7 3zM5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>';
   count.append(n);
   const status=document.createElement('span');status.className='cart-history-status '+(item.state==='ready'?'ready':'draft');
-  status.textContent=item.state==='ready'?'已确认':'草稿';
+  status.textContent='✓';status.title='已确认 / Confirmado';status.setAttribute('aria-label','已确认 / Confirmado');
   const edit=document.createElement('button');edit.type='button';edit.className='cart-history-edit';
   edit.innerHTML=CART_PENCIL_ICON;edit.title='编辑客户 / Editar cliente';
   edit.setAttribute('aria-label','编辑客户名称 / Editar cliente');
@@ -495,7 +497,8 @@ function cartRenderList(){
    cartRenderList();
    if(cartEditingId){const input=host.querySelector('.cart-history-entry.editing input');if(input){input.focus();input.select()}}
   };
-  foot.append(count,status,edit);
+  if(item.state==='ready')foot.append(count,status,edit);
+  else foot.append(count,edit);
   main.append(btn,foot);
   if(cartEditingId===item.id){
    wrapper.classList.add('editing');
@@ -566,7 +569,7 @@ async function cartCreate(){
   cartView='pick';cartCameraOpen=false;cartSummaryOpen=false;cartSkuSearch='';$('cartSkuFilter').value='';cartSearch=null;cartSetData(d.cart);
   void cartLoadNote(d.cart.id);
   void cartLoadItemNotes(d.cart.id);
-  $('cartNewName').value='';cartMsgClean();
+  $('cartNewName').value='';cartCreateEditorOpen=false;cartMsgClean();
   history.replaceState(null,'',location.pathname);
   void cartLoadList();
  }catch(e){cartNotice(e.message,true)}
@@ -711,11 +714,17 @@ $('cartNav').onclick=async()=>{
  }
 };
 $('cartCreateBtn').onclick=cartCreate;
-$('cartSidebarCreateBtn').onclick=async()=>{
+$('cartSidebarCreateBtn').onclick=()=>{
  if(cartRole!=='staff'||cartBusy)return;
- $('cartNewName').value='';
- await cartCreate();
+ cartCreateEditorOpen=!cartCreateEditorOpen;
+ if(cartCreateEditorOpen)$('cartNewName').value='';
+ cartRender();
+ if(cartCreateEditorOpen)$('cartNewName').focus();
 };
+$('cartNewName').addEventListener('keydown',e=>{
+ if(e.key==='Enter'){e.preventDefault();void cartCreate()}
+ if(e.key==='Escape'){cartCreateEditorOpen=false;cartRender();$('cartSidebarCreateBtn').focus()}
+});
 $('cartFilter').oninput=cartRenderList;
 $('cartSkuFilter').oninput=()=>{cartSkuSearch=$('cartSkuFilter').value.trim();cartRender()};
 // Keep the QR workflow unchanged; manual entry shares the existing safe stock lookup.
