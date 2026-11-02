@@ -126,6 +126,30 @@ a{display:inline-flex;align-items:center;gap:8px;padding:12px 15px;border-radius
     return HTMLResponse(PAGE, headers=headers)
 
 
+@router.get("/scanner/start", response_class=HTMLResponse, include_in_schema=False)
+async def scanner_public_start(request: Request):
+    # Reuse the current Scanner HTML, never a second cart application.
+    # A printed public QR contains no customer credential and no cart ID.
+    if _authorized(request):
+        # Staff opening the public QR keep their employee session; they
+        # see the existing Home-only interstitial instead of guest access.
+        return await scanner_guest_page(request)
+    from xingwang_miniapp import scanner_cart
+    token = scanner_cart.issue_start_cookie(request)
+    response = HTMLResponse(PAGE, headers={
+        "Cache-Control": "no-store, private, max-age=0",
+        "Pragma": "no-cache",
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "frame-ancestors 'none'",
+    })
+    response.set_cookie(scanner_cart.START_COOKIE, token,
+                        max_age=scanner_cart.START_TTL, httponly=True,
+                        secure=True,samesite="lax", path="/scanner/api/cart")
+    return response
+
+
 @router.get("/scanner/cart.js", include_in_schema=False)
 async def scanner_cart_javascript():
     source = Path(__file__).with_name("scanner_cart.js").read_text(encoding="utf-8")
