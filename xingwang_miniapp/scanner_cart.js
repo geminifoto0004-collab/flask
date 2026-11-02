@@ -954,6 +954,14 @@ $('cartSharePanel').querySelector('.cart-share-shade').onclick=cartShareClose;
 $('cartShareWhatsApp').onclick=()=>void cartShareAct('whatsapp');
 $('cartShareCopy').onclick=()=>void cartShareAct('copy');
 $('cartShareQr').onclick=()=>void cartShareAct('qr');
+$('cartShareQrDownload').onclick=()=>{
+ const src=$('cartShareQrImage').src;
+ if(!src.startsWith('data:image/svg+xml;base64,'))return;
+ const link=document.createElement('a');
+ link.href=src;
+ link.download=cartShareSelection?.isStart?'XINGWANG_START_QR.svg':'XINGWANG_CART_QR.svg';
+ document.body.append(link);link.click();link.remove();
+};
 document.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&!$('cartSharePanel').classList.contains('hidden')){
   e.preventDefault();cartShareClose();
