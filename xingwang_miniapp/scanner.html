@@ -1953,9 +1953,14 @@ const normalizeProductCode=s=>String(s||'').trim().toUpperCase();
 // Parse only: never contact or navigate to the old LAN IP.
 function parseScannerQR(raw){
  const text=String(raw||'').trim();
- if(valid(text))return normalizeProductCode(text);
+ // URL recognition must precede plain-code validation: SKU characters
+ // also permit slashes and dots, which a scheme-less URL can contain.
  const match=/^(?:https?:\/\/)?((?:\d{1,3}\.){3}\d{1,3})(?::(\d{1,5}))?\/scan\/([^/?#]+)\/?(?:[?#].*)?$/i.exec(text);
- if(!match)return null;
+ if(!match){
+  // Ignore other URL-like QR payloads, including scheme-less IP/domain paths.
+  if(/^(?:[a-z][a-z0-9+.-]*:\/\/|(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\/|[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::\d+)?\/)/i.test(text))return null;
+  return valid(text)?normalizeProductCode(text):null;
+ }
  if(match[1].split('.').some(part=>Number(part)>255))return null;
  if(match[2]&&(Number(match[2])<1||Number(match[2])>65535))return null;
  let code;
