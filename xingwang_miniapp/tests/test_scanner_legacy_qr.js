@@ -53,7 +53,7 @@ assert(cart.includes("const code=parseScannerQR(input||$('cartPublicCode').value
 assert(cart.includes('const code=parseScannerQR(decoded);'));
 
 // Parse all real inline scripts and the cart controller for syntax regressions.
-for (const match of html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)) {
+for (const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)) {
   if (match[1].trim()) new Function(match[1]);
 }
 new Function(cart);
