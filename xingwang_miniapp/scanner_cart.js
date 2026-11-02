@@ -374,8 +374,10 @@ async function cartBootstrap(role,guestId){
   cartData=null;cartSearch=null;cartRender();
  }
 }
+let cartListLoading=false;
 async function cartLoadList(){
- if(cartRole!=='staff')return;
+ if(cartRole!=='staff'||cartListLoading)return;
+ cartListLoading=true;
  try{
   const res=await fetch('/scanner/api/cart/list',{credentials:'same-origin',cache:'no-store'});
   const data=await res.json();
@@ -385,8 +387,20 @@ async function cartLoadList(){
   // Both desktop and mobile stay on the list until a cart is selected.
   cartRender();
  }catch(e){cartNotice(e.message,true)}
+ finally{cartListLoading=false}
 }
 let cartEditingId=null,cartUndoEntry=null,cartUndoTimer=null;
+// Only poll a visible, idle employee cart index. Avoid hot TiDB loops.
+setInterval(()=>{
+ if(cartRole==='staff'&&mode==='cart'&&!cartData&&
+    !cartEditingId&&!cartCreateEditorOpen&&
+    document.visibilityState==='visible'&&$('cartSharePanel').classList.contains('hidden'))
+  void cartLoadList();
+},90000);
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState==='visible'&&cartRole==='staff'&&mode==='cart'&&
+    !cartData&&!cartEditingId&&!cartCreateEditorOpen)void cartLoadList();
+});
 const CART_TRASH_ICON='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>';
 const CART_PENCIL_ICON='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M4 20l4.5-1 11-11a2 2 0 0 0-4-4l-11 11L4 20Z"/></svg>';
 const CART_SHARE_ICON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.7 10.7 6.7-4.3m-6.7 8 6.7 3.7"/></svg>';
