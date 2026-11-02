@@ -2713,4 +2713,10 @@ $('inventoryStartBtn').onclick=async()=>{
 
 
 if(location.hash==='#admin')mode='admin';
-</script><script src="/scanner/cart.js"></script><script>session();</script></body></html>
+</script><script src="/scanner/cart.js"></script><script>
+window.addEventListener('pageshow',event=>{
+ // A history back-forward cache must not restore previously visible staff data.
+ if(event.persisted)location.reload();
+});
+session();
+</script></body></html>
