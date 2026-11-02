@@ -16,6 +16,10 @@ const parse = new Function(html.slice(from, to) + '\nreturn parseScannerQR;')();
 const accepts = new Map([
   ['125G', '125G'],
   ['12-225D', '12-225D'],
+  ['11.11.11.11:5000/scan/158-217', '158-217'],
+  ['192.168.1.50/scan/125g', '125G'],
+  ['10.0.0.2:8080/SCAN/KC26001', 'KC26001'],
+  ['11.11.11.11:5000/scan/158-217?x=1', '158-217'],
   ['http://11.11.11.11:5000/scan/12-225D', '12-225D'],
   ['https://192.168.1.50/scan/125g', '125G'],
   ['HTTP://10.0.0.2:8080/SCAN/KC26001', 'KC26001'],
@@ -35,6 +39,11 @@ const ignores = [
   'WIFI:T:WPA;S:Office;P:abc;;',
   'http://11.11.11.11:5000/login',
   'https://example.com/125G',
+  '999.11.11.11:5000/scan/158-217',
+  '11.11.11.11:99999/scan/158-217',
+  '11.11.11.11:5000/share/158-217',
+  '11.11.11.11:5000/scan/158-217/extra',
+  '11.11.11.11:5000/scan/12%2F225D',
   '', '12 225', 'ftp://11.11.11.11/scan/125G'
 ];
 for (const [raw, sku] of accepts) assert.equal(parse(raw), sku, raw);
@@ -57,4 +66,4 @@ for (const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi))
   if (match[1].trim()) new Function(match[1]);
 }
 new Function(cart);
-console.log('Legacy QR parser and scanner entry points: 22 cases OK');
+console.log(`Legacy QR parser and scanner entry points: ${accepts.size+ignores.length} cases OK`);
