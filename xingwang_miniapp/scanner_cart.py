@@ -1348,15 +1348,19 @@ async def cart_share_qr(request: Request):
     staff._check_origin(request)
     staff._require(request)
     body = await _body(request)
+    kind = body.get("kind")
     code = body.get("code")
-    if not isinstance(code, str) or not re.fullmatch(r"[0-9]{8}", code):
-        raise HTTPException(400, "Invalid customer share code")
+    if kind == "start":
+        url = "https://xingwang-stock.onrender.com/scanner/start"
+    elif isinstance(code, str) and re.fullmatch(r"[0-9]{8}", code):
+        url = "https://xingwang-stock.onrender.com/scanner/guest#v=" + code
+    else:
+        raise HTTPException(400, "Invalid customer share request")
     try:
         import base64
         import qrcode
         import qrcode.image.svg
 
-        url = "https://xingwang-stock.onrender.com/scanner/guest#v=" + code
         qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
                            box_size=5, border=4)
         qr.add_data(url)
