@@ -1,30 +1,25 @@
-# SCANNER guest sharing & Excel copy / Unslop — 2026-11-01
+# XINGWANG SCANNER — Guest sharing and employee Home (2026-11-02)
 
-## User workflow
-1. Employee opens an existing cart in the staff scanner.
-2. Staff: sticky lower center footer beside selected Rollos/SKU counts now contains the SVG **copy Excel** control (SKU + requested quantity in two tab-separated columns). The mobile copy button remains in the mobile detail pane.
-3. Staff: right-side cart controls contain **Share with customer**; deliberately confirm generation. Backend `/scanner/api/cart/share` rotates an eight-digit access code (8h, previous link immediately invalid).
-4. New link copied: `https://xingwang-stock.onrender.com/scanner/guest#v=<8-digit-code>`. The fragment is sent to the customer as a bearer credential and is removed from the address bar by the guest page before API requests. **Only share with the intended customer.**
-5. The dedicated GET `/scanner/guest` clears the *staff* cookie using the same scoped cookie path, sets `Cache-Control: no-store` and Referrer-Policy. When the guest page loads it can only show a guest cart or guest login, never the staff cart list. Opening this route in a staff browser signs the staff user out.
-6. Guest cart session uses existing cart-specific HttpOnly signed cookie and backend `_authorize`, which compares the requested `cart_id` to the guest's permitted `cart_id`. Staff list/admin, item notes, order notes, share, delete remain staff-only. Guest may edit quantities and confirm only that cart.
-7. Browser history back-forward cache restore reloads the page and checks the current session again; old staff HTML is sent with `no-store`.
+Unslop methodology adapted from Damir Sokolovsky, CC BY 4.0.
 
-## Security tradeoffs
-- Anyone possessing the valid 8-hour link can use that one cart for the remaining TTL; do not post it publicly.
-- Opening a guest link on the employee's logged-in device logs that employee out; customers should use their own device. We do **not** provide a CSS-only "guest preview" on a staff session.
-- Re-sharing rotates the guest credential and revokes the old link. The code is not stored in readable form in TiDB, so existing links cannot be recovered by the employee UI.
-- This is customer *cart access*, not a customer-specific permanent account or multi-cart portal.
+## Current employee workflow
+- In the employee **cart list**, each cart row has a Share SVG next to pencil/delete. Click it to open a small share sheet.
+- Choose **WhatsApp**: backend creates an 8-hour cart-specific guest link and opens WhatsApp with the link and message already filled. Employee selects recipient and sends personally; no WhatsApp Business API needed.
+- Choose **Copy**: link copied, with fallback copy dialog if clipboard is unavailable.
+- Choose **QR**: the Scanner's own server creates the QR SVG using qrcode; no third-party QR service receives the secret. Render's actual build uses `xingwang_miniapp/requirements.txt`, so qrcode was added there.
+- Generating a new link rotates the guest credential. Existing previously shared links become invalid; actions within the same share sheet reuse the generated link while it remains live in memory.
+- The cart list's Home control uses an accessible house SVG to return to sample/stock main. Bottom Excel copy remains beside selected quantities.
 
-## Protected
-- No change to TiDB schema, stock/confirmation and sample SAVE, camera parameters, cart quantity/role algorithms.
-- Original employee cart list and desktop app remain unchanged except for export placement/share button.
-- CSS avoided unnecessary `!important` overrides; mobile export access retained.
+## Security improvement
+- On GET `/scanner/guest` **with an existing employee session**, the server renders a separate minimal information screen with a Home/Inicio SVG, without processing the guest token or deleting the employee's staff cookie. Staff can return to the sample/stock main without logging in again.
+- On **a customer device** (no employee session), the guest page processes the 8-digit code, scrubs the fragment from browser history, and uses a cart-specific HttpOnly guest cookie. The staff list, staff notes, deletion and share APIs remain staff-only.
+- Direct guest-login API still revokes an employee cookie if deliberately called; the safe staff-only GET interstitial prevents this happening as a side-effect of clicking the customer URL in an employee browser.
+- Never hand an employee-authenticated browser to a customer. A bearer link allows its holder to use that one cart for its valid 8-hour window.
 
-## Verification
-- JS parse (cart JS and four inline blocks), 62 literal DOM IDs present exactly once.
-- New backend guest GET clears staff cookie and sets no-store.
-- Unit test file `xingwang_miniapp/tests/test_cart_guest_link_and_export.py` added; tests NOT executed here.
-- Still must test private/incognito browser guest flow, actual API authorization for a wrong cart ID, responsive widths and screenshot parity with CC design preview; do not claim end-to-end verification from Render Live.
+## Regression checks
+- Static syntax, DOM IDs, local QR output, per-row share UI, and Home SVG are checked.
+- Existing unit tests updated where old behavior required clearing staff credentials; new isolated tests added under `tests/test_cart_share_direct.py`.
+- No real customer carts have been modified for testing. End-to-end browser, two-device access isolation, WhatsApp dispatch, and QR recognition still need real QA before claiming fully verified.
 
-Rollback: `backup/xw-before-guest-link-and-copy-dock-20261101`.
-Unslop methodology: adapted from Damir Sokolovsky under CC BY 4.0.
+## Rollback
+`backup/xw-share-list-home-20261102`.
