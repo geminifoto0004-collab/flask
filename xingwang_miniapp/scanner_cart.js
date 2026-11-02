@@ -336,6 +336,7 @@ function cartRender(){
 }
 function cartApplyRole(){
  const guest=cartRole==='guest';
+ $('cartGuestExitBtn').classList.toggle('hidden',!guest);
  $('cartNav').classList.toggle('hidden',guest||cartRole!=='staff');
  $('workModes').classList.toggle('hidden',guest||mode==='cart');
  if(guest){
@@ -720,6 +721,20 @@ async function cartExitToScanner(){
  setMode('sample');
 }
 $('cartExitBtn').onclick=cartExitToScanner;
+$('cartGuestExitBtn').onclick=async()=>{
+ if(cartRole!=='guest'||cartBusy)return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ if(cartCameraOpen)await cartCloseCamera();
+ if(cartCameraOpen)return;
+ cartBusy=true;
+ try{
+  // Customer-only session must end before returning to employee login.
+  // Never grant staff authority just by pressing Home.
+  await post('/scanner/api/cart/guest-logout');
+  location.replace('/scanner');
+ }catch(e){cartNotice('无法退出访客模式 / No se pudo salir: '+e.message,true)}
+ finally{cartBusy=false}
+};
 $('cartNav').onclick=async()=>{
  if(cartRole!=='staff')return;
  if(mode==='cart'){await cartExitToScanner();return}
