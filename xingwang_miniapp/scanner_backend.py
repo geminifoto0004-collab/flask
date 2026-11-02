@@ -91,6 +91,23 @@ async def scanner_page():
     })
 
 
+@router.get("/scanner/guest", response_class=HTMLResponse, include_in_schema=False)
+async def scanner_guest_page():
+    # Dedicated customer entry. Visiting it discards any staff session
+    # before the browser loads JS, so Back cannot reopen a staff workspace.
+    response = HTMLResponse(PAGE, headers={
+        "Cache-Control": "no-store, private, max-age=0",
+        "Pragma": "no-cache",
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "frame-ancestors 'none'",
+    })
+    response.delete_cookie(COOKIE, path="/scanner",
+                           secure=True, httponly=True, samesite="lax")
+    return response
+
+
 @router.get("/scanner/cart.js", include_in_schema=False)
 async def scanner_cart_javascript():
     source = Path(__file__).with_name("scanner_cart.js").read_text(encoding="utf-8")
