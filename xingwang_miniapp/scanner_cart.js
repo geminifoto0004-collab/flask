@@ -354,7 +354,7 @@ async function cartBootstrap(role,guestId){
   setMode('cart'); 
   try{
    const d=await post('/scanner/api/cart/open',{cart_id:guestId});
-   cartView='pick';cartSetData(d.cart);cartNotice('');
+   cartView='pick';cartSetData(d.cart);cartItemNotes=new Map();cartItemDrafts.clear();cartEditingSku=null;cartNotice('');
   }catch(e){cartNotice(e.message,true)}
  }else if(role==='staff'){
   // Staff enter on the cart list, not on an automatically selected item.
@@ -414,6 +414,7 @@ async function cartDeleteItem(item){
   if(!(await cartFlush()))return;
  }
  if(cartData?.id===item.id&&!(await cartSaveNote()))return;
+ if(cartData?.id===item.id&&!(await cartSaveEditingNote()))return;
  const revision=cartData?.id===item.id?cartData.revision:item.revision;
  cartBusy=true;
  try{
@@ -540,12 +541,14 @@ async function cartOpen(id){
  if(cartBusy)return;
  if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
  if(!(await cartSaveNote()))return;
+ if(!(await cartSaveEditingNote()))return;
  cartBusy=true;lastQrCode='';
  $('cartConfirmedBox').classList.add('hidden');$('cartConfirmedBox').replaceChildren();
  try{const d=await post('/scanner/api/cart/open',{cart_id:id});
   cartView='pick';cartCameraOpen=false;cartSummaryOpen=false;cartSkuSearch='';$('cartSkuFilter').value='';
   cartSearch=null;cartSetData(d.cart);cartRenderList();cartMsgClean();
   void cartLoadNote(d.cart.id);
+  void cartLoadItemNotes(d.cart.id);
   if(cartRole==='staff')history.replaceState(null,'',location.pathname);}
  catch(e){cartNotice(e.message,true)}
  finally{cartBusy=false;cartRender()}
@@ -554,12 +557,14 @@ async function cartCreate(){
  if(cartBusy)return;
  if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
  if(!(await cartSaveNote()))return;
+ if(!(await cartSaveEditingNote()))return;
  cartBusy=true;lastQrCode='';$('cartCreateBtn').disabled=true;
  $('cartConfirmedBox').classList.add('hidden');$('cartConfirmedBox').replaceChildren();
  try{
   const d=await post('/scanner/api/cart/create',{name:$('cartNewName').value.trim()});
   cartView='pick';cartCameraOpen=false;cartSummaryOpen=false;cartSkuSearch='';$('cartSkuFilter').value='';cartSearch=null;cartSetData(d.cart);
   void cartLoadNote(d.cart.id);
+  void cartLoadItemNotes(d.cart.id);
   $('cartNewName').value='';cartMsgClean();
   history.replaceState(null,'',location.pathname);
   void cartLoadList();
@@ -576,6 +581,7 @@ async function cartRefresh(discardPending=false){
   const noteHasUncommittedText=Boolean(cartNoteDirty());
   cartSetData(d.cart);
   if(!noteHasUncommittedText)void cartLoadNote(d.cart.id);
+  if(!cartEditingSku)void cartLoadItemNotes(d.cart.id);
   cartNotice('已刷新 / Actualizado');
  }catch(e){cartNotice(e.message,true)}
 }
@@ -650,6 +656,7 @@ async function cartSetState(){
   if(cartPending.size||cartSaveJob){
    if(!(await cartFlush()))return;
   }
+  if(!(await cartSaveEditingNote()))return;
   if(cartData.state==='ready'&&cartData.confirmed_version>0){
    const d=await post('/scanner/api/cart/state',{
     cart_id:cartData.id,revision:cartData.revision,state:'open'
@@ -693,6 +700,7 @@ $('cartNav').onclick=async()=>{
  if(cartRole!=='staff')return;
  if(mode==='cart'&&(cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
  if(mode==='cart'&&!(await cartSaveNote()))return;
+ if(mode==='cart'&&!(await cartSaveEditingNote()))return;
  setMode(mode==='cart'?'sample':'cart');
  if(mode==='cart'){
   cartData=null;cartSearch=null;cartCameraOpen=false;cartSummaryOpen=false;
@@ -753,6 +761,7 @@ $('ccSummaryClose').onclick=()=>{cartSummaryOpen=false;cartRender()};
 $('cartBack').onclick=async()=>{
  if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
  if(!(await cartSaveNote()))return;
+ if(!(await cartSaveEditingNote()))return;
  cartClearTimer();cartPending.clear();cartData=null;cartSearch=null;lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;
  
  history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()
