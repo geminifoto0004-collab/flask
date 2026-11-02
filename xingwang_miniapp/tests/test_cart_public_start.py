@@ -40,7 +40,10 @@ def test_two_scans_from_different_devices_receive_independent_tickets():
             a_ticket=a.cookies.get(cart.START_COOKIE)
             b_ticket=b.cookies.get(cart.START_COOKIE)
     assert a_ticket and b_ticket and a_ticket!=b_ticket
-    assert cart._parse_start_token(a_ticket) is None  # no signing key outside patch
+    with patch.object(staff,"_key",return_value=b"1"*32):
+        assert cart._parse_start_token(a_ticket) != cart._parse_start_token(b_ticket)
+    with patch.object(staff,"_key",return_value=b"2"*32):
+        assert cart._parse_start_token(a_ticket) is None
 
 
 def test_anonymous_lookup_does_not_create_cart():
