@@ -4,3 +4,4 @@ mcp>=2.0,<3.0
 PyJWT[crypto]>=2.8,<3.0
 PyMySQL>=1.1,<2
 certifi>=2025.1
+qrcode>=7.4,<9
