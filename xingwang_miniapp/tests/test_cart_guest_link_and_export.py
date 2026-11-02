@@ -10,16 +10,26 @@ app = FastAPI()
 app.include_router(scanner_backend.router)
 
 
-def test_customer_entry_clears_staff_cookie_and_never_caches():
+def test_guest_entry_never_caches_and_anonymous_cookies_unmodified():
     with TestClient(app) as client:
         r = client.get("/scanner/guest")
     assert r.status_code == 200
     assert "no-store" in r.headers["cache-control"]
     assert "no-referrer" == r.headers["referrer-policy"]
-    cookie = r.headers.get("set-cookie", "")
-    assert scanner_backend.COOKIE in cookie
-    assert "path=/scanner" in cookie.lower()
-    assert "max-age=0" in cookie.lower()
+    assert scanner_backend.COOKIE not in r.headers.get("set-cookie", "")
+
+
+def test_signed_in_staff_sees_home_only_not_guest_cart():
+    from unittest.mock import patch
+    with patch.object(scanner_backend, "_authorized", return_value=True):
+        with TestClient(app) as client:
+            r = client.get("/scanner/guest")
+    assert r.status_code == 200
+    assert "Home / Inicio" in r.text
+    assert "员工已登录" in r.text
+    assert 'id="cartWorkspace"' not in r.text
+    assert 'Set-Cookie' not in r.headers
+    assert "no-store" in r.headers["cache-control"]
 
 
 def test_staff_entry_no_store_after_guest_handoff():
@@ -64,5 +74,7 @@ def test_secret_link_is_guest_only_fragment_and_scrubbed():
     assert "history.replaceState(null,'',location.pathname)" in html
     assert "guestEntry?(c.role==='guest'?'guest':'none')" in html
     assert "if(event.persisted)location.reload()" in html
-    assert "location.origin+'/scanner/guest#v='+d.guest_code" in js
-    assert "舊的訪客連結會立即失效" in js
+    assert "location.origin+'/scanner/guest#v='+result.guest_code" in js
+    assert "https://wa.me/?text=" in js
+    assert "cartShareOpen(item)" in js
+    assert "cartShareEnsureLink()" in js
