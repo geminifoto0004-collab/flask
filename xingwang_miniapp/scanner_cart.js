@@ -855,16 +855,28 @@ function cartShareOpen(item){
  if(!cartShareSelection||cartShareSelection.id!==item.id){
   cartShareLink=null;cartShareCode=null;cartShareExpiry=0;cartShareQrLoaded=false;
  }
- cartShareSelection={id:item.id,name:(item.customer_name||'').trim()||item.short_code};
+ cartShareSelection={id:item.id,name:(item.customer_name||'').trim()||item.short_code,isStart:false};
  $('cartShareTitle').textContent='分享 · '+cartShareSelection.name;
- $('cartShareHint').textContent=cartShareLink&&Date.now()<cartShareExpiry
-  ?'連結已產生，可以直接傳 WhatsApp、複製或顯示 QR。'
-  :'專屬連結有效 8 小時。產生新連結時，之前分享的連結會立即失效。';
+ $('cartShareHint').textContent=cartShareSelection.isStart
+  ?'這張 QR 可以重複使用。不同客人開始選貨後會自動建立各自的購物車。'
+  :cartShareLink&&Date.now()<cartShareExpiry
+    ?'連結已產生，可以直接傳 WhatsApp、複製或顯示 QR。'
+    :'專屬連結有效 8 小時。產生新連結時，之前分享的連結會立即失效。';
  $('cartShareQrBox').classList.add('hidden');
  $('cartShareQrImage').removeAttribute('src');cartShareQrLoaded=false;
  cartShareFeedback('');
  $('cartSharePanel').classList.remove('hidden');
  $('cartShareWhatsApp').focus();
+}
+function cartShareOpenStart(){
+ if(cartRole!=='staff'||cartBusy)return;
+ const item={id:'public-start',short_code:'NEW',customer_name:'新客戶 / Nuevo cliente'};
+ cartShareOpen(item);
+ cartShareSelection.isStart=true;
+ cartShareLink=location.origin+'/scanner/start';
+ cartShareCode=null;cartShareExpiry=Number.POSITIVE_INFINITY;
+ $('cartShareTitle').textContent='固定 QR · 開始選貨';
+ $('cartShareHint').textContent='不需要先建立購物車；客人第一次加入商品時才會產生自己專屬的購物車。';
 }
 function cartShareClose(){
  $('cartSharePanel').classList.add('hidden');
@@ -880,6 +892,7 @@ function cartShareTogglePending(pending){
 }
 async function cartShareEnsureLink(){
  if(!cartShareSelection||cartRole!=='staff')throw Error('请先选择购物车');
+ if(cartShareSelection.isStart)return location.origin+'/scanner/start';
  if(cartShareLink&&Date.now()<cartShareExpiry-30000)return cartShareLink;
  if(cartSharePending)return cartSharePending;
  const itemId=cartShareSelection.id;
@@ -909,7 +922,9 @@ async function cartShareAct(action){
   const url=await cartShareEnsureLink();
   if(action==='whatsapp'){
    const name=cartShareSelection?.name||'XINGWANG';
-   const msg='XINGWANG · '+name+'\n請查看您的選貨單 / Revise su carrito:\n'+url;
+   const msg=cartShareSelection?.isStart
+    ?'XINGWANG · 開始選貨 / Empiece a elegir productos:\n'+url
+    :'XINGWANG · '+name+'\n請查看您的選貨單 / Revise su carrito:\n'+url;
    const wa='https://wa.me/?text='+encodeURIComponent(msg);
    if(popup&&!popup.closed)popup.location.replace(wa);
    else window.location.assign(wa);
@@ -919,7 +934,7 @@ async function cartShareAct(action){
    catch(_){cartShareClose();void xwCopyFallback('客戶專屬連結 / Enlace privado',url)}
   }else if(action==='qr'){
    if(!cartShareQrLoaded){
-    const result=await post('/scanner/api/cart/share-qr',{code:cartShareCode});
+    const result=await post('/scanner/api/cart/share-qr',cartShareSelection?.isStart?{kind:'start'}:{code:cartShareCode});
     if(!result.svg_base64)throw Error('QR 无法产生');
     $('cartShareQrImage').src='data:image/svg+xml;base64,'+result.svg_base64;
     cartShareQrLoaded=true;
@@ -933,6 +948,7 @@ async function cartShareAct(action){
  }finally{cartShareTogglePending(false)}
 }
 $('cartShareCustomer').onclick=()=>{if(cartData)cartShareOpen(cartData)};
+$('cartPublicShareBtn').onclick=cartShareOpenStart;
 $('cartShareClose').onclick=cartShareClose;
 $('cartSharePanel').querySelector('.cart-share-shade').onclick=cartShareClose;
 $('cartShareWhatsApp').onclick=()=>void cartShareAct('whatsapp');
