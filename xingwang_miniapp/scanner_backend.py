@@ -146,7 +146,7 @@ async def scanner_public_start(request: Request):
     })
     response.set_cookie(scanner_cart.START_COOKIE, token,
                         max_age=scanner_cart.START_TTL, httponly=True,
-                        secure=True,samesite="lax", path="/scanner/api/cart")
+                        secure=True,samesite="lax", path="/scanner")
     return response
 
 
