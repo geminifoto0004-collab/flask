@@ -5,6 +5,48 @@ let cartRole='none', cartData=null, cartSearch=null,cartBusy=false;
 let cartFilterMode='all',cartRecent=[],cartLookupPending=false;
 let cartView='pick',cartSkuSearch='',cartCameraOpen=false,cartSummaryOpen=false;
 let cartToastTimer=null;
+let cartItemNotes=new Map(),cartItemDrafts=new Map(),cartEditingSku=null,cartItemNotesId=null,cartItemSaving=false;
+const CART_NOTE_ICON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16 4l4 4L9 19l-5 1 1-5L16 4z"/></svg>';
+async function cartLoadItemNotes(id){
+ cartItemNotesId=id;cartItemNotes=new Map();cartItemDrafts.clear();cartEditingSku=null;
+ if(cartRole!=='staff')return;
+ try{
+  const d=await post('/scanner/api/cart/item-notes',{cart_id:id});
+  if(cartData?.id!==id||cartItemNotesId!==id)return;
+  cartItemNotes=new Map(Object.entries(d.notes||{}));
+  cartRender();
+ }catch(e){if(cartData?.id===id)cartNotice('备注读取失败 / Error al cargar notas',true)}
+}
+function cartDraftNote(sku){
+ return cartItemDrafts.has(sku)?cartItemDrafts.get(sku):cartItemNotes.get(sku)?.note||'';
+}
+function cartItemNoteDirty(sku){
+ return cartItemDrafts.has(sku)&&cartItemDrafts.get(sku).trim()!==(cartItemNotes.get(sku)?.note||'');
+}
+async function cartSaveItemNote(sku){
+ if(cartRole!=='staff'||!cartData||cartItemSaving)return false;
+ if(!cartItemNoteDirty(sku)){cartItemDrafts.delete(sku);cartEditingSku=null;cartRender();return true}
+ const id=cartData.id,content=cartDraftNote(sku).trim();
+ cartItemSaving=true;
+ try{
+  const d=await post('/scanner/api/cart/item-note/save',{
+   cart_id:id,sku,note:content,version:cartItemNotes.get(sku)?.version||0
+  });
+  if(cartData?.id!==id)return false;
+  cartItemNotes.set(sku,{note:d.note,version:d.version});
+  cartItemDrafts.delete(sku);cartEditingSku=null;
+  cartNotice('SKU 备注已保存 / Nota guardada');
+  return true;
+ }catch(e){
+  cartNotice(e.status===409?'备注已由其他设备修改，请重新读取 / Nota modificada':e.message,true);
+  return false;
+ }finally{cartItemSaving=false;cartRender()}
+}
+async function cartSaveEditingNote(){
+ if(cartItemSaving)return false;
+ return !cartEditingSku||await cartSaveItemNote(cartEditingSku);
+}
+
 const CART_SAVE_DELAY=1200;
 let cartPending=new Map(),cartSending=new Map(),cartSaveTimer=null,cartSaveJob=null,cartSaveError=false;
 function cartClearTimer(){if(cartSaveTimer){clearTimeout(cartSaveTimer);cartSaveTimer=null;}}
