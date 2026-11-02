@@ -901,7 +901,7 @@ async function cartShareAct(action){
    cartShareFeedback('WhatsApp 已開啟，請選擇收件人並發送 / Seleccione el contacto y envíe');
   }else if(action==='copy'){
    try{await navigator.clipboard.writeText(url);cartShareFeedback('連結已複製 / Enlace copiado')}
-   catch(_){void xwCopyFallback('客戶專屬連結 / Enlace privado',url);cartShareFeedback('請複製連結 / Copiar enlace')}
+   catch(_){cartShareClose();void xwCopyFallback('客戶專屬連結 / Enlace privado',url)}
   }else if(action==='qr'){
    if(!cartShareQrLoaded){
     const result=await post('/scanner/api/cart/share-qr',{code:cartShareCode});
