@@ -100,6 +100,9 @@ function cartUpdateHeader(){
  cartText('cartSkuCount',cartEffectiveItems().length+' SKU');
  cartText('cartDockSkuCount',cartEffectiveItems().length+' SKU');
  $('cartCopy').disabled=cartRole!=='staff'&&cartRole!=='guest';
+ $('cartCopyMobile').disabled=$('cartCopy').disabled;
+ $('cartCopyMobile').title=$('cartCopy').title;
+ $('cartShareCustomer').classList.toggle('hidden',cartRole!=='staff');
  $('cartBack').classList.toggle('hidden',cartRole!=='staff');
  const reopening=cartData.state==='ready'&&cartData.confirmed_version>0&&!cartPending.size&&!cartSending.size;
  $('cartStateButton').innerHTML=reopening
@@ -798,7 +801,7 @@ $('cartVersionBtn').onclick=async()=>{
   host.classList.remove('hidden');
  }catch(e){cartNotice(e.message,true)}
 };
-$('cartCopy').onclick=async()=>{
+async function cartCopyExcel(){
  if(!cartData)return;
  if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
  const items=cartEffectiveItems().filter(i=>i.qty>0);
@@ -807,6 +810,31 @@ $('cartCopy').onclick=async()=>{
  const text=items.map(i=>i.sku+'\t'+i.qty).join('\n');
  try{await navigator.clipboard.writeText(text);cartNotice('已复制 '+items.length+' 个编号 / '+items.length+' SKU copiados')}
  catch(_){void xwCopyFallback('商品编号 + 匹数 / SKU + rollos',text)}
+}
+$('cartCopy').onclick=cartCopyExcel;
+$('cartCopyMobile').onclick=cartCopyExcel;
+$('cartShareCustomer').onclick=async()=>{
+ if(cartRole!=='staff'||!cartData||cartBusy)return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ if(!(await cartSaveNote()))return;
+ if(!(await cartSaveEditingNote()))return;
+ const confirmed=await xwAsk({
+  title:'分享给客户 / Compartir con cliente',
+  description:'產生一個有效 8 小時的專屬連結。舊的訪客連結會立即失效。客人只能看到自己的購物車。'
+ });
+ if(!confirmed)return;
+ const id=cartData.id;
+ const button=$('cartShareCustomer');button.disabled=true;
+ try{
+  const d=await post('/scanner/api/cart/share',{cart_id:id});
+  if(!d.guest_code||cartData?.id!==id)throw Error('无法生成客户链接');
+  const link=location.origin+'/scanner/guest#v='+d.guest_code;
+  try{
+   await navigator.clipboard.writeText(link);
+   cartNotice('客户链接已复制 / Enlace copiado');
+  }catch(_){void xwCopyFallback('客户专属链接 / Enlace privado',link)}
+ }catch(e){cartNotice(e.message,true)}
+ finally{button.disabled=false}
 };
 $('guestLoginBtn').onclick=async()=>{
  const code=$('guestCode').value.trim(),button=$('guestLoginBtn');button.disabled=true;
