@@ -975,6 +975,7 @@ window.cartEnsureSaved=cartFlush;
 /* PUBLIC START. Fixed QR opens the existing Scanner, but no cart record is
    created until the first positive SKU quantity is actually selected. */
 let publicStartBusy=false,publicStartCamera=null,publicStartScanning=false;
+let publicLastScan='',publicLastScanAt=0;
 function publicStartStatus(message){$('cartPublicMessage').textContent=message||''}
 function publicStartReady(){
  if(cartRole==='guest')return;
@@ -1069,8 +1070,11 @@ $('cartPublicCameraBtn').onclick=async()=>{
    {fps:10,qrbox:{width:220,height:220}},decoded=>{
     if(publicStartBusy)return;
     const code=String(decoded||'').trim().toUpperCase();
-    if(/^[A-Z0-9][A-Z0-9_.()/-]{1,39}$/.test(code))
+    if(code===publicLastScan&&Date.now()-publicLastScanAt<15000)return;
+    if(/^[A-Z0-9][A-Z0-9_.()/-]{1,39}$/.test(code)){
+     publicLastScan=code;publicLastScanAt=Date.now();
      void publicStartFind(code);
+    }
    },()=>{});
   publicStartScanning=true;$('cartPublicCameraBtn').disabled=false;
  }catch(e){publicStartStatus('相機無法開啟 / Cámara no disponible');
