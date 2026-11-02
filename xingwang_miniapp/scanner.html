@@ -513,6 +513,34 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 #cartShareFeedback{min-height:18px;margin:12px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
 @media(min-width:950px){#cartWorkspace.cart-has-active #cartMeta .cart-share-action{display:none}}
 @media(max-width:949px){.cart-share-sheet{align-items:flex-end;padding:0}.cart-share-card{width:100%;max-height:calc(100dvh - 16px);border-radius:18px 18px 0 0;padding:20px 16px calc(18px + env(safe-area-inset-bottom,0px))}}
+/* Public QR is a landing state, not a second cart implementation. */
+.xw-public-start{box-sizing:border-box;width:min(100%,800px);margin:20px auto;padding:24px;border:1px solid var(--stroke);border-radius:16px;background:#fff}
+.xw-public-start.hidden{display:none}
+.xw-public-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:22px}
+.xw-public-head>svg{flex:none;color:var(--wine)}
+.xw-public-head h2{font-size:19px;line-height:1.3;margin:0 0 7px;color:var(--ink)}
+.xw-public-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.xw-public-search{display:flex;align-items:center;gap:8px}
+.xw-public-search input{flex:1;min-width:0;min-height:48px;border:1px solid var(--stroke);border-radius:11px;padding:0 12px;font:inherit;font-size:15px;color:var(--ink)}
+.xw-public-search button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:48px;height:48px;padding:0;border:1px solid var(--stroke);border-radius:11px;background:#fff;color:var(--wine)}
+.xw-public-search #cartPublicFind{background:var(--wine);color:#fff;border-color:var(--wine)}
+#cartPublicCamera:not(.hidden){margin:16px 0}
+#cartPublicCameraReader{overflow:hidden;max-width:440px;margin:0 auto;border-radius:12px}
+#cartPublicCameraClose{display:block;margin:9px auto;min-height:44px}
+#cartPublicItems{margin-top:18px}
+.xw-public-product{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;min-height:68px;border-bottom:1px solid var(--stroke)}
+.xw-public-product:nth-child(odd){background:#FAF7F8}
+.xw-public-product .xw-public-product-info{display:flex;flex-direction:column;gap:4px;min-width:0}
+.xw-public-product strong{font-size:15px;color:var(--ink)}
+.xw-public-product small{font-size:12px;color:var(--muted)}
+.xw-public-product .xw-public-product-qty{display:flex;align-items:center;gap:6px;flex:none}
+.xw-public-product button{display:inline-flex;justify-content:center;align-items:center;min-width:42px;height:42px;border-radius:10px;border:1px solid var(--stroke);background:#fff;color:var(--wine);font-size:19px}
+.xw-public-product input{box-sizing:border-box;width:52px;min-width:52px;height:42px;border-radius:9px;border:1px solid var(--stroke);background:#fff;color:var(--ink);font-size:16px;font-weight:700;text-align:center}
+#cartPublicMessage{font-size:13px;line-height:1.5;color:var(--wine);min-height:20px;margin:12px 0}
+.xw-public-footnote{font-size:12px;color:var(--muted);line-height:1.6;margin:20px 0 0}
+#cartStaffList #cartPublicShareBtn{display:inline-flex;flex:none;align-items:center;justify-content:center;width:40px;height:40px;min-height:40px;border:1px solid var(--stroke);border-radius:9px;background:#fff;color:var(--wine)}
+#cartStaffList #cartPublicShareBtn:hover{background:#F9E7EC}
+@media(max-width:600px){.xw-public-start{padding:16px 12px;border-radius:12px;margin:6px auto}.xw-public-product{padding:10px 7px;gap:8px}.xw-public-product input{width:46px;min-width:46px}}
 /* CART HISTORY: canonical two-level row layout. No status text on edit action. */
 #cartStaffList .cart-history-entry{position:relative;display:block;box-sizing:border-box;min-width:0;margin:0 0 10px;border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:#fff}
 #cartStaffList .cart-history-entry.current{border-color:#D8A4B5;background:#F9F0F3}
@@ -1646,6 +1674,18 @@ body.cc-sample-detail #result{
  </div>
  <p id="loginMessage" class="muted" role="alert"></p>
 </section>
+<section id="cartPublicStart" class="xw-public-start hidden" aria-labelledby="cartPublicTitle">
+ <div class="xw-public-head"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18l-2 11H6L3 7zM3 7 2 3M8 21h1m8 0h1"/></svg><div><h2 id="cartPublicTitle">開始選貨 / Elegir productos</h2><p>掃描系列 QR 或輸入編號，開始後才建立您的購物車。</p></div></div>
+ <div class="xw-public-search">
+  <input id="cartPublicCode" type="search" placeholder="系列 / SKU · 例如 12-225D" aria-label="系列或商品編號 / Serie o SKU" autocomplete="off" spellcheck="false">
+  <button id="cartPublicCameraBtn" type="button" title="掃描 QR / Escanear" aria-label="開啟相機掃描 / Abrir cámara"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a2 2 0 0 1 2-2h2m8 0h2a2 2 0 0 1 2 2v3M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M5 12h14"/></svg></button>
+  <button id="cartPublicFind" type="button" title="查詢 / Buscar" aria-label="查詢 SKU / Buscar SKU"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button>
+ </div>
+ <div id="cartPublicCamera" class="hidden"><div id="cartPublicCameraReader"></div><button id="cartPublicCameraClose" class="secondary" type="button">關閉相機 / Cerrar cámara</button></div>
+ <div id="cartPublicItems" aria-live="polite"></div>
+ <p id="cartPublicMessage" role="status" aria-live="polite"></p>
+ <p class="xw-public-footnote">匹數為您的需求，庫存僅供參考 / Cantidades solicitadas; stock orientativo.</p>
+</section>
 <div id="app" class="hidden">
 <section class="panel" id="scanPanel"><button id="ccCartCameraClose" class="hidden" type="button" aria-label="返回购物车 / Volver al carrito"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button>
 <div class="cc-scan-controls"><div id="workModes" class="modes"><button id="modeSample" class="active" type="button" title="布樣盤點 / Muestras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M4 12h16"/></svg><span>样布 <small>Muestras</small></span></button><button id="modeFull" type="button" title="完整查詢 / Consulta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg><span>库存 <small>Stock</small></span></button></div>
@@ -1673,6 +1713,7 @@ body.cc-sample-detail #result{
   <div class="cc-cart-filter cart-list-toolbar">
    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
    <input id="cartFilter" type="search" placeholder="搜索客户 / Buscar cliente" aria-label="搜索客户或购物车 / Buscar clientes o carritos" autocomplete="off">
+   <button id="cartPublicShareBtn" type="button" aria-label="固定 QR 開始選貨 / QR permanente" title="固定入口 · QR / WhatsApp"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6"/><rect x="15" y="3" width="6" height="6"/><rect x="3" y="15" width="6" height="6"/><path d="M16 15h2v2h-2zm4 0v3m-5 3h6v-2"/></svg></button>
    <button id="cartSidebarCreateBtn" type="button" aria-label="新建购物车 / Nuevo carrito" title="新建购物车 / Nuevo carrito" aria-expanded="false" aria-controls="cartStart"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
   </div>
   <div id="cartStart" class="cc-cart-new hidden">
