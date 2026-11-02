@@ -704,17 +704,25 @@ window.cartIsReviewing=()=>!cartCameraOpen;
 window.cartBootstrap=cartBootstrap;
 window.cartApplyRole=cartApplyRole;
 window.cartLoadList=cartLoadList;
+async function cartExitToScanner(){
+ if(cartRole!=='staff'||mode!=='cart'||cartBusy)return;
+ if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
+ if(!(await cartSaveNote()))return;
+ if(!(await cartSaveEditingNote()))return;
+ if(cartCameraOpen)await cartCloseCamera();
+ if(cartCameraOpen)return;
+ cartCreateEditorOpen=false;
+ setMode('sample');
+}
+$('cartExitBtn').onclick=cartExitToScanner;
 $('cartNav').onclick=async()=>{
  if(cartRole!=='staff')return;
- if(mode==='cart'&&(cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
- if(mode==='cart'&&!(await cartSaveNote()))return;
- if(mode==='cart'&&!(await cartSaveEditingNote()))return;
- setMode(mode==='cart'?'sample':'cart');
- if(mode==='cart'){
-  cartData=null;cartSearch=null;cartCameraOpen=false;cartSummaryOpen=false;
-  history.replaceState(null,'',location.pathname);
-  cartRender();void cartLoadList();
- }
+ if(mode==='cart'){await cartExitToScanner();return}
+ setMode('cart');
+ cartCreateEditorOpen=false;
+ cartData=null;cartSearch=null;cartCameraOpen=false;cartSummaryOpen=false;
+ history.replaceState(null,'',location.pathname);
+ cartRender();void cartLoadList();
 };
 $('cartCreateBtn').onclick=cartCreate;
 $('cartSidebarCreateBtn').onclick=()=>{
