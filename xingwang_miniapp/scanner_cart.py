@@ -843,8 +843,17 @@ def _create_public_cart(start_data, sku, qty, ip):
             )
         conn.commit()
         return _load(conn, cart_id), 1, expires
-    except Exception:
+    except Exception as exc:
         conn.rollback()
+        # Concurrent retries with the same ticket may race on the unique
+        # start_hash. After the winner commits, return the same cart.
+        if (getattr(exc, "args", ()) and exc.args[0] == 1062):
+            with conn.cursor() as cur:
+                cur.execute("SELECT id,guest_generation,guest_expires FROM xw_carts "
+                            "WHERE start_hash=%s", (_start_hash(start_data),))
+                existing = cur.fetchone()
+            if existing and existing[2] and existing[2] > utcnow():
+                return _load(conn, existing[0]), int(existing[1]), existing[2]
         raise
     finally:
         conn.close()
