@@ -84,7 +84,12 @@ def _require(request):
 
 @router.get("/scanner", response_class=HTMLResponse)
 async def scanner_page():
+    # Prevent browser Back/cache from displaying an old staff workspace
+    # after the dedicated guest entry has invalidated staff credentials.
     return HTMLResponse(PAGE, headers={
+        "Cache-Control": "no-store, private, max-age=0",
+        "Pragma": "no-cache",
+        "Referrer-Policy": "no-referrer",
         "X-Robots-Tag": "noindex, nofollow, noarchive",
         "X-Frame-Options": "DENY",
         "Content-Security-Policy": "frame-ancestors 'none'",
