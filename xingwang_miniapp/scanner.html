@@ -765,7 +765,7 @@ input{color:var(--ink);background:#fff;border-color:var(--stroke)}
 #freshnessPanel #freshnessCheckBtn{width:40px;min-width:40px;padding:0;background:var(--wine);color:#fff}
 #login.cc-login{position:relative;min-height:82dvh;display:flex;flex-direction:column;justify-content:center;gap:13px;margin:0;border:0;box-shadow:none;background:transparent;padding:28px 14px 65px}
 #login.cc-login.hidden{display:none!important}
-body:has(#login:not(.hidden)) header,body:has(#login:not(.hidden)) footer{display:none!important}
+body:has(#login:not(.hidden)) header{display:none!important}
 #login.cc-login h1{text-align:center;font-size:27px;letter-spacing:.6px;margin:0 0 18px;font-weight:850}
 .cc-login-types{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .cc-login-types button{height:48px;min-height:48px;display:flex;gap:6px;align-items:center;justify-content:center;background:#F1E8EB;color:#241017;font-size:14px;font-weight:700}
@@ -780,7 +780,7 @@ body:has(#login:not(.hidden)) header,body:has(#login:not(.hidden)) footer{displa
 .cc-login-entry>button{height:56px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:var(--wine)}
 .cc-login-entry>button svg{transform:rotate(0deg)}
 #loginMessage:empty{display:none}
-body:has(#cartWorkspace:not(.hidden)) header,body:has(#cartWorkspace:not(.hidden)) footer{display:none!important}
+body:has(#cartWorkspace:not(.hidden)) header{display:none!important}
 body:has(#cartWorkspace:not(.hidden)) main{padding:0 0 calc(93px + env(safe-area-inset-bottom,0px));max-width:none}
 #app:has(#cartWorkspace:not(.hidden)){max-width:100%;margin:0 auto}
 #cartWorkspace{margin:0;border:0;background:transparent;box-shadow:none;padding:0!important;border-radius:0!important}
@@ -1009,7 +1009,7 @@ body.cc-sample-detail #result{position:relative}
 #fullResult #fullDetails:not(:has(.cc-stock-list)){padding:12px}
 #fullResult .stock-note{margin:8px 14px;color:var(--muted);font-size:11px}
 /* Admin: three white cards and CC header, keep original maintenance tools */
-body:has(#adminTab:not(.hidden)) header,body:has(#adminTab:not(.hidden)) footer{display:none!important}
+body:has(#adminTab:not(.hidden)) header{display:none!important}
 body:has(#adminTab:not(.hidden)) main{max-width:1040px;padding:0 0 30px;margin:0 auto}
 .cc-admin-header{height:66px;padding:12px 14px 8px;display:flex;align-items:center;gap:10px;color:var(--wine-deep)}
 #adminApp{padding:0 14px}
@@ -1935,7 +1935,7 @@ async function checkFreshness(){
  })();
  return checkingFreshness;
 }
-$('freshnessCheckBtn').onclick=checkFreshness;
+
 $('freshnessDismissBtn').onclick=()=>{
  // The X means "skip refresh for this page". Acknowledging the unchanged
  // snapshot preserves server authorization for sample query/save.
