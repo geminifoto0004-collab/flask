@@ -97,20 +97,33 @@ async def scanner_page():
 
 
 @router.get("/scanner/guest", response_class=HTMLResponse, include_in_schema=False)
-async def scanner_guest_page():
-    # Dedicated customer entry. Visiting it discards any staff session
-    # before the browser loads JS, so Back cannot reopen a staff workspace.
-    response = HTMLResponse(PAGE, headers={
+async def scanner_guest_page(request: Request):
+    headers = {
         "Cache-Control": "no-store, private, max-age=0",
         "Pragma": "no-cache",
         "X-Robots-Tag": "noindex, nofollow, noarchive",
         "X-Frame-Options": "DENY",
         "Referrer-Policy": "no-referrer",
         "Content-Security-Policy": "frame-ancestors 'none'",
-    })
-    response.delete_cookie(COOKIE, path="/scanner",
-                           secure=True, httponly=True, samesite="lax")
-    return response
+    }
+    if _authorized(request):
+        # Do not silently sign staff out or let a staff browser enter guest
+        # mode with privileged cookies. Customer must use their own browser.
+        return HTMLResponse("""<!doctype html><html lang="zh-Hant"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XINGWANG · Cliente</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#28141c;background:#f8f4f5}
+body{min-height:100dvh;display:grid;place-items:center;margin:0;padding:20px;box-sizing:border-box}
+main{width:min(100%,440px);background:#fff;padding:24px;border-radius:16px;border:1px solid #e5d9df}
+h1{font-size:19px;margin:0 0 10px}p{font-size:14px;line-height:1.7;color:#685860}
+a{display:inline-flex;align-items:center;gap:8px;padding:12px 15px;border-radius:10px;color:#fff;background:#6a1b36;text-decoration:none;font-weight:700}
+</style></head><body><main><h1>员工已登录 / Personal conectado</h1>
+<p>当前是员工浏览器。为保护其他客户资料，请将专属连结发送给客户，在客户自己的手机或浏览器中打开。你的员工登录保持不变。</p>
+<a href="/scanner" aria-label="回到员工首页 / Inicio">
+<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/></svg>Home / Inicio</a>
+</main></body></html>""", headers=headers)
+    return HTMLResponse(PAGE, headers=headers)
 
 
 @router.get("/scanner/cart.js", include_in_schema=False)
