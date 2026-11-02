@@ -1037,7 +1037,8 @@ def _item_note_save(cart_id, sku, note, version):
     try:
         now = utcnow()
         with conn.cursor() as cur:
-            cur.execute("SELECT state FROM xw_carts WHERE id=%s", (cart_id,))
+            # Lock the parent row so concurrent first-note INSERTs serialize.
+            cur.execute("SELECT state FROM xw_carts WHERE id=%s FOR UPDATE", (cart_id,))
             state = cur.fetchone()
             if not state or state[0] == "cancelled":
                 raise HTTPException(404, "Cart not found")
