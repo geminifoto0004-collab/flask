@@ -157,7 +157,7 @@ function cartRow(sku,qty,stockValue,fromSearch){
    cartEditingSku=cartEditingSku===sku?null:sku;
    cartRender();
    if(cartEditingSku){
-    const field=[...document.querySelectorAll('.cart-item-note-editor input')].find(el=>el.dataset.sku===sku);
+    const field=[...document.querySelectorAll('#cartProducts .cart-item-note-editor input, #cartItemView .cart-item-note-editor input')].find(el=>el.dataset.sku===sku);
     if(field){field.focus();field.select()}
    }
   };
