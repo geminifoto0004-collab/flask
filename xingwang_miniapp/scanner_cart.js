@@ -346,7 +346,7 @@ function cartApplyRole(){
 async function cartBootstrap(role,guestId){
  const changed=role!==cartRole;
  cartRole=role;
- if(changed){cartClearTimer();cartPending.clear();cartSending.clear();cartSaveError=false;cartData=null;cartSearch=null;cartRecent=[];lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;}
+ if(changed){cartClearTimer();cartPending.clear();cartSending.clear();cartSaveError=false;cartData=null;cartSearch=null;cartRecent=[];lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;cartItemNotes.clear();cartItemDrafts.clear();cartEditingSku=null;cartItemNotesId=null;}
  cartApplyRole();
  if(role==='guest'){
   // Drop staff-only query results when a company phone becomes a guest device.
@@ -422,7 +422,7 @@ async function cartDeleteItem(item){
   const result=await post('/scanner/api/cart/delete',{cart_id:item.id,revision});
   cartRecent=cartRecent.filter(c=>c.id!==item.id);
   if(cartData?.id===item.id){
-   cartData=null;cartSearch=null;cartCameraOpen=false;cartSummaryOpen=false;
+   cartData=null;cartSearch=null;cartCameraOpen=false;cartSummaryOpen=false;cartItemNotes.clear();cartItemDrafts.clear();cartEditingSku=null;cartItemNotesId=null;
    
    history.replaceState(null,'',location.pathname);
   }
@@ -764,7 +764,7 @@ $('cartBack').onclick=async()=>{
  if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
  if(!(await cartSaveNote()))return;
  if(!(await cartSaveEditingNote()))return;
- cartClearTimer();cartPending.clear();cartData=null;cartSearch=null;lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;
+ cartClearTimer();cartPending.clear();cartData=null;cartSearch=null;lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;cartItemNotes.clear();cartItemDrafts.clear();cartEditingSku=null;cartItemNotesId=null;
  
  history.replaceState(null,'',location.pathname);cartRender();void cartLoadList()
 };
