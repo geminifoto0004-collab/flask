@@ -820,7 +820,7 @@ $('cartShareCustomer').onclick=async()=>{
  if(!(await cartSaveEditingNote()))return;
  const confirmed=await xwAsk({
   title:'分享给客户 / Compartir con cliente',
-  description:'產生一個有效 8 小時的專屬連結。舊的訪客連結會立即失效。客人只能看到自己的購物車。'
+  description:'專屬連結有效 8 小時，重新分享會令舊連結失效。客人只能看自己的購物車；在員工瀏覽器開啟客戶連結會退出員工登入。'
  });
  if(!confirmed)return;
  const id=cartData.id;
