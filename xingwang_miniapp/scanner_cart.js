@@ -153,8 +153,9 @@ function cartRow(sku,qty,stockValue,fromSearch){
   noteBtn.setAttribute('aria-expanded',String(cartEditingSku===sku));
   noteBtn.onclick=async()=>{
    if(cartItemSaving)return;
-   if(cartEditingSku&&cartEditingSku!==sku&&!(await cartSaveEditingNote()))return;
-   cartEditingSku=cartEditingSku===sku?null:sku;
+   const wasSame=cartEditingSku===sku;
+   if(cartEditingSku&&!(await cartSaveEditingNote()))return;
+   cartEditingSku=wasSame?null:sku;
    cartRender();
    if(cartEditingSku){
     const field=[...document.querySelectorAll('#cartProducts .cart-item-note-editor input, #cartItemView .cart-item-note-editor input')].find(el=>el.dataset.sku===sku);
