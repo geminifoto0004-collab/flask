@@ -388,6 +388,7 @@ async function cartLoadList(){
 let cartEditingId=null,cartUndoEntry=null,cartUndoTimer=null;
 const CART_TRASH_ICON='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>';
 const CART_PENCIL_ICON='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 5 5 5M4 20l4.5-1 11-11a2 2 0 0 0-4-4l-11 11L4 20Z"/></svg>';
+const CART_SHARE_ICON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.7 10.7 6.7-4.3m-6.7 8 6.7 3.7"/></svg>';
 const CART_CHECK_ICON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m5 12 4 4 10-10"/></svg>';
 function cartClearUndo(){
  if(cartUndoTimer){clearTimeout(cartUndoTimer);cartUndoTimer=null}
@@ -500,8 +501,12 @@ function cartRenderList(){
    cartRenderList();
    if(cartEditingId){const input=host.querySelector('.cart-history-entry.editing input');if(input){input.focus();input.select()}}
   };
-  if(item.state==='ready')foot.append(count,status,edit);
-  else foot.append(count,edit);
+  const share=document.createElement('button');share.type='button';share.className='cart-history-share';
+  share.innerHTML=CART_SHARE_ICON;
+  share.title='分享给客户 / Compartir';share.setAttribute('aria-label','分享 '+(item.customer_name||item.short_code)+' 给客户');
+  share.onclick=()=>cartShareOpen(item);
+  if(item.state==='ready')foot.append(count,status,edit,share);
+  else foot.append(count,edit,share);
   main.append(btn,foot);
   if(cartEditingId===item.id){
    wrapper.classList.add('editing');
@@ -821,29 +826,108 @@ async function cartCopyExcel(){
 }
 $('cartCopy').onclick=cartCopyExcel;
 $('cartCopyMobile').onclick=cartCopyExcel;
-$('cartShareCustomer').onclick=async()=>{
- if(cartRole!=='staff'||!cartData||cartBusy)return;
- if((cartPending.size||cartSaveJob)&&!(await cartFlush()))return;
- if(!(await cartSaveNote()))return;
- if(!(await cartSaveEditingNote()))return;
- const confirmed=await xwAsk({
-  title:'分享给客户 / Compartir con cliente',
-  description:'專屬連結有效 8 小時，重新分享會令舊連結失效。客人只能看自己的購物車；在員工瀏覽器開啟客戶連結會退出員工登入。'
- });
- if(!confirmed)return;
- const id=cartData.id;
- const button=$('cartShareCustomer');button.disabled=true;
+// Sharing is available straight from the cart list. A link is created only
+// when staff chooses an action; regeneration invalidates previously shared links.
+let cartShareSelection=null,cartShareLink=null,cartShareCode=null;
+let cartShareExpiry=0,cartSharePending=null,cartShareQrLoaded=false;
+let cartSharePreviousFocus=null;
+function cartShareFeedback(message){
+ $('cartShareFeedback').textContent=message||'';
+}
+function cartShareOpen(item){
+ if(cartRole!=='staff'||!item?.id||cartBusy)return;
+ cartSharePreviousFocus=document.activeElement;
+ if(!cartShareSelection||cartShareSelection.id!==item.id){
+  cartShareLink=null;cartShareCode=null;cartShareExpiry=0;cartShareQrLoaded=false;
+ }
+ cartShareSelection={id:item.id,name:(item.customer_name||'').trim()||item.short_code};
+ $('cartShareTitle').textContent='分享 · '+cartShareSelection.name;
+ $('cartShareHint').textContent=cartShareLink&&Date.now()<cartShareExpiry
+  ?'連結已產生，可以直接傳 WhatsApp、複製或顯示 QR。'
+  :'專屬連結有效 8 小時。產生新連結時，之前分享的連結會立即失效。';
+ $('cartShareQrBox').classList.add('hidden');
+ $('cartShareQrImage').removeAttribute('src');cartShareQrLoaded=false;
+ cartShareFeedback('');
+ $('cartSharePanel').classList.remove('hidden');
+ $('cartShareWhatsApp').focus();
+}
+function cartShareClose(){
+ $('cartSharePanel').classList.add('hidden');
+ $('cartShareQrBox').classList.add('hidden');
+ $('cartShareQrImage').removeAttribute('src');
+ cartShareQrLoaded=false;
+ if(cartSharePreviousFocus&&cartSharePreviousFocus.isConnected)cartSharePreviousFocus.focus();
+ cartSharePreviousFocus=null;
+}
+function cartShareTogglePending(pending){
+ for(const id of ['cartShareWhatsApp','cartShareCopy','cartShareQr','cartShareClose'])
+  $(id).disabled=pending;
+}
+async function cartShareEnsureLink(){
+ if(!cartShareSelection||cartRole!=='staff')throw Error('请先选择购物车');
+ if(cartShareLink&&Date.now()<cartShareExpiry-30000)return cartShareLink;
+ if(cartSharePending)return cartSharePending;
+ const itemId=cartShareSelection.id;
+ const p=(async()=>{
+  if(cartData?.id===itemId){
+   if((cartPending.size||cartSaveJob)&&!(await cartFlush()))throw Error('数量尚未保存');
+   if(!(await cartSaveNote())||!(await cartSaveEditingNote()))throw Error('备注尚未保存');
+  }
+  const result=await post('/scanner/api/cart/share',{cart_id:itemId});
+  if(!result.guest_code||cartShareSelection?.id!==itemId)throw Error('分享已经切换，请重新选择');
+  cartShareCode=result.guest_code;
+  cartShareLink=location.origin+'/scanner/guest#v='+result.guest_code;
+  cartShareExpiry=Date.now()+8*60*60*1000;
+  $('cartShareHint').textContent='連結有效 8 小時。已產生的新連結取代之前的訪客連結。';
+  return cartShareLink;
+ })();
+ cartSharePending=p;
+ try{return await p}finally{cartSharePending=null}
+}
+async function cartShareAct(action){
+ // Opening the WhatsApp window within the click gesture avoids popup blocks.
+ const popup=action==='whatsapp'?window.open('about:blank','_blank'):null;
+ if(popup){try{popup.opener=null}catch(_){}}
+ cartShareTogglePending(true);
+ cartShareFeedback('產生客戶連結中 / Generando enlace…');
  try{
-  const d=await post('/scanner/api/cart/share',{cart_id:id});
-  if(!d.guest_code||cartData?.id!==id)throw Error('无法生成客户链接');
-  const link=location.origin+'/scanner/guest#v='+d.guest_code;
-  try{
-   await navigator.clipboard.writeText(link);
-   cartNotice('客户链接已复制 / Enlace copiado');
-  }catch(_){void xwCopyFallback('客户专属链接 / Enlace privado',link)}
- }catch(e){cartNotice(e.message,true)}
- finally{button.disabled=false}
-};
+  const url=await cartShareEnsureLink();
+  if(action==='whatsapp'){
+   const name=cartShareSelection?.name||'XINGWANG';
+   const msg='XINGWANG · '+name+'\n請查看您的選貨單 / Revise su carrito:\n'+url;
+   const wa='https://wa.me/?text='+encodeURIComponent(msg);
+   if(popup&&!popup.closed)popup.location.replace(wa);
+   else window.location.assign(wa);
+   cartShareFeedback('WhatsApp 已開啟，請選擇收件人並發送 / Seleccione el contacto y envíe');
+  }else if(action==='copy'){
+   try{await navigator.clipboard.writeText(url);cartShareFeedback('連結已複製 / Enlace copiado')}
+   catch(_){void xwCopyFallback('客戶專屬連結 / Enlace privado',url);cartShareFeedback('請複製連結 / Copiar enlace')}
+  }else if(action==='qr'){
+   if(!cartShareQrLoaded){
+    const result=await post('/scanner/api/cart/share-qr',{code:cartShareCode});
+    if(!result.svg_base64)throw Error('QR 无法产生');
+    $('cartShareQrImage').src='data:image/svg+xml;base64,'+result.svg_base64;
+    cartShareQrLoaded=true;
+   }
+   $('cartShareQrBox').classList.remove('hidden');
+   cartShareFeedback('請讓客戶用自己的手機掃描 / Escanear con móvil del cliente');
+  }
+ }catch(e){
+  if(popup&&!popup.closed)popup.close();
+  cartShareFeedback(e.message||'分享失敗 / Error');
+ }finally{cartShareTogglePending(false)}
+}
+$('cartShareCustomer').onclick=()=>{if(cartData)cartShareOpen(cartData)};
+$('cartShareClose').onclick=cartShareClose;
+$('cartSharePanel').querySelector('.cart-share-shade').onclick=cartShareClose;
+$('cartShareWhatsApp').onclick=()=>void cartShareAct('whatsapp');
+$('cartShareCopy').onclick=()=>void cartShareAct('copy');
+$('cartShareQr').onclick=()=>void cartShareAct('qr');
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&!$('cartSharePanel').classList.contains('hidden')){
+  e.preventDefault();cartShareClose();
+ }
+});
 $('guestLoginBtn').onclick=async()=>{
  const code=$('guestCode').value.trim(),button=$('guestLoginBtn');button.disabled=true;
  try{
