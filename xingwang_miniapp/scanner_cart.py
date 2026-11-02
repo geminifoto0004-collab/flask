@@ -1171,6 +1171,32 @@ async def cart_state(request: Request):
             conn.close()
 
 
+@router.post("/scanner/api/cart/share-qr")
+async def cart_share_qr(request: Request):
+    """Render a customer QR locally; never send the access code to a QR site."""
+    staff._check_origin(request)
+    staff._require(request)
+    body = await _body(request)
+    code = body.get("code")
+    if not isinstance(code, str) or not re.fullmatch(r"[0-9]{8}", code):
+        raise HTTPException(400, "Invalid customer share code")
+    try:
+        import base64
+        import qrcode
+        import qrcode.image.svg
+
+        url = "https://xingwang-stock.onrender.com/scanner/guest#v=" + code
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
+                           box_size=5, border=4)
+        qr.add_data(url)
+        qr.make(fit=True)
+        svg = qr.make_image(image_factory=qrcode.image.svg.SvgPathImage).to_string()
+        return JSONResponse({"ok": True, "svg_base64": base64.b64encode(svg).decode("ascii")},
+                            headers={"Cache-Control": "no-store"})
+    except Exception as exc:
+        _error_safe(exc, "SHARE_QR")
+
+
 @router.post("/scanner/api/cart/share")
 async def cart_share(request: Request):
     staff._check_origin(request)
