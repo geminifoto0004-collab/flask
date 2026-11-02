@@ -413,6 +413,16 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
 #cartWorkspace .cart-item-note-editor input{flex:1;min-width:0;box-sizing:border-box;height:40px;padding:0 10px;border:1px solid var(--stroke);border-radius:9px;font:inherit;font-size:13px;color:var(--ink);background:#fff}
 #cartWorkspace .cart-item-note-editor input:focus-visible{outline:2px solid var(--wine);outline-offset:1px}
 #cartWorkspace .cart-item-note-editor button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;border:0;border-radius:9px;background:var(--wine);color:white}
+@media(max-width:949px){
+ /* Retain the familiar selected-card mobile treatment until phone QA. */
+ #cartWorkspace #cartProducts .cart-line{min-height:66px;padding:8px 10px}
+ #cartWorkspace #cartProducts .cart-line.selected{background:#F6E8EC;border-radius:7px}
+ #cartWorkspace .cart-line-title{min-width:96px}
+ #cartWorkspace .cart-qty-controls{gap:3px}
+ #cartWorkspace .cart-qty-controls button{width:36px;min-width:36px;height:40px}
+ #cartWorkspace .cart-qty-controls input.cart-qty{width:40px;min-width:40px;height:40px}
+ #cartWorkspace .cart-qty-controls button.cart-item-note-button{width:36px;min-width:36px}
+}
 @media(min-width:950px){
  #cartWorkspace #cartProducts{background:#fff}
  #cartWorkspace #cartProducts .cart-line:not(.insufficient):nth-of-type(odd){background:#FAF7F8}
