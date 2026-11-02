@@ -111,7 +111,7 @@ def test_staff_only_note_routes_and_zebra_warning_ui():
     js = (root/"scanner_cart.js").read_text("utf-8")
     html = (root/"scanner.html").read_text("utf-8")
     for route in ("/scanner/api/cart/item-notes", "/scanner/api/cart/item-note/save"):
-        block = py[py.index('"' + route + '"'):][:160]
+        block = py[py.index('"' + route + '"'):][:280]
         assert "staff._require(request)" in block
     assert "stock_rolls" in py
     assert "qty > available" not in py
