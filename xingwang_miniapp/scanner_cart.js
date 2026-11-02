@@ -348,7 +348,7 @@ function cartApplyRole(){
 async function cartBootstrap(role,guestId){
  const changed=role!==cartRole;
  cartRole=role;
- if(changed){cartClearTimer();cartPending.clear();cartSending.clear();cartSaveError=false;cartData=null;cartSearch=null;cartRecent=[];lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;cartItemNotes.clear();cartItemDrafts.clear();cartEditingSku=null;cartItemNotesId=null;}
+ if(changed){cartCreateEditorOpen=false;cartClearTimer();cartPending.clear();cartSending.clear();cartSaveError=false;cartData=null;cartSearch=null;cartRecent=[];lastQrCode='';cartView='pick';cartSkuSearch='';cartCameraOpen=false;cartSummaryOpen=false;cartItemNotes.clear();cartItemDrafts.clear();cartEditingSku=null;cartItemNotesId=null;}
  cartApplyRole();
  if(role==='guest'){
   // Drop staff-only query results when a company phone becomes a guest device.
