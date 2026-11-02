@@ -621,7 +621,7 @@ async function cartFlush(){
    if(cartData?.id===cartId){
     for(const [sku,qty] of submission)if(!cartPending.has(sku))cartPending.set(sku,qty);
     cartSaveError=true;
-    cartNotice(e.status===409?'数据已变动或库存不足 / Datos cambiados o stock insuficiente':e.message,true);
+    cartNotice(e.status===409?'数据已变动，请刷新 / Datos modificados, actualiza':e.message,true);
    }
    return false;
   }finally{
@@ -678,6 +678,7 @@ async function cartSetState(){
 
 async function cartLookup(input){
  if(mode!=='cart'||!cartData||cartLookupPending)return;
+ if(!(await cartSaveEditingNote()))return;
  const code=normalizeProductCode(input);
  if(!valid(code)){cartNotice('无效二维码或编号 / Código QR o SKU no válido',true);return}
  cartLookupPending=true;busy=true;$('queryBtn').disabled=true;
