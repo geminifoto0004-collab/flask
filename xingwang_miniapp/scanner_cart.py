@@ -908,7 +908,7 @@ async def public_start_add(request: Request):
     reply.set_cookie(GUEST_COOKIE, _sign_session(cart["id"],generation,int(time.time())+ttl),
                      max_age=ttl,httponly=True,secure=True,samesite="lax",
                      path="/scanner/api/cart")
-    reply.delete_cookie(START_COOKIE, path="/scanner/api/cart",
+    reply.delete_cookie(START_COOKIE, path="/scanner",
                         secure=True,httponly=True,samesite="lax")
     return reply
 
