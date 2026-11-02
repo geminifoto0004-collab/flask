@@ -971,3 +971,110 @@ $('guestCode').addEventListener('keydown',e=>{if(e.key==='Enter')$('guestLoginBt
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&cartPending.size)void cartFlush()});
 window.addEventListener('pagehide',()=>{if(cartPending.size&&!cartSaveJob)void cartFlush()});
 window.cartEnsureSaved=cartFlush;
+
+/* PUBLIC START. Fixed QR opens the existing Scanner, but no cart record is
+   created until the first positive SKU quantity is actually selected. */
+let publicStartBusy=false,publicStartCamera=null,publicStartScanning=false;
+function publicStartStatus(message){$('cartPublicMessage').textContent=message||''}
+function publicStartReady(){
+ if(cartRole==='guest')return;
+ $('cartPublicItems').replaceChildren();
+ $('cartPublicCode').value='';
+ publicStartStatus('掃描或輸入系列 / Escanear o buscar una serie');
+}
+async function publicStartFind(input){
+ if(publicStartBusy)return;
+ const code=String(input||$('cartPublicCode').value).trim().toUpperCase();
+ if(!/^[A-Z0-9][A-Z0-9_.()/-]{1,39}$/.test(code)){
+  publicStartStatus('請輸入有效系列或 SKU / Introduzca una serie válida');return;
+ }
+ $('cartPublicCode').value=code;publicStartBusy=true;
+ $('cartPublicFind').disabled=true;
+ publicStartStatus('查詢中 / Buscando…');
+ try{
+  const data=await post('/scanner/api/cart/start/lookup',{code});
+  const host=$('cartPublicItems');host.replaceChildren();
+  const items=Array.isArray(data.variants)?data.variants:[];
+  for(const v of items){
+   const row=document.createElement('div');row.className='xw-public-product';
+   const info=document.createElement('div');info.className='xw-public-product-info';
+   const title=document.createElement('strong');title.textContent=v.code;
+   const stock=document.createElement('small');
+   stock.textContent=v.stock_rolls==null?'庫存未明 / Stock —':'庫存 '+v.stock_rolls+' / Stock';
+   info.append(title,stock);
+   const controls=document.createElement('div');controls.className='xw-public-product-qty';
+   const field=document.createElement('input');field.type='text';field.inputMode='numeric';
+   field.value='0';field.maxLength=4;field.setAttribute('aria-label',v.code+' 客戶需要的匹數');
+   const minus=document.createElement('button');minus.type='button';
+   minus.textContent='−';minus.disabled=true;
+   minus.setAttribute('aria-label',v.code+' 減少');
+   const plus=document.createElement('button');plus.type='button';plus.textContent='+';
+   plus.setAttribute('aria-label',v.code+' 加入選貨單');
+   async function commit(n){
+    if(!Number.isInteger(n)||n<1||n>9999){publicStartStatus('匹數必須為 1–9999 / Rollos: 1–9999');return}
+    field.value=String(n);
+    await publicStartAdd(v.code,n);
+   }
+   plus.onclick=()=>void commit(Math.min(9999,(Number(field.value)||0)+1));
+   field.onchange=()=>{if(!/^\d+$/.test(field.value.trim())){field.value='0';return}
+    const n=Number(field.value);
+    if(n>0)void commit(n);
+   };
+   field.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();field.blur()}};
+   controls.append(minus,field,plus);row.append(info,controls);host.append(row);
+  }
+  publicStartStatus(items.length+' 個 SKU · 點 + 開始選貨 / Pulse + para empezar');
+ }catch(e){
+  publicStartStatus(e.status===401?'入口已過期，請重新掃 QR / Reabra el enlace':e.message);
+ }finally{publicStartBusy=false;$('cartPublicFind').disabled=false}
+}
+async function publicStartAdd(sku,qty){
+ if(publicStartBusy)return;
+ publicStartBusy=true;
+ $('cartPublicFind').disabled=true;
+ publicStartStatus('正在建立專屬購物車 / Creando su carrito…');
+ try{
+  // Stop only the public selection camera; SAMPLE scanner is untouched.
+  await publicStartStopCamera();
+  await post('/scanner/api/cart/start/add',{sku,qty});
+  $('cartPublicStart').classList.add('hidden');
+  await session(); // existing cartBootstrap('guest') loads the saved first item.
+ }catch(e){
+  publicStartStatus(e.status===429?'新購物車太多，請聯絡員工 / Contacte al personal':
+   e.status===401?'入口已過期，請重新掃 QR / Reabra el enlace':e.message);
+ }finally{publicStartBusy=false;$('cartPublicFind').disabled=false}
+}
+async function publicStartStopCamera(){
+ if(!publicStartCamera)return;
+ try{if(publicStartScanning)await publicStartCamera.stop()}catch(_){}
+ try{await publicStartCamera.clear()}catch(_){}
+ publicStartCamera=null;publicStartScanning=false;
+ $('cartPublicCamera').classList.add('hidden');
+ $('cartPublicCameraBtn').disabled=false;
+}
+$('cartPublicFind').onclick=()=>void publicStartFind();
+$('cartPublicCode').addEventListener('keydown',e=>{
+ if(e.key==='Enter'){e.preventDefault();void publicStartFind()}
+});
+$('cartPublicCameraBtn').onclick=async()=>{
+ if(publicStartCamera){await publicStartStopCamera();return}
+ if(typeof Html5Qrcode==='undefined'){
+  publicStartStatus('相機元件未載入，請輸入系列 / Introduzca la serie');return;
+ }
+ $('cartPublicCamera').classList.remove('hidden');
+ $('cartPublicCameraBtn').disabled=true;
+ publicStartCamera=new Html5Qrcode('cartPublicCameraReader');
+ try{
+  await publicStartCamera.start({facingMode:'environment'},
+   {fps:10,qrbox:{width:220,height:220}},decoded=>{
+    if(publicStartBusy)return;
+    const code=String(decoded||'').trim().toUpperCase();
+    if(/^[A-Z0-9][A-Z0-9_.()/-]{1,39}$/.test(code))
+     void publicStartFind(code);
+   },()=>{});
+  publicStartScanning=true;$('cartPublicCameraBtn').disabled=false;
+ }catch(e){publicStartStatus('相機無法開啟 / Cámara no disponible');
+  await publicStartStopCamera()}
+};
+$('cartPublicCameraClose').onclick=()=>void publicStartStopCamera();
+window.publicStartReady=publicStartReady;
