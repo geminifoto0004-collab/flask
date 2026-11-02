@@ -43,8 +43,9 @@ def test_temporary_cart_guest_cannot_use_scanner_staff_api():
 
 def test_cart_uses_only_snapshot_reference_not_reserved_access_write():
     code = (ROOT / "scanner_cart.py").read_text(encoding="utf-8")
-    assert "FROM xw_stock_snapshot" in code
-    assert "SELECT stock_rolls" in code
+    assert "LEFT JOIN xw_stock_snapshot" in code
+    assert "stock_rolls" in code
+    assert "qty > available" not in code
     assert "FOR UPDATE" in code
     assert "old_revision != revision" in code
     assert "xw_cart_events" in code
@@ -203,7 +204,7 @@ def test_cart_mobile_pick_review_ux_is_compact_and_role_safe():
     assert 'id="cartPickView"' in ui
     assert 'id="cartItemView" class="cc-cart-summary-sheet hidden"' in ui
     assert 'id="cartSkuFilter"' in ui
-    assert 'id="cartShareRow"' in ui  # employee code still available
+    assert 'id="cartShareRow"' not in ui  # guest code no longer shown to staff
     assert 'cart-scanner-parked' in ui  # do not close camera on review
     assert 'if(window.cartIsReviewing?.())return;' in ui
     assert "window.cartIsReviewing=()=>!cartCameraOpen" in js
@@ -233,7 +234,7 @@ def test_cc_ui_redesign_keeps_real_apis_and_camera():
     assert "await xwConfirm(" in html
     assert "window.prompt(" not in html
     assert "window.prompt(" not in js
-    assert "const name=await xwPrompt(" in js
+    assert "cartSaveListName(item,field)" in js  # inline editor, no customer modal
     assert "await xwConfirm(" in js
     assert "cartScanNow').onclick=cartScanNow;" in js
     assert "await startCamera()" in js
