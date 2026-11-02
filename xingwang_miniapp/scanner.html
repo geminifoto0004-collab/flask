@@ -1934,7 +1934,7 @@ async function xwCopyFallback(title,value){
 
 let mode='sample', reader=null, running=false, busy=false, current=null, saved=false, lastQrCode='';
 let ccResultView=null,scanBlockedCode='',scanBlockedAt=0;
-let scanQueuedCode='',scanQueuedAt=0,scanInvalidWarningAt=0;
+let scanQueuedCode='',scanQueuedAt=0;
 let scanRetryCode='',scanRetryAt=0;
 function ccReturnToScan(){
  ccResultView=null;
@@ -1948,6 +1948,21 @@ let fullKind='product',fullTab='stock',fullData=null,fullDataKind='product',full
 try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
 const normalizeProductCode=s=>String(s||'').trim().toUpperCase();
+// Accept plain product codes and the historical Flask /scan/<codigo> QR.
+// The host is parsed as data only: never fetch or navigate to the old LAN IP.
+function parseScannerQR(raw){
+ const text=String(raw||'').trim();
+ if(valid(text))return normalizeProductCode(text);
+ const match=/^https?:\/\/((?:\d{1,3}\.){3}\d{1,3})(?::(\d{1,5}))?\/scan\/([^/?#]+)\/?(?:[?#].*)?$/i.exec(text);
+ if(!match)return null;
+ if(match[1].split('.').some(part=>Number(part)>255))return null;
+ if(match[2]&&(Number(match[2])<1||Number(match[2])>65535))return null;
+ let code;
+ try{code=decodeURIComponent(match[3]);}catch(_){return null}
+ // Legacy Flask route captures one URL segment, never another path.
+ if(code.includes('/')||code.includes('\\'))return null;
+ return valid(code)?normalizeProductCode(code):null;
+}
 const skuCollator=new Intl.Collator('en',{numeric:true,sensitivity:'base'});
 const compareSkus=(a,b)=>skuCollator.compare(String(a||''),String(b||''));
 function setSampleSort(field){
@@ -2570,7 +2585,7 @@ function showResult(d){
 async function lookup(input){
  if(mode==='cart'){if(window.cartLookup)await window.cartLookup(input);return;}
  const nota=mode==='full'&&fullKind==='nota';
- const code=nota?String(input||'').trim():normalizeProductCode(input);
+ const code=nota?String(input||'').trim():(parseScannerQR(input)||normalizeProductCode(input));
  const validInput=nota?(code==='@'||/^[0-9]{1,5}$/.test(code)||code.length>=2&&code.length<=40):valid(code);
  if(!validInput){msg('查詢條件不正確，請檢查後重試','error');return}
  if(busy||mode==='admin')return;
@@ -2645,15 +2660,10 @@ $('queryBtn').onclick=()=>lookup($('code').value);
 $('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
 function onScan(raw){
  if(mode==='admin')return;
- const code=normalizeProductCode(raw);
+ const code=parseScannerQR(raw);
+ // Ignore unrelated QR content silently; keep the camera running.
+ if(!code)return;
  if(code===scanRetryCode&&Date.now()<scanRetryAt)return;
- if(!valid(code)){
-  if(Date.now()-scanInvalidWarningAt>3000){
-   scanInvalidWarningAt=Date.now();
-   msg('QR 不是商品編號，請掃描純編號 QR','error');
-  }
-  return;
- }
  if(busy){
   if(mode!=='cart'&&code!==lastQrCode&&code!==(mode==='sample'?current?.product_code:fullCode)){
    scanQueuedCode=code;scanQueuedAt=Date.now();
