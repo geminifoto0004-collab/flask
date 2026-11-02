@@ -21,7 +21,7 @@ def test_public_qr_issues_ticket_without_creating_any_cart():
     with (patch.object(staff, "_authorized", return_value=False),
           patch.object(staff, "_key", return_value=b"0"*32),
           patch.object(cart, "_db", side_effect=AssertionError("GET must never touch TiDB"))):
-        with TestClient(app) as client:
+        with TestClient(app,base_url="https://testserver") as client:
             response=client.get("/scanner/start")
     assert response.status_code==200
     assert "no-store" in response.headers["cache-control"]
@@ -34,7 +34,7 @@ def test_public_qr_issues_ticket_without_creating_any_cart():
 def test_two_scans_from_different_devices_receive_independent_tickets():
     with (patch.object(staff,"_authorized",return_value=False),
           patch.object(staff,"_key",return_value=b"1"*32)):
-        with TestClient(app) as a, TestClient(app) as b:
+        with TestClient(app,base_url="https://testserver") as a, TestClient(app,base_url="https://testserver") as b:
             a.get("/scanner/start")
             b.get("/scanner/start")
             a_ticket=a.cookies.get(cart.START_COOKIE)
@@ -55,7 +55,7 @@ def test_anonymous_lookup_does_not_create_cart():
           patch.object(cart,"_guard_query",return_value=None),
           patch.object(cart,"_lookup",return_value=stock),
           patch.object(cart,"_create_public_cart",side_effect=AssertionError("must not create"))):
-        with TestClient(app) as client:
+        with TestClient(app,base_url="https://testserver") as client:
             client.get("/scanner/start")
             res=client.post("/scanner/api/cart/start/lookup",json={"code":"12-225"})
     assert res.status_code==200
@@ -74,7 +74,7 @@ def test_first_positive_sku_selection_creates_scoped_guest_cookie():
           patch.object(staff,"_key",return_value=b"1"*32),
           patch.object(staff,"_check_origin",return_value=None),
           patch.object(cart,"_create_public_cart",side_effect=fake_create)):
-        with TestClient(app) as client:
+        with TestClient(app,base_url="https://testserver") as client:
             client.get("/scanner/start")
             before=client.cookies.get(cart.START_COOKIE)
             res=client.post("/scanner/api/cart/start/add",json={"sku":"12-225D-1","qty":10})
