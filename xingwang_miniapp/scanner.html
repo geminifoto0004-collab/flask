@@ -2066,6 +2066,7 @@ async function post(path,body={}){
 }
 async function session(){
  const guestEntry=location.pathname==='/scanner/guest';
+ const publicEntry=location.pathname==='/scanner/start';
  let guestLinkError='';
  if(guestEntry){
   document.body.classList.add('xw-guest-entry');
@@ -2084,7 +2085,15 @@ async function session(){
   const d=await (await fetch('/scanner/api/session',{credentials:'same-origin',cache:'no-store'})).json();
   const c=await (await fetch('/scanner/api/cart/session',{credentials:'same-origin',cache:'no-store'})).json();
   // The dedicated guest route must never render staff UI even if cookies conflict.
-  const role=guestEntry?(c.role==='guest'?'guest':'none'):(d.signed_in?'staff':c.role==='guest'?'guest':'none');
+  const role=(guestEntry||publicEntry)?(c.role==='guest'?'guest':'none'):(d.signed_in?'staff':c.role==='guest'?'guest':'none');
+  $('cartPublicStart').classList.toggle('hidden',!(publicEntry&&role==='none'));
+  if(publicEntry&&role==='none'){
+   $('login').classList.add('hidden');$('app').classList.add('hidden');
+   $('logout').classList.add('hidden');$('adminLink').classList.add('hidden');
+   $('cartNav').classList.add('hidden');
+   if(window.publicStartReady)window.publicStartReady();
+   return;
+  }
   const signed=role!=='none';
   $('login').classList.toggle('hidden',signed);
   $('app').classList.toggle('hidden',!signed);
