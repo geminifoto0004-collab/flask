@@ -1948,10 +1948,26 @@ async function post(path,body={}){
  return data
 }
 async function session(){
+ const guestEntry=location.pathname==='/scanner/guest';
+ let guestLinkError='';
+ if(guestEntry){
+  document.body.classList.add('xw-guest-entry');
+  ccLoginMode('guest');
+  const token=new URLSearchParams(location.hash.slice(1)).get('v');
+  // Remove any access code from URL/history before a request or navigation.
+  if(location.hash)history.replaceState(null,'',location.pathname);
+  if(token){
+   try{
+    if(!/^[0-9]{8}$/.test(token))throw Error('无效客户链接 / Enlace inválido');
+    await post('/scanner/api/cart/guest-login',{code:token});
+   }catch(e){guestLinkError=e.message||'客户链接已失效 / Enlace caducado'}
+  }
+ }
  try{
   const d=await (await fetch('/scanner/api/session',{credentials:'same-origin',cache:'no-store'})).json();
   const c=await (await fetch('/scanner/api/cart/session',{credentials:'same-origin',cache:'no-store'})).json();
-  const role=d.signed_in?'staff':c.role==='guest'?'guest':'none';
+  // The dedicated guest route must never render staff UI even if cookies conflict.
+  const role=guestEntry?(c.role==='guest'?'guest':'none'):(d.signed_in?'staff':c.role==='guest'?'guest':'none');
   const signed=role!=='none';
   $('login').classList.toggle('hidden',signed);
   $('app').classList.toggle('hidden',!signed);
@@ -1961,7 +1977,12 @@ async function session(){
   if(role==='staff' && mode==='admin'){setMode('admin');}
   if(role==='staff' && mode==='sample')void checkFreshness();
   if(window.cartBootstrap)await window.cartBootstrap(role,c.cart_id);
-  if(!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
+  if(guestEntry){
+   ccLoginMode('guest');
+   $('ccLoginStaff').classList.add('hidden');
+   if(guestLinkError)$('loginMessage').textContent=guestLinkError;
+  }else $('ccLoginStaff').classList.remove('hidden');
+  if(!guestEntry&&!d.configured)$('loginMessage').textContent='管理員尚未設定登入碼';
  }catch(e){$('login').classList.remove('hidden');$('loginMessage').textContent='連線失敗：'+e.message}
 }
 $('loginBtn').onclick=async()=>{let b=$('loginBtn');b.disabled=true;try{await post('/scanner/api/login',{passcode:$('passcode').value});$('passcode').value='';await session()}catch(e){$('loginMessage').textContent=e.message}finally{b.disabled=false}};
