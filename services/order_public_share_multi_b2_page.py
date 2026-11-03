@@ -528,7 +528,9 @@ def _assets_owned_by_customer(customer_key):
 
 @b2_test_bp.before_app_request
 def _order_public_share_multi_b2_page():
-    if request.method != 'GET':
+    # Flask GET routes also accept HEAD. Use the same fast, read-only path so
+    # mobile preview probes do not fall through to the legacy DB/schema path.
+    if request.method not in ('GET', 'HEAD'):
         return None
     path = request.path or ''
     if not path.startswith('/share/') or path.startswith('/share/test'):

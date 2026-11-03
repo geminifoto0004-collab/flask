@@ -475,46 +475,73 @@ def _reconcile_once(source_target=None):
 
 
 def _worker():
-    # Let Render bind its HTTP port and pass startup health checks before the
-    # standby-repair worker opens extra TiDB connections. Local processes keep the
-    # shorter delay for faster repair.
+    # Keep standby repair outside the HTTP request path. In particular, a
+    # permanently divergent standby (preserved rows not present on the active
+    # DB) must not trigger another full-table scan every ten minutes.
     import os
     time.sleep(30.0 if (os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_NAME')) else 4.0)
     event = cloud_mirror_dirty_event()
     first = True
     last_pass = 0.0
+    last_completed_versions = None
+    failures = 0
+    next_retry_at = 0.0
     while True:
         if not first:
             event.wait(timeout=600.0)
-        if not first:
-            remaining = 300 - (time.monotonic() - last_pass)
+            now = time.monotonic()
+            remaining = max(300.0 - (now - last_pass), next_retry_at - now)
             if remaining > 0:
-                time.sleep(min(remaining, 30))
+                time.sleep(min(remaining, 30.0))
                 continue
+
         dirty = event.is_set()
         was_first = first
         first = False
         event.clear()
         try:
             if not dirty and not was_first:
-                # The first pass repairs preexisting drift. After that, two equal
-                # stream versions mean no write was missed. Free TiDB instances
-                # should not copy every ORDER row every five minutes just to check.
+                # A successful pass already reconciled every row possible
+                # without deleting standby-only audit records. Their presence
+                # is expected to keep integrity.verified=False. Versions are
+                # the cheap change detector; do not reread entire tables.
                 versions = (_mirror_version('TIDB1'), _mirror_version('TIDB2'))
+                if (
+                    last_completed_versions is not None
+                    and all(version is not None for version in versions)
+                    and versions == last_completed_versions
+                ):
+                    continue
                 if versions[0] is not None and versions[0] == versions[1] and versions[0] > 0:
                     import tidb_integrity
                     prior = tidb_integrity.snapshot()
-                    if prior.get('verified') and prior.get('versions') == dict(zip(('TIDB1','TIDB2'), versions)):
+                    if prior.get('verified') and prior.get('versions') == dict(zip(('TIDB1', 'TIDB2'), versions)):
                         tidb_integrity.publish(prior, tidb_integrity.generation())
                         continue
+
             last_pass = time.monotonic()
             reconcile_once()
             from services.order_sync_integrity import verify_once
             verify_once()
+            # Capture versions only after BOTH steps finish. If a new source
+            # write arrives during repair, its dirty signal forces a new pass.
+            checked = (_mirror_version('TIDB1'), _mirror_version('TIDB2'))
+            last_completed_versions = checked if all(v is not None for v in checked) else None
+            failures = 0
+            next_retry_at = 0.0
         except Exception as exc:
-            print(f'[WARN] TiDB cloud reconcile pending: {type(exc).__name__}: {exc}')
+            # A broken TiDB connection must not hammer both databases with
+            # repeated full scans or compete with the public share endpoint.
+            # Back off from five to thirty minutes; keep repair pending.
+            last_completed_versions = None
+            failures = min(failures + 1, 10)
+            delay = min(1800.0, 300.0 * (2 ** (failures - 1)))
+            next_retry_at = time.monotonic() + delay
+            print(
+                f'[WARN] TiDB cloud reconcile pending: {type(exc).__name__}: {exc}; '
+                f'retry_not_before_seconds={int(delay)}'
+            )
             event.set()
-            time.sleep(60.0)
 
 
 def install():
