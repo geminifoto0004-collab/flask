@@ -3,16 +3,24 @@
 <div class="automation-top">
   <div>
     <div class="automation-title"><i class="fas fa-robot"></i> 自動化中心</div>
-    <div class="automation-sub">統一管理 Telegram Bot 與爬蟲通知。以後新增 Bot 不需要再建立另一套登入或另一個 Render。</div>
+    <div class="automation-sub">{% if crawler_only %}0005 · 爬蟲專用自動化中心，與 0004 ORDER 分開運行。{% else %}統一管理 Telegram Bot 與爬蟲通知。以後新增 Bot 不需要再建立另一套登入或另一個 Render。{% endif %}</div>
   </div>
 </div>
 
 {% if message %}<div class="hub-notice">{{ message }}</div>{% endif %}
+{% if crawler_setup_mode %}
+<div class="hub-notice hub-warn">
+  <strong>目前為安全設定模式，尚未啟用爬蟲。</strong>
+  {% if database_configured %}TiDB3 連線網址已填寫，但尚未初始化及驗證。{% else %}尚未提供獨立 TiDB3 連線。{% endif %}
+  登入和管理網頁已可使用；Telegram、Aduana、貨櫃爬蟲及資料同步均未啟動。
+  完成資料表與權限遷移並測試後，才把 Render 環境變數 <code>CRAWLER_SETUP_MODE</code> 設為 <code>0</code>。
+</div>
+{% endif %}
 {% if not settings.MASTER_KEY %}<div class="hub-notice hub-warn"><b>尚未設定 AUTOMATION_MASTER_KEY。</b> 在 Render 設定一次長密鑰後，就能從這裡安全保存所有 Bot Token。</div>{% endif %}
 
 <div class="automation-grid">
-  <div class="automation-stat"><span class="muted">Telegram Bots</span><b>{{ bots|length }}</b></div>
-  <div class="automation-stat"><span class="muted">啟用中</span><b>{{ bots|selectattr('enabled')|list|length }}</b></div>
+  <div class="automation-stat"><span class="muted">Telegram Bots</span><b>{{ '未讀取' if crawler_setup_mode else bots|length }}</b></div>
+  <div class="automation-stat"><span class="muted">啟用中</span><b>{{ '已停用' if crawler_setup_mode else bots|selectattr('enabled')|list|length }}</b></div>
   <div class="automation-stat"><span class="muted">自動化模組</span><b>{{ plugins|length }}</b></div>
   <div class="automation-stat"><span class="muted">Render 公開網址</span><b style="font-size:15px">{{ '正常' if settings.PUBLIC_BASE_URL else '未取得' }}</b></div>
 </div>
@@ -26,7 +34,8 @@
         <div class="plugin-name">{{ p.label }}</div>
         <div class="plugin-key">{{ p.key }} · Telegram Plugin</div>
       </div>
-      {% if p.admin_path %}<a class="hub-btn hub-secondary" href="{{ p.admin_path }}">管理</a>{% endif %}
+      {% if crawler_setup_mode %}<span class="hub-badge hub-off">等待啟用</span>
+      {% elif p.admin_path %}<a class="hub-btn hub-secondary" href="{{ p.admin_path }}">管理</a>{% endif %}
     </div>
     {% else %}
     <div class="muted">目前沒有已註冊的自動化模組。</div>
@@ -34,6 +43,7 @@
   </div>
 </div>
 
+{% if not crawler_only %}
 <div class="automation-card">
   <h3 style="margin-top:0">🔐 中國同事 · 客戶分享查詢</h3>
   <p class="muted">中國同事無需 Telegram，也不用公司主系統帳號密碼。專用密碼雜湊保存於 TiDB，登入後與 Telegram 共用同一套搜尋、開啟及複製功能。</p>
@@ -42,7 +52,9 @@
     <a class="hub-btn hub-secondary" href="/cn/order-links" target="_blank" rel="noopener noreferrer">查看中國同事入口</a>
   </div>
 </div>
+{% endif %}
 
+{% if not crawler_setup_mode %}
 <div class="automation-card">
   <h3 style="margin-top:0">＋ 新增 Telegram Bot</h3>
   <form class="hub-form hub-formgrid" method="post" action="{{ url_for('.admin_create_bot') }}">
@@ -83,4 +95,10 @@
   </table>
   {% endif %}
 </div>
+{% else %}
+<div class="automation-card">
+  <h3 style="margin-top:0">Telegram Bots</h3>
+  <p class="muted">此處將在啟用獨立 TiDB3 後顯示原本的 Telegram Bot 管理功能。現在不會產生 Webhook 或連線到 ORDER。</p>
+</div>
+{% endif %}
 {% endblock %}

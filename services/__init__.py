@@ -6,165 +6,171 @@ Services 包初始化
 from .email_service import send_verification_code, verify_code
 from .user_service import create_user, verify_password, reset_password
 
-# ORDER public-share fast paths.
-#
-# The legacy cloud service is correct but some read paths use N+1 queries. Large
-# customers (dozens of orders, workflows and history rows) can therefore exceed the
-# Render request timeout. Keep the storage schema/business behaviour unchanged and
-# replace only the two expensive public-share read/create paths with bounded-query
-# implementations.
-from . import order_cloud_service as _order_cloud_service
+# The crawler process imports individual services (for ITI, monitoring and
+# administration). Importing this package must not activate ORDER/B2 patches,
+# create ORDER cloud tables, or start ORDER background workers.
+import os as _os
+
+if _os.environ.get("XINGWANG_SERVICE_ROLE", "").strip().upper() != "CRAWLER":
+    # ORDER public-share fast paths.
+    #
+    # The legacy cloud service is correct but some read paths use N+1 queries. Large
+    # customers (dozens of orders, workflows and history rows) can therefore exceed the
+    # Render request timeout. Keep the storage schema/business behaviour unchanged and
+    # replace only the two expensive public-share read/create paths with bounded-query
+    # implementations.
+    from . import order_cloud_service as _order_cloud_service
 
 
-def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, permanent=False,
-                            history_scope='current', include_cancelled=False, status_filter_mode='simple',
-                            show_pdf_pages=True, allow_report_pdf_download=False, show_images=True,
-                            show_workflow_images=True, requested_token=None):
-    from .order_share_create_control import create_live_share
-    return create_live_share(
-        customer_key, source_site=source_site, expires_hours=expires_hours, permanent=permanent,
-        history_scope=history_scope, include_cancelled=False, status_filter_mode=status_filter_mode,
-        show_pdf_pages=show_pdf_pages, allow_report_pdf_download=allow_report_pdf_download,
-        show_images=show_images, show_workflow_images=show_workflow_images, requested_token=requested_token,
-    )
-
-
-def _fast_get_customer_space(customer_key):
-    """Load one public customer space in a fixed number of SQL queries.
-
-    Legacy get_customer_space() selected order numbers and then called get_order()
-    once per order; get_order() in turn queried history once per workflow. A customer
-    with 42 orders could therefore produce hundreds of TiDB round-trips. This version
-    fetches customer, orders, workflows and history in four indexed queries and groups
-    rows in Python while preserving the original response shape.
-    """
-    customer_key = str(customer_key or '').strip()
-    if not customer_key:
-        return None
-
-    conn = _order_cloud_service.get_db_connection()
-    cur = _order_cloud_service.get_cursor(conn)
-    try:
-        cur.execute(
-            "SELECT customer_key, customer_name, updated_at "
-            "FROM cloud_customers WHERE customer_key=? AND active=TRUE LIMIT 1",
-            (customer_key,),
+    def _fast_create_live_share(customer_key, source_site=None, expires_hours=24, permanent=False,
+                                history_scope='current', include_cancelled=False, status_filter_mode='simple',
+                                show_pdf_pages=True, allow_report_pdf_download=False, show_images=True,
+                                show_workflow_images=True, requested_token=None):
+        from .order_share_create_control import create_live_share
+        return create_live_share(
+            customer_key, source_site=source_site, expires_hours=expires_hours, permanent=permanent,
+            history_scope=history_scope, include_cancelled=False, status_filter_mode=status_filter_mode,
+            show_pdf_pages=show_pdf_pages, allow_report_pdf_download=allow_report_pdf_download,
+            show_images=show_images, show_workflow_images=show_workflow_images, requested_token=requested_token,
         )
-        row = cur.fetchone()
-        if not row:
+
+
+    def _fast_get_customer_space(customer_key):
+        """Load one public customer space in a fixed number of SQL queries.
+
+        Legacy get_customer_space() selected order numbers and then called get_order()
+        once per order; get_order() in turn queried history once per workflow. A customer
+        with 42 orders could therefore produce hundreds of TiDB round-trips. This version
+        fetches customer, orders, workflows and history in four indexed queries and groups
+        rows in Python while preserving the original response shape.
+        """
+        customer_key = str(customer_key or '').strip()
+        if not customer_key:
             return None
-        customer = _order_cloud_service.get_row_dict(row, cur)
 
-        cur.execute(
-            """SELECT order_number, customer_key, customer_name, order_status, order_date,
-                      expected_delivery_date, production_type, product_name, product_code,
-                      pattern_code, quantity, active, source_site, updated_at
-               FROM cloud_orders
-               WHERE customer_key=? AND active=TRUE
-               ORDER BY order_date DESC, order_number DESC""",
-            (customer_key,),
-        )
-        orders = [_order_cloud_service.get_row_dict(r, cur) for r in cur.fetchall()]
-        if not orders:
-            return {'customer': customer, 'orders': []}
-
-        by_order = {str(order.get('order_number') or ''): order for order in orders}
-        for order in orders:
-            order['workflows'] = []
-
-        cur.execute(
-            """SELECT w.workflow_key, w.workflow_number, w.order_number, w.workflow_type,
-                      w.status, w.production_type, w.product_name, w.product_code,
-                      w.quantity, w.expected_delivery_date, w.last_status_change_date,
-                      w.draft_date, w.sort_order, w.active, w.updated_at
-               FROM cloud_workflows w
-               INNER JOIN cloud_orders o ON o.order_number=w.order_number
-               WHERE o.customer_key=? AND o.active=TRUE AND w.active=TRUE
-               ORDER BY w.order_number, w.sort_order, w.workflow_key""",
-            (customer_key,),
-        )
-        workflows = [_order_cloud_service.get_row_dict(r, cur) for r in cur.fetchall()]
-        by_workflow = {}
-        for wf in workflows:
-            wf['timeline'] = []
-            wf_key = str(wf.get('workflow_key') or '')
-            if wf_key:
-                by_workflow[wf_key] = wf
-            parent = by_order.get(str(wf.get('order_number') or ''))
-            if parent is not None:
-                parent['workflows'].append(wf)
-
-        if by_workflow:
+        conn = _order_cloud_service.get_db_connection()
+        cur = _order_cloud_service.get_cursor(conn)
+        try:
             cur.execute(
-                """SELECT h.history_key, h.workflow_key, h.order_number, h.status,
-                          h.action_date, h.sort_order
-                   FROM cloud_workflow_history h
-                   INNER JOIN cloud_orders o ON o.order_number=h.order_number
-                   WHERE o.customer_key=? AND o.active=TRUE AND h.active=TRUE
-                   ORDER BY h.order_number, h.workflow_key, h.sort_order,
-                            h.action_date, h.history_key""",
+                "SELECT customer_key, customer_name, updated_at "
+                "FROM cloud_customers WHERE customer_key=? AND active=TRUE LIMIT 1",
                 (customer_key,),
             )
-            for r in cur.fetchall():
-                item = _order_cloud_service.get_row_dict(r, cur)
-                parent = by_workflow.get(str(item.get('workflow_key') or ''))
+            row = cur.fetchone()
+            if not row:
+                return None
+            customer = _order_cloud_service.get_row_dict(row, cur)
+
+            cur.execute(
+                """SELECT order_number, customer_key, customer_name, order_status, order_date,
+                          expected_delivery_date, production_type, product_name, product_code,
+                          pattern_code, quantity, active, source_site, updated_at
+                   FROM cloud_orders
+                   WHERE customer_key=? AND active=TRUE
+                   ORDER BY order_date DESC, order_number DESC""",
+                (customer_key,),
+            )
+            orders = [_order_cloud_service.get_row_dict(r, cur) for r in cur.fetchall()]
+            if not orders:
+                return {'customer': customer, 'orders': []}
+
+            by_order = {str(order.get('order_number') or ''): order for order in orders}
+            for order in orders:
+                order['workflows'] = []
+
+            cur.execute(
+                """SELECT w.workflow_key, w.workflow_number, w.order_number, w.workflow_type,
+                          w.status, w.production_type, w.product_name, w.product_code,
+                          w.quantity, w.expected_delivery_date, w.last_status_change_date,
+                          w.draft_date, w.sort_order, w.active, w.updated_at
+                   FROM cloud_workflows w
+                   INNER JOIN cloud_orders o ON o.order_number=w.order_number
+                   WHERE o.customer_key=? AND o.active=TRUE AND w.active=TRUE
+                   ORDER BY w.order_number, w.sort_order, w.workflow_key""",
+                (customer_key,),
+            )
+            workflows = [_order_cloud_service.get_row_dict(r, cur) for r in cur.fetchall()]
+            by_workflow = {}
+            for wf in workflows:
+                wf['timeline'] = []
+                wf_key = str(wf.get('workflow_key') or '')
+                if wf_key:
+                    by_workflow[wf_key] = wf
+                parent = by_order.get(str(wf.get('order_number') or ''))
                 if parent is not None:
-                    parent['timeline'].append(item)
+                    parent['workflows'].append(wf)
 
-        return {'customer': customer, 'orders': orders}
-    finally:
-        conn.close()
+            if by_workflow:
+                cur.execute(
+                    """SELECT h.history_key, h.workflow_key, h.order_number, h.status,
+                              h.action_date, h.sort_order
+                       FROM cloud_workflow_history h
+                       INNER JOIN cloud_orders o ON o.order_number=h.order_number
+                       WHERE o.customer_key=? AND o.active=TRUE AND h.active=TRUE
+                       ORDER BY h.order_number, h.workflow_key, h.sort_order,
+                                h.action_date, h.history_key""",
+                    (customer_key,),
+                )
+                for r in cur.fetchall():
+                    item = _order_cloud_service.get_row_dict(r, cur)
+                    parent = by_workflow.get(str(item.get('workflow_key') or ''))
+                    if parent is not None:
+                        parent['timeline'].append(item)
+
+            return {'customer': customer, 'orders': orders}
+        finally:
+            conn.close()
 
 
-_order_cloud_service.create_live_share = _fast_create_live_share
-_order_cloud_service.get_customer_space = _fast_get_customer_space
+    _order_cloud_service.create_live_share = _fast_create_live_share
+    _order_cloud_service.get_customer_space = _fast_get_customer_space
 
-# Register the protected short-lived direct-B2 upload signer on b2_test_bp before
-# app.py registers that blueprint. No B2 credential leaves Render.
-from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
+    # Register the protected short-lived direct-B2 upload signer on b2_test_bp before
+    # app.py registers that blueprint. No B2 credential leaves Render.
+    from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 
-# Admin-only TiDB-indexed B2 image management; B2 credentials stay on Render.
-from . import order_cloud_asset_admin as _order_cloud_asset_admin  # noqa: E402,F401
+    # Admin-only TiDB-indexed B2 image management; B2 credentials stay on Render.
+    from . import order_cloud_asset_admin as _order_cloud_asset_admin  # noqa: E402,F401
 
-# Compatibility module + multi-B2 extension registration. Its legacy thumbnail
-# upload endpoint is hard-disabled: ORDER image bytes never pass through Render.
-from . import order_cloud_proxy_thumb as _order_cloud_proxy_thumb  # noqa: E402,F401
+    # Compatibility module + multi-B2 extension registration. Its legacy thumbnail
+    # upload endpoint is hard-disabled: ORDER image bytes never pass through Render.
+    from . import order_cloud_proxy_thumb as _order_cloud_proxy_thumb  # noqa: E402,F401
 
-# Intercept public ORDER share routes before the legacy handlers: persist each link's
-# scope, filter old/cancelled rows per token, serve cached thumbnails, and redirect
-# authorized WEB-image reads directly to short-lived private B2 URLs.
-from . import order_public_share_fast as _order_public_share_fast  # noqa: E402,F401
+    # Intercept public ORDER share routes before the legacy handlers: persist each link's
+    # scope, filter old/cancelled rows per token, serve cached thumbnails, and redirect
+    # authorized WEB-image reads directly to short-lived private B2 URLs.
+    from . import order_public_share_fast as _order_public_share_fast  # noqa: E402,F401
 
-# Keep the chunked full-mirror finalize HTTP request short. Expensive old-table cleanup
-# is deliberately deferred so Render/Gunicorn does not terminate finalize with an empty 502.
-from . import order_full_mirror_finalize_fast as _order_full_mirror_finalize_fast  # noqa: E402,F401
+    # Keep the chunked full-mirror finalize HTTP request short. Expensive old-table cleanup
+    # is deliberately deferred so Render/Gunicorn does not terminate finalize with an empty 502.
+    from . import order_full_mirror_finalize_fast as _order_full_mirror_finalize_fast  # noqa: E402,F401
 
-# Persistent TiDB customer-share snapshots move ORDER/asset assembly away from the
-# customer's GET request and rebuild after ORDER/image writes.
-from . import order_customer_share_snapshot as _order_customer_share_snapshot  # noqa: E402,F401
+    # Persistent TiDB customer-share snapshots move ORDER/asset assembly away from the
+    # customer's GET request and rebuild after ORDER/image writes.
+    from . import order_customer_share_snapshot as _order_customer_share_snapshot  # noqa: E402,F401
 
-# Prewarm active token hashes + persisted snapshots in Render memory. Normal customer
-# first opens can therefore validate the token and render without a TiDB round trip;
-# the persistent one-row loader remains the safe fallback.
-from . import order_customer_share_hot_cache as _order_customer_share_hot_cache  # noqa: E402,F401
+    # Prewarm active token hashes + persisted snapshots in Render memory. Normal customer
+    # first opens can therefore validate the token and render without a TiDB round trip;
+    # the persistent one-row loader remains the safe fallback.
+    from . import order_customer_share_hot_cache as _order_customer_share_hot_cache  # noqa: E402,F401
 
-# Pre-render token-neutral customer-share HTML so normal public GETs avoid repeating
-# the large Jinja render. Snapshot refreshes invalidate and rebuild the HTML variant.
-from . import order_share_render_cache as _order_share_render_cache  # noqa: E402,F401
+    # Pre-render token-neutral customer-share HTML so normal public GETs avoid repeating
+    # the large Jinja render. Snapshot refreshes invalidate and rebuild the HTML variant.
+    from . import order_share_render_cache as _order_share_render_cache  # noqa: E402,F401
 
-# Measure only the existing public-share path. This adds Server-Timing/X-Order-* headers
-# so occasional TTFB spikes can be attributed without changing data/cache behaviour.
-from . import order_share_server_timing as _order_share_server_timing  # noqa: E402,F401
+    # Measure only the existing public-share path. This adds Server-Timing/X-Order-* headers
+    # so occasional TTFB spikes can be attributed without changing data/cache behaviour.
+    from . import order_share_server_timing as _order_share_server_timing  # noqa: E402,F401
 
-# Final compatibility layer for mutable share visibility and flicker-free live updates.
-from . import order_share_visibility_live_patch as _order_share_visibility_live_patch  # noqa: E402,F401
+    # Final compatibility layer for mutable share visibility and flicker-free live updates.
+    from . import order_share_visibility_live_patch as _order_share_visibility_live_patch  # noqa: E402,F401
 
-# Final thumbnail read path: metadata first, then render aliases/preload.
-from . import order_share_thumb_metadata_patch as _order_share_thumb_metadata_patch  # noqa: E402,F401
-from . import order_share_thumb_render_patch as _order_share_thumb_render_patch  # noqa: E402,F401
+    # Final thumbnail read path: metadata first, then render aliases/preload.
+    from . import order_share_thumb_metadata_patch as _order_share_thumb_metadata_patch  # noqa: E402,F401
+    from . import order_share_thumb_render_patch as _order_share_thumb_render_patch  # noqa: E402,F401
 
-# Keep TiDB1/TiDB2 ORDER cloud metadata synchronized and repair drift in background.
-from . import order_tidb_cloud_reconcile as _order_tidb_cloud_reconcile  # noqa: E402,F401
+    # Keep TiDB1/TiDB2 ORDER cloud metadata synchronized and repair drift in background.
+    from . import order_tidb_cloud_reconcile as _order_tidb_cloud_reconcile  # noqa: E402,F401
 
 __all__ = [
     'send_verification_code',

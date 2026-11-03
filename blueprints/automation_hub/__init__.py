@@ -25,13 +25,16 @@ register_lazy(
     admin_path="/admin/automation/aduana",
 )
 
-register_lazy(
-    "ORDER_SHARES",
-    "客户分享链接",
-    "services.order_share_telegram_bot",
-    "handle_update",
-    admin_path="/admin/order-shares",
-)
+# ORDER shares must never be activated on the dedicated crawler service.
+import os as _os
+if _os.environ.get("XINGWANG_SERVICE_ROLE", "").strip().upper() != "CRAWLER":
+    register_lazy(
+        "ORDER_SHARES",
+        "客户分享链接",
+        "services.order_share_telegram_bot",
+        "handle_update",
+        admin_path="/admin/order-shares",
+    )
 
 from . import routes as _routes  # noqa: E402,F401
 

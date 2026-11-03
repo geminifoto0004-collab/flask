@@ -124,7 +124,7 @@
         </div>
 
         <div class="auth-links">
-            <a href="/login">¿Ya tiene una cuenta? Iniciar Sesión</a>
+            <a href="{% if crawler_only %}/user/login{% else %}/login{% endif %}">¿Ya tiene una cuenta? Iniciar Sesión</a>
         </div>
 
         <div class="footer">

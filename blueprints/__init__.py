@@ -15,7 +15,9 @@ _TOWN_STANDALONE = str(_os.environ.get('TOWN_STANDALONE_SERVICE') or '').strip()
     '1', 'true', 'yes', 'on', 'y'
 }
 
-if not _TOWN_STANDALONE:
+_CRAWLER_STANDALONE = _os.environ.get("XINGWANG_SERVICE_ROLE", "").strip().upper() == "CRAWLER"
+
+if not _TOWN_STANDALONE and not _CRAWLER_STANDALONE:
     # Main Render must never run the full schema bootstrap inside a user's first
     # HTTP request. app.py imports init_database before importing this package,
     # so replace only app.py's bound reference while the app module is importing.
@@ -59,5 +61,6 @@ if not _TOWN_STANDALONE:
 else:
     # Dedicated AI-town service: importing blueprints.* must not drag in ORDER,
     # crawler/B2 helpers, auth pages or other main-service modules.
-    print('✅ Standalone AI town blueprint mode')
+    print('✅ Standalone crawler blueprint mode' if _CRAWLER_STANDALONE
+          else '✅ Standalone AI town blueprint mode')
     __all__ = []

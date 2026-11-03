@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XINGWANG · 爬蟲管理中心</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI","Microsoft JhengHei",sans-serif;color:#243044;background:#f5f7fb}
+*{box-sizing:border-box}body{margin:0}.bar{background:#fff;border-bottom:1px solid #dce3f0;padding:16px max(20px,calc((100vw - 920px)/2));display:flex;justify-content:space-between;align-items:center}
+.bar strong{font-size:19px}.bar a{color:#5366ad;text-decoration:none}
+main{max-width:920px;margin:38px auto;padding:0 20px}.card{background:#fff;border:1px solid #e1e7f1;border-radius:15px;padding:24px;margin:20px 0;box-shadow:0 8px 25px rgba(23,32,51,.04)}
+h1{font-size:27px;margin:0 0 9px}h2{font-size:19px;margin:0 0 15px}.muted{color:#64748b;line-height:1.7}
+.state{display:inline-block;border-radius:99px;padding:7px 12px;font-size:13px;font-weight:700;background:#fef3c7;color:#92400e}
+.ok{background:#dcfce7;color:#166534}.item{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #edf0f5}.item:last-child{border-bottom:none}
+code{font-family:Consolas,monospace;background:#f1f5f9;padding:2px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<header class="bar"><strong>XINGWANG · 爬蟲管理中心</strong><a href="/logout">登出</a></header>
+<main>
+ <h1>獨立爬蟲服務</h1>
+ <p class="muted">這是 Render 0005 的管理入口，與 0004 ORDER 分開。未連接獨立 TiDB 前，不會執行 Telegram 爬蟲、貨櫃查詢或資料同步。</p>
+ <section class="card">
+  <h2>部署狀態</h2>
+  <div class="item"><span>網頁登入</span><span class="state ok">已啟用</span></div>
+  <div class="item"><span>獨立 TiDB</span>{% if database_configured %}<span class="state">連線資料已填，等待啟用與驗證</span>{% else %}<span class="state">尚未設定</span>{% endif %}</div>
+  <div class="item"><span>Telegram Bot 加密設定</span>{% if automation_key_configured %}<span class="state ok">變數已設定</span>{% else %}<span class="state">之後設定</span>{% endif %}</div>
+  <div class="item"><span>爬蟲正式執行</span>{% if setup_mode %}<span class="state">安全停止中</span>{% else %}<span class="state ok">已切換正式模式</span>{% endif %}</div>
+ </section>
+ <section class="card">
+  <h2>接下來要做的事</h2>
+  <p class="muted">先申請獨立 TiDB3，將網址存成 <code>CRAWLER_TIDB_URL</code>。完成爬蟲資料與權限遷移、測試後，才將 <code>CRAWLER_SETUP_MODE</code> 設成 <code>0</code>。在此之前保留原本 ORDER 與 Telegram 網址。</p>
+ </section>
+</main>
+</body>
+</html>

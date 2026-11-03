@@ -800,10 +800,11 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
                 return False, {}, "無法取得有效 ZOFRI 文件資料（保留上次結果）"
         
         if df_zofri is None or df_zofri.empty:
+            all_containers = _merge_manual_monitor_containers(task_config.get('id'), [])
             return True, {
-                'containers': [],
-                'matched_count': 0,
-                'unmatched_count': 0
+                'containers': all_containers,
+                'matched_count': sum(1 for c in all_containers if c.get('matched')),
+                'unmatched_count': sum(1 for c in all_containers if not c.get('matched'))
             }, ""
         
         # 4. 獲取 ITI 數據並匹配
@@ -934,10 +935,11 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         else:
             print(f"[監控檢查-{execution_id}] ✅ 所有容器都已匹配，沒有未匹配的容器")
         
+        all_containers = _merge_manual_monitor_containers(task_config.get('id'), all_containers)
         result = {
             'containers': all_containers,
-            'matched_count': len(matched_data),
-            'unmatched_count': len(unmatched_data)
+            'matched_count': sum(1 for c in all_containers if c.get('matched')),
+            'unmatched_count': sum(1 for c in all_containers if not c.get('matched'))
         }
         
         print(f"[監控檢查-{execution_id}] 監控檢查完成")
@@ -953,6 +955,42 @@ def check_monitor_task(task_config: Dict) -> Tuple[bool, Dict, str]:
         import traceback
         traceback.print_exc()
         return False, {}, f"檢查失敗: {str(e)}"
+
+
+def _merge_manual_monitor_containers(task_id, containers):
+    """Merge manual container exceptions into the normal monitor result."""
+    if not task_id:
+        return containers
+    try:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT container_no FROM monitor_manual_containers WHERE task_id = ? ORDER BY container_no",(task_id,))
+            codes=[(r.get('container_no') if isinstance(r,dict) else r[0]) for r in (cur.fetchall() or [])]
+        finally:
+            conn.close()
+    except Exception:
+        return containers
+    if not codes:
+        return containers
+    existing={_get_container_identity(c) for c in containers}
+    try:
+        from services.unified_iti_service import get_unified_iti_index, normalize_container
+        index=get_unified_iti_index(allow_stale=True)
+    except Exception:
+        index={}
+        from services.container_iti_service import normalize_container
+    for raw in codes:
+        code=normalize_container(raw)
+        if not code or code in existing:
+            continue
+        rec=index.get(code)
+        item={'codigo':code,'glosa_codigo':code,'glosa_descripcion':'人工補入','estado':'人工補入','matched':bool(rec),'source_manual':True}
+        if rec:
+            item.update({'vessel_name':'','fecha':rec.fecha_entrega,'iti_folio':rec.folio,'iti_sigla':rec.sigla,'iti_numero':rec.numero,'iti_digito':rec.digito,'iti_pies':rec.pies})
+        containers.append(item)
+        existing.add(code)
+    return containers
 
 
 # ========== 對比上次結果，判斷是否有變化 ==========
@@ -1453,10 +1491,12 @@ def _prepare_telegram_row(container: Dict) -> Dict:
     code = _safe_text(container.get('glosa_codigo') or container.get('codigo'))
     sigla_auto, numero_auto, digito_auto = _split_container_code(code)
 
+    is_manual = bool(container.get('source_manual'))
     row = {
         'matched': is_matched,
+        'manual': is_manual,
         'codigo': code,
-        'buque': _safe_text(container.get('vessel_name') if is_matched else container.get('glosa_descripcion')),
+        'buque': '人工補入' if is_manual else _safe_text(container.get('vessel_name') if is_matched else container.get('glosa_descripcion')),
         'estado': _safe_text(container.get('estado')),
         'descripcion': _safe_text(container.get('glosa_descripcion')),
         'folio': _safe_text(container.get('iti_folio'), '-') if is_matched else '-',
@@ -1801,6 +1841,8 @@ def _render_telegram_html_image(
             task_id=task_id
         )
         context['company_name'] = _safe_text(company_name, 'NICO').upper()
+        # Match the public /monitor/report UI, including free-time SVG badges.
+        context['web_report_only'] = True
         html_content = template.render(**context)
     except Exception as exc:
         return None, f"template render failed: {exc}"
@@ -2165,8 +2207,22 @@ def _render_telegram_table_image(containers: List[Dict], company_name: str, incl
         task_id=task_id
     )
     if html_png:
+        print("[Telegram Image] renderer=playwright_html; matches web report", flush=True)
         return [html_png], ""
-    return [], f"html render failed: {html_err}"
+    print(f"[Telegram Image] renderer=playwright_html failed; reason={html_err}", flush=True)
+    # Render's Python build may not include Playwright Chromium.  Keep
+    # Telegram images working with the existing Pillow renderer instead.
+    pillow_pages, pillow_err = _render_telegram_table_image_pillow(
+        containers=containers,
+        company_name=company_name,
+        include_matched=include_matched,
+        include_unmatched=include_unmatched,
+        max_rows=max_rows,
+    )
+    if pillow_pages:
+        print("[Telegram Image] renderer=pillow_fallback; NOT the web report UI", flush=True)
+        return pillow_pages, ""
+    return [], f"html render failed: {html_err}; pillow render failed: {pillow_err}"
 
 
 def send_notification_telegram(
@@ -2213,7 +2269,8 @@ def send_notification_telegram(
     caption = _build_telegram_image_caption(company_name, containers)
     report_url = (report_url or "").strip()
     # Fixed PIN-protected free-time importer. Do not put the PIN in Telegram.
-    free_days_url = "https://flask-393d.onrender.com/admin/container-excel"
+    free_days_base = (os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("CRAWLER_PUBLIC_BASE_URL") or "https://xingwang-crawler.onrender.com").strip().rstrip("/")
+    free_days_url = f"{free_days_base}/admin/container-excel"
     free_days_hint = "\n設定／匯入免箱天數（需輸入密碼）：\n" + free_days_url
 
     text_ok = None
@@ -2234,11 +2291,22 @@ def send_notification_telegram(
             trimmed = trimmed[:max(0, allowed - 3)] + "..."
         return trimmed + suffix
 
-    if telegram_mode == "text" and report_url:
+    # In BOTH mode the report URL must also appear in the text message,
+    # even when the image renderer or Telegram photo upload fails.
+    if telegram_mode in ("text", "both") and report_url:
         text_message = f"{text_message}\n\n🔗 Ver reporte web:\n{report_url}"
     if telegram_mode in ("text", "both"):
-        text_message = (text_message[:max(0, 4096 - len(free_days_hint) - 3)] + "..."
-                        if len(text_message) + len(free_days_hint) > 4096 else text_message) + free_days_hint
+        # Keep both links intact when trimming long container reports.
+        suffix = (f"\n\n🔗 Ver reporte web:\n{report_url}" if report_url else "") + free_days_hint
+        if len(text_message) + len(free_days_hint) > 4096:
+            main_message = _build_telegram_text_message(
+                company_name=company_name, containers=containers,
+                include_matched=include_matched, include_unmatched=include_unmatched,
+                max_rows=max_rows
+            )
+            text_message = main_message[:max(0, 4096 - len(suffix) - 3)] + "..." + suffix
+        else:
+            text_message += free_days_hint
 
     if telegram_mode in ("text", "both"):
         text_ok, text_err = send_telegram_message(bot_token, chat_id, text_message)
