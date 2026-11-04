@@ -7,6 +7,7 @@
     search: document.getElementById("search"),
     count: document.getElementById("count"),
     sync: document.getElementById("sync-meta"),
+    syncText: document.getElementById("sync-meta-text"),
     status: document.getElementById("status"),
     refresh: document.getElementById("refresh"),
     toast: document.getElementById("toast"),
@@ -108,7 +109,7 @@
         }).format(date).replace(",", "") + "（智利）";
       }
     }
-    dom.sync.textContent = "雲端快照更新：" + value + target;
+    dom.syncText.textContent = "雲端快照更新：" + value + target;
     dom.sync.hidden = false;
   }
   function render() {

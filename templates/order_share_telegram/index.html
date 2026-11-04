@@ -18,7 +18,8 @@
   input{width:100%;border:1px solid var(--border);border-radius:13px;padding:14px 16px;font-size:16px;background:var(--panel);color:var(--fg);outline:none}
   input:focus{border-color:var(--accent)}
   .meta{font-size:12px;color:var(--hint);margin:0 2px 12px;display:flex;justify-content:space-between}
-  .sync-meta{font-size:12px;color:var(--hint);margin:-3px 2px 12px;line-height:1.5}
+  .sync-meta{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--hint);margin:7px 0 0;line-height:1.4;flex-wrap:wrap}
+  .sync-meta svg{width:14px;height:14px;flex:none;stroke:currentColor}
   .sync-meta[hidden]{display:none}
   .list{background:var(--panel);border-radius:14px;overflow:hidden;border:1px solid var(--border)}
   .item{display:flex;align-items:center;gap:12px;padding:12px 13px;border-bottom:1px solid var(--border);min-height:64px}
@@ -41,7 +42,14 @@
 <body>
   <main class="shell">
     <header>
-      <div><h1>📋 XINGWANG 客戶分享</h1><p>只顯示目前有效的客戶連結</p></div>
+      <div>
+        <h1>📋 XINGWANG 客戶分享</h1>
+        <p>只顯示目前有效的客戶連結</p>
+        {% if china %}<div id="sync-meta" class="sync-meta" role="status" aria-live="polite" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <span id="sync-meta-text"></span>
+        </div>{% endif %}
+      </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="refresh" id="refresh" type="button">↻ 更新</button>
         {% if china %}<form action="/cn/order-links/logout" method="post" style="margin:0">
@@ -51,7 +59,6 @@
     </header>
     <div class="search"><input id="search" type="search" autocomplete="off" placeholder="輸入客戶名稱，例如 SERGIO" aria-label="搜尋客戶名稱"></div>
     <div class="meta"><span id="count">讀取中…</span><span>點姓名開啟 · 點複製取網址</span></div>
-    {% if china %}<div id="sync-meta" class="sync-meta" role="status" hidden></div>{% endif %}
     <section id="list" class="list" hidden aria-label="有效客戶連結"></section>
     <div id="status" class="status" role="status">{{ '正在載入客戶資料…' if china else '正在確認 Telegram 身分…' }}</div>
   </main>
