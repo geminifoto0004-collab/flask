@@ -1711,6 +1711,8 @@ body.cc-sample-detail #result{
  #cartWorkspace .cart-filter.cc-three-filters strong{font-size:11px!important}
 }
 
+.xw-order-stock-note{margin:2px 14px 8px;padding:9px 11px;border:1px solid #ead3a1;border-radius:10px;background:#fff8e8;color:#704c08;font-size:12px;line-height:1.5}
+
 /* UNSLOP QR test /scanner?compact=1
    Native Html5Qrcode scan frame is preserved: scale its parent width BEFORE
    camera start, then let the browser and library determine video height.
@@ -1901,6 +1903,7 @@ body.cc-sample-detail #result{
 <div class="stock-visibility" role="group" aria-label="布樣盤點顯示範圍">
 <button id="samplePositiveBtn" type="button" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="samplePositiveCount" class="filter-count">0</strong><span class="filter-label">有库存 Con stock</span></button>
 <button id="sampleAllBtn" type="button" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="sampleAllCount" class="filter-count">0</strong><span class="filter-label">全部 Todos</span></button></div>
+<p id="sampleOrderNote" class="xw-order-stock-note hidden">常规库存无结果；已显示带 (*) 的订单库存，不能当作普通备货。</p>
 <div id="totals" class="sample-stats" aria-label="庫存統計"></div>
 <div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th id="sampleSkuSort" class="sample-sku-sort" tabindex="0" role="button" aria-label="商品編號排序" aria-sort="ascending">SKU ▲</th><th id="sampleRollsSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="匹數排序">ROLL</th><th id="sampleMetersSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="米數排序">M</th><th class="sample-check-cell"><label class="sample-headcheck">✓ <input id="sampleHeaderCheck" type="checkbox" aria-label="目前顯示商品全部有樣或無樣"></label></th></tr></thead><tbody id="rows"></tbody></table></div>
 <p id="emptyMsg" class="muted hidden">本次查詢沒有可列出的商品編號，請確認快照中的編號。</p>
@@ -2431,10 +2434,11 @@ function ccFullStockRows(rows){
 }
 function fullRenderProduct(data){
  const stock=Array.isArray(data.rows)?data.rows:[];
- const visibleStock=fullPositiveOnly?stock.filter(row=>hasPositivePieces(row.pieces)):stock;
+ const fullPos=positiveSkuSelection(stock,'pieces');
+ const visibleStock=fullPositiveOnly?fullPos.rows:stock;
  const all=fullTab==='stock'?visibleStock:(Array.isArray(data[fullTab])?data[fullTab]:[]);
  $('fullStockVisibility').classList.toggle('hidden',fullTab!=='stock');
- updateVisibilityCounts('fullPositiveCount','fullAllCount',stock.filter(row=>hasPositivePieces(row.pieces)).length,stock.length);
+ updateVisibilityCounts('fullPositiveCount','fullAllCount',fullPos.rows.length,stock.length);
  syncVisibilityButtons(fullPositiveOnly,'fullPositiveBtn','fullAllBtn');
  const pieces=fullTab==='stock'&&fullPositiveOnly?totalsForShownRows(visibleStock,'pieces'):
               stock.some(x=>x.pieces!=null)?stock.reduce((sum,x)=>sum+Number(x.pieces||0),0):null;
@@ -2453,7 +2457,9 @@ function fullRenderProduct(data){
  const cols=fullTab==='history'&&data.price_allowed?[...fullFields.history,['price','成交單價']]:fullFields[fullTab];
  $('fullDetails').replaceChildren(fullTab==='stock'?ccFullStockRows(rows):fullTable(rows,cols));
  $('fullHistoryMore').classList.toggle('hidden',fullTab!=='history'||!Number.isInteger(data.history_next_cursor)||data.history_next_cursor >= Number(data.history_retrievable_count??data.history_total_count??0));
- $('fullNote').textContent=fullTab==='history'?'本頁為公司唯讀查詢，不提供成交單價。':''; 
+ $('fullNote').textContent=fullTab==='history'?'本頁為公司唯讀查詢，不提供成交單價。':
+  fullTab==='stock'&&fullPositiveOnly&&fullPos.orderFallback?
+  '常规库存无结果；已显示带 (*) 的订单库存，不能当作普通备货。':''; 
 }
 function fullRenderNota(data){
  const docs=Array.isArray(data.documents)?data.documents:(data.nota?[data]:[]);
@@ -2528,11 +2534,23 @@ $('fullHistoryMore').onclick=async()=>{
  }catch(e){msg(e.message,'error')}finally{b.disabled=false}
 };
 
+// Stock preview: standard SKUs first; use order-marked "(*)" SKUs only
+// when the same already-fetched family has no standard positive-stock SKU.
+// This is a display fallback, never an automatic reservation or DB write.
+const isOrderMarkedSku=code=>/\(\s*\*\s*\)/.test(String(code||''));
+function positiveSkuSelection(rows,quantityKey){
+ const positive=rows.filter(x=>hasPositivePieces(x[quantityKey]));
+ const ordinary=positive.filter(x=>!isOrderMarkedSku(x.code));
+ const fallback=ordinary.length===0 ? positive.filter(x=>isOrderMarkedSku(x.code)) : [];
+ return {rows:ordinary.length?ordinary:fallback,orderFallback:fallback.length>0};
+}
+function sampleSelection(){
+ const rows=Array.isArray(current?.variants)?current.variants:[];
+ return positiveSkuSelection(rows,'stock_rolls');
+}
 function visibleSampleRows(){
  if(!current||!Array.isArray(current.variants))return [];
- return samplePositiveOnly
-   ?current.variants.filter(x=>hasPositivePieces(x.stock_rolls))
-   :current.variants;
+ return samplePositiveOnly ? sampleSelection().rows : current.variants;
 }
 function setSampleVisibleState(hasSample){
  if(!current||saved)return;
@@ -2558,8 +2576,11 @@ function renderRows(){
   if(active)th.setAttribute('aria-sort',sampleDescending?'descending':'ascending');
   else th.removeAttribute('aria-sort');
  }
- updateVisibilityCounts('samplePositiveCount','sampleAllCount',all.filter(row=>hasPositivePieces(row.stock_rolls)).length,all.length);
+ const samplePos=sampleSelection();
+ updateVisibilityCounts('samplePositiveCount','sampleAllCount',samplePos.rows.length,all.length);
  syncVisibilityButtons(samplePositiveOnly,'samplePositiveBtn','sampleAllBtn');
+ const sampleOrderNote=$('sampleOrderNote');
+ sampleOrderNote.classList.toggle('hidden',!(samplePositiveOnly&&samplePos.orderFallback));
  const headerCheck=$('sampleHeaderCheck');
  headerCheck.disabled=saved||!visible.length;
  const checked=visible.filter(row=>sampleStates.get(row.code)===true).length;
