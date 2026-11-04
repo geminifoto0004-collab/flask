@@ -26,6 +26,7 @@ TTL = 30 * 86400
 CODE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$")
 LOGIN_ATTEMPTS = {}
 REQUEST_TIMES = []
+ORDER_REQUEST_TIMES = []  # Separate V41 budget; concurrent TiDB scans must not double-count.
 LOCK = asyncio.Lock()
 PENDING_SCANS = {}  # random scan_id => (time, signed-in device, series, real SKUs)
 PAGE = Path(__file__).with_name("scanner.html").read_text(encoding="utf-8")
@@ -622,10 +623,10 @@ def attach_stock_lookup(stock_lookup, order_stock_select):
         code = code.strip().upper()
         async with LOCK:
             now = time.monotonic()
-            REQUEST_TIMES[:] = [v for v in REQUEST_TIMES if now - v < 60]
-            if len(REQUEST_TIMES) >= 35:
+            ORDER_REQUEST_TIMES[:] = [v for v in ORDER_REQUEST_TIMES if now - v < 60]
+            if len(ORDER_REQUEST_TIMES) >= 35:
                 raise HTTPException(429, "查询过于频繁")
-            REQUEST_TIMES.append(now)
+            ORDER_REQUEST_TIMES.append(now)
         upstream = await order_stock_select(code)
         if not isinstance(upstream, dict) or not upstream.get("ok"):
             reason = upstream.get("code", "UNAVAILABLE") if isinstance(upstream, dict) else "UNAVAILABLE"
