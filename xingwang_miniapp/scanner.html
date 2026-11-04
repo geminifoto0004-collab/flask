@@ -2338,6 +2338,7 @@ function setMode(m){
  $('code').value=m==='full'&&fullKind==='nota'?notaInput:sharedProductCode;
  syncSearchClear();
  const sampleMatch=m==='sample'&&current&&current.product_code===sharedProductCode;
+ if(m==='full'&&fullKind==='product')activatePreloadedStock(preloadedFullStock);
  const fullMatch=m==='full'&&fullData&&fullDataKind===fullKind&&fullCode===(fullKind==='nota'?notaInput:sharedProductCode);
  $('result').classList.toggle('hidden',!sampleMatch);
  $('fullResult').classList.toggle('hidden',!fullMatch);
@@ -2468,9 +2469,17 @@ async function fullRequest(action,q,extra={}){
 // One sample QR fetches the local stock and orders up-front. Switching
 // SAMPLE -> STOCK only changes the view; it must not ask Flask twice.
 let preloadedFullStock=null;
+function activatePreloadedStock(job){
+ if(!job||job.state!=='ready'||job.code!==sharedProductCode)return false;
+ if(fullData!==job.data){
+  fullData=job.data;fullDataKind='product';fullCode=job.code;fullTab='stock';
+  fullSort='code';fullDesc=false;fullStockMode='stock';
+  $('fullFilter').value='';
+ }
+ return true;
+}
 function prefetchLocalFullStock(code,orderRequest){
- const cached=preloadedFullStock;
- if(cached?.code===code&&cached.state!=='error')return cached;
+ // Each new sample scan starts a fresh local read. Tab switches never do.
  const job={code,state:'loading',data:null,error:null,promise:null};
  preloadedFullStock=job;
  job.promise=fullRequest('stock',code).then(data=>{
@@ -2486,13 +2495,8 @@ function prefetchLocalFullStock(code,orderRequest){
    data.xwOrderError=result.error?.message||'';
    if(fullData===data&&mode==='full'&&fullKind==='product')renderFullResult(data);
   });
-  if(sharedProductCode===code){
-   fullData=data;fullDataKind='product';fullCode=code;fullTab='stock';
-   fullSort='code';fullDesc=false;fullStockMode='stock';
-   $('fullFilter').value='';
-   if(mode==='full'&&fullKind==='product'){
-    renderFullResult(data);msg('');
-   }
+  if(activatePreloadedStock(job)&&mode==='full'&&fullKind==='product'){
+   renderFullResult(data);msg('');
   }
   return data;
  }).catch(error=>{
@@ -2985,6 +2989,8 @@ async function lookup(input){
         last_checked_at:null,last_checked_count:0,order_lookup_only:true};
     }
     sharedProductCode=code;showResult(d);msg('');
+    // Fast local responses can arrive before TiDB; adopt the ready data now.
+    activatePreloadedStock(preloadedFullStock);
     void lookupLocalOrderReference(code,orderRequest,!!d.order_lookup_only);
    }
   }
