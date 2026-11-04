@@ -3991,6 +3991,8 @@ def _public_share_registry_upsert(conn, item, creator=None):
     if permanent and not expires:
         expires = created + 36500 * 86400
     revoked = _share_epoch(row.get('revoked_at_epoch') or row.get('revoked_at'), 0) or None
+    if str(row.get('status') or '').strip().lower() == 'revoked' and not revoked:
+        revoked = now
     last_accessed = _share_epoch(row.get('last_accessed_at_epoch') or row.get('last_accessed_at'), 0) or None
     url = str(row.get('url') or row.get('public_url') or row.get('share_url') or row.get('guest_url') or '').strip()
     qr = str(row.get('qr_data_uri') or '').strip()
