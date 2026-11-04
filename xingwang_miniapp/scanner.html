@@ -1780,6 +1780,37 @@ body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-wid
  html.xw-compact-qr-preview #result .sample-series-header #series{min-width:0!important;flex:0 1 auto!important}
 }
 
+
+/* V42 desktop alignment: detail-state rules used to override the centered
+   toolbar with 14px side margins (higher CSS specificity). Keep the search
+   controls and results anchored to the SAME center on both view states. */
+@media (min-width:750px){
+ body.cc-stock-detail main,
+ body.cc-sample-detail main{
+  width:100%!important;
+  max-width:1100px!important;
+  margin-inline:auto!important;
+ }
+ body.cc-stock-detail #scanPanel .cc-scan-controls,
+ body.cc-sample-detail #scanPanel .cc-scan-controls{
+  box-sizing:border-box!important;
+  width:calc(100% - 28px)!important;
+  max-width:720px!important;
+  margin:4px auto 12px!important;
+ }
+ body.cc-stock-detail #scanPanel #message,
+ body.cc-sample-detail #scanPanel #message{
+  width:calc(100% - 28px)!important;
+  max-width:720px!important;
+  margin:6px auto!important;
+ }
+ body.cc-stock-detail #fullResult,
+ body.cc-sample-detail #result{
+  width:calc(100% - 28px)!important;
+  max-width:720px!important;
+  margin:10px auto 0!important;
+ }
+}
 </style>
 </head>
 <body><main>
