@@ -437,10 +437,13 @@ def frontend():
 
 
 def _read_snapshot_update(conn):
-    """Read one existing ORDER snapshot marker from the same TiDB as the directory.
+    """Return a truthful ORDER timestamp from the selected TiDB.
 
-    This is the last successful *changed* snapshot, not a crawler heartbeat.
-    Avoid schema creation, standby queries or expensive scans on this page.
+    The whole-text snapshot marker is optional: newer standalone upload paths
+    update cloud_orders without running the snapshot importer. A successful
+    snapshot timestamp is preferred; otherwise clearly label the latest
+    committed order-row update rather than pretending a crawler finished.
+    Never read the other TiDB or create/mutate schema in this customer page.
     """
     target = str(getattr(conn, "active_target", "") or "").upper()
     if target not in {"TIDB1", "TIDB2"}:
@@ -455,11 +458,30 @@ def _read_snapshot_update(conn):
         )
         row = _row(cur.fetchone(), cur)
         epoch = row.get("updated_epoch")
-        if epoch is not None:
-            meta["updated_epoch"] = int(epoch)
-            meta["status"] = "recorded"
-    except Exception:
-        # Older TiDB snapshots may not have the state table. Never invent time.
+        if epoch is not None and int(epoch) > 0:
+            meta.update(updated_epoch=int(epoch), status="recorded")
+            return meta
+    except Exception as exc:
+        # Missing snapshot-state table on a standalone-sync TiDB is expected.
+        # Do not expose SQL/connection details to an authenticated customer page.
+        code = (getattr(exc, "args", None) or [None])[0]
+        print(f"[ORDER CN time] snapshot marker unavailable on {target or 'DB'}: {type(exc).__name__} code={code}", flush=True)
+
+    # A bounded-output read. Unlike the marker above, this is a data-change
+    # timestamp, not proof that all crawler work finished successfully.
+    try:
+        cur = _cursor(conn)
+        cur.execute(
+            "SELECT UNIX_TIMESTAMP(MAX(updated_at)) AS updated_epoch "
+            "FROM cloud_orders WHERE active=TRUE"
+        )
+        row = _row(cur.fetchone(), cur)
+        epoch = row.get("updated_epoch")
+        if epoch is not None and int(epoch) > 0:
+            meta.update(updated_epoch=int(epoch), status="orders_updated")
+    except Exception as exc:
+        code = (getattr(exc, "args", None) or [None])[0]
+        print(f"[ORDER CN time] order timestamp unavailable on {target or 'DB'}: {type(exc).__name__} code={code}", flush=True)
         meta["status"] = "unavailable"
     return meta
 
