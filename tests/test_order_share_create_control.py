@@ -120,6 +120,7 @@ class ControlTests(unittest.TestCase):
         cloud=types.ModuleType('services.order_cloud_service');cloud.create_live_share=self.control.create_live_share
         control=types.ModuleType('services.order_share_create_control');control.ShareCreateConflict=self.control.ShareCreateConflict
         scope={'request':request,'jsonify':jsonify,'hashlib':hashlib,
+               'share_token_hash':lambda token:hashlib.sha256(str(token).encode('utf-8')).hexdigest(),
                '_order_cloud_auth_source':lambda:('ORDER',None),'_ensure_columns':lambda:None,
                '_scope':lambda value:value or 'current','_mode':lambda value:value or 'simple',
                '_flags':lambda p:(bool(p.get('show_pdf_pages',True)),bool(p.get('allow_report_pdf_download')),bool(p.get('show_images',True))),
