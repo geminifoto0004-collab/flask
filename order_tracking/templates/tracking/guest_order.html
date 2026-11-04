@@ -6,6 +6,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="robots" content="noindex,nofollow,noarchive">
     <title>{{ order.workflow_number or order.order_number }} · {{ customer_name }}</title>
+    {# Render's guest CSS is external; lightweight HTML fallback for restrictive mobile proxies. #}
+    <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:system-ui,-apple-system,Arial,sans-serif;background:#f5f5f7;color:#20242b}
+    .guest-shell{max-width:760px;margin:auto;padding:0 14px 24px}
+    .guest-head{position:relative;margin:0 -14px 14px;padding:14px;border-bottom:1px solid #e5e7eb;background:#fff}
+    .guest-brand{display:flex;align-items:center;gap:10px;padding-right:88px}
+    .guest-logo{display:grid;place-items:center;width:42px;height:42px;flex:none;border-radius:12px;background:#ff2442;color:#fff;text-decoration:none;font-weight:800}
+    .guest-title{min-width:0}.guest-title h1{margin:0;font-size:18px;overflow-wrap:anywhere}.guest-title p{margin:4px 0 0;color:#737783;font-size:12px}
+    .guest-lang-toggle,.guest-theme-toggle{position:absolute;top:14px;right:57px;min-width:32px;height:34px;border:1px solid #e5e7eb;border-radius:50%;background:#fff}
+    .guest-theme-toggle{right:14px}.guest-theme-toggle svg{width:17px;height:17px}
+    .guest-top-queue-btn[hidden]{display:none}.guest-expiry{margin-top:10px;display:flex;justify-content:space-between;color:#858895;font-size:12px}
+    .guest-back{display:inline-flex;align-items:center;gap:6px;margin-bottom:12px;color:#324a87;text-decoration:none;font-size:13px}
+    .guest-order-head h1{margin:0;font-size:21px}.guest-order-head p{color:#7b7f87;font-size:12px}
+    .guest-panel{margin:12px 0;padding:14px;background:#fff;border:1px solid #e4e6eb;border-radius:14px}
+    .guest-panel h2{margin:0 0 12px;font-size:16px}.guest-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .guest-info-item span{display:block;color:#777;font-size:11px}.guest-info-item strong{display:block;margin-top:4px;overflow-wrap:anywhere;font-size:12px}
+    .guest-stage-timeline{display:flex;justify-content:space-between;gap:8px;overflow-x:auto}
+    .guest-stage{flex:1;min-width:54px;text-align:center;font-size:11px}
+    .guest-stage-dot{margin:auto auto 8px;width:24px;height:24px;border-radius:50%;background:#eef0f3;display:grid;place-items:center}
+    .guest-stage strong{display:block;font-size:10px}.guest-stage time{display:block;margin-top:5px;color:#858995;font-size:10px}
+    </style>
     <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest.css') }}?v={{ STATIC_VER }}">
     <script>
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -55,6 +77,14 @@
     </section>
 
     <div data-order-media data-media-json="{{ order.images|tojson|forceescape }}" data-documents-json="{{ (order.documents or [])|tojson|forceescape }}"></div>
+
+    {# No eager PDF thumbnails. Text-only fallback if scripts are disabled. #}
+    <noscript><section class="guest-panel">
+      <h2>Archivos del pedido</h2>
+      {% for media in order.images %}
+      <p><a href="{{ media.url or media.preview_url }}" target="_blank" rel="noopener noreferrer">{{ media.document_name or media.name or ('Archivo ' ~ loop.index) }}{% if media.media_type == 'pdf_page' %} · PDF {{ media.pdf_page_number }}{% endif %}</a></p>
+      {% endfor %}
+    </section></noscript>
 
     <section class="guest-panel">
         <h2 data-i18n="guest.order_info">Información del pedido</h2>
