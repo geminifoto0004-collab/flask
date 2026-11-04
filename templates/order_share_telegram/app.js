@@ -97,8 +97,10 @@
     const target = meta && /^(TIDB1|TIDB2)$/.test(String(meta.target || ""))
       ? " · " + meta.target : "";
     const epoch = Number(meta && meta.updated_epoch);
+    const kind = meta && meta.status === "orders_updated"
+      ? "訂單資料最近更新：" : "雲端快照更新：";
     let value = meta && meta.status === "unavailable"
-      ? "同步紀錄暫時無法取得" : "尚無成功快照紀錄";
+      ? "目前無法讀取更新時間" : "尚無可核對的更新時間";
     if (Number.isFinite(epoch) && epoch > 0) {
       const date = new Date(epoch * 1000);
       if (!Number.isNaN(date.getTime())) {
@@ -109,7 +111,7 @@
         }).format(date).replace(",", "") + "（智利）";
       }
     }
-    dom.syncText.textContent = "雲端快照更新：" + value + target;
+    dom.syncText.textContent = kind + value + target;
     dom.sync.hidden = false;
   }
   function render() {
