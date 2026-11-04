@@ -1659,19 +1659,24 @@ body.cc-sample-detail #result{
  #cartWorkspace .cart-filter.cc-three-filters strong{font-size:11px!important}
 }
 
-/* XW optional compact camera test. Enabled only with /scanner?compact=1.
-   Clip the ORIGINAL html5-qrcode video + QR overlay together; do not resize
-   or distort the QR box, decoder canvas, or camera stream. Cart remains intact. */
+/* UNSLOP QR test /scanner?compact=1
+   Native Html5Qrcode scan frame is preserved: scale its parent width BEFORE
+   camera start, then let the browser and library determine video height.
+   No clipped/cropped window, no scrollTop, no changed QR decoding config. */
 #sampleCameraToggle{display:none!important}
 @media(max-width:740px){
  html.xw-compact-qr-preview body:not(.xw-cart-mode) #scanPanel:not(.cc-cart-camera-active) #reader.camera-active{
-  position:relative!important;display:block!important;
+  display:block!important;position:relative!important;
   box-sizing:border-box!important;
-  width:calc(100% - 28px)!important;max-width:460px!important;
-  height:clamp(312px,41dvh,360px)!important;
-  min-height:312px!important;max-height:360px!important;
-  overflow:hidden!important;margin:8px auto!important;
-  border-radius:14px!important;
+  width:min(calc(100% - 32px), 280px)!important;max-width:280px!important;
+  height:auto!important;min-height:0!important;max-height:none!important;
+  overflow:hidden!important;margin:8px auto 10px!important;
+  padding:0!important;border-radius:14px!important;
+ }
+ html.xw-compact-qr-preview body:not(.xw-cart-mode) #scanPanel:not(.cc-cart-camera-active) #reader.camera-active video{
+  width:100%!important;max-width:100%!important;
+  height:auto!important;min-height:0!important;max-height:none!important;
+  object-fit:contain!important;
  }
  html.xw-compact-qr-preview body.cc-sample-detail #result .sample-series-header #sampleCameraToggle{
   display:inline-flex!important;flex:0 0 34px!important;
@@ -2744,17 +2749,6 @@ async function startCamera(){
   reader=new Html5Qrcode('reader',{verbose:false});
   await reader.start({facingMode:'environment'},{fps:10,qrbox:{width:220,height:220}},onScan,()=>{});
   running=true;lastQrCode='';scanQueuedCode='';scanRetryCode='';syncCameraButton();msg('相機已開啟，可連續掃描商品編號。');
-  // Scroll only the clipped viewport, not the stream or QR decode overlay.
-  if(document.documentElement.classList.contains('xw-compact-qr-preview') && matchMedia('(max-width:740px)').matches && mode!=='cart'){
-   requestAnimationFrame(()=>{
-    requestAnimationFrame(()=>{
-     const viewport=$('reader'),region=$('reader__scan_region');
-     if(!region || !viewport.classList.contains('camera-active'))return;
-     const a=region.getBoundingClientRect(),b=viewport.getBoundingClientRect();
-     viewport.scrollTop+=Math.round((a.top+a.height/2)-(b.top+b.height/2));
-    });
-   });
-  }
  }catch(e){
   if(reader){try{reader.clear()}catch(_){}}
   reader=null;running=false;
