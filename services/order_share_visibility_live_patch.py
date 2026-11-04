@@ -211,7 +211,7 @@ def _create_scoped_share():
             show_workflow_images=bool(payload.get('show_workflow_images', True)),
             requested_token=payload.get('requested_token'),
         )
-        token = result.pop('token'); token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+        token = result.pop('token'); token_hash = share_token_hash(token)
         expiry = result.get('expires_at'); result['expires_at'] = expiry.isoformat() if expiry else None
         result.update({'include_cancelled':False, 'share_url':request.host_url.rstrip('/') + '/share/' + token})
         try:
