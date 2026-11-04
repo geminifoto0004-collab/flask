@@ -29,6 +29,7 @@ REQUEST_TIMES = []
 ORDER_REQUEST_TIMES = []  # Separate V41 budget; concurrent TiDB scans must not double-count.
 LOCK = asyncio.Lock()
 PENDING_SCANS = {}  # random scan_id => (time, signed-in device, series, real SKUs)
+PENDING_ORDER_RESULTS = {}  # short-lived verified V42 order rows for optional sample audit
 PAGE = Path(__file__).with_name("scanner.html").read_text(encoding="utf-8")
 
 
@@ -686,8 +687,98 @@ def attach_stock_lookup(stock_lookup, order_stock_select):
                     meters = None
             order_rows.append({"code": sku, "stock_rolls": str(rolls),
                                "stock_meters": meters})
+        sample_rows = [
+            row for row in order_rows
+            if len(row["code"]) <= 40
+        ]
+        ticket = None
+        if sample_rows:
+            ticket = uuid4().hex
+            device = hashlib.sha256(request.cookies.get(COOKIE, "").encode()).hexdigest()[:16]
+            async with LOCK:
+                now = time.monotonic()
+                for token, entry in list(PENDING_ORDER_RESULTS.items()):
+                    if now - entry[0] > 300:
+                        PENDING_ORDER_RESULTS.pop(token, None)
+                if len(PENDING_ORDER_RESULTS) >= 500:
+                    PENDING_ORDER_RESULTS.pop(next(iter(PENDING_ORDER_RESULTS)))
+                PENDING_ORDER_RESULTS[ticket] = (
+                    now, device, code, tuple(sample_rows)
+                )
         return JSONResponse({"ok": True, "product_code": code, "variants": order_rows,
-                             "count": len(order_rows), "source": "access_v42_order_stock"})
+                             "count": len(order_rows), "sample_ticket": ticket,
+                             "source": "access_v42_order_stock"})
+
+
+    @router.post("/scanner/api/sample/order")
+    async def start_local_order_sample(request: Request):
+        """Authorize a sample check using a signed-in user's recent V42 results.
+
+        Local order SKUs can be inspected and saved into the *sample audit*
+        tables, but are never written to the TiDB inventory snapshot.
+        """
+        _check_origin(request)
+        _require(request)
+        if not scanner_tidb.configured():
+            raise HTTPException(503, "TiDB 样品盘点存储尚未配置")
+        if int(request.headers.get("content-length", "0") or 0) > 320:
+            raise HTTPException(413, "Request too large")
+        try:
+            data = await request.json()
+        except (ValueError, UnicodeError):
+            raise HTTPException(400, "Invalid JSON")
+        if not isinstance(data, dict):
+            raise HTTPException(400, "Invalid request")
+        code, ticket = data.get("code"), data.get("sample_ticket")
+        if (not isinstance(code, str) or not CODE.fullmatch(code.strip()) or
+            not isinstance(ticket, str) or not re.fullmatch(r"[a-f0-9]{32}", ticket)):
+            raise HTTPException(400, "Invalid sample authorization request")
+        if "allow_stale" in data and type(data["allow_stale"]) is not bool:
+            raise HTTPException(400, "Invalid stale stock choice")
+        code = code.strip().upper()
+        device = hashlib.sha256(request.cookies.get(COOKIE, "").encode()).hexdigest()[:16]
+        async with LOCK:
+            entry = PENDING_ORDER_RESULTS.get(ticket)
+            if (not entry or time.monotonic() - entry[0] > 300 or
+                not hmac.compare_digest(entry[1], device) or entry[2] != code):
+                raise HTTPException(409, "本机商品查詢已过期，请重新扫描")
+            rows = entry[3]
+        if not rows or len(rows) > 200:
+            raise HTTPException(409, "本机没有可盘点的订单商品")
+        skus = tuple(row["code"] for row in rows)
+        if len(skus) != len(set(skus)) or any(len(sku) > 40 for sku in skus):
+            raise HTTPException(422, "本机返回了不支持的样品编号")
+        try:
+            freshness = await asyncio.to_thread(scanner_tidb.stock_freshness)
+            if not freshness["has_synced"]:
+                raise HTTPException(409, "还没有有效库存快照")
+            if not freshness["fresh"] and data.get("allow_stale") is not True:
+                raise HTTPException(409, "库存超过60分钟，请确认继续使用旧库存")
+            audit = await asyncio.to_thread(scanner_tidb.read_order_sample_audit, code, skus)
+        except HTTPException:
+            raise
+        except Exception:
+            logging.getLogger("uvicorn.error").exception("ORDER_SAMPLE_AUDIT_READ_FAILED")
+            raise HTTPException(503, "暂时无法读取历史样品盘点")
+        scan_id = uuid4().hex
+        async with LOCK:
+            now = time.monotonic()
+            for token, entry in list(PENDING_SCANS.items()):
+                if now - entry[0] > 1800:
+                    PENDING_SCANS.pop(token, None)
+            if len(PENDING_SCANS) >= 500:
+                PENDING_SCANS.pop(next(iter(PENDING_SCANS)))
+            PENDING_SCANS[scan_id] = (
+                now, device, code, skus, freshness["synced_at_utc"]
+            )
+        return JSONResponse({
+            "ok": True, "product_code": code, "variants": list(rows),
+            "source": "access_v42_sample", "order_sample_only": True,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "freshness": freshness,
+            "db_connected": True, "db_error": False,
+            "scan_id": scan_id, **audit,
+        })
 
 
     @router.post("/scanner/api/save")
