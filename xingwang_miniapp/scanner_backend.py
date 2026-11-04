@@ -564,7 +564,7 @@ async def sample_from_tidb(request: Request):
     })
 
 
-def attach_stock_lookup(stock_lookup):
+def attach_stock_lookup(stock_lookup, order_stock_select):
     """Bind the existing read-only V33 stock bridge, without modifying it."""
     @router.post("/scanner/api/stock")
     async def scanner_stock(request: Request):
@@ -604,6 +604,85 @@ def attach_stock_lookup(stock_lookup):
             "source": clean.get("source"), "as_of": clean.get("as_of"),
             "db_connected": False, "db_error": False,
             "scan_id": None, "previous_status": {}})
+
+    @router.post("/scanner/api/orders")
+    async def scanner_order_stock(request: Request):
+        """Authenticated, fixed-query V41 order stock lookup (never saves SKUs)."""
+        _check_origin(request)
+        _require(request)
+        if int(request.headers.get("content-length", "0") or 0) > 256:
+            raise HTTPException(413, "Request too large")
+        try:
+            body = await request.json()
+        except (ValueError, UnicodeError):
+            raise HTTPException(400, "Invalid JSON")
+        code = body.get("code") if isinstance(body, dict) else None
+        if not isinstance(code, str) or not CODE.fullmatch(code.strip()):
+            raise HTTPException(400, "Invalid product code")
+        code = code.strip().upper()
+        async with LOCK:
+            now = time.monotonic()
+            REQUEST_TIMES[:] = [v for v in REQUEST_TIMES if now - v < 60]
+            if len(REQUEST_TIMES) >= 35:
+                raise HTTPException(429, "查询过于频繁")
+            REQUEST_TIMES.append(now)
+        upstream = await order_stock_select(code)
+        if not isinstance(upstream, dict) or not upstream.get("ok"):
+            reason = upstream.get("code", "UNAVAILABLE") if isinstance(upstream, dict) else "UNAVAILABLE"
+            safe_messages = {
+                "DISABLED": "本机 V41 唯读 SELECT 通道尚未启用",
+                "LOCAL_OFFLINE": "本机连接离线，订单库存无法核对",
+                "BUSY": "本机忙碌，稍后重新查询",
+                "STANDBY": "本机正在切换，稍后重新查询",
+                "SWITCHING": "本机正在切换，稍后重新查询",
+                "TIMEOUT": "本机订单库存查询超时",
+                "LOCAL_API": "本机唯读 Access 快照或登入尚不可用",
+                "ACCESS_DENIED": "本机 V41 不支持此唯读查询",
+            }
+            return JSONResponse({"ok": False, "code": reason,
+                                 "error": safe_messages.get(reason, "本机订单库存暂时无法查询")},
+                                status_code=429 if reason == "BUSY" else 503)
+        payload = upstream.get("data")
+        if not isinstance(payload, dict):
+            raise HTTPException(502, "Invalid local SELECT response")
+        columns, rows = payload.get("columns"), payload.get("rows")
+        if not isinstance(columns, list) or not isinstance(rows, list) or len(rows) > 200:
+            raise HTTPException(502, "Invalid local SELECT rows")
+        try:
+            indices = {str(name).lower(): idx for idx, name in enumerate(columns)}
+            sku_idx = indices["sku"]
+            rolls_idx = indices["rollos"]
+            meters_idx = indices["metros"]
+        except (KeyError, ValueError, TypeError):
+            raise HTTPException(502, "Invalid local SELECT columns")
+        from decimal import Decimal, InvalidOperation
+        order_rows = []
+        for row in rows:
+            if not isinstance(row, (list, tuple)) or max(sku_idx, rolls_idx, meters_idx) >= len(row):
+                raise HTTPException(502, "Invalid order row")
+            sku = row[sku_idx]
+            if not isinstance(sku, str) or not CODE.fullmatch(sku) or not sku.upper().startswith(code):
+                raise HTTPException(502, "Invalid order SKU")
+            if not re.search(r"\([^()]{1,40}\)", sku):
+                continue
+            try:
+                rolls = Decimal(str(row[rolls_idx]))
+                if not rolls.is_finite() or rolls <= 0:
+                    continue
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+            meters = row[meters_idx]
+            if meters is not None:
+                try:
+                    value = Decimal(str(meters))
+                    meters = str(value) if value.is_finite() else None
+                except (InvalidOperation, TypeError, ValueError):
+                    meters = None
+            order_rows.append({"code": sku, "stock_rolls": str(rolls),
+                               "stock_meters": meters})
+        return JSONResponse({"ok": True, "product_code": code, "variants": order_rows,
+                             "count": len(order_rows), "source": "access_v41_readonly"})
+
 
     @router.post("/scanner/api/save")
     async def scanner_save(request: Request):
