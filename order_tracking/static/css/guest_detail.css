@@ -94,3 +94,16 @@
 
 /* Keep the selected page's new-image marker inline with its date. */
 .od-description .media-new{position:static!important;flex:none;align-self:center;margin:0 0 0 4px;padding:1px 6px;font-size:10px;line-height:1.4;vertical-align:middle}
+
+/* Absolute latest attachment, independent of the 7-day NUEVO indicator. */
+.od-source-tabs button.od-latest,.od-row.od-latest,.od-file-card.od-latest{position:relative}
+.od-latest-mark{position:absolute;right:4px;top:2px;z-index:2;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#fff1f2;color:#e11d48;pointer-events:none}
+.od-latest-mark svg{display:block;width:12px;height:12px}
+.od-file-card.od-latest,.od-row.od-latest{border-color:#ee9caf}
+.od-file-card.od-latest .media-new,.od-row.od-latest .media-new{display:none!important}
+.od-current-latest{display:inline-flex;align-items:center;justify-content:center;color:#e11d48;margin-left:4px}
+.od-current-latest svg{width:15px;height:15px}
+@media(max-width:1023px),(hover:none),(pointer:coarse){
+ .od-source-tabs button.od-latest .od-latest-mark{top:2px;right:max(3px,calc(50% - 30px))}
+ .od-file-card.od-latest .od-latest-mark{top:3px;right:4px}
+}
