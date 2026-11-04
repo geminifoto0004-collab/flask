@@ -3928,6 +3928,7 @@ def _find_active_local_guest_link(conn, customer_name, now):
                   share_url, qr_data_uri
            FROM local_guest_links
            WHERE revoked_at_epoch IS NULL
+             AND LOWER(COALESCE(share_mode, 'lan'))='lan'
              AND (COALESCE(is_permanent, 0)=1 OR expires_at_epoch>?)
            ORDER BY created_at_epoch ASC, id ASC""",
         (now,),
