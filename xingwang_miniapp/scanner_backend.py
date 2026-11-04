@@ -661,7 +661,7 @@ def attach_stock_lookup(stock_lookup, order_stock_select):
             if not isinstance(row, (list, tuple)) or max(sku_idx, rolls_idx, meters_idx) >= len(row):
                 raise HTTPException(502, "Invalid order row")
             sku = row[sku_idx]
-            if not isinstance(sku, str) or not CODE.fullmatch(sku) or not sku.upper().startswith(code):
+            if not isinstance(sku, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.()/*-]{1,99}", sku) or not sku.upper().startswith(code):
                 raise HTTPException(502, "Invalid order SKU")
             if not re.search(r"\([^()]{1,40}\)", sku):
                 continue
