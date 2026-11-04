@@ -1,0 +1,36 @@
+name: ORDER customer share uniqueness
+on:
+  pull_request:
+    paths:
+      - "order_tracking/__init__.py"
+      - "order_tracking/static/js/tracking.js"
+      - "order_tracking/templates/tracking/customer_share_admin.html"
+      - "services/order_cloud_service.py"
+      - "services/order_share_create_control.py"
+      - "services/order_public_share_fast.py"
+      - "services/order_share_visibility_live_patch.py"
+      - "services/order_share_admin_runtime_patch.py"
+      - "tests/test_order_share_create_control.py"
+      - ".github/workflows/order-share-uniqueness-ci.yml"
+  workflow_dispatch:
+jobs:
+  share-uniqueness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependency
+        run: python -m pip install Flask
+      - name: Compile changed Python modules
+        run: |
+          python -m py_compile \
+            order_tracking/__init__.py \
+            services/order_cloud_service.py \
+            services/order_share_create_control.py \
+            services/order_public_share_fast.py \
+            services/order_share_visibility_live_patch.py \
+            services/order_share_admin_runtime_patch.py
+      - name: Test one active share per customer
+        run: python -m unittest tests.test_order_share_create_control -v
