@@ -436,6 +436,34 @@ def frontend():
     return send_file(path, mimetype="text/javascript")
 
 
+def _read_snapshot_update(conn):
+    """Read one existing ORDER snapshot marker from the same TiDB as the directory.
+
+    This is the last successful *changed* snapshot, not a crawler heartbeat.
+    Avoid schema creation, standby queries or expensive scans on this page.
+    """
+    target = str(getattr(conn, "active_target", "") or "").upper()
+    if target not in {"TIDB1", "TIDB2"}:
+        target = None
+    meta = {"target": target, "updated_epoch": None, "status": "no_record"}
+    try:
+        cur = _cursor(conn)
+        cur.execute(
+            "SELECT UNIX_TIMESTAMP(updated_at) AS updated_epoch "
+            "FROM cloud_order_snapshot_state WHERE snapshot_key=?",
+            ("order_text_v1",),
+        )
+        row = _row(cur.fetchone(), cur)
+        epoch = row.get("updated_epoch")
+        if epoch is not None:
+            meta["updated_epoch"] = int(epoch)
+            meta["status"] = "recorded"
+    except Exception:
+        # Older TiDB snapshots may not have the state table. Never invent time.
+        meta["status"] = "unavailable"
+    return meta
+
+
 @cn_bp.get("/cn/order-links/data")
 def directory():
     from services import order_share_telegram_bot as lookup
@@ -444,7 +472,12 @@ def directory():
         settings = _settings()
         if not _authorized(settings):
             return jsonify(ok=False, error="unauthorized"), 403
-        rows = lookup._lookup_all_full()
+        conn = _db()
+        try:
+            rows = lookup._lookup_all_full(conn=conn)
+            sync_meta = _read_snapshot_update(conn)
+        finally:
+            conn.close()
         items = [
             {
                 "name": " ".join(str(row.get("customer_name")
@@ -456,4 +489,4 @@ def directory():
         ]
     except Exception:
         return jsonify(ok=False, error="temporarily_unavailable"), 503
-    return jsonify(ok=True, count=len(items), items=items)
+    return jsonify(ok=True, count=len(items), items=items, sync=sync_meta)
