@@ -3981,7 +3981,9 @@ def _public_share_registry_upsert(conn, item, creator=None):
             row['share_url'] = existing.get('share_url') or ''
         if not str(row.get('qr_data_uri') or '').strip():
             row['qr_data_uri'] = existing.get('qr_data_uri') or ''
-    customer_name = str(row.get('customer_name') or row.get('customer') or row.get('customer_key') or '').strip() or '—'
+    customer_name = str(row.get('customer_name') or row.get('customer') or '').strip()
+    if not customer_name or customer_name == '—':
+        customer_name = str(row.get('customer_key') or '').strip() or '—'
     now = int(time.time())
     created = _share_epoch(row.get('created_at_epoch') or row.get('created_at'), now)
     permanent = bool(row.get('is_permanent'))
@@ -4435,6 +4437,7 @@ def api_create_public_guest_link_placeholder():
 
             if not bool(current_app.config.get('TRACKING_PERMANENT_PUBLIC_GUEST_ENABLED', PERMANENT_PUBLIC_GUEST_ENABLED)) and bool(data.get('is_permanent')):
                 return jsonify({'success':False,'error':'此部署未开放永久 Render 链接'}), 403
+            data['customer_name'] = customer_name
             result = create_public_share(data, creator)
             if not isinstance(result, dict):
                 raise RuntimeError('Public provider returned invalid result')
@@ -4443,7 +4446,8 @@ def api_create_public_guest_link_placeholder():
                 raise RuntimeError('Render 分享已建立，但 Provider 未返回可访问网址')
             result['url'] = public_url
             result.setdefault('share_mode', 'render')
-            result.setdefault('customer_name', customer_name)
+            if not str(result.get('customer_name') or '').strip() or str(result.get('customer_name') or '').strip() == '—':
+                result['customer_name'] = customer_name
             result.setdefault('history_scope', str(data.get('history_scope') or 'current'))
             result.setdefault('include_cancelled', bool(data.get('include_cancelled')))
             result.setdefault('show_pdf_pages', data.get('show_pdf_pages') is not False)
