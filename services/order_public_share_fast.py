@@ -370,7 +370,7 @@ def _create_scoped_share():
         result = create_live_share(payload.get('customer_key'), source_site=source_site,
                                    expires_hours=payload.get('expires_hours', 24),
                                    permanent=bool(payload.get('permanent', False)))
-        token = result.pop('token'); token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+        token = result.pop('token'); token_hash = share_token_hash(token)
         conn = get_db_connection(); cur = get_cursor(conn)
         try:
             cur.execute('UPDATE cloud_share_tokens SET history_scope=?, status_filter_mode=?, include_cancelled=? WHERE token_hash=?',
