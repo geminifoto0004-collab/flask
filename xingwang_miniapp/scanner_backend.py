@@ -636,60 +636,58 @@ def attach_stock_lookup(stock_lookup, order_stock_select):
                 "SCANNER_V41_ORDERS_NOT_READY reason=%s", reason
             )
             safe_messages = {
-                "DISABLED": "本机 V41 唯读 SELECT 通道尚未启用",
+                "FLASK_AUTH": "本机 Flask 登录失效，请检查账号",
+                "FLASK_TIMEOUT": "本机 Flask 订单查询超时",
+                "FLASK_OFFLINE": "本机 Flask 未连接",
+                "FLASK_QUERY": "本机 Flask /search 订单查询失败",
                 "LOCAL_OFFLINE": "本机连接离线，订单库存无法核对",
                 "BUSY": "本机忙碌，稍后重新查询",
                 "STANDBY": "本机正在切换，稍后重新查询",
                 "SWITCHING": "本机正在切换，稍后重新查询",
                 "TIMEOUT": "本机订单库存查询超时",
-                "LOCAL_API": "本机唯读 Access 快照或登入尚不可用",
-                "ACCESS_DENIED": "本机 V41 不支持此唯读查询",
+                "LOCAL_API": "本机订单库存查询暂时无法使用",
+                "ACCESS_DENIED": "本机程序不支持订单查询，请安装 V42",
                 "UNAVAILABLE": "本机 V41 订单通道暂时无法确认状态",
-                "INVALID_RESPONSE": "本机 V41 回传资料格式不正确",
+                "INVALID_RESPONSE": "本机订单查询返回格式不正确",
             }
             return JSONResponse({"ok": False, "code": reason,
                                  "error": safe_messages.get(reason, "本机订单库存暂时无法查询")},
                                 status_code=429 if reason == "BUSY" else 503)
         payload = upstream.get("data")
-        if not isinstance(payload, dict):
-            raise HTTPException(502, "Invalid local SELECT response")
-        columns, rows = payload.get("columns"), payload.get("rows")
-        if not isinstance(columns, list) or not isinstance(rows, list) or len(rows) > 200:
-            raise HTTPException(502, "Invalid local SELECT rows")
-        try:
-            indices = {str(name).lower(): idx for idx, name in enumerate(columns)}
-            sku_idx = indices["sku"]
-            rolls_idx = indices["rollos"]
-            meters_idx = indices["metros"]
-        except (KeyError, ValueError, TypeError):
-            raise HTTPException(502, "Invalid local SELECT columns")
+        if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
+            raise HTTPException(502, "Invalid local order response")
+        rows = payload["rows"]
+        if len(rows) > 200:
+            raise HTTPException(502, "Too many local order rows")
         from decimal import Decimal, InvalidOperation
         order_rows = []
         for row in rows:
-            if not isinstance(row, (list, tuple)) or max(sku_idx, rolls_idx, meters_idx) >= len(row):
+            if not isinstance(row, dict):
                 raise HTTPException(502, "Invalid order row")
-            sku = row[sku_idx]
-            if not isinstance(sku, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.()/*-]{1,99}", sku) or not sku.upper().startswith(code):
+            sku = row.get("code")
+            if (not isinstance(sku, str)
+                    or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.()/* -]{1,99}", sku)
+                    or not sku.upper().startswith(code)):
                 raise HTTPException(502, "Invalid order SKU")
             if not re.search(r"\([^()]{1,40}\)", sku):
                 continue
             try:
-                rolls = Decimal(str(row[rolls_idx]))
+                rolls = Decimal(str(row.get("stock_rolls")))
                 if not rolls.is_finite() or rolls <= 0:
                     continue
             except (InvalidOperation, TypeError, ValueError):
                 continue
-            meters = row[meters_idx]
+            meters = row.get("stock_meters")
             if meters is not None:
                 try:
-                    value = Decimal(str(meters))
-                    meters = str(value) if value.is_finite() else None
+                    meters_value = Decimal(str(meters))
+                    meters = str(meters_value) if meters_value.is_finite() else None
                 except (InvalidOperation, TypeError, ValueError):
                     meters = None
             order_rows.append({"code": sku, "stock_rolls": str(rolls),
                                "stock_meters": meters})
         return JSONResponse({"ok": True, "product_code": code, "variants": order_rows,
-                             "count": len(order_rows), "source": "access_v41_readonly"})
+                             "count": len(order_rows), "source": "access_v42_order_stock"})
 
 
     @router.post("/scanner/api/save")
