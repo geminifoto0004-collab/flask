@@ -829,7 +829,7 @@ def _create_scoped_share_guarded():
                 )
                 if key in payload
             }
-            if settings:
+            if settings and not result.get("reused_token"):
                 detail = _apply_share_settings(token_hash, settings)
                 result.update({
                     "show_pdf_pages": detail.get("show_pdf_pages"),
