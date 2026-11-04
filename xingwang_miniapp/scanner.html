@@ -1717,6 +1717,16 @@ body.cc-sample-detail #result{
 #cartStaffList .cart-list-return>.xw-language-switch,#adminTab .cc-admin-header>.xw-language-switch{margin-left:auto;flex:none}
 #cartMeta>.xw-language-switch{display:flex;width:max-content;margin:0 0 8px auto}
 
+
+.xw-order-action{display:flex;align-items:center;gap:9px;margin:9px 11px 4px;min-height:30px}
+.xw-order-action.hidden,.xw-order-toggle.hidden{display:none!important}
+.xw-order-toggle{display:inline-flex!important;align-items:center;justify-content:center;gap:5px;
+ min-height:30px!important;width:auto!important;max-width:190px;padding:4px 10px!important;
+ border:1px solid #cba967!important;border-radius:9px!important;background:#fff7e7!important;
+ color:#6d490d!important;font-size:12px!important;font-weight:700!important}
+.xw-order-toggle strong{font-variant-numeric:tabular-nums}
+.xw-order-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.xw-order-status{font-size:12px;color:#82602b}
 /* Local order stock is read-only and NEVER part of an inspection save. */
 #sampleLocalOrders.xw-local-orders{margin:8px 10px 12px;padding:12px;border-radius:12px;border:1px solid #e6d0a5;background:#fffaf0;color:#513a14}
 #sampleLocalOrders.xw-local-orders.hidden{display:none!important}
@@ -1933,6 +1943,9 @@ body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-wid
 <button id="samplePositiveBtn" type="button" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="samplePositiveCount" class="filter-count">0</strong><span class="filter-label">有库存 Con stock</span></button>
 <button id="sampleAllBtn" type="button" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="sampleAllCount" class="filter-count">0</strong><span class="filter-label">全部 Todos</span></button></div>
 <p id="sampleOrderNote" class="xw-order-stock-note hidden">常规库存无结果；已显示带 (*) 的订单库存，不能当作普通备货。</p>
+<div id="sampleOrderAction" class="xw-order-action hidden" aria-live="polite">
+<button type="button" id="sampleOrderToggle" class="xw-order-toggle hidden" aria-expanded="false" aria-controls="sampleLocalOrders"><span>訂單</span><strong id="sampleOrderCount">0</strong><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+<span id="sampleOrderStatus" class="xw-order-status"></span></div>
 <section id="sampleLocalOrders" class="xw-local-orders hidden" aria-live="polite"></section>
 <div id="totals" class="sample-stats" aria-label="庫存統計"></div>
 <div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th id="sampleSkuSort" class="sample-sku-sort" tabindex="0" role="button" aria-label="商品編號排序" aria-sort="ascending">SKU ▲</th><th id="sampleRollsSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="匹數排序">ROLL</th><th id="sampleMetersSort" class="num sample-sku-sort" tabindex="0" role="button" aria-label="米數排序">M</th><th class="sample-check-cell"><label class="sample-headcheck">✓ <input id="sampleHeaderCheck" type="checkbox" aria-label="目前顯示商品全部有樣或無樣"></label></th></tr></thead><tbody id="rows"></tbody></table></div>
@@ -2705,45 +2718,57 @@ function renderLastChecked(){
 // create sample scan authorization for order-tagged codes.
 let sampleOrderRequestId=0;
 const hasOrderParentheses=sku=>/\([^()\r\n]{1,40}\)/.test(String(sku||''));
-async function lookupLocalOrderReference(code,onlyLocal){
- const requestId=++sampleOrderRequestId,panel=$('sampleLocalOrders');
- const isCurrent=()=>requestId===sampleOrderRequestId&&mode==='sample'&&current?.product_code===code;
+async function lookupLocalOrderReference(code,request,onlyLocal){
+ const stamp=++sampleOrderRequestId, panel=$('sampleLocalOrders');
+ const action=$('sampleOrderAction'),toggle=$('sampleOrderToggle'),status=$('sampleOrderStatus');
+ const validResult=()=>stamp===sampleOrderRequestId&&mode==='sample'&&current?.product_code===code;
  if(onlyLocal)$('result').classList.add('xw-local-order-only');
- panel.classList.remove('hidden');panel.replaceChildren();
+ action.classList.add('hidden');toggle.classList.add('hidden');
+ toggle.setAttribute('aria-expanded','false');status.textContent='';
+ panel.classList.add('hidden');panel.replaceChildren();
+ const result=await request;
+ if(!validResult())return;
+ if(result.error){
+  action.classList.remove('hidden');
+  status.textContent='本机 V41 订单查询暂不可用';
+  return;
+ }
+ const rows=(Array.isArray(result.value?.variants)?result.value.variants:[])
+    .filter(row=>typeof row.code==='string'&&row.code.toUpperCase().startsWith(code)
+       &&hasOrderParentheses(row.code)&&hasPositivePieces(row.stock_rolls));
+ if(!rows.length){
+  if(onlyLocal){
+   action.classList.remove('hidden');
+   status.textContent='本机没有找到订单库存';
+  }
+  return;
+ }
  const title=document.createElement('h3');title.className='xw-local-orders-title';
  title.textContent='订单库存 · 本机查询';
  const hint=document.createElement('p');hint.className='xw-local-orders-hint';
- hint.textContent='正在查询本机 Access…';
+ hint.textContent='只读参考，不计入 TiDB 或样布盘点保存。';
  panel.append(title,hint);
- try{
-  const data=await post('/scanner/api/stock',{code});
-  if(!isCurrent())return;
-  const variants=Array.isArray(data.variants)?data.variants:[];
-  const orders=variants.filter(v=>typeof v.code==='string'&&v.code.toUpperCase().startsWith(code)&&hasOrderParentheses(v.code));
-  const positive=orders.filter(v=>hasPositivePieces(v.stock_rolls));
-  const display=(positive.length?positive:orders).slice(0,100);
-  if(!display.length){hint.textContent='本机已查询，但没有带括号的订单编号。';return;}
-  hint.textContent='仅供查询：订单编号未写入 TiDB，也不能用于样布盘点保存。';
-  for(const row of display){
-   const item=document.createElement('div');item.className='xw-local-orders-row';
-   const sku=document.createElement('code');sku.textContent=row.code;
-   const qty=document.createElement('span');
-   qty.textContent='ROLL '+fmt(row.stock_rolls)+(row.stock_meters==null?'':' · M '+fmtMeters(row.stock_meters));
-   item.append(sku,qty);panel.append(item);
-  }
-  if(orders.length>100){
-   const more=document.createElement('p');more.className='xw-local-orders-hint';
-   more.textContent='本机匹配超过100个编号，仅显示前100个。';panel.append(more);
-  }
- }catch(error){
-  if(!isCurrent())return;
-  hint.textContent=error.status===404?'本机没有找到相关订单库存。':'本机暂时无法查询订单库存；不代表库存为零。';
+ for(const row of rows){
+  const item=document.createElement('div');item.className='xw-local-orders-row';
+  const sku=document.createElement('code');sku.textContent=row.code;
+  const qty=document.createElement('span');
+  qty.textContent='ROLL '+fmt(row.stock_rolls)+(row.stock_meters==null?'':' · M '+fmtMeters(row.stock_meters));
+  item.append(sku,qty);panel.append(item);
  }
+ $('sampleOrderCount').textContent=String(rows.length);
+ toggle.classList.remove('hidden');action.classList.remove('hidden');
 }
+$('sampleOrderToggle').onclick=()=>{
+ const opened=$('sampleLocalOrders').classList.toggle('hidden')===false;
+ $('sampleOrderToggle').setAttribute('aria-expanded',String(opened));
+};
 function showResult(d){
  sampleOrderRequestId++;
  $('sampleLocalOrders').replaceChildren();
  $('sampleLocalOrders').classList.add('hidden');
+ $('sampleOrderAction').classList.add('hidden');
+ $('sampleOrderToggle').classList.add('hidden');
+ $('sampleOrderStatus').textContent='';
  $('result').classList.remove('xw-local-order-only');
  current=d;sampleStates=new Map();saved=false;sampleDirty=false;savedScope.clear();
  for(const row of d.variants||[]){
@@ -2789,17 +2814,19 @@ async function lookup(input){
     if(!fresh.fresh&&!staleAccepted(fresh))
      throw Object.assign(new Error('⚠ 庫存超過 60 分鐘；請先按「繼續使用舊庫存」，或更新庫存'),{status:409});
     msg('正在查詢布樣：'+code);
+    // Start local V41 SELECT concurrently with TiDB, even when TiDB has stock.
+    const orderRequest=post('/scanner/api/orders',{code}).then(
+       value=>({value}),error=>({error}));
     let d;
     try{d=await post('/scanner/api/sample',{code,allow_stale:staleAccepted(fresh)});}
     catch(error){
      if(error.status!==404)throw error;
      d={product_code:code,variants:[],db_connected:false,scan_id:null,
         previous_status:{},as_of:fresh.synced_at_utc,
-        last_checked_at:null,last_checked_count:0};
+        last_checked_at:null,last_checked_count:0,order_lookup_only:true};
     }
-    const ordinaryPositive=(d.variants||[]).some(v=>!hasOrderParentheses(v.code)&&hasPositivePieces(v.stock_rolls));
     sharedProductCode=code;showResult(d);msg('');
-    if(!ordinaryPositive)void lookupLocalOrderReference(code,!(d.variants||[]).length);
+    void lookupLocalOrderReference(code,orderRequest,!!d.order_lookup_only);
    }
   }
  }catch(e){
