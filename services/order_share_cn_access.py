@@ -449,6 +449,7 @@ def _read_snapshot_update(conn):
     if target not in {"TIDB1", "TIDB2"}:
         target = None
     meta = {"target": target, "updated_epoch": None, "status": "no_record"}
+    snapshot_epoch = 0
     try:
         cur = _cursor(conn)
         cur.execute(
@@ -459,8 +460,7 @@ def _read_snapshot_update(conn):
         row = _row(cur.fetchone(), cur)
         epoch = row.get("updated_epoch")
         if epoch is not None and int(epoch) > 0:
-            meta.update(updated_epoch=int(epoch), status="recorded")
-            return meta
+            snapshot_epoch = int(epoch)
     except Exception as exc:
         # Missing snapshot-state table on a standalone-sync TiDB is expected.
         # Do not expose SQL/connection details to an authenticated customer page.
@@ -477,12 +477,15 @@ def _read_snapshot_update(conn):
         )
         row = _row(cur.fetchone(), cur)
         epoch = row.get("updated_epoch")
-        if epoch is not None and int(epoch) > 0:
+        if epoch is not None and int(epoch) > snapshot_epoch:
             meta.update(updated_epoch=int(epoch), status="orders_updated")
     except Exception as exc:
         code = (getattr(exc, "args", None) or [None])[0]
         print(f"[ORDER CN time] order timestamp unavailable on {target or 'DB'}: {type(exc).__name__} code={code}", flush=True)
-        meta["status"] = "unavailable"
+        if not snapshot_epoch:
+            meta["status"] = "unavailable"
+    if snapshot_epoch and meta["status"] != "orders_updated":
+        meta.update(updated_epoch=snapshot_epoch, status="recorded")
     return meta
 
 
