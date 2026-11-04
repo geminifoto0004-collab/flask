@@ -630,6 +630,11 @@ def attach_stock_lookup(stock_lookup, order_stock_select):
         upstream = await order_stock_select(code)
         if not isinstance(upstream, dict) or not upstream.get("ok"):
             reason = upstream.get("code", "UNAVAILABLE") if isinstance(upstream, dict) else "UNAVAILABLE"
+            if not isinstance(reason, str) or len(reason) > 36 or not re.fullmatch(r"[A-Z_]+", reason):
+                reason = "UNAVAILABLE"
+            logging.getLogger("uvicorn.error").warning(
+                "SCANNER_V41_ORDERS_NOT_READY reason=%s", reason
+            )
             safe_messages = {
                 "DISABLED": "本机 V41 唯读 SELECT 通道尚未启用",
                 "LOCAL_OFFLINE": "本机连接离线，订单库存无法核对",
@@ -639,6 +644,8 @@ def attach_stock_lookup(stock_lookup, order_stock_select):
                 "TIMEOUT": "本机订单库存查询超时",
                 "LOCAL_API": "本机唯读 Access 快照或登入尚不可用",
                 "ACCESS_DENIED": "本机 V41 不支持此唯读查询",
+                "UNAVAILABLE": "本机 V41 订单通道暂时无法确认状态",
+                "INVALID_RESPONSE": "本机 V41 回传资料格式不正确",
             }
             return JSONResponse({"ok": False, "code": reason,
                                  "error": safe_messages.get(reason, "本机订单库存暂时无法查询")},
