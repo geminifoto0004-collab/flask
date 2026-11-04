@@ -1713,6 +1713,18 @@ body.cc-sample-detail #result{
 
 .xw-order-stock-note{margin:2px 14px 8px;padding:9px 11px;border:1px solid #ead3a1;border-radius:10px;background:#fff8e8;color:#704c08;font-size:12px;line-height:1.5}
 
+
+/* XW localized scanner: compact language switch, one language per screen. */
+.xw-language-switch{display:inline-flex;align-items:center;flex:none;gap:2px;padding:3px;border:1px solid var(--stroke);border-radius:10px;background:#fff;line-height:1}
+.xw-language-switch button{display:inline-flex;align-items:center;justify-content:center;width:30px!important;min-width:30px!important;height:28px!important;min-height:28px!important;padding:0!important;border:0!important;border-radius:7px!important;color:var(--wine)!important;background:transparent!important;font-size:11px!important;font-weight:750!important}
+.xw-language-switch button.active{color:#fff!important;background:var(--wine)!important}
+.xw-language-switch button:focus-visible{outline:2px solid var(--wine);outline-offset:2px}
+body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-width:0}
+#login.cc-login{position:relative}
+#login.cc-login>.xw-language-switch{position:absolute;top:20px;right:26px;z-index:2}
+#login .cc-login-types button small,#workModes button small,#saveBtn .cc-save-label small,#inventoryStartBtn small{display:none!important}
+@media(max-width:390px){body>main>header>div:first-child{gap:4px}.xw-language-switch{padding:2px}.xw-language-switch button{width:24px!important;min-width:24px!important;height:26px!important;min-height:26px!important;font-size:10px!important}body:has(#scanPanel:not(.hidden)) header h1{font-size:18px!important;letter-spacing:0!important}#login.cc-login>.xw-language-switch{top:22px;right:28px}}
+
 /* UNSLOP QR test /scanner?compact=1
    Native Html5Qrcode scan frame is preserved: scale its parent width BEFORE
    camera start, then let the browser and library determine video height.
@@ -2941,7 +2953,96 @@ $('inventoryStartBtn').onclick=async()=>{
 
 
 if(location.hash==='#admin')mode='admin';
-</script><script src="/scanner/cart.js"></script><script>
+</script><script src="/scanner/cart.js"></script>
+<!-- XW-SCANNER-I18N-V1: UI-only localization; QR, stock and cart state unchanged -->
+<script>
+(function(){
+'use strict';
+const entries={"员工":["员工","Personal"],"访客":["访客","Visitante"],"样布":["样布","Muestras"],"库存":["库存","Inventario"],"庫存":["库存","Inventario"],"商品查詢":["商品查询","Consulta de productos"],"Nota 查詢":["Nota 查询","Consultar notas"],"有库存 Con stock":["有库存","Con stock"],"有库存":["有库存","Con stock"],"全部 Todos":["全部","Todos"],"全部":["全部","Todos"],"有样 / Con":["有样","Con muestra"],"无样 / Sin":["无样","Sin muestra"],"有样":["有样","Con muestra"],"无样":["无样","Sin muestra"],"保存":["保存","Guardar"],"已保存":["已保存","Guardado"],"Guardar visibles":["仅保存显示项","Guardar visibles"],"匹 Rollos":["匹数","Rollos"],"匹 Roll":["匹数","Rollos"],"米 Metros":["米数","Metros"],"米 m":["米数","Metros"],"新建 / Nuevo · 客户可选":["新建 · 客户可选","Nuevo · Cliente puede elegir"],"草稿":["草稿","Borrador"],"打开 / Abierto":["打开","Abierto"],"确认 / Confirmado":["已确认","Confirmado"],"确认 / Confirmar":["确认","Confirmar"],"确定 / Aceptar":["确定","Aceptar"],"取消 / Cancelar":["取消","Cancelar"],"保存 / Guardar":["保存","Guardar"],"完成 / Listo":["完成","Listo"],"查询":["查询","Buscar"],"查詢":["查询","Consultar"],"登录码 / Clave":["登录码","Clave de acceso"],"完整查詢":["完整查询","Consulta completa"],"庫存已超過 60 分鐘，請確認是否使用舊資料。":["库存已超过60分钟，请确认是否使用旧数据。","El stock tiene más de 60 minutos. Confirme si desea usarlo."],"繼續使用舊庫存":["继续使用旧库存","Usar stock anterior"],"更新庫存":["更新库存","Actualizar stock"],"已选商品":["已选商品","Seleccionados"],"已选":["已选","Seleccionados"],"已選":["已选","Seleccionados"],"库存仅供参考，正式开单前须核对 RESERVAR":["库存仅供参考，正式下单前须核对预订。","El stock es orientativo. Verifique las reservas antes de confirmar."],"关闭 / Cerrar":["关闭","Cerrar"],"關閉相機 / Cerrar cámara":["关闭相机","Cerrar cámara"],"关闭":["关闭","Cerrar"],"打开":["打开","Abrir"],"确认":["确认","Confirmar"],"Rollos":["匹数","Rollos"],"✓ 已保存":["✓ 已保存","✓ Guardado"],"已删除 / Eliminado":["已删除","Eliminado"],"恢复 / Deshacer":["撤销","Deshacer"],"分享購物車 / Compartir":["分享购物车","Compartir carrito"],"複製 / Copiar":["复制","Copiar"],"下載 QR / Descargar":["下载 QR","Descargar QR"],"使用客戶手機掃描 / Escanear con el móvil del cliente":["使用客户手机扫描","Escanear con el móvil del cliente"],"商品編號":["商品编号","Código"],"匹數":["匹数","Rollos"],"米數":["米数","Metros"],"預定狀態":["预订状态","Reserva"],"貨櫃":["货柜","Contenedor"],"單位":["单位","Unidad"],"到貨日期":["到货日期","Llegada"],"日期":["日期","Fecha"],"客戶":["客户","Cliente"],"預定單號":["预订单号","N.º de reserva"],"待到貨":["待到货","Por llegar"],"歷史購買":["历史购买","Historial"],"預訂":["预订","Reservas"],"查下一筆":["查下一笔","Siguiente consulta"],"載入更多購買紀錄":["加载更多购买记录","Cargar más compras"],"商品種類":["商品种类","Productos"],"庫存匹數":["库存匹数","Rollos disponibles"],"庫存米數":["库存米数","Metros disponibles"],"待到貨(匹)":["待到货（匹）","Rollos por llegar"],"近365天":["近365天","Últimos 365 días"],"最近交易":["最近交易","Última venta"],"成交單價":["成交单价","Precio de venta"],"符合單據":["符合单据","Documentos encontrados"],"查詢條件":["查询条件","Condición de búsqueda"],"出貨日期":["出货日期","Despacho"],"司機":["司机","Conductor"],"沒有符合的資料":["没有符合的数据","Sin datos"],"沒有符合的單據":["没有符合的单据","No se encontraron documentos"],"没有符合的商品 / Sin resultados":["没有符合的商品","Sin resultados"],"沒有符合商品。":["没有符合的商品。","No se encontraron productos."],"沒有正庫存商品，請點 ALL 查看。":["没有正库存商品，请点击全部查看。","No hay stock positivo. Seleccione Todos."],"SKU ▲":["SKU ▲","SKU ▲"],"ROLL":["匹数","Rollos"],"手動":["手动","Manual"],"管理工具":["管理工具","Herramientas"],"库存同步 / Sincronización":["库存同步","Sincronización de stock"],"数据库维护 / Base de datos":["数据库维护","Mantenimiento de BD"],"分享扫描入口 / Compartir":["分享扫描入口","Compartir escáner"],"↻ 更新库存":["↻ 更新库存","↻ Actualizar stock"],"Actualizar stock":["更新库存","Actualizar stock"],"检查数据库 / Base de datos":["检查数据库","Comprobar BD"],"分享連結":["分享链接","Compartir enlace"],"复制":["复制","Copiar"],"⚠ 库存未更新":["⚠ 库存未更新","⚠ Stock desactualizado"],"⚠ 库存同步状态未知":["⚠ 库存同步状态未知","⚠ Estado de stock desconocido"],"继续 / Seguir":["继续","Continuar"],"库存更新":["库存更新","Stock actualizado"],"常规库存无结果；已显示带 (*) 的订单库存，不能当作普通备货。":["常规库存无结果；已显示带 (*) 的订单库存，不能当作普通备货。","Sin stock normal: se muestra stock (*) de pedidos, no de libre venta."],"掃描系列 QR 或輸入編號，開始後才建立您的購物車。":["扫描系列 QR 或输入编号，开始后才建立购物车。","Escanee el QR o introduzca el código; el carrito se creará al comenzar."],"匹數為您的需求，庫存僅供參考 / Cantidades solicitadas; stock orientativo.":["匹数代表需求，库存仅供参考。","La cantidad es la solicitud del cliente; stock referencial."],"連結有效 8 小時；重新產生會使舊連結失效。":["链接有效8小时；重新生成后旧链接会失效。","El enlace dura 8 horas; generar otro invalida el anterior."],"雲端通知本機系統 從本機 Flask 取得完整庫存，再更新 TiDB；布樣盤點資料不會被覆蓋。":["云端从本机 Flask 读取完整库存并更新 TiDB，样布盘点资料不会被覆盖。","La nube consulta Flask local y actualiza TiDB sin borrar inventarios de muestras."],"首次部署或連線異常時才需要使用。":["仅首次部署或连接异常时使用。","Utilice solo si es la primera instalación o falla la conexión."],"同事開啟後仍需要公司登入碼。":["同事打开后仍需公司登录码。","Los empleados necesitarán su clave de acceso."],"本次查詢沒有可列出的商品編號，請確認快照中的編號。":["本次查询没有可显示的商品编号，请检查库存快照。","No hay códigos en esta consulta. Revise la copia de stock."],"尚未確認 TiDB 連線；不會寫入盤點資料。":["尚未确认 TiDB 连接；不会写入盘点数据。","No se confirmó TiDB. No se guardará el inventario."],"本頁為公司唯讀查詢，不提供成交單價。":["本页只读查询，不提供成交单价。","Consulta empresarial de solo lectura; sin precio de venta."],"TiDB 不可用，暫時不能保存。":["TiDB 不可用，暂时不能保存。","TiDB no está disponible; no se puede guardar."],"尚無正式保存的盤點紀錄":["尚无正式保存的盘点记录","Aún no hay inventarios guardados"],"最近盤點：":["最近盘点：","Último inventario: "],"；本次保存 ":["；本次保存 ","; guardados: "],"有樣 ":["有样 ","Con muestra "],"無樣 ":["无样 ","Sin muestra "],"登入已過期，請重新登入。":["登录已过期，请重新登录。","La sesión caducó. Inicie sesión otra vez."],"管理員尚未設定登入碼":["管理员尚未设置登录码","El administrador no configuró la clave"],"相機元件尚未載入，請重新整理。":["相机组件尚未加载，请刷新页面。","El lector QR no cargó. Actualice la página."],"相機已開啟，可連續掃描商品編號。":["相机已开启，可连续扫描商品编号。","Cámara activa; puede escanear códigos seguidos."],"相機權限或開啟失敗：":["相机权限或开启失败：","Error al abrir cámara: "],"停止連續掃描":["停止连续扫描","Detener escáner"],"開啟連續掃描":["开启连续扫描","Iniciar escáner"],"查詢完成":["查询完成","Consulta completada"],"查詢完整資料：":["查询完整资料：","Consultando datos:"],"顯示已查詢的完整資料":["显示已查询的完整资料","Mostrando datos consultados"],"原本的盤點選擇仍保留":["原有盘点选择已保留","Las selecciones se han conservado"],"正在查詢布樣：":["正在查询样布：","Consultando muestras:"],"目前系列尚未保存，請先按保存。相機仍然保持開啟。":["当前系列尚未保存，请先保存。相机保持开启。","La serie tiene cambios sin guardar. Guarde primero; la cámara sigue abierta."],"尚無有效庫存快照，請先更新庫存":["尚无有效库存快照，请先更新库存","No hay stock actualizado. Sincronice primero."],"⚠ 庫存超過 60 分鐘；請先按「繼續使用舊庫存」，或更新庫存":["⚠ 库存超过60分钟，请选择继续使用旧库存或更新库存","⚠ Stock de más de 60 minutos: use el anterior o actualícelo"],"已複製網址":["已复制网址","Enlace copiado"],"長按複製 / Mantener pulsado para copiar":["长按复制","Mantenga pulsado para copiar"],"查看上次保存":["查看上次保存","Ver último guardado"],"版本 / Versión":["版本","Versión"],"备注 / Nota":["备注","Nota"],"价格、交期及要求 / Precio, entrega y detalles":["价格、交期及要求","Precio, entrega y detalles"],"客戶名稱":["客户名称","Nombre del cliente"],"客户名称":["客户名称","Nombre del cliente"],"正在讀取最後成功時間…":["正在读取最后成功时间…","Leyendo última sincronización…"],"正在連接 TiDB":["正在连接 TiDB","Conectando TiDB"],"正在準備庫存快照":["正在准备库存快照","Preparando datos"],"正在批次寫入 TiDB":["正在批量写入 TiDB","Escribiendo lotes en TiDB"],"新庫存已全部驗證，正在切換正式資料表":["新库存验证完毕，正在切换正式数据表","Stock validado. Activando nuevos datos"],"寫入完成":["写入完成","Escritura completa"],"正在同步":["正在同步","Sincronizando"],"同步失敗：":["同步失败：","Error de sincronización:"],"請檢查 Render 日誌":["请检查 Render 日志","Revise registros de Render"],"本次完整庫存已成功替換：":["本次完整库存已成功替换：","Stock completo reemplazado:"],"本次同步成功。":["本次同步成功。","Sincronización completada."],"本次寫入尚未提交；成功時間將在完成後更新":["本次写入尚未提交；成功时间将在完成后更新","Pendiente: se actualizará al completar"],"尚無成功紀錄":["尚无成功记录","Sin registros de éxito"],"最後成功：":["最后成功：","Última sincronización:"],"無法取得同步狀態：":["无法获取同步状态：","No se puede consultar estado:"],"正在向 本機 發出庫存同步指令…":["正在向本机发送库存同步指令…","Solicitando sincronización al equipo local…"],"無法開始：":["无法开始：","No se puede iniciar:"]};
+const simplify={"庫":"库","樣":"样","盤":"盘","購":"购","歷":"历","預":"预","訂":"订","檢":"检","啟":"启","閉":"闭","掃":"扫","選":"选","儲":"储","單":"单","處":"处","確":"确","認":"认","還":"还","復":"复","網":"网","頁":"页","顯":"显","數":"数","據":"据","總":"总","類":"类","連":"连","傳":"传","時":"时","間":"间","長":"长","對":"对","產":"产","實":"实","檔":"档","齡":"龄","額":"额","獨":"独","關":"关","過":"过","濾":"滤","匯":"汇","導":"导","備":"备","註":"注","暫":"暂","請":"请","變":"变","減":"减","線":"线","開":"开","設":"设","結":"结","統":"统","參":"参","權":"权","問":"问","應":"应","該":"该","幣":"币","門":"门","動":"动","擊":"击","無":"无","資":"资","語":"语","讓":"让","點":"点","編":"编","號":"号","複":"复","製":"制","給":"给","業":"业","務":"务","計":"计","刪":"删","範":"范","圍":"围","帳":"账","當":"当","測":"测","試":"试","錯":"错","誤":"误","輸":"输","換":"换","讀":"读","發":"发","緊":"紧","續":"续","狀":"状","態":"态","證":"证","記":"记","錄":"录","標":"标","維":"维","護":"护","體":"体","進":"进","華":"华","話":"话","強":"强","負":"负","達":"达","擔":"担","飛":"飞","舊":"旧","訊":"讯","現":"现","離":"离","寫":"写","聽":"听","載":"载","擴":"扩","評":"评","價":"价","鍵":"键","軟":"软","專":"专","車":"车","圖":"图","觸":"触","燈":"灯","碼":"码","區":"区","萬":"万","與":"与","為":"为","個":"个","筆":"笔","屬":"属","驗":"验","稱":"称","貼":"贴","畫":"画","審":"审","準":"准","節":"节","須":"须","週":"周","級":"级","嗎":"吗","遲":"迟","彈":"弹","將":"将","查":"查","列":"列","內":"内","運":"运","賣":"卖","錢":"钱","學":"学","店":"店","綁":"绑","訪":"访","僅":"仅","戶":"户","比":"比","斷":"断","裝":"装","貨":"货","櫃":"柜","餘":"余","賺":"赚","管":"管"};
+const bases=new WeakMap(),attributes=new WeakMap();
+const key='xw_scanner_ui_lang';let lang='zh-CN';
+try{lang=localStorage.getItem(key)==='es'?'es':'zh-CN'}catch(_){}
+const hasHan=s=>/[\u3400-\u9fff]/.test(s);
+const toSimple=s=>s.replace(/[\u3400-\u9fff]/g,ch=>simplify[ch]||ch);
+const phrases=Object.entries(entries).filter(([s])=>hasHan(s)).sort((a,b)=>b[0].length-a[0].length);
+function localized(raw){
+ const original=String(raw||''),trimmed=original.trim();
+ if(!trimmed)return original;
+ let next=trimmed;
+ if(entries[trimmed])next=entries[trimmed][lang==='es'?1:0];
+ else{
+  const slash=trimmed.split(/\s+\/\s+/),newlines=trimmed.split(/\s*\n\s*/);
+  if(slash.length===2&&hasHan(slash[0])&&!hasHan(slash[1]))next=lang==='es'?slash[1]:toSimple(slash[0]);
+  else if(newlines.length===2&&hasHan(newlines[0])&&!hasHan(newlines[1]))next=lang==='es'?newlines[1]:toSimple(newlines[0]);
+  else if(lang==='zh-CN')next=toSimple(trimmed);
+  else if(hasHan(trimmed)){
+   for(const [from,to] of phrases){if(next.includes(from))next=next.split(from).join(to[1]);}
+  }
+ }
+ const a=(original.match(/^\s*/)||[''])[0],b=(original.match(/\s*$/)||[''])[0];
+ return a+next+b;
+}
+function textNode(node){
+ if(!node||node.nodeType!==3||!node.parentElement||node.parentElement.closest('script,style,svg,.xw-language-switch'))return;
+ const now=node.nodeValue,old=bases.get(node),base=old&&old.view===now?old.base:now,view=localized(base);
+ bases.set(node,{base,view});if(now!==view)node.nodeValue=view;
+}
+const attrNames=['placeholder','title','aria-label','alt'];
+function attrs(el){
+ if(!el||el.nodeType!==1||el.closest('script,style,svg,.xw-language-switch'))return;
+ const memo=attributes.get(el)||{};
+ for(const name of attrNames){if(!el.hasAttribute(name))continue;
+  const now=el.getAttribute(name),old=memo[name],base=old&&old.view===now?old.base:now,view=localized(base);
+  memo[name]={base,view};if(now!==view)el.setAttribute(name,view);
+ }
+ attributes.set(el,memo);
+}
+function translateTree(root){
+ if(!root)return;if(root.nodeType===3){textNode(root);return;}
+ if(root.nodeType!==1&&root.nodeType!==9)return;
+ if(root.nodeType===1&&root.matches('script,style,svg,.xw-language-switch'))return;
+ if(root.nodeType===1)attrs(root);
+ root.querySelectorAll('[title],[placeholder],[aria-label],[alt]').forEach(attrs);
+ const tw=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+ while(tw.nextNode())textNode(tw.currentNode);
+}
+function refresh(){
+ document.documentElement.lang=lang;
+ document.querySelectorAll('.xw-language-switch button').forEach(b=>{
+  const active=b.dataset.xwLang===lang;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
+ });
+}
+function change(next){
+ if(next!=='es'&&next!=='zh-CN')return;lang=next;
+ try{localStorage.setItem(key,lang)}catch(_){}
+ refresh();translateTree(document.body);
+}
+function picker(){
+ const div=document.createElement('div');div.className='xw-language-switch';
+ div.setAttribute('role','group');div.setAttribute('aria-label','Idioma / 语言');
+ div.innerHTML='<button type="button" data-xw-lang="zh-CN" aria-label="简体中文">中</button><button type="button" data-xw-lang="es" aria-label="Español">ES</button>';
+ div.addEventListener('click',e=>{const b=e.target.closest('button[data-xw-lang]');if(b)change(b.dataset.xwLang);});return div;
+}
+function init(){
+ const head=document.querySelector('body>main>header>div:first-child'),login=document.getElementById('login');
+ if(head&&!head.querySelector('.xw-language-switch'))head.append(picker());
+ if(login&&!login.querySelector('.xw-language-switch'))login.insertBefore(picker(),login.firstChild);
+ refresh();translateTree(document.body);
+ const watcher=new MutationObserver(records=>{
+  for(const rec of records){
+   if(rec.type==='characterData')textNode(rec.target);
+   else if(rec.type==='attributes')attrs(rec.target);
+   else rec.addedNodes.forEach(translateTree);
+  }
+ });
+ watcher.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:attrNames});
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+window.xwScannerSetLanguage=change;
+})();
+</script>
+<script>
 window.addEventListener('pageshow',event=>{
  // A history back-forward cache must not restore previously visible staff data.
  if(event.persisted)location.reload();
