@@ -304,7 +304,7 @@ function cartRender(){
  // On stock-only view, prefer ordinary SKUs. Order-marked (*) SKUs
  // become a read-only availability fallback only if there are no ordinary
  // positive-stock matches; selected quantities and writes are unchanged.
- const markedSku=sku=>/\\(\\s*\\*\\s*\\)/.test(String(sku||''));
+ const markedSku=sku=>/\(\s*\*\s*\)/.test(String(sku||''));
  const ordinaryInStock=inStock.filter(v=>!markedSku(v.code));
  const fallbackInStock=inStock.filter(v=>markedSku(v.code));
  const orderStockFallback=ordinaryInStock.length===0&&fallbackInStock.length>0;
