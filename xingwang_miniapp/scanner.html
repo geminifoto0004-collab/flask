@@ -1663,12 +1663,11 @@ body.cc-sample-detail #result{
    Native Html5Qrcode scan frame is preserved: scale its parent width BEFORE
    camera start, then let the browser and library determine video height.
    No clipped/cropped window, no scrollTop, no changed QR decoding config. */
-#sampleCameraToggle{display:none!important}
 @media(max-width:740px){
  html.xw-compact-qr-preview body:not(.xw-cart-mode) #scanPanel:not(.cc-cart-camera-active) #reader.camera-active{
   display:block!important;position:relative!important;
   box-sizing:border-box!important;
-  width:min(calc(100% - 32px), 280px)!important;max-width:280px!important;
+  width:min(calc(100% - 32px), 248px)!important;max-width:248px!important;
   height:auto!important;min-height:0!important;max-height:none!important;
   overflow:hidden!important;margin:8px auto 10px!important;
   padding:0!important;border-radius:14px!important;
@@ -1678,19 +1677,8 @@ body.cc-sample-detail #result{
   height:auto!important;min-height:0!important;max-height:none!important;
   object-fit:contain!important;
  }
- html.xw-compact-qr-preview body.cc-sample-detail #result .sample-series-header #sampleCameraToggle{
-  display:inline-flex!important;flex:0 0 34px!important;
-  width:34px!important;height:34px!important;min-width:34px!important;
-  align-items:center!important;justify-content:center!important;
-  padding:0!important;border:1px solid var(--stroke)!important;
-  border-radius:10px!important;background:#fff!important;color:var(--wine)!important;
- }
- html.xw-compact-qr-preview body.cc-sample-detail #result .sample-series-header #sampleCameraToggle[aria-pressed="true"]{
-  background:var(--wine)!important;color:#fff!important;border-color:var(--wine)!important;
- }
  html.xw-compact-qr-preview #result .sample-series-header{gap:6px!important}
  html.xw-compact-qr-preview #result .sample-series-header #series{min-width:0!important;flex:0 1 auto!important}
- html.xw-compact-qr-preview #result .sample-series-header #sampleCameraToggle svg{width:19px;height:19px}
 }
 
 </style>
@@ -1857,7 +1845,7 @@ body.cc-sample-detail #result{
 </section>
 <section id="result" class="panel hidden">
 <div class="cc-sample-top"><button id="ccSampleBack" class="cc-detail-back" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button></div>
-<div class="sample-series-header"><h2 id="series"></h2><button id="sampleCameraToggle" type="button" aria-pressed="false" aria-label="開啟連續掃描" title="開啟連續掃描"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.4"/></svg></button><span class="sample-sync" title="庫存更新 / Stock updated"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><small id="asof"></small></span><span id="source" class="tag"></span></div>
+<div class="sample-series-header"><h2 id="series"></h2><span class="sample-sync" title="庫存更新 / Stock updated"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><small id="asof"></small></span><span id="source" class="tag"></span></div>
 <div class="stock-visibility" role="group" aria-label="布樣盤點顯示範圍">
 <button id="samplePositiveBtn" type="button" class="active" aria-pressed="true" aria-label="Stock > 0" title="有庫存 / Con stock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4v10l-9 4-9-4V7Z"/><path d="m3 7 9 4 9-4M12 11v10"/></svg><strong id="samplePositiveCount" class="filter-count">0</strong><span class="filter-label">有库存 Con stock</span></button>
 <button id="sampleAllBtn" type="button" aria-pressed="false" aria-label="All stock" title="全部 / Todos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><strong id="sampleAllCount" class="filter-count">0</strong><span class="filter-label">全部 Todos</span></button></div>
@@ -2768,15 +2756,8 @@ function syncCameraButton(){
  b.setAttribute('aria-pressed',String(running));b.setAttribute('aria-label',running?'停止連續掃描':'開啟連續掃描');
  b.title=running?'停止連續掃描':'開啟連續掃描';
  $('cameraOnIcon').classList.toggle('hidden',running);$('cameraOffIcon').classList.toggle('hidden',!running);
- const quick=$('sampleCameraToggle');
- if(quick){
-  quick.setAttribute('aria-pressed',String(running));
-  quick.setAttribute('aria-label',running?'停止連續掃描':'開啟連續掃描');
-  quick.title=running?'停止連續掃描':'開啟連續掃描';
- }
 }
 $('cameraToggle').onclick=async()=>{if(running)await stopCamera();else await startCamera()};
-$('sampleCameraToggle').onclick=()=>$('cameraToggle').click();
 function clearFullQuery(){
  // The existing "查下一筆" action belongs only to the full-inquiry tab.
  fullData=null;fullCode='';lastQrCode='';
