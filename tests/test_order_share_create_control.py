@@ -46,6 +46,33 @@ class ControlTests(unittest.TestCase):
         conn.row_factory = sqlite3.Row
         return conn
 
+    def test_connection_driver_unwraps_cloud_mirror_adapted_dbutils_pool(self):
+        class RawMySQLConnection:
+            pass
+        RawMySQLConnection.__module__ = 'pymysql.connections'
+
+        class PooledDedicatedDBConnection:
+            pass
+        PooledDedicatedDBConnection.__module__ = 'DBUtils.PooledDB'
+
+        class AdaptedConnection:
+            pass
+
+        class CloudMirroredConnection:
+            pass
+
+        pooled = PooledDedicatedDBConnection()
+        pooled._con = RawMySQLConnection()
+        adapted = AdaptedConnection()
+        adapted._conn = pooled
+        mirrored = CloudMirroredConnection()
+        mirrored._active = adapted
+
+        self.assertEqual(
+            self.control._connection_driver(mirrored),
+            'pymysql.connections',
+        )
+
     def create(self, **kwargs):
         return self.control.create_live_share('SERGIO', requested_token='a' * 43, **kwargs)
 
