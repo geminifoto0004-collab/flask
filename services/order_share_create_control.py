@@ -18,16 +18,25 @@ class ShareCreateConflict(ValueError):
 
 
 def _connection_driver(connection):
-    """Find the raw DB-API connection behind ORDER's compatibility wrappers."""
+    """Find the raw DB-API driver behind ORDER and DBUtils connection wrappers."""
     current = connection
-    for _ in range(4):
-        if hasattr(current, '_active'):
-            current = current._active
-            continue
-        if hasattr(current, '_conn'):
-            current = current._conn
-            continue
-        break
+    # Render may return CloudMirroredConnection -> AdaptedConnection ->
+    # DBUtils.PooledDedicatedDBConnection -> pymysql.Connection. The pool
+    # wrapper exposes the actual driver connection as _con; stopping at
+    # DBUtils.PooledDB would skip TiDB's SELECT ... FOR UPDATE guard.
+    for _ in range(8):
+        next_connection = None
+        for attribute in ('_active', '_conn', '_con'):
+            try:
+                candidate = getattr(current, attribute, None)
+            except Exception:
+                candidate = None
+            if candidate is not None and candidate is not current:
+                next_connection = candidate
+                break
+        if next_connection is None:
+            break
+        current = next_connection
     return str(current.__class__.__module__ or '')
 
 
