@@ -488,6 +488,57 @@ async def relay_stock_mcp(product_code: str) -> dict:
     return {"ok": True, "data": reply.get("data"), "source": role}
 
 
+# Scanner-only order-stock SELECT. This SQL is generated on Render, never
+# accepted from a browser. V41's read-only SQL tunnel must be independently
+# enabled and backed by an OS-protected, non-live Access snapshot.
+_ORDER_STOCK_SQL = (
+    "SELECT TOP 200 [CODIGO] AS [Sku], "
+    "SUM([STOCK]) AS [Rollos], SUM([UNT]*[PN]) AS [Metros] "
+    "FROM [Stockdeventa] "
+    "WHERE LEFT([CODIGO], ?) = ? AND [CODIGO] LIKE ? "
+    "GROUP BY [CODIGO] HAVING SUM([STOCK]) > 0 "
+    "ORDER BY [CODIGO]"
+)
+
+
+async def relay_order_stock_select(product_code: str) -> dict:
+    """Authorized scanner query -> local V41 sql_readonly, fixed SELECT only."""
+    async with bridge_lock:
+        ws = active_bridge
+        role = active_role
+        if ws is None or role is None:
+            return {"ok": False, "code": "LOCAL_OFFLINE"}
+        if len(waiting) >= MAX_INFLIGHT:
+            return {"ok": False, "code": "BUSY"}
+        req_id = uuid4().hex
+        future = asyncio.get_running_loop().create_future()
+        waiting[req_id] = (future, ws)
+        try:
+            await send_peer(role, {
+                "type": "query",
+                "id": req_id,
+                "source": "sql_readonly_admin",
+                "action": "sql_readonly",
+                "sql": _ORDER_STOCK_SQL,
+                "params": [len(product_code), product_code, "%(%)%"],
+            })
+        except (RuntimeError, WebSocketDisconnect, OSError):
+            waiting.pop(req_id, None)
+            return {"ok": False, "code": "LOCAL_OFFLINE"}
+    try:
+        reply = await asyncio.wait_for(future, timeout=24)
+    except asyncio.TimeoutError:
+        return {"ok": False, "code": "TIMEOUT"}
+    finally:
+        waiting.pop(req_id, None)
+    if not isinstance(reply, dict):
+        return {"ok": False, "code": "INVALID_RESPONSE"}
+    if reply.get("ok") is not True:
+        code = reply.get("code", "LOCAL_API")
+        return {"ok": False, "code": code if isinstance(code, str) else "LOCAL_API"}
+    return {"ok": True, "data": reply.get("data")}
+
+
 def _render_stock_variant_table(variants: list[dict]) -> str:
     """HTML contains only already-allowlisted product codes and quantities."""
     from html import escape
@@ -734,7 +785,7 @@ async def stock_test(request: Request, code: str = "", ticket: str = ""):
 
 # QR scanner is a separate, authenticated interface. Keep it before MCP root mount.
 from xingwang_miniapp.scanner_backend import router as scanner_router, attach_stock_lookup
-attach_stock_lookup(relay_stock_mcp)
+attach_stock_lookup(relay_stock_mcp, relay_order_stock_select)
 app.include_router(scanner_router)
 from xingwang_miniapp.scanner_cart import router as scanner_cart_router
 app.include_router(scanner_cart_router)
