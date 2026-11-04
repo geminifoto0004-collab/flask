@@ -488,21 +488,10 @@ async def relay_stock_mcp(product_code: str) -> dict:
     return {"ok": True, "data": reply.get("data"), "source": role}
 
 
-# Scanner-only order-stock SELECT. This SQL is generated on Render, never
-# accepted from a browser. V41's read-only SQL tunnel must be independently
-# enabled and backed by an OS-protected, non-live Access snapshot.
-_ORDER_STOCK_SQL = (
-    "SELECT TOP 200 [CODIGO] AS [Sku], "
-    "SUM([STOCK]) AS [Rollos], SUM([UNT]*[PN]) AS [Metros] "
-    "FROM [Stockdeventa] "
-    "WHERE LEFT([CODIGO], ?) = ? AND [CODIGO] LIKE ? "
-    "GROUP BY [CODIGO] HAVING SUM([STOCK]) > 0 "
-    "ORDER BY [CODIGO]"
-)
-
-
+# V42 scanner order-only lookup through the existing local Flask /search.
+# No browser-supplied SQL, no SQL tunnel, no Access/TiDB sync modification.
 async def relay_order_stock_select(product_code: str) -> dict:
-    """Authorized scanner query -> local V41 sql_readonly, fixed SELECT only."""
+    """Authorized scanner -> signed WSS bridge -> fixed V42 order_stock action."""
     async with bridge_lock:
         ws = active_bridge
         role = active_role
@@ -517,16 +506,15 @@ async def relay_order_stock_select(product_code: str) -> dict:
             await send_peer(role, {
                 "type": "query",
                 "id": req_id,
-                "source": "sql_readonly_admin",
-                "action": "sql_readonly",
-                "sql": _ORDER_STOCK_SQL,
-                "params": [len(product_code), product_code, "%(%)%"],
+                "source": "scanner_order_stock",
+                "action": "order_stock",
+                "q": product_code,
             })
         except (RuntimeError, WebSocketDisconnect, OSError):
             waiting.pop(req_id, None)
             return {"ok": False, "code": "LOCAL_OFFLINE"}
     try:
-        reply = await asyncio.wait_for(future, timeout=24)
+        reply = await asyncio.wait_for(future, timeout=28)
     except asyncio.TimeoutError:
         return {"ok": False, "code": "TIMEOUT"}
     finally:
