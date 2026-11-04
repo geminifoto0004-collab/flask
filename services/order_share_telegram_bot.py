@@ -206,11 +206,13 @@ def _lookup_all(page):
         conn.close()
 
 
-def _lookup_all_full():
+def _lookup_all_full(conn=None):
     """One read-only SQL query retrieves all currently valid Render shares."""
     from database import get_db_connection, get_cursor, get_row_dict
 
-    conn = get_db_connection()
+    owns_connection = conn is None
+    if owns_connection:
+        conn = get_db_connection()
     try:
         cur = get_cursor(conn)
         cur.execute(
@@ -225,7 +227,8 @@ def _lookup_all_full():
         )
         return [get_row_dict(row, cur) or {} for row in cur.fetchall()]
     finally:
-        conn.close()
+        if owns_connection:
+            conn.close()
 
 
 def _date(value):

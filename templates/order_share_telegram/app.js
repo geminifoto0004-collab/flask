@@ -6,6 +6,7 @@
     list: document.getElementById("list"),
     search: document.getElementById("search"),
     count: document.getElementById("count"),
+    sync: document.getElementById("sync-meta"),
     status: document.getElementById("status"),
     refresh: document.getElementById("refresh"),
     toast: document.getElementById("toast"),
@@ -90,6 +91,26 @@
       toast("複製失敗，請長按客戶名稱複製網址");
     }
   }
+  function showSync(meta) {
+    if (!dom.sync) return;
+    const target = meta && /^(TIDB1|TIDB2)$/.test(String(meta.target || ""))
+      ? " · " + meta.target : "";
+    const epoch = Number(meta && meta.updated_epoch);
+    let value = meta && meta.status === "unavailable"
+      ? "同步紀錄暫時無法取得" : "尚無成功快照紀錄";
+    if (Number.isFinite(epoch) && epoch > 0) {
+      const date = new Date(epoch * 1000);
+      if (!Number.isNaN(date.getTime())) {
+        value = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "America/Santiago",
+          day: "2-digit", month: "2-digit", year: "numeric",
+          hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+        }).format(date).replace(",", "") + "（智利）";
+      }
+    }
+    dom.sync.textContent = "雲端快照更新：" + value + target;
+    dom.sync.hidden = false;
+  }
   function render() {
     const query = normalize(dom.search.value);
     const found = items.map((item, index) =>
@@ -140,6 +161,7 @@
       return;
     }
     dom.refresh.disabled = true;
+    if (dom.sync) dom.sync.hidden = true;
     showStatus("正在載入有效客戶分享…");
     try {
       const response = await fetch(
@@ -166,6 +188,7 @@
         expires: item.expires ? String(item.expires) : null,
       })).filter(item => item.name && item.url);
       render();
+      showSync(data.sync);
     } catch {
       items = [];
       dom.count.textContent = "讀取失敗";
