@@ -188,14 +188,17 @@ def _share_admin_state():
             wanted = str(request.args.get('share_id') or '').strip().lower()
             if wanted and (len(wanted) != 64 or any(c not in '0123456789abcdef' for c in wanted)):
                 return jsonify({'ok': False, 'error': 'share_id is invalid'}), 400
-            sql = """SELECT token_hash, customer_key, status, source_site, created_at, expires_at,
-                            history_scope, show_pdf_pages, allow_report_pdf_download,
-                            show_images, show_workflow_images, access_count, last_accessed_at
-                     FROM cloud_share_tokens"""
+            sql = """SELECT s.token_hash, s.customer_key,
+                            COALESCE(NULLIF(c.customer_name,''), s.customer_key) AS customer_name,
+                            s.status, s.source_site, s.created_at, s.expires_at,
+                            s.history_scope, s.show_pdf_pages, s.allow_report_pdf_download,
+                            s.show_images, s.show_workflow_images, s.access_count, s.last_accessed_at
+                     FROM cloud_share_tokens s
+                     LEFT JOIN cloud_customers c ON c.customer_key=s.customer_key"""
             if wanted:
-                cur.execute(sql + ' WHERE token_hash=?', (wanted,))
+                cur.execute(sql + ' WHERE s.token_hash=?', (wanted,))
             else:
-                cur.execute(sql + ' ORDER BY created_at DESC')
+                cur.execute(sql + ' ORDER BY s.created_at DESC')
             rows = []
             now = int(time.time())
             for raw in cur.fetchall():
@@ -210,6 +213,7 @@ def _share_admin_state():
                     "id": str(item.get("token_hash") or ""),
                     "share_id": str(item.get("token_hash") or ""),
                     "customer_key": str(item.get("customer_key") or ""),
+                    "customer_name": str(item.get("customer_name") or item.get("customer_key") or ""),
                     "status": effective_status,
                     "source_site": str(item.get("source_site") or ""),
                     "created_at": _dt_iso(item.get("created_at")),
