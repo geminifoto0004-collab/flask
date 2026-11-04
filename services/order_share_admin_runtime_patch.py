@@ -890,11 +890,30 @@ def _desktop_link_origin(value):
             or parsed.username or parsed.password or parsed.path not in {'', '/'}
             or parsed.query or parsed.fragment):
         raise ValueError('invalid desktop origin')
-    if parsed.hostname != 'localhost':
-        address = ipaddress.ip_address(parsed.hostname)
-        networks = ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7')
-        if not address.is_loopback and not any(address in ipaddress.ip_network(n) for n in networks):
-            raise ValueError('desktop origin must be local or private LAN')
+    hostname = parsed.hostname.lower().rstrip('.')
+    if hostname != 'localhost':
+        # LAN browsers often use the Windows computer name (DESKTOP-ABC123),
+        # not an IP address. The old ip_address() rejected every hostname and
+        # surfaced "invalid local destination" before admin consent.
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            # Only local, non-public hostnames may receive the browser's
+            # postMessage. NEVER allow an arbitrary public DNS destination.
+            import re
+            label = r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
+            parts = hostname.split('.')
+            local_fqdn = (len(parts) > 1 and (
+                parts[-1] in {'local', 'lan', 'localdomain'} or
+                parts[-2:] == ['home', 'arpa']))
+            local_netbios = len(parts) == 1 and not hostname.isdecimal()
+            if (len(hostname)>253 or not all(re.fullmatch(label,p) for p in parts)
+                    or not (local_fqdn or local_netbios)):
+                raise ValueError('desktop origin must be local or private LAN')
+        else:
+            networks = ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7')
+            if not address.is_loopback and not any(address in ipaddress.ip_network(n) for n in networks):
+                raise ValueError('desktop origin must be local or private LAN')
     parsed.port  # Reject malformed ports before rendering a target origin.
     return parsed.scheme + '://' + parsed.netloc
 
