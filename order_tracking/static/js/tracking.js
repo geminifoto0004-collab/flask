@@ -13158,16 +13158,22 @@ async function desktopGuestCollectActiveItems() {
 function desktopGuestRenderExistingLinksHint(customer, items) {
     const box = document.getElementById('desktopGuestExistingLinks');
     if (!box) return;
+    const currentMode = desktopGuestShareMode === 'render' ? 'render' : 'lan';
+    const currentLabel = currentMode === 'render' ? 'WEB' : 'LAN';
+    const generateButton = document.getElementById('desktopGuestGenerateBtn');
+    const defaultButtonLabel = currentMode === 'render' ? '建立 Render 公网链接' : '建立局网分享链接';
     const name = String(customer || '').trim();
     if (!name) {
         box.hidden = true;
         box.innerHTML = '';
+        if (generateButton) generateButton.textContent = defaultButtonLabel;
         return;
     }
     const same = (Array.isArray(items) ? items : []).filter(item => desktopGuestSameCustomer(item.customer_name || '', name));
     if (!same.length) {
         box.hidden = true;
         box.innerHTML = '';
+        if (generateButton) generateButton.textContent = defaultButtonLabel;
         return;
     }
     const modeCounts = same.reduce((acc, item) => {
@@ -13179,12 +13185,9 @@ function desktopGuestRenderExistingLinksHint(customer, items) {
         modeCounts.lan ? `LAN 已有 ${modeCounts.lan} 条` : 'LAN 尚未建立',
         modeCounts.render ? `WEB 已有 ${modeCounts.render} 条` : 'WEB 尚未建立'
     ];
-    const currentMode = desktopGuestShareMode === 'render' ? 'render' : 'lan';
-    const currentLabel = currentMode === 'render' ? 'WEB' : 'LAN';
     const currentCount = modeCounts[currentMode] || 0;
-    const generateButton = document.getElementById('desktopGuestGenerateBtn');
     if (generateButton) {
-        generateButton.textContent = currentCount ? `使用现有 ${currentLabel} 链接` : (currentMode === 'render' ? '建立 Render 公网链接' : '建立局网分享链接');
+        generateButton.textContent = currentCount ? `使用现有 ${currentLabel} 链接` : defaultButtonLabel;
     }
     const duplicateWarning = (modeCounts.lan > 1 || modeCounts.render > 1)
         ? '<small style="color:#b45309">检测到旧版重复链接。新操作会沿用现有链接，不再增加；旧重复记录请在管理全部分享中核对后失效。</small>'
