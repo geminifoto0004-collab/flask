@@ -27,13 +27,15 @@ class ControlTests(unittest.TestCase):
         CREATE TABLE cloud_share_tokens(token_hash TEXT PRIMARY KEY, customer_key TEXT, mode TEXT,
         status TEXT, source_site TEXT, history_scope TEXT, status_filter_mode TEXT, show_pdf_pages INTEGER,
         allow_report_pdf_download INTEGER, show_images INTEGER, show_workflow_images INTEGER,
-        include_cancelled INTEGER, expires_at TEXT);''')
+        include_cancelled INTEGER, expires_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);''')
         conn.close()
         database = types.ModuleType('database')
         database.get_db_connection = self.connect
         database.get_cursor = lambda conn: conn.cursor()
         database.get_row_dict = lambda row, cur: dict(row)
-        with patch.dict(sys.modules, {'database': database}):
+        share_links = types.ModuleType('services.order_share_links')
+        share_links.share_link_token = lambda token_hash: 'm1_' + str(token_hash)
+        with patch.dict(sys.modules, {'database': database, 'services.order_share_links': share_links}):
             self.control = load_module('control_v110_test', ROOT / 'services/order_share_create_control.py')
 
     def tearDown(self):
@@ -58,6 +60,25 @@ class ControlTests(unittest.TestCase):
         repeated = self.create(show_images=True, permanent=False)
         self.assertFalse(repeated['show_images'])
         self.assertIsNone(repeated['expires_at'])
+
+    def test_different_requested_tokens_reuse_one_active_customer_share(self):
+        first = self.control.create_live_share('SERGIO', requested_token='a' * 43)
+        second = self.control.create_live_share('SERGIO', requested_token='b' * 43)
+        self.assertEqual(first['share_id'], second['share_id'])
+        self.assertTrue(second['reused_customer_share'])
+        self.assertEqual(second['token'], 'm1_' + first['share_id'])
+        conn = self.connect()
+        self.assertEqual(conn.execute('SELECT COUNT(*) FROM cloud_share_tokens').fetchone()[0], 1)
+        conn.close()
+
+    def test_concurrent_different_tokens_still_create_one_customer_share(self):
+        tokens = [chr(97 + i) * 43 for i in range(4)]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(lambda token: self.control.create_live_share('SERGIO', requested_token=token), tokens))
+        self.assertEqual(len({r['share_id'] for r in results}), 1)
+        conn = self.connect()
+        self.assertEqual(conn.execute('SELECT COUNT(*) FROM cloud_share_tokens').fetchone()[0], 1)
+        conn.close()
 
     def test_revoked_expired_and_other_customer_are_conflicts(self):
         self.create()
