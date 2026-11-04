@@ -17,6 +17,20 @@ class ShareCreateConflict(ValueError):
     pass
 
 
+def _connection_driver(connection):
+    """Find the raw DB-API connection behind ORDER's compatibility wrappers."""
+    current = connection
+    for _ in range(4):
+        if hasattr(current, '_active'):
+            current = current._active
+            continue
+        if hasattr(current, '_conn'):
+            current = current._conn
+            continue
+        break
+    return str(current.__class__.__module__ or '')
+
+
 def _as_naive_utc(value):
     if not value:
         return None
@@ -117,7 +131,8 @@ def create_live_share(customer_key, source_site=None, expires_hours=24, permanen
         try:
             # SQLite gets a write reservation before checking; TiDB locks the
             # canonical customer row. This closes the check-then-insert race.
-            if conn.__class__.__module__.startswith('sqlite3'):
+            driver = _connection_driver(conn)
+            if driver.startswith('sqlite3'):
                 conn.execute('BEGIN IMMEDIATE')
 
             if raw_token is not None:
@@ -128,7 +143,7 @@ def create_live_share(customer_key, source_site=None, expires_hours=24, permanen
                     conn.commit()
                     return result
 
-            if conn.__class__.__module__.startswith(('pymysql', 'mysql')):
+            if driver.startswith(('pymysql', 'mysql')):
                 cur.execute(
                     'SELECT customer_key FROM cloud_customers '
                     'WHERE customer_key=? AND active=TRUE LIMIT 1 FOR UPDATE',
