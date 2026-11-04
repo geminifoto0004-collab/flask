@@ -154,6 +154,43 @@ def read_status(series, skus):
     finally:
         conn.close()
 
+def read_order_sample_audit(series, skus):
+    """Look up previously saved sample checks for local-order products.
+
+    Does not insert any product into the stock snapshot or record a scan.
+    """
+    if not isinstance(series, str) or len(series) > 40:
+        raise ValueError("Invalid series")
+    if not skus or len(skus) > 200 or any(not isinstance(v, str) or len(v) > 40 for v in skus):
+        raise ValueError("Invalid sample SKUs")
+    conn = _connect()
+    try:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT checked_at, sku_count, missing_count FROM xw_sample_scans "
+                "WHERE series=%s ORDER BY checked_at DESC LIMIT 1", (series,)
+            )
+            previous = cur.fetchone()
+            placeholders = ",".join(["%s"] * len(skus))
+            cur.execute(
+                "SELECT sku, missing, checked_at FROM xw_sample_status "
+                "WHERE sku IN (" + placeholders + ")", tuple(skus)
+            )
+            statuses = {
+                sku: {"missing": bool(missing), "checked_at": checked_at.isoformat(timespec="seconds")}
+                for sku, missing, checked_at in cur.fetchall() if sku in set(skus)
+            }
+        return {
+            "previous_status": statuses,
+            "last_checked_at": previous[0].isoformat(timespec="seconds") + "Z" if previous else None,
+            "last_checked_count": previous[1] if previous else None,
+            "last_missing_count": previous[2] if previous else None,
+        }
+    finally:
+        conn.close()
+
+
 # A sample is taken from the most recently committed TiDB inventory, NOT
 # from a live V33 bridge.  All timestamps in xw_stock_sync_state are UTC.
 STOCK_MAX_AGE_SECONDS = 3600
