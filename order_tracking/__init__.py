@@ -4180,6 +4180,16 @@ def api_admin_customer_shares():
     force_public = str(request.args.get('refresh') or '').strip().lower() in {'1','true','yes','on'}
     all_items = _admin_load_all_shares(refresh_public=True, force_public=force_public)
     now = int(time.time())
+    active_slot_counts = {}
+    for item in all_items:
+        if item.get('status') != 'active':
+            continue
+        slot = (str(item.get('share_mode') or 'lan').lower(), _guest_share_name_key(item.get('customer_name')))
+        if slot[1]:
+            active_slot_counts[slot] = active_slot_counts.get(slot, 0) + 1
+    for item in all_items:
+        slot = (str(item.get('share_mode') or 'lan').lower(), _guest_share_name_key(item.get('customer_name')))
+        item['duplicate_active_count'] = active_slot_counts.get(slot, 0) if item.get('status') == 'active' else 0
     stats = {
         'active': sum(1 for x in all_items if x['status'] == 'active'),
         'permanent': sum(1 for x in all_items if x['status'] == 'active' and x['is_permanent']),
