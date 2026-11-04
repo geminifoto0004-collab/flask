@@ -1715,6 +1715,7 @@ body.cc-sample-detail #result{
 
 
 #cartStaffList .cart-list-return>.xw-language-switch,#adminTab .cc-admin-header>.xw-language-switch{margin-left:auto;flex:none}
+#cartMeta>.xw-language-switch{display:flex;width:max-content;margin:0 0 8px auto}
 /* XW localized scanner: compact language switch, one language per screen. */
 .xw-language-switch{display:inline-flex;align-items:center;flex:none;gap:2px;padding:3px;border:1px solid var(--stroke);border-radius:10px;background:#fff;line-height:1}
 .xw-language-switch button{display:inline-flex;align-items:center;justify-content:center;width:30px!important;min-width:30px!important;height:28px!important;min-height:28px!important;padding:0!important;border:0!important;border-radius:7px!important;color:var(--wine)!important;background:transparent!important;font-size:11px!important;font-weight:750!important}
@@ -3029,10 +3030,12 @@ function init(){
  const head=document.querySelector('body>main>header>div:first-child'),login=document.getElementById('login');
  const adminHead=document.querySelector('#adminTab .cc-admin-header');
  const cartListHead=document.querySelector('#cartStaffList .cart-list-return');
+ const cartDetails=document.getElementById('cartMeta');
  if(head&&!head.querySelector('.xw-language-switch'))head.append(picker());
  if(login&&!login.querySelector('.xw-language-switch'))login.insertBefore(picker(),login.firstChild);
  if(adminHead&&!adminHead.querySelector('.xw-language-switch'))adminHead.append(picker());
  if(cartListHead&&!cartListHead.querySelector('.xw-language-switch'))cartListHead.append(picker());
+ if(cartDetails&&!cartDetails.querySelector('.xw-language-switch'))cartDetails.insertBefore(picker(),cartDetails.firstChild);
  refresh();translateTree(document.body);
  const watcher=new MutationObserver(records=>{
   for(const rec of records){
