@@ -2306,6 +2306,11 @@ function setMode(m){
  else if(valid($('code').value.trim()))sharedProductCode=normalizeProductCode($('code').value);
  const wasMode=mode;
  mode=m;
+ if(m==='full'&&wasMode==='sample'&&fullKind!=='product'){
+  fullKind='product';
+  $('fullProduct').classList.add('active');
+  $('fullNota').classList.remove('active');
+ }
  document.body.classList.toggle('xw-cart-mode',m==='cart');
  if(m==='cart'||m==='admin')document.body.classList.remove('cc-sample-detail','cc-stock-detail');
  if(m!==wasMode){ccResultView=null;document.body.classList.remove('cc-sample-detail','cc-stock-detail')}
@@ -2336,8 +2341,20 @@ function setMode(m){
  const fullMatch=m==='full'&&fullData&&fullDataKind===fullKind&&fullCode===(fullKind==='nota'?notaInput:sharedProductCode);
  $('result').classList.toggle('hidden',!sampleMatch);
  $('fullResult').classList.toggle('hidden',!fullMatch);
- if(sampleMatch)renderRows();
+ if(sampleMatch){
+  // setMode() clears view CSS on every tab change; restore sample scope,
+  // otherwise desktop sample tables stretch to the full 1100px main panel.
+  ccResultView='sample';
+  document.body.classList.add('cc-sample-detail');
+  document.body.classList.remove('cc-stock-detail');
+  renderRows();
+ }
  if(fullMatch)renderFullResult(fullData);
+ if(m==='full'&&fullKind==='product'&&!fullMatch&&
+    preloadedFullStock?.code===sharedProductCode){
+  if(preloadedFullStock.state==='loading')msg('正在載入本機庫存…');
+  else if(preloadedFullStock.state==='error')msg(preloadedFullStock.error?.message||'本機庫存暫時不可用','error');
+ }
  history.replaceState(null,'',location.pathname+(managing?'#admin':''));
 }
 $('ccSampleBack').onclick=()=>ccReturnToScan();
@@ -2447,6 +2464,44 @@ async function fullRequest(action,q,extra={}){
  const data=await response.json();
  if(!response.ok||data.ok!==true)throw Error(data.error||data.detail||'完整查詢失敗');
  return data.data||{};
+}
+// One sample QR fetches the local stock and orders up-front. Switching
+// SAMPLE -> STOCK only changes the view; it must not ask Flask twice.
+let preloadedFullStock=null;
+function prefetchLocalFullStock(code,orderRequest){
+ const cached=preloadedFullStock;
+ if(cached?.code===code&&cached.state!=='error')return cached;
+ const job={code,state:'loading',data:null,error:null,promise:null};
+ preloadedFullStock=job;
+ job.promise=fullRequest('stock',code).then(data=>{
+  if(preloadedFullStock!==job)return data;
+  data.xwOrderRows=[];data.xwOrderStatus='loading';data.xwOrderError='';
+  job.data=data;job.state='ready';
+  // The separate order request is already running from the same QR scan.
+  // Reusing its promise avoids a second V42 query and extra local load.
+  void orderRequest.then(result=>{
+   if(preloadedFullStock!==job)return;
+   data.xwOrderRows=result.error?[]:(result.value?.variants||[]);
+   data.xwOrderStatus=result.error?'error':'ok';
+   data.xwOrderError=result.error?.message||'';
+   if(fullData===data&&mode==='full'&&fullKind==='product')renderFullResult(data);
+  });
+  if(sharedProductCode===code){
+   fullData=data;fullDataKind='product';fullCode=code;fullTab='stock';
+   fullSort='code';fullDesc=false;fullStockMode='stock';
+   $('fullFilter').value='';
+   if(mode==='full'&&fullKind==='product'){
+    renderFullResult(data);msg('');
+   }
+  }
+  return data;
+ }).catch(error=>{
+  job.state='error';job.error=error;
+  if(preloadedFullStock===job&&mode==='full'&&fullKind==='product'&&
+     sharedProductCode===code)msg(error.message||'本機庫存暫時不可用','error');
+  return null;
+ });
+ return job;
 }
 async function queryFull(code){
  const start=performance.now();
@@ -2916,9 +2971,11 @@ async function lookup(input){
     if(!fresh.fresh&&!staleAccepted(fresh))
      throw Object.assign(new Error('⚠ 庫存超過 60 分鐘；請先按「繼續使用舊庫存」，或更新庫存'),{status:409});
     msg('正在查詢布樣：'+code);
-    // Start local V41 SELECT concurrently with TiDB, even when TiDB has stock.
+    // Start local V42 order and normal stock queries together with TiDB.
+    // Their results are shared with the full-stock tab (All/Stock/Orders).
     const orderRequest=post('/scanner/api/orders',{code}).then(
        value=>({value}),error=>({error}));
+    prefetchLocalFullStock(code,orderRequest);
     let d;
     try{d=await post('/scanner/api/sample',{code,allow_stale:staleAccepted(fresh)});}
     catch(error){
