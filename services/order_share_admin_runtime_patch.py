@@ -215,6 +215,7 @@ def _share_admin_state():
                     "customer_key": str(item.get("customer_key") or ""),
                     "customer_name": str(item.get("customer_name") or item.get("customer_key") or ""),
                     "status": effective_status,
+                    "revoked_at_epoch": now if status == "revoked" else None,
                     "source_site": str(item.get("source_site") or ""),
                     "created_at": _dt_iso(item.get("created_at")),
                     "created_at_epoch": _dt_epoch(item.get("created_at")),
