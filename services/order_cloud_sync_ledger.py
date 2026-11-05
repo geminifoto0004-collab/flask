@@ -7,6 +7,8 @@ object, preventing HOME from overwriting COMPANY checkpoints.
 from __future__ import annotations
 
 import gzip
+import hmac
+import os
 import hashlib
 import json
 import re
@@ -109,6 +111,15 @@ def order_cloud_sync_checkpoints():
     _, auth_error = _order_cloud_auth_source()
     if auth_error:
         return auth_error
+    # ORDER=1 alone is a feature gate, not authentication. Do not expose a
+    # writable 'skip work' journal to public clients. Reuse the existing
+    # paired desktop sync grant or an explicitly configured shared key.
+    from services.order_desktop_grant import authorized
+    key = str(os.environ.get("ORDER_SYNC_CHECKPOINT_KEY") or "").strip()
+    supplied = str(request.headers.get("X-Order-Checkpoint-Key") or "")
+    if not (authorized("replicas:verify-repair") or (
+            len(key) >= 24 and hmac.compare_digest(key, supplied))):
+        return jsonify({"ok": False, "error": "checkpoint authorization required"}), 401
     try:
         payload = (request.get_json(silent=True) or {}) if request.method == "POST" else request.args
         kind = _check(payload.get("kind"), _KINDS, "kind").lower()
