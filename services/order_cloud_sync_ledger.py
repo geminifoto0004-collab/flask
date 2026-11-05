@@ -51,8 +51,8 @@ def _read(kind, target, site):
         if exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
             return {}
         raise
-    raw = obj["Body"].read(2 * 1024 * 1024 + 1)
-    if len(raw) > 2 * 1024 * 1024:
+    raw = obj["Body"].read(4 * 1024 * 1024 + 1)
+    if len(raw) > 4 * 1024 * 1024:
         raise ValueError("checkpoint object exceeds limit")
     body = json.loads(gzip.decompress(raw))
     if body.get("version") != 272 or body.get("kind") != kind or body.get("target") != target or body.get("site") != site:
@@ -72,13 +72,13 @@ def _merge(kind, target):
 
 
 def _ti_db_mirror(kind, target, rows):
-    if target == "GLOBAL" or not rows:
+    if not rows:
         return False
     # Never read or connect to the other TiDB. It may be RU-exhausted.
     from database import get_db_connection, get_cursor
     conn = get_db_connection()
     try:
-        if getattr(conn, "active_target", "") != target:
+        if target != "GLOBAL" and getattr(conn, "active_target", "") != target:
             return False
         cur = get_cursor(conn)
         cur.execute("""CREATE TABLE IF NOT EXISTS cloud_sync_receipts_v272 (
@@ -134,6 +134,10 @@ def order_cloud_sync_checkpoints():
             if checked_at > now + 300 or checked_at < now - 30 * 86400:
                 raise ValueError("invalid receipt timestamp")
             rows[key] = {"fingerprint": fingerprint, "checked_at": checked_at}
+            if kind == "audit":
+                generation = str(item.get("generation") or "")[:96]
+                if generation:
+                    rows[key]["generation"] = generation
         with _LOCK:
             saved = _read(kind, target, site)
             for key, item in rows.items():
@@ -143,13 +147,13 @@ def order_cloud_sync_checkpoints():
             # no receipt is authoritative proof of current TiDB content.
             saved = dict(sorted(saved.items(),
                                 key=lambda pair: int((pair[1] or {}).get("checked_at") or 0),
-                                reverse=True)[:8000])
+                                reverse=True)[:25000])
             body = {"version": 272, "site": site, "target": target,
                     "kind": kind, "entries": saved}
             packed = gzip.compress(json.dumps(body, separators=(",", ":"),
                                               sort_keys=True).encode("utf-8"))
-            if len(packed) > 1024 * 1024:
-                raise ValueError("checkpoint exceeds 1 MiB")
+            if len(packed) > 3 * 1024 * 1024:
+                raise ValueError("checkpoint exceeds 3 MiB")
             s3, cfg = _storage()
             s3.put_object(Bucket=cfg["bucket_name"], Key=_key(kind, target, site),
                           Body=packed, ContentType="application/json",
