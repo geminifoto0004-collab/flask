@@ -920,13 +920,62 @@ def direct_repair_register(asset_key, sha256_hex, content_type, file_size, objec
     return result
 
 
-# Emergency TiDB1 restore fast-path. No B2 bytes or share tokens are touched.
-# Idempotent bulk INSERT/UPDATE and bounded 100-order transactions replace
-# per-order existence checks and thousands of TiDB network round trips.
-def ensure_order_owners_fast_batch(orders, source_site=None):
-    if not isinstance(orders, list) or not orders or len(orders) > 200:
-        raise ValueError("orders-fast-batch expects 1..200 orders")
-    source_site = (str(source_site or "").strip().upper()[:16] or None)
+_DELTA_MAX_ORDERS = 2000
+_SQL_ORDER_CHUNK = 500
+
+
+def _order_json(payload, *, sort_keys=True):
+    return json.dumps(payload, ensure_ascii=False, sort_keys=sort_keys, separators=(",", ":"), default=str)
+
+
+def _sql_chunks(keys):
+    for offset in range(0, len(keys), _SQL_ORDER_CHUNK):
+        yield tuple(keys[offset:offset + _SQL_ORDER_CHUNK])
+
+
+def _delete_keys(cur, table, column, keys):
+    for part in _sql_chunks(keys):
+        cur.execute(f"DELETE FROM {table} WHERE {column} IN (" + ",".join(["?"] * len(part)) + ")", part)
+
+
+def probe_order_deltas(fingerprints):
+    """Read indexed order digests from the current TiDB without fetching payloads."""
+    if not isinstance(fingerprints, dict) or not 1 <= len(fingerprints) <= _DELTA_MAX_ORDERS:
+        raise ValueError("fingerprints must contain 1..2000 orders")
+    numbers = {}
+    for number, digest in fingerprints.items():
+        if not isinstance(number, str) or not number or number != number.strip() or len(number) > 191:
+            raise ValueError("invalid order_number")
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("invalid order fingerprint")
+        numbers[number.casefold()] = number
+    if len(numbers) != len(fingerprints):
+        raise ValueError("duplicate order_number in fingerprints")
+    changed = dict.fromkeys(fingerprints, "")
+    conn = get_db_connection()
+    try:
+        target = getattr(conn, "active_target", "")
+        cur = get_cursor(conn)
+        cur.execute(
+            "SELECT order_number, active, SHA2(render_payload, 256) AS digest "
+            "FROM cloud_orders WHERE order_number IN (" + ",".join(["?"] * len(fingerprints)) + ")",
+            tuple(fingerprints),
+        )
+        for raw in cur.fetchall():
+            row = get_row_dict(raw, cur)
+            number = numbers.get(row["order_number"].casefold())
+            if number is None:
+                continue
+            if row["active"] and row["digest"] == fingerprints[number]:
+                del changed[number]
+    finally:
+        conn.close()
+    return {"changed": changed, "target": target}
+
+
+def _validate_order_batch(orders, limit):
+    if not isinstance(orders, list) or not 1 <= len(orders) <= limit:
+        raise ValueError(f"expected 1..{limit} orders")
     seen_numbers = set()
     for payload in orders:
         if not isinstance(payload, dict):
@@ -935,180 +984,226 @@ def ensure_order_owners_fast_batch(orders, source_site=None):
         name = str(payload.get("customer_name") or "").strip()
         if not number or not name:
             raise ValueError("order_number and customer_name are required")
-        if number in seen_numbers:
+        if number.casefold() in seen_numbers:
             raise ValueError("duplicate order_number in batch")
-        seen_numbers.add(number)
+        seen_numbers.add(number.casefold())
         if not isinstance(payload.get("workflows") or [], list):
             raise ValueError("workflows must be a list")
+
+
+def _write_order_rows(cur, part, source_site, *, changed_only):
+    numbers = tuple(str(row["order_number"]).strip() for row in part)
+    written = []
     all_customers = set()
-    all_orders = []
     total_timeline = 0
-    # A timeout cannot partially commit an individual 100-row sub-batch. A
-    # retry is safe: ON DUPLICATE KEY updates the same source identities.
-    for offset in range(0, len(orders), 100):
-        part = orders[offset:offset + 100]
-        numbers = [str(x["order_number"]).strip() for x in part]
-        customers = {}
-        order_rows = []
-        workflow_rows = []
-        history_rows = []
-        workflow_by_order = {}
-        history_by_workflow = {}
-        conn = get_db_connection()
-        cur = get_cursor(conn)
-        try:
-            # One bulk read keeps existing logistics when a particular local
-            # ORDER payload did not include a new logistics snapshot.
-            existing_orders = {}
-            cur.execute(
-                "SELECT order_number,render_payload FROM cloud_orders WHERE order_number IN ("
-                + ",".join(["?"] * len(numbers)) + ")", tuple(numbers))
-            for row in cur.fetchall():
-                row = get_row_dict(row, cur) or {}
-                existing_orders[str(row.get("order_number") or "")] = row.get("render_payload")
-            from services.order_cloud_service import _preserve_existing_logistics
-            for original in part:
-                number = str(original["order_number"]).strip()
-                name = str(original["customer_name"]).strip()
-                key = str(original.get("customer_key") or name).strip()
-                if not key:
-                    raise ValueError("customer_key is required")
-                customers[key] = name
-                all_customers.add(key)
-                p = _preserve_existing_logistics(original, existing_orders.get(number))
-                order_rows.append((
-                    number, key, name,
-                    p.get("order_status") or p.get("current_status"),
-                    p.get("order_date"),
-                    p.get("expected_delivery_date") or p.get("delivery_date"),
-                    p.get("production_type"), p.get("product_name"),
-                    p.get("product_code"), p.get("pattern_code"),
-                    str(p["quantity"]) if p.get("quantity") is not None else None,
-                    source_site,
-                    json.dumps(p, ensure_ascii=False, separators=(",", ":"), default=str),
+    customers = {}
+    order_rows = []
+    workflow_rows = []
+    history_rows = []
+    workflow_by_order = {}
+    history_by_workflow = {}
+    existing_orders = {}
+    cur.execute(
+        "SELECT order_number, customer_key, active, render_payload FROM cloud_orders "
+        "WHERE order_number IN (" + ",".join(["?"] * len(numbers)) + ")" +
+        (" FOR UPDATE" if changed_only else ""), numbers,
+    )
+    for raw in cur.fetchall():
+        row = get_row_dict(raw, cur)
+        existing_orders[row["order_number"].casefold()] = row
+    from services.order_cloud_service import _preserve_existing_logistics
+    for original in part:
+        number = str(original["order_number"]).strip()
+        name = str(original["customer_name"]).strip()
+        key = str(original.get("customer_key") or name).strip()
+        if not key:
+            raise ValueError("customer_key is required")
+        existing = existing_orders.get(number.casefold(), {})
+        prior = existing.get("render_payload")
+        p = _preserve_existing_logistics(original, prior)
+        encoded = _order_json(p, sort_keys=changed_only)
+        same_order = changed_only and existing.get("active") and existing.get("customer_key") == key
+        if same_order and prior == encoded:
+            continue
+        written.append(number)
+        all_customers.add(key)
+        if changed_only and existing.get("customer_key"):
+            all_customers.add(existing["customer_key"])
+        previous = {}
+        if same_order and prior:
+            try:
+                previous = json.loads(prior)
+            except ValueError:
+                pass
+        if not isinstance(previous, dict) or previous.get("customer_name") != p.get("customer_name"):
+            customers[key] = name
+        order_rows.append((
+            number, key, name,
+            p.get("order_status") or p.get("current_status"),
+            p.get("order_date"),
+            p.get("expected_delivery_date") or p.get("delivery_date"),
+            p.get("production_type"), p.get("product_name"),
+            p.get("product_code"), p.get("pattern_code"),
+            str(p["quantity"]) if p.get("quantity") is not None else None,
+            source_site,
+            encoded,
+        ))
+        if same_order and isinstance(previous, dict) and previous.get("workflows") == p.get("workflows"):
+            continue
+        wf_keys = set()
+        for pos, wf in enumerate(p.get("workflows") or []):
+            if not isinstance(wf, dict):
+                continue
+            wf_number = str(wf.get("workflow_number") or "").strip()
+            wf_key = str(wf.get("workflow_key") or wf_number or wf.get("id") or (number + ":" + str(pos))).strip()
+            if not wf_key:
+                continue
+            wf_keys.add(wf_key.casefold())
+            workflow_rows.append((
+                wf_key, number, wf_number or wf_key,
+                wf.get("workflow_type") or wf.get("production_type") or wf.get("type"),
+                wf.get("status") or wf.get("current_status"),
+                wf.get("production_type"), wf.get("product_name"), wf.get("product_code"),
+                str(wf["quantity"]) if wf.get("quantity") is not None else None,
+                wf.get("expected_delivery_date"), wf.get("last_status_change_date"),
+                wf.get("draft_date"), int(wf.get("sort_order", pos) or 0),
+            ))
+            timeline_present = "timeline" in wf or "history" in wf
+            if not timeline_present:
+                continue
+            timeline = wf.get("timeline") if "timeline" in wf else wf.get("history")
+            timeline = [] if timeline is None else timeline
+            if not isinstance(timeline, list):
+                raise ValueError("timeline must be a list")
+            hist_keys = set()
+            for hpos, item in enumerate(timeline):
+                if not isinstance(item, dict):
+                    continue
+                hist_key = str(item.get("history_key") or item.get("id") or
+                               (wf_key + ":" + str(hpos) + ":" + str(item.get("status") or item.get("to_status") or "") +
+                                ":" + str(item.get("action_date") or ""))).strip()
+                if not hist_key:
+                    continue
+                hist_keys.add(hist_key.casefold())
+                history_rows.append((
+                    hist_key, wf_key, number, item.get("status") or item.get("to_status"),
+                    item.get("action_date"), int(item.get("sort_order", hpos) or 0)
                 ))
-                wf_keys = set()
-                for pos, wf in enumerate(p.get("workflows") or []):
-                    if not isinstance(wf, dict):
-                        continue
-                    wf_number = str(wf.get("workflow_number") or "").strip()
-                    wf_key = str(wf.get("workflow_key") or wf_number or wf.get("id") or (number + ":" + str(pos))).strip()
-                    if not wf_key:
-                        continue
-                    wf_keys.add(wf_key)
-                    workflow_rows.append((
-                        wf_key, number, wf_number or wf_key,
-                        wf.get("workflow_type") or wf.get("production_type") or wf.get("type"),
-                        wf.get("status") or wf.get("current_status"),
-                        wf.get("production_type"), wf.get("product_name"), wf.get("product_code"),
-                        str(wf["quantity"]) if wf.get("quantity") is not None else None,
-                        wf.get("expected_delivery_date"), wf.get("last_status_change_date"),
-                        wf.get("draft_date"), int(wf.get("sort_order", pos) or 0),
-                    ))
-                    timeline_present = "timeline" in wf or "history" in wf
-                    if not timeline_present:
-                        continue
-                    timeline = wf.get("timeline") if "timeline" in wf else wf.get("history")
-                    timeline = [] if timeline is None else timeline
-                    if not isinstance(timeline, list):
-                        raise ValueError("timeline must be a list")
-                    hist_keys = set()
-                    for hpos, item in enumerate(timeline):
-                        if not isinstance(item, dict):
-                            continue
-                        hist_key = str(item.get("history_key") or item.get("id") or
-                                       (wf_key + ":" + str(hpos) + ":" + str(item.get("status") or item.get("to_status") or "") +
-                                        ":" + str(item.get("action_date") or ""))).strip()
-                        if not hist_key:
-                            continue
-                        hist_keys.add(hist_key)
-                        history_rows.append((
-                            hist_key, wf_key, number, item.get("status") or item.get("to_status"),
-                            item.get("action_date"), int(item.get("sort_order", hpos) or 0)
-                        ))
-                        total_timeline += 1
-                    history_by_workflow[wf_key] = hist_keys
-                workflow_by_order[number] = wf_keys
-            cur.executemany(
-                "INSERT INTO cloud_customers (customer_key,customer_name,source_site) VALUES (?,?,?) "
-                "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),active=TRUE,"
-                "source_site=VALUES(source_site),updated_at=CURRENT_TIMESTAMP",
-                [(k, v, source_site) for k,v in customers.items()])
-            cur.executemany(
-                "INSERT INTO cloud_orders "
-                "(order_number,customer_key,customer_name,order_status,order_date,expected_delivery_date,"
-                "production_type,product_name,product_code,pattern_code,quantity,source_site,render_payload) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE "
-                "customer_key=VALUES(customer_key),customer_name=VALUES(customer_name),"
-                "order_status=VALUES(order_status),order_date=VALUES(order_date),"
-                "expected_delivery_date=VALUES(expected_delivery_date),"
-                "production_type=VALUES(production_type),product_name=VALUES(product_name),"
-                "product_code=VALUES(product_code),pattern_code=VALUES(pattern_code),"
-                "quantity=VALUES(quantity),source_site=VALUES(source_site),"
-                "render_payload=VALUES(render_payload),active=TRUE,updated_at=CURRENT_TIMESTAMP",
-                order_rows)
-            if workflow_rows:
-                cur.executemany(
-                    "INSERT INTO cloud_workflows "
-                    "(workflow_key,order_number,workflow_number,workflow_type,status,production_type,"
-                    "product_name,product_code,quantity,expected_delivery_date,last_status_change_date,"
-                    "draft_date,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
-                    "ON DUPLICATE KEY UPDATE order_number=VALUES(order_number),"
-                    "workflow_number=VALUES(workflow_number),workflow_type=VALUES(workflow_type),"
-                    "status=VALUES(status),production_type=VALUES(production_type),"
-                    "product_name=VALUES(product_name),product_code=VALUES(product_code),"
-                    "quantity=VALUES(quantity),expected_delivery_date=VALUES(expected_delivery_date),"
-                    "last_status_change_date=VALUES(last_status_change_date),draft_date=VALUES(draft_date),"
-                    "sort_order=VALUES(sort_order),active=TRUE,updated_at=CURRENT_TIMESTAMP",
-                    workflow_rows)
-            if history_rows:
-                cur.executemany(
-                    "INSERT INTO cloud_workflow_history "
-                    "(history_key,workflow_key,order_number,status,action_date,sort_order) "
-                    "VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE "
-                    "workflow_key=VALUES(workflow_key),order_number=VALUES(order_number),"
-                    "status=VALUES(status),action_date=VALUES(action_date),"
-                    "sort_order=VALUES(sort_order),active=TRUE,updated_at=CURRENT_TIMESTAMP",
-                    history_rows)
-            # Reconcile removed workflows/history using two batched reads,
-            # instead of a SELECT per workflow and per history item.
-            cur.execute(
-                "SELECT workflow_key,order_number FROM cloud_workflows WHERE order_number IN ("
-                + ",".join(["?"] * len(numbers)) + ")", tuple(numbers))
-            stale_workflows = []
-            for raw in cur.fetchall():
-                row = get_row_dict(raw, cur) or {}
-                if str(row.get("workflow_key") or "") not in workflow_by_order.get(str(row.get("order_number") or ""), set()):
-                    stale_workflows.append(str(row.get("workflow_key") or ""))
-            if history_by_workflow:
-                keys = list(history_by_workflow)
-                cur.execute(
-                    "SELECT workflow_key,history_key FROM cloud_workflow_history WHERE workflow_key IN ("
-                    + ",".join(["?"] * len(keys)) + ")", tuple(keys))
-                stale_history = [
-                    str(row.get("history_key") or "")
-                    for raw in cur.fetchall()
-                    for row in [get_row_dict(raw, cur) or {}]
-                    if str(row.get("history_key") or "") not in history_by_workflow.get(
-                        str(row.get("workflow_key") or ""), set())
-                ]
-                if stale_history:
-                    cur.executemany("DELETE FROM cloud_workflow_history WHERE history_key=?",
-                                    [(x,) for x in stale_history])
-            if stale_workflows:
-                cur.executemany("DELETE FROM cloud_workflow_history WHERE workflow_key=?",
-                                [(x,) for x in stale_workflows])
-                cur.executemany("DELETE FROM cloud_workflows WHERE workflow_key=?",
-                                [(x,) for x in stale_workflows])
+                total_timeline += 1
+            history_by_workflow[wf_key] = hist_keys
+        workflow_by_order[number] = wf_keys
+    if not written:
+        return written, all_customers, 0
+    if customers:
+        cur.executemany(
+            "INSERT INTO cloud_customers (customer_key,customer_name,source_site) VALUES (?,?,?) "
+            "ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),active=TRUE,"
+            "source_site=VALUES(source_site),updated_at=CURRENT_TIMESTAMP",
+            [(key, name, source_site) for key, name in customers.items()],
+        )
+    cur.executemany(
+        "INSERT INTO cloud_orders "
+        "(order_number,customer_key,customer_name,order_status,order_date,expected_delivery_date,"
+        "production_type,product_name,product_code,pattern_code,quantity,source_site,render_payload) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE "
+        "customer_key=VALUES(customer_key),customer_name=VALUES(customer_name),"
+        "order_status=VALUES(order_status),order_date=VALUES(order_date),"
+        "expected_delivery_date=VALUES(expected_delivery_date),"
+        "production_type=VALUES(production_type),product_name=VALUES(product_name),"
+        "product_code=VALUES(product_code),pattern_code=VALUES(pattern_code),"
+        "quantity=VALUES(quantity),source_site=VALUES(source_site),"
+        "render_payload=VALUES(render_payload),active=TRUE,updated_at=CURRENT_TIMESTAMP",
+        order_rows)
+    if workflow_rows:
+        cur.executemany(
+            "INSERT INTO cloud_workflows "
+            "(workflow_key,order_number,workflow_number,workflow_type,status,production_type,"
+            "product_name,product_code,quantity,expected_delivery_date,last_status_change_date,"
+            "draft_date,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON DUPLICATE KEY UPDATE order_number=VALUES(order_number),"
+            "workflow_number=VALUES(workflow_number),workflow_type=VALUES(workflow_type),"
+            "status=VALUES(status),production_type=VALUES(production_type),"
+            "product_name=VALUES(product_name),product_code=VALUES(product_code),"
+            "quantity=VALUES(quantity),expected_delivery_date=VALUES(expected_delivery_date),"
+            "last_status_change_date=VALUES(last_status_change_date),draft_date=VALUES(draft_date),"
+            "sort_order=VALUES(sort_order),active=TRUE,updated_at=CURRENT_TIMESTAMP",
+            workflow_rows)
+    if history_rows:
+        cur.executemany(
+            "INSERT INTO cloud_workflow_history "
+            "(history_key,workflow_key,order_number,status,action_date,sort_order) "
+            "VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE "
+            "workflow_key=VALUES(workflow_key),order_number=VALUES(order_number),"
+            "status=VALUES(status),action_date=VALUES(action_date),"
+            "sort_order=VALUES(sort_order),active=TRUE,updated_at=CURRENT_TIMESTAMP",
+            history_rows)
+    # Only reconcile orders whose workflow snapshot is being written.
+    stale_workflows = []
+    if workflow_by_order:
+        keys = tuple(workflow_by_order)
+        normalized = {key.casefold(): values for key, values in workflow_by_order.items()}
+        cur.execute(
+            "SELECT workflow_key,order_number FROM cloud_workflows WHERE order_number IN ("
+            + ",".join(["?"] * len(keys)) + ")", keys,
+        )
+        for raw in cur.fetchall():
+            row = get_row_dict(raw, cur)
+            if row["workflow_key"].casefold() not in normalized.get(row["order_number"].casefold(), ()):
+                stale_workflows.append(row["workflow_key"])
+    stale_history = []
+    normalized = {key.casefold(): values for key, values in history_by_workflow.items()}
+    for keys in _sql_chunks(tuple(history_by_workflow)):
+        cur.execute(
+            "SELECT workflow_key,history_key FROM cloud_workflow_history WHERE workflow_key IN ("
+            + ",".join(["?"] * len(keys)) + ")", keys,
+        )
+        for raw in cur.fetchall():
+            row = get_row_dict(raw, cur)
+            if row["history_key"].casefold() not in normalized.get(row["workflow_key"].casefold(), ()):
+                stale_history.append(row["history_key"])
+    _delete_keys(cur, "cloud_workflow_history", "history_key", stale_history)
+    _delete_keys(cur, "cloud_workflow_history", "workflow_key", stale_workflows)
+    _delete_keys(cur, "cloud_workflows", "workflow_key", stale_workflows)
+    return written, all_customers, total_timeline
+
+
+def ensure_order_owners_fast_batch(orders, source_site=None, *, expected_target=None):
+    """Apply ORDER, workflow and history rows in grouped SQL operations."""
+    changed_only = expected_target is not None
+    limit = _DELTA_MAX_ORDERS if changed_only else 200
+    _validate_order_batch(orders, limit)
+    source_site = str(source_site or "").strip().upper()[:16] or None
+    if changed_only and any(not isinstance(row.get("workflows"), list) or
+                            not isinstance(row.get("logistics"), list) for row in orders):
+        raise ValueError("delta orders require workflows and logistics lists")
+    written, customers, total_timeline = [], set(), 0
+    conn = get_db_connection()
+    try:
+        if changed_only and getattr(conn, "active_target", "") != expected_target:
+            raise ValueError("TiDB target changed after comparison; run sync again")
+        cur = get_cursor(conn)
+        if changed_only:
+            orders = sorted(orders, key=lambda row: str(row["order_number"]).strip())
+        size = _SQL_ORDER_CHUNK if changed_only else 100
+        for offset in range(0, len(orders), size):
+            numbers, keys, count = _write_order_rows(
+                cur, orders[offset:offset + size], source_site, changed_only=changed_only,
+            )
+            written.extend(numbers)
+            customers.update(keys)
+            total_timeline += count
+            if not changed_only:
+                conn.commit()
+        if changed_only and written:
             conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-        all_orders.extend(numbers)
-    return {"count":len(all_orders),"orders":all_orders,"customer_keys":sorted(all_customers),
-            "timeline_items":total_timeline,"fast":True}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    confirmed = [str(row["order_number"]).strip() for row in orders]
+    return {"count": len(confirmed), "orders": confirmed, "customer_keys": sorted(customers),
+            "timeline_items": total_timeline, "fast": True, "written": written}
 
 
 _FAST_REFRESH_LOCK = __import__("threading").Lock()
@@ -1126,9 +1221,9 @@ def fast_refresh_shared_customers(customer_keys):
     cur = get_cursor(conn)
     try:
         active = set()
-        for i in range(0, len(keys), 100):
-            part = keys[i:i+100]
+        for part in _sql_chunks(keys):
             cur.execute("SELECT DISTINCT customer_key FROM cloud_share_tokens WHERE status='active' "
+                        "AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) "
                         "AND customer_key IN (" + ",".join(["?"]*len(part)) + ")", tuple(part))
             active.update(str((get_row_dict(r,cur) or {}).get("customer_key") or "") for r in cur.fetchall())
     finally:
@@ -1137,11 +1232,13 @@ def fast_refresh_shared_customers(customer_keys):
         _FAST_REFRESH_QUEUED.update(active)
         if _FAST_REFRESH_THREAD is None or not _FAST_REFRESH_THREAD.is_alive():
             def worker():
+                global _FAST_REFRESH_THREAD
                 from services.order_customer_share_snapshot import rebuild_snapshot
                 from services.order_public_share_fast import invalidate_customer_space_cache
                 while True:
                     with _FAST_REFRESH_LOCK:
                         if not _FAST_REFRESH_QUEUED:
+                            _FAST_REFRESH_THREAD = None
                             return
                         customer = _FAST_REFRESH_QUEUED.pop()
                     try:
