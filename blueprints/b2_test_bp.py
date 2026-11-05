@@ -482,6 +482,18 @@ def order_cloud_public_asset(token, asset_key):
         return Response("Servicio temporalmente no disponible.", status=503, mimetype="text/plain")
 
 
+@b2_test_bp.route("/api/order-cloud/sync/target", methods=["GET"])
+def order_cloud_current_target():
+    """DB-free target selector. Never probes the RU-exhausted TiDB."""
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    from tidb_targets import selected_target
+    selected = selected_target()
+    # AUTO must still be verified through the real orders-delta probe.
+    return jsonify({"ok": True, "result": {"target": selected, "database_probe": False}})
+
+
 @b2_test_bp.route("/api/order-cloud/sync/orders-delta", methods=["POST"])
 def order_cloud_sync_orders_delta():
     source_site, auth_error = _order_cloud_auth_source()
