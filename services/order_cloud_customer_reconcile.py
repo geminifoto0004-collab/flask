@@ -178,10 +178,12 @@ def _reconcile_customer_orders():
             conn = get_db_connection()
             cur = get_cursor(conn)
             results = []
-            refresh_customers = []
             try:
                 for raw_customer in raw_customers:
-                    item = dict(raw_customer or {})
+                    if not isinstance(raw_customer, dict):
+                        results.append({"customer_key": "", "ok": False, "error": "customer entry must be an object"})
+                        continue
+                    item = dict(raw_customer)
                     customer = str(item.get("customer_key") or "").strip()
                     numbers = item.get("order_numbers")
                     if not customer or not isinstance(numbers, list) or len(numbers) > 50000:
@@ -216,7 +218,6 @@ def _reconcile_customer_orders():
                             "remaining_orders": remaining,
                             "physical_objects_deleted": 0,
                         }})
-                        refresh_customers.append(customer)
                     except Exception as exc:
                         conn.rollback()
                         results.append({"customer_key": customer, "ok": False,
