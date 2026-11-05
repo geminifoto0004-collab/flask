@@ -353,7 +353,10 @@ async def scanner_full_query(request: Request):
         extra={"cursor":cursor,"include_older":include_older}
     elif action=="nota_details":
         customer=data.get("customer")
-        if not q.isdecimal() or not 2<=len(q)<=12 or not isinstance(customer,str) or not 1<=len(customer)<=130:
+        # V45 adds one fixed, authenticated read-only RESERVAR detail query.
+        # Never accept arbitrary Nota text, SQL, or customer-less requests.
+        is_nota=(q.isdecimal() and 2<=len(q)<=12)
+        if not (is_nota or q=="RESERVAR") or not isinstance(customer,str) or not 1<=len(customer)<=130:
             raise HTTPException(400, "Invalid Nota detail")
         extra={"customer":customer}
     elif action=="nota":
