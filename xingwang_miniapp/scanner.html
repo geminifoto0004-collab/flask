@@ -3306,8 +3306,12 @@ async function fetchSearchHints(){
    if(i<hot.length)add(hot[i]);
    if(i<recent.length)add(recent[i]);
   }
+  // Keep the displayed suggestion stable when a background refresh
+  // updates ranking order; never make it jump while the user is reading.
+  const visibleCode=xwHintCodes[xwHintIndex%xwHintCodes.length]||'';
   xwHintCodes=combined.slice(0,6);
-  xwHintIndex=0;
+  xwHintIndex=visibleCode&&xwHintCodes.includes(visibleCode)?
+   xwHintCodes.indexOf(visibleCode):0;
   renderGhostHint();
  }catch(_){/* optional recommendation never blocks scanning */}
 }
@@ -3321,7 +3325,7 @@ function toggleSearchHints(enabled){
   if(document.visibilityState==='visible'&&xwHintCodes.length>1){
    xwHintIndex=(xwHintIndex+1)%xwHintCodes.length;renderGhostHint();
   }
- },4500);
+ },10000);
  xwHintRefreshTick=setInterval(()=>void fetchSearchHints(),120000);
  renderGhostHint();
 }
@@ -3332,13 +3336,19 @@ function reportSuccessfulSkuSearch(code){
   ()=>{}
  );
 }
-$('codeGhostHint').onclick=()=>{
- const code=xwHintCodes[xwHintIndex%xwHintCodes.length];
- if(!xwHintsEnabled||!code||$('code').value.trim()||busy)return;
- $('code').value=code;
- syncSearchClear();
- void lookup(code);
-};
+// Submit the *visible* ghost suggestion when the real input is blank.
+// It remains a hint until the user explicitly taps the magnifier,
+// presses Enter or taps the suggested SKU; it never starts automatically.
+function currentGhostSku(){
+ const input=$('code'),hint=$('codeGhostHint');
+ if(input.value.trim()||!xwHintsEnabled||hint.classList.contains('hidden'))return '';
+ return xwHintCodes[xwHintIndex%xwHintCodes.length]||'';
+}
+function submitCodeQuery(){
+ const typed=$('code').value;
+ void lookup(typed.trim()?typed:(currentGhostSku()||typed));
+}
+$('codeGhostHint').onclick=submitCodeQuery;
 document.addEventListener('visibilitychange',()=>{
  if(document.visibilityState==='visible')renderGhostHint();
 });
@@ -3433,8 +3443,10 @@ $('codeClearBtn').onclick=()=>{
  syncSearchClear();
  $('code').focus();
 };
-$('queryBtn').onclick=()=>lookup($('code').value);
-$('code').addEventListener('keydown',e=>{if(e.key==='Enter')lookup($('code').value)});
+$('queryBtn').onclick=submitCodeQuery;
+$('code').addEventListener('keydown',e=>{
+ if(e.key==='Enter'){e.preventDefault();submitCodeQuery()}
+});
 function onScan(raw){
  if(mode==='admin')return;
  const code=parseScannerQR(raw);
