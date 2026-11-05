@@ -121,14 +121,6 @@ SCHEMA = (
         updated INT NOT NULL,
         deactivated INT NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
-    """CREATE TABLE IF NOT EXISTS xw_scanner_search_daily (
-        day_utc DATE NOT NULL,
-        sku VARCHAR(40) NOT NULL,
-        hits INT UNSIGNED NOT NULL,
-        last_seen_utc DATETIME(6) NOT NULL,
-        PRIMARY KEY(day_utc, sku),
-        KEY idx_last_seen_utc (last_seen_utc)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 )
 
 def _ensure(conn):
@@ -473,7 +465,31 @@ def check_and_initialize():
 
 
 # Staff-only scanner search suggestions. This tiny daily aggregate is separate
-# from stock snapshots, reservations and sample inspection records.
+# from stock snapshots, reservations and sample inspection records. Its
+# creation is also isolated: an unavailable suggestion table MUST NOT prevent
+# stock/sample reads, sync or SAVEs from working.
+_SEARCH_SCHEMA_LOCK = threading.Lock()
+_SEARCH_SCHEMA_DONE = False
+
+def _ensure_search_rank(conn):
+    global _SEARCH_SCHEMA_DONE
+    if _SEARCH_SCHEMA_DONE:
+        return
+    with _SEARCH_SCHEMA_LOCK:
+        if _SEARCH_SCHEMA_DONE:
+            return
+        with conn.cursor() as cur:
+            cur.execute("""CREATE TABLE IF NOT EXISTS xw_scanner_search_daily (
+                day_utc DATE NOT NULL,
+                sku VARCHAR(40) NOT NULL,
+                hits INT UNSIGNED NOT NULL,
+                last_seen_utc DATETIME(6) NOT NULL,
+                PRIMARY KEY(day_utc, sku),
+                KEY idx_last_seen_utc (last_seen_utc)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+        conn.commit()
+        _SEARCH_SCHEMA_DONE = True
+
 def record_search_batch(batch, *, cleanup=False):
     """Atomically apply counts collected across the active Render worker.
 
@@ -484,7 +500,7 @@ def record_search_batch(batch, *, cleanup=False):
         return
     conn = _connect()
     try:
-        _ensure(conn)
+        _ensure_search_rank(conn)
         from datetime import timedelta
         rows = []
         for sku, hits, seen in batch:
@@ -520,7 +536,7 @@ def read_search_recommendations():
     """Small bounded top/last lists; callers cache them between users."""
     conn = _connect()
     try:
-        _ensure(conn)
+        _ensure_search_rank(conn)
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT sku, SUM(hits) AS hits, MAX(last_seen_utc) AS last_seen
