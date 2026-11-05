@@ -126,6 +126,12 @@ from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
 # Admin-only TiDB-indexed B2 image management; B2 credentials stay on Render.
 from . import order_cloud_asset_admin as _order_cloud_asset_admin  # noqa: E402,F401
 
+# TiDB/B2 cross-target checkpoint ledger; does not require a read from inactive TiDB.
+from . import order_cloud_sync_ledger as _order_cloud_sync_ledger  # noqa: E402,F401
+
+# Read-only, authenticated parity report: tables, columns and indexes only.
+from . import order_cloud_schema_compare as _order_cloud_schema_compare  # noqa: E402,F401
+
 # Compatibility module + multi-B2 extension registration. Its legacy thumbnail
 # upload endpoint is hard-disabled: ORDER image bytes never pass through Render.
 from . import order_cloud_proxy_thumb as _order_cloud_proxy_thumb  # noqa: E402,F401
