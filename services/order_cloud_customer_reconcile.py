@@ -16,6 +16,31 @@ from database import get_cursor, get_db_connection, get_row_dict
 from services.order_cloud_customer_storage import _INTENT_TABLE
 
 
+def _delete_stale_order_numbers(cur, customer_key, stale):
+    """Delete stale logical rows in bounded SQL batches, never one order at a time."""
+    removed = 0
+    for offset in range(0, len(stale), 500):
+        batch = stale[offset:offset + 500]
+        marks = ",".join("?" for _ in batch)
+        values = tuple(batch)
+        cur.execute(f"DELETE FROM cloud_workflow_history WHERE order_number IN ({marks})", values)
+        cur.execute(f"DELETE FROM cloud_workflows WHERE order_number IN ({marks})", values)
+        cur.execute(
+            f"DELETE FROM cloud_assets WHERE customer_key=? AND order_number IN ({marks})",
+            (customer_key, *values),
+        )
+        cur.execute(
+            f"DELETE FROM {_INTENT_TABLE} WHERE customer_key=? AND order_number IN ({marks})",
+            (customer_key, *values),
+        )
+        cur.execute(
+            f"DELETE FROM cloud_orders WHERE customer_key=? AND order_number IN ({marks})",
+            (customer_key, *values),
+        )
+        removed += len(batch)
+    return removed
+
+
 def _snapshot_manifest(raw):
     """Certify the persisted bundle, never substitute current SQL rows for it."""
     try:
@@ -48,6 +73,7 @@ def _reconcile_customer_orders():
     if request.method != "POST" or request.path not in {
         "/api/order-cloud/customer/manifest",
         "/api/order-cloud/customer/reconcile-orders",
+        "/api/order-cloud/customer/reconcile-orders-batch",
         "/api/order-cloud/customer/snapshot",
     }:
         return None
@@ -145,6 +171,74 @@ def _reconcile_customer_orders():
             result["snapshot_present"] = bool(bundle)
             return jsonify({"ok": True, "result": result})
 
+        if request.path.endswith("/reconcile-orders-batch"):
+            raw_customers = payload.get("customers")
+            if not isinstance(raw_customers, list) or not 1 <= len(raw_customers) <= 100:
+                return jsonify({"ok": False, "error": "customers must contain 1..100 entries"}), 400
+            conn = get_db_connection()
+            cur = get_cursor(conn)
+            results = []
+            refresh_customers = []
+            try:
+                for raw_customer in raw_customers:
+                    item = dict(raw_customer or {})
+                    customer = str(item.get("customer_key") or "").strip()
+                    numbers = item.get("order_numbers")
+                    if not customer or not isinstance(numbers, list) or len(numbers) > 50000:
+                        results.append({"customer_key": customer, "ok": False, "error": "invalid customer order manifest"})
+                        continue
+                    expected = {str(value or "").strip() for value in numbers if str(value or "").strip()}
+                    if not expected and not bool(item.get("confirm_empty", False)):
+                        results.append({"customer_key": customer, "ok": False, "error": "empty order manifest requires confirm_empty=true"})
+                        continue
+                    try:
+                        cur.execute(
+                            "SELECT order_number FROM cloud_orders WHERE customer_key=?",
+                            (customer,),
+                        )
+                        current = {
+                            str((get_row_dict(row, cur) or {}).get("order_number") or "").strip()
+                            for row in cur.fetchall() or []
+                        }
+                        stale = sorted(value for value in current if value and value not in expected)
+                        _delete_stale_order_numbers(cur, customer, stale)
+                        cur.execute("SELECT COUNT(*) AS n FROM cloud_orders WHERE customer_key=?", (customer,))
+                        count_row = cur.fetchone()
+                        count_data = get_row_dict(count_row, cur) if count_row else {}
+                        remaining = int((count_data or {}).get("n") or 0)
+                        if remaining == 0:
+                            cur.execute("DELETE FROM cloud_customers WHERE customer_key=?", (customer,))
+                        conn.commit()
+                        results.append({"customer_key": customer, "ok": True, "result": {
+                            "customer_key": customer,
+                            "expected_orders": len(expected),
+                            "stale_orders_removed": len(stale),
+                            "remaining_orders": remaining,
+                            "physical_objects_deleted": 0,
+                        }})
+                        refresh_customers.append(customer)
+                    except Exception as exc:
+                        conn.rollback()
+                        results.append({"customer_key": customer, "ok": False,
+                                        "error": str(exc), "error_type": type(exc).__name__})
+            finally:
+                conn.close()
+            from services import order_customer_share_snapshot as snapshot
+            for row in results:
+                if row.get("ok") is True:
+                    customer = str(row.get("customer_key") or "")
+                    try:
+                        snapshot.queue_snapshot_refresh(customer, delay=0.05)
+                        row.setdefault("result", {})["snapshot_refresh_queued"] = True
+                    except Exception as exc:
+                        row.setdefault("result", {})["snapshot_refresh_queued"] = False
+                        row["warning"] = f"snapshot refresh queue failed: {type(exc).__name__}"
+            return jsonify({"ok": True, "result": {
+                "items": results,
+                "reconciled": sum(1 for row in results if row.get("ok") is True),
+                "failed": sum(1 for row in results if row.get("ok") is not True),
+            }})
+
         if not isinstance(raw_orders, list):
             return jsonify({"ok": False, "error": "order_numbers must be a list"}), 400
         if len(raw_orders) > 50000:
@@ -173,21 +267,7 @@ def _reconcile_customer_orders():
 
             # Child rows first; no FK cascade is assumed. B2 objects are deliberately
             # untouched. cloud_assets is logical metadata and follows SQLite ownership.
-            for order_number in stale:
-                cur.execute("DELETE FROM cloud_workflow_history WHERE order_number=?", (order_number,))
-                cur.execute("DELETE FROM cloud_workflows WHERE order_number=?", (order_number,))
-                cur.execute(
-                    "DELETE FROM cloud_assets WHERE customer_key=? AND order_number=?",
-                    (customer_key, order_number),
-                )
-                cur.execute(
-                    f"DELETE FROM {_INTENT_TABLE} WHERE customer_key=? AND order_number=?",
-                    (customer_key, order_number),
-                )
-                cur.execute(
-                    "DELETE FROM cloud_orders WHERE customer_key=? AND order_number=?",
-                    (customer_key, order_number),
-                )
+            _delete_stale_order_numbers(cur, customer_key, stale)
 
             cur.execute("SELECT COUNT(*) AS n FROM cloud_orders WHERE customer_key=?", (customer_key,))
             row = cur.fetchone()
