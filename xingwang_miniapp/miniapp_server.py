@@ -337,11 +337,11 @@ async def scanner_full_query(request: Request):
     if not isinstance(data, dict):
         raise HTTPException(400, "Invalid query")
     action, q = data.get("action"), data.get("q")
-    if action not in ("stock", "nota", "history_more", "nota_details"):
+    if action not in ("stock", "camino", "nota", "history_more", "nota_details"):
         raise HTTPException(400, "Unsupported read-only query")
     if not isinstance(q,str) or not 1<=len(q)<=40:
         raise HTTPException(400, "Invalid query")
-    if action in ("stock","history_more") and not scanner_backend.CODE.fullmatch(q):
+    if action in ("stock","camino","history_more") and not scanner_backend.CODE.fullmatch(q):
         raise HTTPException(400, "Invalid product code")
     if action=="nota" and not (q=="@" or q.isdecimal() and len(q)<=5 or len(q)>=2):
         raise HTTPException(400, "Invalid Nota criteria")
