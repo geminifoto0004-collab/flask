@@ -672,7 +672,8 @@ def check_image_hash_batch(items, max_workers=12):
     readable = []
     unavailable = []
     for backend in BACKENDS:
-        status = (health.get("primary") if backend == "b2_primary" else health.get("secondary") or {}).get("status")
+        health_row = (health.get("primary") if backend == "b2_primary" else health.get("secondary")) or {}
+        status = health_row.get("status")
         if status == "ok":
             readable.append(backend)
         elif status == "error":
@@ -681,11 +682,13 @@ def check_image_hash_batch(items, max_workers=12):
         raise RuntimeError("no readable B2 backend is available for batch verification")
 
     def inspect(item):
+        errors = []
         for backend in readable:
             try:
                 info = _head_backend_object(backend, item["object_key"])
             except Exception as exc:
-                return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+                errors.append(f"{backend}: {type(exc).__name__}: {exc}")
+                continue
             if info is not None:
                 return {"ok": True, "result": {
                     "exists": True, "sha256": item["sha256"],
@@ -693,8 +696,8 @@ def check_image_hash_batch(items, max_workers=12):
                     "file_size": int(info.get("ContentLength") or 0),
                     "storage_backend": backend,
                 }}
-        if unavailable:
-            return {"ok": False, "error": "a configured B2 backend is unavailable; absence cannot be confirmed"}
+        if unavailable or errors:
+            return {"ok": False, "error": (errors or ["a configured B2 backend is unavailable; absence cannot be confirmed"])[0][:300]}
         return {"ok": True, "result": {
             "exists": False, "sha256": item["sha256"],
             "content_type": item["content_type"], "file_size": None,
