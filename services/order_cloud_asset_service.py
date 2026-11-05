@@ -5,6 +5,7 @@ Metadata remains in TiDB and public reads stay protected by the share-token rout
 """
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
@@ -640,6 +641,80 @@ def check_image_hash(sha256_hex, content_type):
                 "file_size": int(info.get("ContentLength") or 0), "storage_backend": backend,
             }
     return {"exists": False, "sha256": sha256_hex, "content_type": content_type, "file_size": None}
+
+
+def check_image_hash_batch(items, max_workers=12):
+    """Check up to 500 B2 image hashes with one backend-health probe per batch."""
+    if not isinstance(items, list) or not 1 <= len(items) <= 500:
+        raise ValueError("check-batch expects 1..500 items")
+    unique = {}
+    seen_ids = set()
+    for raw in items:
+        if not isinstance(raw, dict):
+            raise ValueError("each check item must be an object")
+        client_id = str(raw.get("client_id") or "").strip()
+        if not client_id or len(client_id) > 64 or client_id in seen_ids:
+            raise ValueError("client_id must be unique and 1..64 characters")
+        seen_ids.add(client_id)
+        sha256_hex = _validate_sha256(raw.get("sha256"))
+        content_type = _validate_content_type(raw.get("content_type"))
+        object_key = _object_key(sha256_hex, content_type)
+        key = (sha256_hex, content_type)
+        row = unique.setdefault(key, {
+            "sha256": sha256_hex, "content_type": content_type,
+            "object_key": object_key, "client_ids": [],
+        })
+        row["client_ids"].append(client_id)
+
+    # Health checks are expensive (one S3 list request per configured bucket).
+    # Do them once for the batch, not once for every image.
+    health = backend_health(force=True)
+    readable = []
+    unavailable = []
+    for backend in BACKENDS:
+        status = (health.get("primary") if backend == "b2_primary" else health.get("secondary") or {}).get("status")
+        if status == "ok":
+            readable.append(backend)
+        elif status == "error":
+            unavailable.append(backend)
+    if not readable:
+        raise RuntimeError("no readable B2 backend is available for batch verification")
+
+    def inspect(item):
+        for backend in readable:
+            try:
+                info = _head_backend_object(backend, item["object_key"])
+            except Exception as exc:
+                return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            if info is not None:
+                return {"ok": True, "result": {
+                    "exists": True, "sha256": item["sha256"],
+                    "content_type": item["content_type"],
+                    "file_size": int(info.get("ContentLength") or 0),
+                    "storage_backend": backend,
+                }}
+        if unavailable:
+            return {"ok": False, "error": "a configured B2 backend is unavailable; absence cannot be confirmed"}
+        return {"ok": True, "result": {
+            "exists": False, "sha256": item["sha256"],
+            "content_type": item["content_type"], "file_size": None,
+        }}
+
+    rows = list(unique.values())
+    workers = max(1, min(int(max_workers or 12), 16, len(rows)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        inspected = list(pool.map(inspect, rows))
+
+    results = []
+    for item, outcome in zip(rows, inspected):
+        for client_id in item["client_ids"]:
+            results.append({"client_id": client_id, **outcome})
+    return {
+        "items": results,
+        "unique_count": len(rows),
+        "checked_count": len(rows),
+        "backend_health": health,
+    }
 
 
 def register_existing_image(order_number, workflow_key, sha256_hex, content_type, source_site=None):
