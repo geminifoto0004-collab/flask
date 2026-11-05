@@ -485,8 +485,8 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
         conn.close()
 
 
-def _head_backend_object(backend, object_key):
-    s3, cfg = _backend_client(backend)
+def _head_backend_object(backend, object_key, client_cfg=None):
+    s3, cfg = client_cfg or _backend_client(backend)
     try:
         return s3.head_object(Bucket=cfg["bucket_name"], Key=object_key)
     except ClientError as exc:
@@ -680,12 +680,14 @@ def check_image_hash_batch(items, max_workers=12):
             unavailable.append(backend)
     if not readable:
         raise RuntimeError("no readable B2 backend is available for batch verification")
+    # Reuse one boto3 client per backend across all worker threads in this batch.
+    backend_clients = {backend: _backend_client(backend) for backend in readable}
 
     def inspect(item):
         errors = []
         for backend in readable:
             try:
-                info = _head_backend_object(backend, item["object_key"])
+                info = _head_backend_object(backend, item["object_key"], client_cfg=backend_clients[backend])
             except Exception as exc:
                 errors.append(f"{backend}: {type(exc).__name__}: {exc}")
                 continue
