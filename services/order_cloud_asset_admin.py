@@ -334,7 +334,10 @@ def asset_retention_plan():
         for row in rows:
             raw = row.get('render_payload')
             payload = json.loads(raw) if isinstance(raw, (str, bytes)) and raw else (raw or {})
-            reason = 'keep_missing_order_evidence' if row.get('order_active') is None else retention_reason(payload, row, bool(row.get('order_active')))
+            if row.get('asset_active') is False or str(row.get('asset_active')).lower() in {'0', 'false'}:
+                reason = 'candidate_retired_order'
+            else:
+                reason = 'keep_missing_order_evidence' if row.get('order_active') is None else retention_reason(payload, row, bool(row.get('order_active')))
             if reason == 'candidate_completed_over_three_months' and extended_history:
                 reason = 'keep_extended_history_share'
             if reason.startswith('candidate_'):
