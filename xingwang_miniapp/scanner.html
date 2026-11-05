@@ -1,8 +1,9 @@
 <!doctype html>
 <html lang="zh-Hant"><head>
-<!-- Opt-in scanner preview test: /scanner?compact=1. Default layout unchanged. -->
+<!-- Mobile camera uses the verified compact 248px native preview by default.
+     ?compact=0 is a diagnostic fallback; no QR decoder setting is changed. -->
 <script>
-if(new URLSearchParams(location.search).get('compact')==='1'){
+if(new URLSearchParams(location.search).get('compact')!=='0'){
  document.documentElement.classList.add('xw-compact-qr-preview');
 }
 </script>
@@ -1786,10 +1787,10 @@ body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-wid
 #login .cc-login-types button small,#workModes button small,#saveBtn .cc-save-label small,#inventoryStartBtn small,#copyScannerBtn small,.cart-item-heading strong small,.cc-modal-save small{display:none!important}
 @media(max-width:390px){body>main>header>div:first-child{gap:4px}.xw-language-switch{padding:2px}.xw-language-switch button{width:24px!important;min-width:24px!important;height:26px!important;min-height:26px!important;font-size:10px!important}body:has(#scanPanel:not(.hidden)) header h1{font-size:18px!important;letter-spacing:0!important}#login.cc-login>.xw-language-switch{top:22px;right:28px}}
 
-/* UNSLOP QR test /scanner?compact=1
-   Native Html5Qrcode scan frame is preserved: scale its parent width BEFORE
-   camera start, then let the browser and library determine video height.
-   No clipped/cropped window, no scrollTop, no changed QR decoding config. */
+/* Verified production compact QR camera on mobile (248px preview).
+   Native Html5Qrcode scan frame remains 220x220; scale its parent width
+   BEFORE camera start and let the browser determine the height.
+   No crop, no scrollTop and no change to decoder configuration. */
 @media(max-width:740px){
  html.xw-compact-qr-preview body:not(.xw-cart-mode) #scanPanel:not(.cc-cart-camera-active) #reader.camera-active{
   display:block!important;position:relative!important;
