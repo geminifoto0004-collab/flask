@@ -235,7 +235,7 @@ def order_cloud_admin_asset_delete():
 def _known_object_keys():
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
-        cur.execute("SELECT object_key, thumb_object_key, sha256 FROM cloud_assets WHERE active=TRUE")
+        cur.execute("SELECT object_key, thumb_object_key, sha256 FROM cloud_assets")
         known = set()
         for r in cur.fetchall():
             d = get_row_dict(r, cur) or {}
