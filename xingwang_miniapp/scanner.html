@@ -2222,7 +2222,19 @@ function ccReturnToScan(){
  $('scanPanel').classList.remove('hidden');
  $('scanPanel').scrollIntoView({behavior:'smooth',block:'start'});
 }
-let sampleStates=new Map(),samplePositiveOnly=false,sampleSortField='code',sampleDescending=false,sampleDirty=false,savedScope=new Set(),sharedProductCode='',notaInput='',lastWorkMode='sample';
+// Per-browser display preferences: never affect Access, TiDB or sample SAVE.
+const XW_SAMPLE_FILTER_KEY='xw_scanner_sample_visibility_v1';
+const XW_STOCK_FILTER_KEY='xw_scanner_full_stock_mode_v1';
+function readScannerFilter(key,allowed,fallback){
+ try{
+  const value=localStorage.getItem(key);
+  return allowed.includes(value)?value:fallback;
+ }catch(_){return fallback}
+}
+function saveScannerFilter(key,value){
+ try{localStorage.setItem(key,value)}catch(_){/* storage can be disabled */}
+}
+let sampleStates=new Map(),samplePositiveOnly=readScannerFilter(XW_SAMPLE_FILTER_KEY,['all','positive'],'all')==='positive',sampleSortField='code',sampleDescending=false,sampleDirty=false,savedScope=new Set(),sharedProductCode='',notaInput='',lastWorkMode='sample';
 let fullKind='product',fullTab='stock',fullData=null,fullDataKind='product',fullSort='',fullDesc=false,fullCode='',fullSession='';
 try{fullSession=sessionStorage.getItem('xw_full_miniapp_session')||''}catch(_){}
 const valid=s=>/^[A-Za-z0-9][A-Za-z0-9_.()/-]{1,39}$/.test(s);
@@ -2515,7 +2527,7 @@ function setFullKind(kind){
  $('fullResult').classList.toggle('hidden',!match);
  if(match)renderFullResult(fullData);
 }
-let fullStockMode='all'; // options: all (default), stock, order
+let fullStockMode=readScannerFilter(XW_STOCK_FILTER_KEY,['all','stock','order'],'all'); // all, stock, order
 function hasPositivePieces(v){if(v==null||String(v).trim()==='')return false;const n=Number(v);return Number.isFinite(n)&&n>0}
 function meterForSum(value){
  if(value==null)return 0;
@@ -2547,11 +2559,16 @@ function syncVisibilityButtons(yes,yesId,allId){
   $(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));
  }
 }
-$('samplePositiveBtn').onclick=()=>{samplePositiveOnly=true;renderRows()};
-$('sampleAllBtn').onclick=()=>{samplePositiveOnly=false;renderRows()};
+$('samplePositiveBtn').onclick=()=>{
+ samplePositiveOnly=true;saveScannerFilter(XW_SAMPLE_FILTER_KEY,'positive');renderRows();
+};
+$('sampleAllBtn').onclick=()=>{
+ samplePositiveOnly=false;saveScannerFilter(XW_SAMPLE_FILTER_KEY,'all');renderRows();
+};
 function setFullStockMode(next){
  if(!['all','stock','order'].includes(next))return;
  fullStockMode=next;
+ saveScannerFilter(XW_STOCK_FILTER_KEY,next);
  if(fullData&&fullKind==='product')renderFullResult(fullData);
 }
 $('fullAllBtn').onclick=()=>setFullStockMode('all');
@@ -2590,7 +2607,7 @@ function activatePreloadedStock(job){
  if(!job||job.state!=='ready'||job.code!==sharedProductCode)return false;
  if(fullData!==job.data){
   fullData=job.data;fullDataKind='product';fullCode=job.code;fullTab='stock';
-  fullSort='code';fullDesc=false;fullStockMode='all';
+  fullSort='code';fullDesc=false;
   $('fullFilter').value='';
  }
  return true;
@@ -2634,7 +2651,7 @@ async function queryFull(code){
  const data=await fullRequest(product?'stock':'nota',code);
  data.xwOrderRows=[];data.xwOrderStatus=product?'loading':'not_requested';
  fullData=data;fullDataKind=fullKind;fullCode=code;fullTab='stock';fullSort=product?'code':'';fullDesc=false;
- fullStockMode='all';
+ // Keep the previous full-stock display mode across queries.
  $('fullFilter').value='';
  $('fullTime').textContent='本次查詢耗時 '+((performance.now()-start)/1000).toFixed(2)+' 秒';
  if(orderRequest)void orderRequest.then(result=>{
@@ -3249,7 +3266,7 @@ function showResult(d){
  $('sampleOrderStatus').textContent='';
  $('result').classList.remove('xw-local-order-only');
  current=d;sampleStates=new Map();saved=false;sampleDirty=false;savedScope.clear();
- samplePositiveOnly=false; // QR inspection: include every sample SKU, even at zero stock.
+ // New sample scan retains the user's last filter choice.
  for(const row of d.variants||[]){
   const prior=d.previous_status?.[row.code];
   sampleStates.set(row.code,prior?prior.missing===false:true);
