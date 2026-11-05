@@ -25,8 +25,10 @@ def _delete_stale_order_numbers(cur, customer_key, stale):
         values = tuple(batch)
         cur.execute(f"DELETE FROM cloud_workflow_history WHERE order_number IN ({marks})", values)
         cur.execute(f"DELETE FROM cloud_workflows WHERE order_number IN ({marks})", values)
+        # Keep the metadata row as an inactive tombstone. The retention audit
+        # needs its object_key/backend so it can remove the B2 bytes after grace.
         cur.execute(
-            f"DELETE FROM cloud_assets WHERE customer_key=? AND order_number IN ({marks})",
+            f"UPDATE cloud_assets SET active=FALSE, updated_at=CURRENT_TIMESTAMP WHERE customer_key=? AND order_number IN ({marks})",
             (customer_key, *values),
         )
         cur.execute(
