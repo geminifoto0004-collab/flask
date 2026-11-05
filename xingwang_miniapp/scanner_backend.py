@@ -84,6 +84,133 @@ def _require(request):
         raise HTTPException(401, "請先登入掃描器")
 
 
+# Staff-only cross-user hints. No customer details, guest data or typing
+# history is collected; a bounded worker buffers successful SKU searches.
+_SUGGEST_LOCK = asyncio.Lock()
+_SUGGEST_READ_LOCK = asyncio.Lock()
+_SUGGEST_PENDING = {}       # (date_utc, sku) => (count, timestamp_utc)
+_SUGGEST_FLUSH_TASK = None
+_SUGGEST_LAST_BY_DEVICE = {}
+_SUGGEST_CACHE = {"at": 0.0, "popular": [], "recent": []}
+_SUGGEST_LAST_CLEANUP = None
+_SUGGEST_CODE = re.compile(r"^[A-Z0-9][A-Z0-9._/-]{1,39}$")
+
+
+async def _suggest_flush_loop():
+    global _SUGGEST_FLUSH_TASK, _SUGGEST_LAST_CLEANUP
+    while True:
+        await asyncio.sleep(40)
+        async with _SUGGEST_LOCK:
+            if not _SUGGEST_PENDING:
+                _SUGGEST_FLUSH_TASK = None
+                return
+            batch = dict(_SUGGEST_PENDING)
+            _SUGGEST_PENDING.clear()
+        rows = [(sku, count, seen) for (_day, sku), (count, seen) in batch.items()]
+        today = datetime.now(timezone.utc).date()
+        cleanup = _SUGGEST_LAST_CLEANUP != today
+        try:
+            await asyncio.to_thread(scanner_tidb.record_search_batch, rows, cleanup=cleanup)
+            if cleanup:
+                _SUGGEST_LAST_CLEANUP = today
+            _SUGGEST_CACHE["at"] = 0.0
+        except Exception:
+            logging.getLogger("uvicorn.error").warning(
+                "SCANNER_SEARCH_RANK_FLUSH_FAILED (will retry)", exc_info=True
+            )
+            async with _SUGGEST_LOCK:
+                for key, (count, seen) in batch.items():
+                    old = _SUGGEST_PENDING.get(key)
+                    _SUGGEST_PENDING[key] = (
+                        count + (old[0] if old else 0),
+                        max(seen, old[1]) if old else seen,
+                    )
+            await asyncio.sleep(80)
+
+
+@router.get("/scanner/api/search-hints")
+async def scanner_search_hints(request: Request):
+    _require(request)
+    if not scanner_tidb.configured():
+        return JSONResponse({"ok": True, "popular": [], "recent": []},
+                            headers={"Cache-Control": "no-store"})
+    async with _SUGGEST_READ_LOCK:
+        if time.monotonic() - _SUGGEST_CACHE["at"] > 120:
+            try:
+                data = await asyncio.to_thread(scanner_tidb.read_search_recommendations)
+                _SUGGEST_CACHE.update({
+                    "at": time.monotonic(),
+                    "popular": data["popular"],
+                    "recent": data["recent"],
+                })
+            except Exception:
+                logging.getLogger("uvicorn.error").warning(
+                    "SCANNER_SEARCH_HINT_READ_FAILED", exc_info=True
+                )
+        async with _SUGGEST_LOCK:
+            pending = list(_SUGGEST_PENDING.items())
+    popular = {item["code"]: [item["hits"], item["last_seen"]]
+               for item in _SUGGEST_CACHE["popular"]}
+    recent = {item["code"]: item["last_seen"]
+              for item in _SUGGEST_CACHE["recent"]}
+    today = datetime.now(timezone.utc).date()
+    for (day, code), (hits, seen) in pending:
+        ts = seen.replace(tzinfo=None).isoformat()
+        if 0 <= (today - day).days <= 6:
+            old = popular.get(code)
+            popular[code] = [(old[0] if old else 0) + hits,
+                             max(old[1], ts) if old else ts]
+        if 0 <= (today - day).days <= 29:
+            recent[code] = max(recent.get(code, ts), ts)
+    hot = sorted(popular, key=lambda key: (popular[key][0], popular[key][1], key),
+                 reverse=True)[:6]
+    latest = sorted(recent, key=lambda key: (recent[key], key), reverse=True)[:6]
+    return JSONResponse({"ok": True, "popular": hot, "recent": latest},
+                        headers={"Cache-Control": "no-store"})
+
+
+@router.post("/scanner/api/search-hints")
+async def scanner_record_search(request: Request):
+    global _SUGGEST_FLUSH_TASK
+    _check_origin(request)
+    _require(request)
+    if int(request.headers.get("content-length", "0") or 0) > 192:
+        raise HTTPException(413, "Request too large")
+    if not scanner_tidb.configured():
+        return {"ok": True, "recorded": False}
+    try:
+        data = await request.json()
+    except (ValueError, UnicodeError):
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(data, dict) or not isinstance(data.get("code"), str):
+        raise HTTPException(400, "Invalid search code")
+    code = data["code"].strip().upper()
+    if not _SUGGEST_CODE.fullmatch(code):
+        raise HTTPException(400, "Invalid search code")
+    device = hashlib.sha256(request.cookies.get(COOKIE, "").encode()).hexdigest()[:16]
+    at = datetime.now(timezone.utc)
+    now = time.monotonic()
+    async with _SUGGEST_LOCK:
+        dedupe = (device, code)
+        if now - _SUGGEST_LAST_BY_DEVICE.get(dedupe, -1e9) < 15:
+            return {"ok": True, "recorded": False}
+        _SUGGEST_LAST_BY_DEVICE[dedupe] = now
+        if len(_SUGGEST_LAST_BY_DEVICE) > 2000:
+            _SUGGEST_LAST_BY_DEVICE.clear()
+            _SUGGEST_LAST_BY_DEVICE[dedupe] = now
+        key = (at.date(), code)
+        old = _SUGGEST_PENDING.get(key)
+        _SUGGEST_PENDING[key] = (
+            (old[0] if old else 0) + 1,
+            max(at, old[1]) if old else at,
+        )
+        if _SUGGEST_FLUSH_TASK is None or _SUGGEST_FLUSH_TASK.done():
+            _SUGGEST_FLUSH_TASK = asyncio.create_task(
+                _suggest_flush_loop(), name="scanner-search-rank-batch"
+            )
+    return {"ok": True, "recorded": True}
+
+
 @router.get("/scanner", response_class=HTMLResponse)
 async def scanner_page():
     # Prevent browser Back/cache from displaying an old staff workspace
