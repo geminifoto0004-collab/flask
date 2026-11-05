@@ -340,6 +340,22 @@ def order_cloud_asset_check():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@b2_test_bp.route("/api/order-cloud/assets/check-batch", methods=["POST"])
+def order_cloud_asset_check_batch():
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import check_image_hash_batch
+        payload = request.get_json(silent=True) or {}
+        return jsonify({"ok": True, **check_image_hash_batch(payload.get("items"))})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @b2_test_bp.route("/api/order-cloud/assets/register", methods=["POST"])
 def order_cloud_asset_register():
     source_site, auth_error = _order_cloud_auth_source()
