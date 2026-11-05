@@ -121,6 +121,14 @@ SCHEMA = (
         updated INT NOT NULL,
         deactivated INT NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    """CREATE TABLE IF NOT EXISTS xw_scanner_search_daily (
+        day_utc DATE NOT NULL,
+        sku VARCHAR(40) NOT NULL,
+        hits INT UNSIGNED NOT NULL,
+        last_seen_utc DATETIME(6) NOT NULL,
+        PRIMARY KEY(day_utc, sku),
+        KEY idx_last_seen_utc (last_seen_utc)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
 )
 
 def _ensure(conn):
@@ -460,5 +468,84 @@ def check_and_initialize():
                     "xw_stock_snapshot","xw_stock_sync_state",
                     "xw_sample_status","xw_sample_scans","xw_sample_scan_items"
                 ]}
+    finally:
+        conn.close()
+
+
+# Staff-only scanner search suggestions. This tiny daily aggregate is separate
+# from stock snapshots, reservations and sample inspection records.
+def record_search_batch(batch, *, cleanup=False):
+    """Atomically apply counts collected across the active Render worker.
+
+    batch is [(sku, count, timestamp_utc), ...]. Nothing is written per
+    keystroke or animation tick. Discard no batch on failed transactions.
+    """
+    if not batch:
+        return
+    conn = _connect()
+    try:
+        _ensure(conn)
+        from datetime import timedelta
+        rows = []
+        for sku, hits, seen in batch:
+            if (not isinstance(sku, str) or not 2 <= len(sku) <= 40
+                or not isinstance(hits, int) or not 1 <= hits <= 100000
+                or not isinstance(seen, datetime)):
+                raise ValueError("Invalid suggestion aggregate")
+            at = seen.astimezone(timezone.utc)
+            rows.append((at.date(), sku, hits, at.replace(tzinfo=None)))
+        with conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO xw_scanner_search_daily (day_utc,sku,hits,last_seen_utc)
+                   VALUES (%s,%s,%s,%s)
+                   ON DUPLICATE KEY UPDATE
+                       hits=hits+VALUES(hits),
+                       last_seen_utc=GREATEST(last_seen_utc,VALUES(last_seen_utc))""",
+                rows,
+            )
+            if cleanup:
+                cur.execute(
+                    "DELETE FROM xw_scanner_search_daily "
+                    "WHERE day_utc < DATE_SUB(UTC_DATE(), INTERVAL 30 DAY)"
+                )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def read_search_recommendations():
+    """Small bounded top/last lists; callers cache them between users."""
+    conn = _connect()
+    try:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT sku, SUM(hits) AS hits, MAX(last_seen_utc) AS last_seen
+                   FROM xw_scanner_search_daily
+                   WHERE day_utc >= DATE_SUB(UTC_DATE(), INTERVAL 6 DAY)
+                   GROUP BY sku
+                   ORDER BY hits DESC, last_seen DESC
+                   LIMIT 12"""
+            )
+            popular = cur.fetchall()
+            cur.execute(
+                """SELECT sku, SUM(hits) AS hits, MAX(last_seen_utc) AS last_seen
+                   FROM xw_scanner_search_daily
+                   WHERE day_utc >= DATE_SUB(UTC_DATE(), INTERVAL 29 DAY)
+                   GROUP BY sku
+                   ORDER BY last_seen DESC
+                   LIMIT 12"""
+            )
+            recent = cur.fetchall()
+        def as_dict(rows):
+            return [
+                {"code": sku, "hits": int(hits), "last_seen": last_seen.isoformat()}
+                for sku, hits, last_seen in rows
+                if isinstance(sku, str) and 2 <= len(sku) <= 40
+            ]
+        return {"popular": as_dict(popular), "recent": as_dict(recent)}
     finally:
         conn.close()
