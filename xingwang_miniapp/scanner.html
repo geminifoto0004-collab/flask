@@ -1839,6 +1839,56 @@ body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-wid
   margin:10px auto 0!important;
  }
 }
+
+/* UNSLOP: compact, stable business metrics.  Three across for arrivals and
+   reservations; history has 3 + 2 cards (two rows, never 2 + 2 + 1).
+   Values and source calculations remain unchanged. */
+#fullResult[data-full-tab="camino"] #fullStats,
+#fullResult[data-full-tab="history"] #fullStats,
+#fullResult[data-full-tab="reservar"] #fullStats{
+ display:grid!important;
+ grid-template-columns:repeat(6,minmax(0,1fr))!important;
+ gap:8px!important;
+ padding:0 10px!important;
+ margin:10px 0!important;
+ align-items:stretch;
+}
+#fullResult[data-full-tab="camino"] #fullStats .stock-stat,
+#fullResult[data-full-tab="history"] #fullStats .stock-stat,
+#fullResult[data-full-tab="reservar"] #fullStats .stock-stat{
+ box-sizing:border-box!important;
+ grid-column:span 2!important;
+ flex:none!important;
+ width:auto!important;
+ min-width:0!important;
+ margin:0!important;
+ padding:9px 9px!important;
+ border-radius:10px!important;
+}
+#fullResult[data-full-tab="history"] #fullStats .stock-stat:nth-child(4),
+#fullResult[data-full-tab="history"] #fullStats .stock-stat:nth-child(5){
+ grid-column:span 3!important;
+}
+#fullResult[data-full-tab="camino"] #fullStats .stock-stat small,
+#fullResult[data-full-tab="history"] #fullStats .stock-stat small,
+#fullResult[data-full-tab="reservar"] #fullStats .stock-stat small{
+ font-size:11px!important;line-height:1.35!important;
+ overflow-wrap:anywhere;
+}
+#fullResult[data-full-tab="camino"] #fullStats .stock-stat strong,
+#fullResult[data-full-tab="history"] #fullStats .stock-stat strong,
+#fullResult[data-full-tab="reservar"] #fullStats .stock-stat strong{
+ font-size:16px!important;line-height:1.2!important;
+ font-variant-numeric:tabular-nums;
+}
+@media(max-width:380px){
+ #fullResult[data-full-tab="camino"] #fullStats,
+ #fullResult[data-full-tab="history"] #fullStats,
+ #fullResult[data-full-tab="reservar"] #fullStats{gap:5px!important;padding:0 5px!important}
+ #fullResult[data-full-tab="camino"] #fullStats .stock-stat,
+ #fullResult[data-full-tab="history"] #fullStats .stock-stat,
+ #fullResult[data-full-tab="reservar"] #fullStats .stock-stat{padding:8px 6px!important}
+}
 </style>
 </head>
 <body><main>
