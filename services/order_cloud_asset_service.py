@@ -957,7 +957,7 @@ def probe_order_deltas(fingerprints):
         target = getattr(conn, "active_target", "")
         cur = get_cursor(conn)
         cur.execute(
-            "SELECT order_number, customer_key, active, SHA2(render_payload, 256) AS digest "
+            "SELECT order_number, active, SHA2(render_payload, 256) AS digest "
             "FROM cloud_orders WHERE order_number IN (" + ",".join(["?"] * len(fingerprints)) + ")",
             tuple(fingerprints),
         )
@@ -968,8 +968,6 @@ def probe_order_deltas(fingerprints):
                 continue
             if row["active"] and row["digest"] == fingerprints[number]:
                 del changed[number]
-            else:
-                changed[number] = row["customer_key"]
     finally:
         conn.close()
     return {"changed": changed, "target": target}
