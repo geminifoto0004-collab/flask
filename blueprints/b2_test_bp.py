@@ -532,6 +532,50 @@ def order_cloud_sync_orders_delta():
         return jsonify({"ok": False, "error": "ORDER TiDB sync failed"}), 500
 
 
+@b2_test_bp.route("/api/order-cloud/sync/orders-upsert-only", methods=["POST"])
+def order_cloud_sync_orders_upsert_only():
+    """V278 shared-customer/manual-all delta: upsert data, never delete old rows.
+
+    This is a dedicated endpoint so existing COMPANY clients keep their old
+    delta semantics. No fallback to a deleting endpoint is permitted.
+    """
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        limit = 16 * 1024 * 1024
+        raw = request.stream.read(limit + 1)
+        if len(raw) > limit:
+            return jsonify({"ok": False, "error": "ORDER request exceeds 16 MiB"}), 413
+        encoding = request.headers.get("Content-Encoding", "").lower()
+        if encoding == "gzip":
+            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as zipped:
+                raw = zipped.read(limit + 1)
+            if len(raw) > limit:
+                return jsonify({"ok": False, "error": "ORDER request exceeds 16 MiB"}), 413
+        elif encoding:
+            raise ValueError("unsupported Content-Encoding")
+        body = json.loads(raw)
+        if not isinstance(body, dict) or set(body) not in ({"fingerprints"}, {"orders", "target"}):
+            raise ValueError("expected fingerprints or orders with a TiDB target")
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import ensure_order_owners_fast_batch, probe_order_deltas
+        if "fingerprints" in body:
+            result = probe_order_deltas(body["fingerprints"])
+        else:
+            target = body["target"]
+            if target not in ("TIDB1", "TIDB2"):
+                raise ValueError("invalid TiDB target")
+            result = ensure_order_owners_fast_batch(
+                body["orders"], source_site, expected_target=target, upsert_only=True)
+        return jsonify({"ok": True, "result": result})
+    except (ValueError, OSError, EOFError, zlib.error) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        print(f"[ORDER Upsert Only] {type(exc).__name__}: {exc}", flush=True)
+        return jsonify({"ok": False, "error": "ORDER TiDB upsert-only sync failed"}), 500
+
+
 @b2_test_bp.route("/api/order-cloud/sync/orders-fast-batch", methods=["POST"])
 def order_cloud_sync_orders_fast_batch():
     source_site, auth_error = _order_cloud_auth_source()
