@@ -65,7 +65,7 @@ def _next_cursor(row, entity):
     }
 
 
-def _load_share_context(cur, customer_keys):
+def _load_share_context(cur, customer_keys, *, allow_missing=False):
     placeholders = ",".join(["?"] * len(customer_keys))
     cur.execute(
         "SELECT token_hash,customer_key,show_images,show_workflow_images,show_pdf_pages "
@@ -92,7 +92,7 @@ def _load_share_context(cur, customer_keys):
         tokens_by_customer.setdefault(_norm(customer_key), []).append(token)
         tokens_by_hash[token_hash] = token
     missing = [key for key in customer_keys if not tokens_by_customer.get(_norm(key))]
-    if missing:
+    if missing and not allow_missing:
         raise RosterChanged("WEB share roster changed during index read; refresh and retry")
 
     visibility_by_token = {}
@@ -253,6 +253,9 @@ def order_cloud_sync_orders_index_v281():
             return jsonify({"ok": False, "error": "limit must be 1..2000"}), 400
         cursor = _parse_cursor(body.get("cursor"), entity)
         requested_target = str(body.get("target") or "").strip().upper()
+        parity_mode = body.get("parity") is True
+        if parity_mode and not requested_target:
+            return jsonify({"ok": False, "error": "parity requires an explicit TiDB target"}), 400
         if requested_target and requested_target not in {"TIDB1", "TIDB2"}:
             return jsonify({"ok": False, "error": "target must be TIDB1 or TIDB2"}), 400
         if not customer_keys:
@@ -272,7 +275,12 @@ def order_cloud_sync_orders_index_v281():
             return jsonify({"ok": False, "error": "active TiDB target is unavailable"}), 503
         cur = get_cursor(conn)
         try:
-            tokens_by_customer, _tokens_by_hash, visibility_by_token = _load_share_context(cur, customer_keys)
+            tokens_by_customer, _tokens_by_hash, visibility_by_token = _load_share_context(
+                cur, customer_keys, allow_missing=parity_mode)
+            # Parity is an authenticated metadata-only investigation. The
+            # passive TiDB may not have the newest WEB token. Missing tokens
+            # must not hide order/asset index rows or abort content comparison.
+            # Normal day-to-day B reads still fail closed on a changed roster.
             page, next_cursor = _fetch_page(cur, entity, customer_keys, cursor, limit)
             if entity == "orders":
                 items = []
@@ -313,7 +321,7 @@ def order_cloud_sync_orders_index_v281():
                         "updated_at": _serialize_time(row.get("updated_at")),
                     })
             return jsonify({"ok": True, "result": {
-                "target": target, "entity": entity, "items": items,
+                "target": target, "entity": entity, "parity": parity_mode, "items": items,
                 "next_cursor": next_cursor, "count": len(items),
             }})
         finally:
