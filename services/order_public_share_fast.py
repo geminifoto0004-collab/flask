@@ -95,6 +95,11 @@ def _ensure_share_columns():
     with _share_columns_lock:
         if _share_columns_ready:
             return
+        # The first customer GET may arrive before the desktop makes a sync
+        # POST. Ensure the additive cloud_assets.customer_visible column
+        # exists before all public thumbnail/snapshot queries rely on it.
+        from services.order_cloud_asset_service import init_order_cloud_asset_table
+        init_order_cloud_asset_table()
         conn = get_db_connection(); cur = get_cursor(conn)
         try:
             if not check_column_exists(cur, 'cloud_share_tokens', 'history_scope'):
