@@ -1038,7 +1038,7 @@ def probe_order_deltas(fingerprints, *, include_new=False):
         target = getattr(conn, "active_target", "")
         cur = get_cursor(conn)
         cur.execute(
-            "SELECT order_number, active, SHA2(render_payload, 256) AS digest "
+            "SELECT order_number, active, COALESCE(sync_fingerprint, SHA2(render_payload, 256)) AS digest "
             "FROM cloud_orders WHERE order_number IN (" + ",".join(["?"] * len(fingerprints)) + ")",
             tuple(fingerprints),
         )
@@ -1090,7 +1090,7 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
     history_by_workflow = {}
     existing_orders = {}
     cur.execute(
-        "SELECT order_number, customer_key, active, render_payload FROM cloud_orders "
+        "SELECT order_number, customer_key, active, render_payload, sync_fingerprint FROM cloud_orders "
         "WHERE order_number IN (" + ",".join(["?"] * len(numbers)) + ")" +
         (" FOR UPDATE" if changed_only else ""), numbers,
     )
@@ -1108,8 +1108,9 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
         prior = existing.get("render_payload")
         p = _preserve_existing_logistics(original, prior)
         encoded = _order_json(p, sort_keys=changed_only)
+        sync_fingerprint = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         same_order = changed_only and existing.get("active") and existing.get("customer_key") == key
-        if same_order and prior == encoded:
+        if same_order and prior == encoded and existing.get("sync_fingerprint") == sync_fingerprint:
             continue
         written.append(number)
         all_customers.add(key)
@@ -1133,6 +1134,7 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
             str(p["quantity"]) if p.get("quantity") is not None else None,
             source_site,
             encoded,
+            sync_fingerprint,
         ))
         if same_order and isinstance(previous, dict) and previous.get("workflows") == p.get("workflows"):
             continue
@@ -1190,15 +1192,15 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
     cur.executemany(
         "INSERT INTO cloud_orders "
         "(order_number,customer_key,customer_name,order_status,order_date,expected_delivery_date,"
-        "production_type,product_name,product_code,pattern_code,quantity,source_site,render_payload) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE "
+        "production_type,product_name,product_code,pattern_code,quantity,source_site,render_payload,sync_fingerprint) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE "
         "customer_key=VALUES(customer_key),customer_name=VALUES(customer_name),"
         "order_status=VALUES(order_status),order_date=VALUES(order_date),"
         "expected_delivery_date=VALUES(expected_delivery_date),"
         "production_type=VALUES(production_type),product_name=VALUES(product_name),"
         "product_code=VALUES(product_code),pattern_code=VALUES(pattern_code),"
         "quantity=VALUES(quantity),source_site=VALUES(source_site),"
-        "render_payload=VALUES(render_payload),active=TRUE,updated_at=CURRENT_TIMESTAMP",
+        "render_payload=VALUES(render_payload),sync_fingerprint=VALUES(sync_fingerprint),active=TRUE,updated_at=CURRENT_TIMESTAMP",
         order_rows)
     if workflow_rows:
         cur.executemany(
