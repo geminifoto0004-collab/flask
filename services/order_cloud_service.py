@@ -302,10 +302,9 @@ def sync_logistics_batch(items, source_site=None):
 
             payload["logistics"] = safe_logistics
             encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
-            digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
             cur.execute(
-                "UPDATE cloud_orders SET render_payload=?, sync_fingerprint=?, updated_at=CURRENT_TIMESTAMP WHERE order_number=?",
-                (encoded, digest, order_number),
+                "UPDATE cloud_orders SET render_payload=?, updated_at=CURRENT_TIMESTAMP WHERE order_number=?",
+                (encoded, order_number),
             )
             updated += 1
 
@@ -371,6 +370,7 @@ def sync_order(payload, source_site=None):
         cur.execute("SELECT order_number, render_payload FROM cloud_orders WHERE order_number = ?", (order_number,))
         existing_row = cur.fetchone()
         existing_data = get_row_dict(existing_row, cur) if existing_row else {}
+        source_payload = dict(payload or {})
         payload = _preserve_existing_logistics(payload, (existing_data or {}).get("render_payload"))
         vals = (
             customer_key,
@@ -407,7 +407,8 @@ def sync_order(payload, source_site=None):
             )
 
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
-        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        source_encoded = json.dumps(source_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+        digest = hashlib.sha256(source_encoded.encode("utf-8")).hexdigest()
         cur.execute(
             "UPDATE cloud_orders SET render_payload=?, sync_fingerprint=? WHERE order_number=?",
             (encoded, digest, order_number),
