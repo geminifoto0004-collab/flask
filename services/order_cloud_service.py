@@ -95,6 +95,7 @@ def init_order_cloud_tables():
                 delivery_date VARCHAR(32) NULL,
                 active BOOLEAN NOT NULL DEFAULT TRUE,
                 source_site VARCHAR(16) NULL,
+                sync_fingerprint VARCHAR(64) NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_cloud_orders_customer (customer_key)
             )
@@ -147,6 +148,7 @@ def init_order_cloud_tables():
 
         # Safe additive migration from phase 1 to the real ORDER payload shape.
         _ensure_column(cur, "cloud_orders", "render_payload", "LONGTEXT NULL")
+        _ensure_column(cur, "cloud_orders", "sync_fingerprint", "VARCHAR(64) NULL")
 
         for name, definition in (
             ("production_type", "VARCHAR(191) NULL"),
@@ -299,9 +301,11 @@ def sync_logistics_batch(items, source_site=None):
                 continue
 
             payload["logistics"] = safe_logistics
+            encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+            digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
             cur.execute(
-                "UPDATE cloud_orders SET render_payload=?, updated_at=CURRENT_TIMESTAMP WHERE order_number=?",
-                (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str), order_number),
+                "UPDATE cloud_orders SET render_payload=?, sync_fingerprint=?, updated_at=CURRENT_TIMESTAMP WHERE order_number=?",
+                (encoded, digest, order_number),
             )
             updated += 1
 
@@ -402,9 +406,11 @@ def sync_order(payload, source_site=None):
                 vals,
             )
 
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         cur.execute(
-            "UPDATE cloud_orders SET render_payload=? WHERE order_number=?",
-            (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str), order_number),
+            "UPDATE cloud_orders SET render_payload=?, sync_fingerprint=? WHERE order_number=?",
+            (encoded, digest, order_number),
         )
 
         seen_workflows = []
