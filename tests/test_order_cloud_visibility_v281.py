@@ -136,6 +136,40 @@ class V281VisibilityTests(unittest.TestCase):
         self.assertIn('a.active=TRUE AND a.customer_visible=TRUE', SNAPSHOT)
         self.assertIn('a.asset_key=? AND a.active=TRUE AND a.customer_visible=TRUE', THUMBS)
 
+    def test_local_and_render_share_canonical_timeline_digest(self):
+        # Same independently pinned test vector in COMPANY V283 and HOME V282.
+        import hashlib
+        import json
+        tree = ast.parse(SERVICE)
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_order_json")
+        env = {"json": json}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "order_cloud_asset_service.py", "exec"), env)
+        payload = {
+            "order_number": "1008621", "customer_name": "CLIENT A",
+            "customer_key": "CLIENT A", "order_status": "ACTIVE",
+            "workflows": [{
+                "workflow_key": "1008621-1", "status": "EN PROCESO",
+                "timeline": [
+                    {"status": "EN PROCESO", "action_date": "2026-11-06T12:30:00"},
+                    {"status": "COMPLETED", "action_date": "2026-11-06T13:15:00"},
+                ],
+            }],
+            "logistics": [],
+        }
+        encoded = env["_order_json"](payload, sort_keys=True)
+        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        self.assertEqual(digest, "6bf5bdff8927c4a48c529914843008699e8152d586f60e698a309eff52ae8eb4")
+        changed = dict(payload)
+        changed["workflows"] = [{
+            **payload["workflows"][0],
+            "timeline": payload["workflows"][0]["timeline"] + [
+                {"status": "REOPENED", "action_date": "2026-11-07T08:00:00"}],
+        }]
+        self.assertNotEqual(
+            hashlib.sha256(env["_order_json"](changed, sort_keys=True).encode("utf-8")).hexdigest(),
+            digest,
+        )
+
     def test_reregister_does_not_unhide_existing_image(self):
         self.assertIn('effective_visible = (bool(existing.get("customer_visible", True))', SERVICE)
         self.assertIn('customer_visible=None):', SERVICE)
