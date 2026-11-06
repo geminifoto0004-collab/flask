@@ -1018,7 +1018,7 @@ def _delete_keys(cur, table, column, keys):
         cur.execute(f"DELETE FROM {table} WHERE {column} IN (" + ",".join(["?"] * len(part)) + ")", part)
 
 
-def probe_order_deltas(fingerprints):
+def probe_order_deltas(fingerprints, *, include_new=False):
     """Read indexed order digests from the current TiDB without fetching payloads."""
     if not isinstance(fingerprints, dict) or not 1 <= len(fingerprints) <= _DELTA_MAX_ORDERS:
         raise ValueError("fingerprints must contain 1..2000 orders")
@@ -1032,6 +1032,7 @@ def probe_order_deltas(fingerprints):
     if len(numbers) != len(fingerprints):
         raise ValueError("duplicate order_number in fingerprints")
     changed = dict.fromkeys(fingerprints, "")
+    found = set()
     conn = get_db_connection()
     try:
         target = getattr(conn, "active_target", "")
@@ -1044,13 +1045,18 @@ def probe_order_deltas(fingerprints):
         for raw in cur.fetchall():
             row = get_row_dict(raw, cur)
             number = numbers.get(row["order_number"].casefold())
+            if number is not None:
+                found.add(number)
             if number is None:
                 continue
             if row["active"] and row["digest"] == fingerprints[number]:
                 del changed[number]
     finally:
         conn.close()
-    return {"changed": changed, "target": target}
+    result = {"changed": changed, "target": target}
+    if include_new:
+        result["new"] = [key for key in fingerprints if key not in found]
+    return result
 
 
 def _validate_order_batch(orders, limit):
@@ -1071,7 +1077,7 @@ def _validate_order_batch(orders, limit):
             raise ValueError("workflows must be a list")
 
 
-def _write_order_rows(cur, part, source_site, *, changed_only):
+def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False):
     numbers = tuple(str(row["order_number"]).strip() for row in part)
     written = []
     all_customers = set()
@@ -1217,37 +1223,41 @@ def _write_order_rows(cur, part, source_site, *, changed_only):
             "status=VALUES(status),action_date=VALUES(action_date),"
             "sort_order=VALUES(sort_order),active=TRUE,updated_at=CURRENT_TIMESTAMP",
             history_rows)
-    # Only reconcile orders whose workflow snapshot is being written.
-    stale_workflows = []
-    if workflow_by_order:
-        keys = tuple(workflow_by_order)
-        normalized = {key.casefold(): values for key, values in workflow_by_order.items()}
-        cur.execute(
-            "SELECT workflow_key,order_number FROM cloud_workflows WHERE order_number IN ("
-            + ",".join(["?"] * len(keys)) + ")", keys,
-        )
-        for raw in cur.fetchall():
-            row = get_row_dict(raw, cur)
-            if row["workflow_key"].casefold() not in normalized.get(row["order_number"].casefold(), ()):
-                stale_workflows.append(row["workflow_key"])
-    stale_history = []
-    normalized = {key.casefold(): values for key, values in history_by_workflow.items()}
-    for keys in _sql_chunks(tuple(history_by_workflow)):
-        cur.execute(
-            "SELECT workflow_key,history_key FROM cloud_workflow_history WHERE workflow_key IN ("
-            + ",".join(["?"] * len(keys)) + ")", keys,
-        )
-        for raw in cur.fetchall():
-            row = get_row_dict(raw, cur)
-            if row["history_key"].casefold() not in normalized.get(row["workflow_key"].casefold(), ()):
-                stale_history.append(row["history_key"])
-    _delete_keys(cur, "cloud_workflow_history", "history_key", stale_history)
-    _delete_keys(cur, "cloud_workflow_history", "workflow_key", stale_workflows)
-    _delete_keys(cur, "cloud_workflows", "workflow_key", stale_workflows)
+    # B-mode is strictly non-destructive: never delete workflow/history rows.
+    # Other callers retain their previous authoritative replacement semantics.
+    if not upsert_only:
+        # Only reconcile orders whose workflow snapshot is being written.
+        stale_workflows = []
+        if workflow_by_order:
+            keys = tuple(workflow_by_order)
+            normalized = {key.casefold(): values for key, values in workflow_by_order.items()}
+            cur.execute(
+                "SELECT workflow_key,order_number FROM cloud_workflows WHERE order_number IN ("
+                + ",".join(["?"] * len(keys)) + ")", keys,
+            )
+            for raw in cur.fetchall():
+                row = get_row_dict(raw, cur)
+                if row["workflow_key"].casefold() not in normalized.get(row["order_number"].casefold(), ()):
+                    stale_workflows.append(row["workflow_key"])
+        stale_history = []
+        normalized = {key.casefold(): values for key, values in history_by_workflow.items()}
+        for keys in _sql_chunks(tuple(history_by_workflow)):
+            cur.execute(
+                "SELECT workflow_key,history_key FROM cloud_workflow_history WHERE workflow_key IN ("
+                + ",".join(["?"] * len(keys)) + ")", keys,
+            )
+            for raw in cur.fetchall():
+                row = get_row_dict(raw, cur)
+                if row["history_key"].casefold() not in normalized.get(row["workflow_key"].casefold(), ()):
+                    stale_history.append(row["history_key"])
+        _delete_keys(cur, "cloud_workflow_history", "history_key", stale_history)
+        _delete_keys(cur, "cloud_workflow_history", "workflow_key", stale_workflows)
+        _delete_keys(cur, "cloud_workflows", "workflow_key", stale_workflows)
+    
     return written, all_customers, total_timeline
 
 
-def ensure_order_owners_fast_batch(orders, source_site=None, *, expected_target=None):
+def ensure_order_owners_fast_batch(orders, source_site=None, *, expected_target=None, upsert_only=False):
     """Apply ORDER, workflow and history rows in grouped SQL operations."""
     changed_only = expected_target is not None
     limit = _DELTA_MAX_ORDERS if changed_only else 200
@@ -1268,6 +1278,7 @@ def ensure_order_owners_fast_batch(orders, source_site=None, *, expected_target=
         for offset in range(0, len(orders), size):
             numbers, keys, count = _write_order_rows(
                 cur, orders[offset:offset + size], source_site, changed_only=changed_only,
+                upsert_only=upsert_only,
             )
             written.extend(numbers)
             customers.update(keys)
