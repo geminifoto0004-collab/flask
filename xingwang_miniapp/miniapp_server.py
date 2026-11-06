@@ -319,6 +319,32 @@ async def query(request:Request):
 # endpoint NEVER accepts Telegram initData, bot aliases, or user-supplied
 # source fields. The local worker recognizes the privileged source ONLY over
 # the authenticated Render -> local WebSocket. No write actions are allowed.
+
+def _scanner_staff_history_prices(data, action):
+    """Show historical prices already returned by the authenticated bridge.
+
+    Called only by company-cookie /scanner/api/full after its auth checks.
+    No extra Access queries, no invented prices, no Telegram/guest changes.
+    """
+    if not isinstance(data, dict) or action not in ("stock", "history_more"):
+        return data
+    key = "history" if action == "stock" else "rows"
+    rows = data.get(key)
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            value = row.get("price")
+            if value is None or str(value).strip() == "":
+                for alias in ("PRECIO", "Precio", "precio"):
+                    value = row.get(alias)
+                    if value is not None and str(value).strip() != "":
+                        row["price"] = value
+                        break
+    if action == "stock":
+        data["price_allowed"] = True
+    return data
+
 _scanner_full_queries = []
 _scanner_full_lock = asyncio.Lock()
 
@@ -402,7 +428,7 @@ async def scanner_full_query(request: Request):
         message=("本機程式可能尚未更新，請確認使用新版 XINGWANG 後重啟。" if code=="INPUT"
                  else str(response.get("error") or "查詢未完成")[:140])
         return JSONResponse({"ok":False,"error":message,"code":code},status_code=status)
-    return {"ok":True,"data":response.get("data")}
+    return {"ok":True,"data":_scanner_staff_history_prices(response.get("data"),action)}
 
 @app.websocket("/bridge")
 async def bridge(ws:WebSocket):
