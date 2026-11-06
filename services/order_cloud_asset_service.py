@@ -1038,7 +1038,7 @@ def probe_order_deltas(fingerprints, *, include_new=False):
         target = getattr(conn, "active_target", "")
         cur = get_cursor(conn)
         cur.execute(
-            "SELECT order_number, active, SHA2(render_payload, 256) AS digest "
+            "SELECT order_number, active, COALESCE(sync_fingerprint, SHA2(render_payload, 256)) AS digest "
             "FROM cloud_orders WHERE order_number IN (" + ",".join(["?"] * len(fingerprints)) + ")",
             tuple(fingerprints),
         )
