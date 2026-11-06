@@ -11,7 +11,7 @@ import os
 from flask import jsonify, request
 
 from blueprints.b2_test_bp import b2_test_bp, _order_cloud_auth_source
-from database import get_cursor, get_db_connection, get_db_connection_for_target, get_row_dict
+from database import check_column_exists, get_cursor, get_db_connection, get_db_connection_for_target, get_row_dict
 
 
 _MAX_CUSTOMERS = 200
@@ -175,9 +175,15 @@ def _fetch_page(cur, entity, customer_keys, cursor, limit):
         )
         params.extend([cursor[0], cursor[0], cursor[1]])
     if entity == "orders":
+        # Read-only compatibility with an older target that has not yet run the
+        # additive sync_fingerprint migration. A missing column is NOT created
+        # by an index GET/POST; the existing write path owns schema migration.
+        fp_expr = ("COALESCE(NULLIF(sync_fingerprint,''),SHA2(render_payload,256))"
+                   if check_column_exists(cur, "cloud_orders", "sync_fingerprint")
+                   else "SHA2(render_payload,256)")
         sql = (
             "SELECT order_number,customer_key,order_status,active,"
-            "COALESCE(NULLIF(sync_fingerprint,''),SHA2(render_payload,256)) AS fp "
+            + fp_expr + " AS fp "
             "FROM cloud_orders WHERE customer_key IN (" + key_placeholders + ")"
             + cursor_clause + " ORDER BY customer_key,order_number LIMIT ?"
         )
