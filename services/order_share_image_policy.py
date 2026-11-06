@@ -1,14 +1,14 @@
 def source_match(asset, order):
-    """Match only the last writer's *own* local file inventory.
+    """Enrich metadata from a local manifest, never treat its omissions as deletion.
 
-    COMPANY and HOME share cloud_assets, but neither has a complete view of the
-    other PC's local files. A fresh HOME render_payload may contain an empty
-    image_sources manifest marked authoritative; it must not hide an otherwise
-    active, customer-visible COMPANY asset. The reverse applies too.
+    COMPANY and HOME each see only their own on-disk image files. Both currently
+    identify to Render as ORDER, so image_sources_authoritative describes ONE PC's
+    local inventory, not the complete cloud_assets ledger. If HOME has no COMPANY
+    photo on disk, it must not remove that registered image from customer pages.
 
-    A matching local manifest is still authoritative for assets from the same
-    source_site. Explicit cloud_assets.customer_visible and per-share permissions
-    remain enforced separately by asset_allowed().
+    The customer visibility authority is cloud_assets.active/customer_visible
+    plus the WEB share permission flags, enforced independently in the snapshot
+    and public routes. Missing from a local manifest is not a hide instruction.
     """
     if not order.get('image_sources_authoritative'):
         return None
@@ -17,14 +17,7 @@ def source_match(asset, order):
                if (str(s.get('workflow_key') or ''), str(s.get('sha256') or '')) == key]
     if matches:
         return max(matches, key=lambda s: int(s.get('uploaded_at_epoch') or 0))
-
-    asset_site = str(asset.get('source_site') or '').strip().upper()
-    order_site = str(order.get('source_site') or '').strip().upper()
-    if asset_site in {'HOME', 'COMPANY'} and order_site in {'HOME', 'COMPANY'} and asset_site != order_site:
-        # The manifest came from the other PC. Missing locally is not deletion.
-        return None
-    return False
-
+    return None
 
 """Shared image-source policy for public HTML and authorized media reads."""
 
