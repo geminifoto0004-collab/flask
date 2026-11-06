@@ -11,7 +11,7 @@ from services.order_cloud_index_v281 import (
 
 class OrderCloudIndexV281Tests(unittest.TestCase):
     def test_customer_keys_are_deduplicated_and_bounded(self):
-        self.assertEqual(_clean_customer_keys([" A  B ", "a b"]), ["A  B "])
+        self.assertEqual(_clean_customer_keys([" A  B ", "a b"]), ["A  B"])
         with self.assertRaises(ValueError):
             _clean_customer_keys([" "])
 
