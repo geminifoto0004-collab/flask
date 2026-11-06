@@ -1,0 +1,21 @@
+name: Guest share QR checks
+on:
+  pull_request:
+    paths:
+      - "templates/tracking/customer_share_public.html"
+      - "static/js/order_guest_qrcode.min.js"
+      - "static/js/qrcodejs.LICENSE.txt"
+      - "tests/test_guest_share_hidden_qr.py"
+      - ".github/workflows/guest-share-qr-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  check-hidden-qr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: QR and public share regressions
+        run: python -m unittest discover -s tests -p test_guest_share_hidden_qr.py -v
