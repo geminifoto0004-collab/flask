@@ -225,7 +225,33 @@ def _share_admin_state():
                     "access_count": int(item.get("access_count") or 0),
                     "last_accessed_at": _dt_iso(item.get("last_accessed_at")),
                     "last_accessed_at_epoch": _dt_epoch(item.get("last_accessed_at")),
+                    # cloud_share_tokens is the Render WEB-share roster. LAN-only
+                    # shares remain local and are deliberately not represented here.
+                    "share_mode": "WEB",
                 })
+            token_hashes = [str(item.get("share_id") or "") for item in rows if item.get("share_id")]
+            visibility_by_token = {}
+            for offset in range(0, len(token_hashes), 500):
+                part = token_hashes[offset:offset + 500]
+                cur.execute(
+                    "SELECT token_hash,order_number,show_order,show_images,show_workflow_images,show_logistics "
+                    "FROM cloud_share_order_visibility WHERE token_hash IN (" + ",".join(["?"] * len(part)) + ")",
+                    tuple(part),
+                )
+                for raw_visibility in cur.fetchall():
+                    visibility = get_row_dict(raw_visibility, cur) or {}
+                    token_hash = str(visibility.get("token_hash") or "")
+                    order_number = str(visibility.get("order_number") or "")
+                    if not token_hash or not order_number:
+                        continue
+                    visibility_by_token.setdefault(token_hash, {})[order_number] = {
+                        "show_order": bool(visibility.get("show_order", True)),
+                        "show_images": visibility.get("show_images"),
+                        "show_workflow_images": visibility.get("show_workflow_images"),
+                        "show_logistics": visibility.get("show_logistics"),
+                    }
+            for item in rows:
+                item["order_visibility"] = visibility_by_token.get(str(item.get("share_id") or ""), {})
         finally:
             conn.close()
         return jsonify({"ok": True, "result": {"shares": rows, "idempotent_create": True}})
