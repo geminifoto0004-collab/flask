@@ -188,9 +188,14 @@ def _fetch_page(cur, entity, customer_keys, cursor, limit):
             + cursor_clause + " ORDER BY customer_key,order_number LIMIT ?"
         )
     else:
+        # The index must stay read-only even when a backup TiDB still needs the
+        # additive visibility column. The write/setup path owns migrations.
+        visibility_expr = ("customer_visible" if check_column_exists(cur, "cloud_assets", "customer_visible")
+                           else "TRUE AS customer_visible")
         sql = (
             "SELECT asset_key,customer_key,order_number,workflow_key,asset_type,sha256,"
-            "object_key,storage_backend,content_type,file_size,active,customer_visible,updated_at "
+            "object_key,storage_backend,content_type,file_size,active,"
+            + visibility_expr + ",updated_at "
             "FROM cloud_assets WHERE customer_key IN (" + key_placeholders + ")"
             + cursor_clause + " ORDER BY customer_key,asset_key LIMIT ?"
         )
