@@ -1,10 +1,29 @@
 def source_match(asset, order):
+    """Match only the last writer's *own* local file inventory.
+
+    COMPANY and HOME share cloud_assets, but neither has a complete view of the
+    other PC's local files. A fresh HOME render_payload may contain an empty
+    image_sources manifest marked authoritative; it must not hide an otherwise
+    active, customer-visible COMPANY asset. The reverse applies too.
+
+    A matching local manifest is still authoritative for assets from the same
+    source_site. Explicit cloud_assets.customer_visible and per-share permissions
+    remain enforced separately by asset_allowed().
+    """
     if not order.get('image_sources_authoritative'):
         return None
     key = (str(asset.get('workflow_key') or ''), str(asset.get('sha256') or ''))
     matches = [s for s in order.get('image_sources') or []
                if (str(s.get('workflow_key') or ''), str(s.get('sha256') or '')) == key]
-    return max(matches, key=lambda s: int(s.get('uploaded_at_epoch') or 0)) if matches else False
+    if matches:
+        return max(matches, key=lambda s: int(s.get('uploaded_at_epoch') or 0))
+
+    asset_site = str(asset.get('source_site') or '').strip().upper()
+    order_site = str(order.get('source_site') or '').strip().upper()
+    if asset_site in {'HOME', 'COMPANY'} and order_site in {'HOME', 'COMPANY'} and asset_site != order_site:
+        # The manifest came from the other PC. Missing locally is not deletion.
+        return None
+    return False
 
 
 """Shared image-source policy for public HTML and authorized media reads."""
