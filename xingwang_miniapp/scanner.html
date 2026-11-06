@@ -167,6 +167,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
  }
 }
 
+.xw-history-mobile-name,.xw-history-mobile-nota{display:none}
 /* UNSLOP: compact, readable responsive transaction rows.
    Only UI for HISTORY / RESERVAR. Desktop stays the original sortable table. */
 @media(max-width:700px){
@@ -261,47 +262,72 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
     color:#241017;font-size:14px;font-weight:650;line-height:1.45;
     white-space:normal;overflow-wrap:anywhere;word-break:normal;
   }
-  /* History: SKU + CAJA / customer full width / date + Nota. */
+  /* History: compact mobile cards with a prominent authorized US$ price. */
+  #fullResult[data-full-tab="history"] .full-table thead th[data-xw-col="nota"],
+  #fullResult[data-full-tab="history"] .full-table thead th[data-xw-col="customer"]{display:none}
+  #fullResult[data-full-tab="history"] .full-table tbody tr.xw-history-line{
+    display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;
+    gap:9px 12px;margin:0 0 9px;padding:13px 12px;
+    border:1px solid #E7DDE1;border-radius:12px;
+    box-shadow:0 2px 5px rgba(70,23,43,.045);
+  }
   #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(4){
-    grid-row:1;grid-column:1;
-    font-size:17px;font-weight:800;
+    grid-row:1;grid-column:1;min-width:0;
+    display:flex;flex-direction:column;align-items:flex-start;gap:5px;
+    font-size:17px;font-weight:800;overflow-wrap:anywhere;
   }
-  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(5){
-    grid-row:1;grid-column:2;
-    font-size:16px;font-weight:800;
-    white-space:nowrap;
+  #fullResult[data-full-tab="history"] .full-table tbody tr.xw-history-line td:nth-child(4)::before{
+    content:"SALIDA";display:inline-flex;
+    border-radius:5px;padding:3px 6px;
+    font-size:10px;font-weight:800;line-height:1.15;letter-spacing:.025em;
+    color:#813A54;background:#F4E5EA;
   }
-  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(5)::before{
-    content:"CAJA";
-    margin-right:6px;
-    font-size:11px;
-    color:#806E77;
-    font-weight:600;
+  #fullResult[data-full-tab="history"] .full-table tbody tr.xw-inbound td:nth-child(4)::before{
+    content:"INGRESO";color:#155B8C;background:#CEE7F7;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(3){
+    grid-column:1/-1;grid-row:2;display:flex;min-width:0;gap:0;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(3)::before{content:none}
+  #fullResult[data-full-tab="history"] .full-table .full-customer-text{display:none}
+  #fullResult[data-full-tab="history"] .full-table .xw-history-mobile-name{
+    display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px;
+    max-width:100%;min-width:0;line-height:1.35;
+    font-size:13px;font-weight:650;overflow-wrap:anywhere;
+  }
+  #fullResult[data-full-tab="history"] .full-table .xw-history-container{
+    color:#195D8C;background:#D4E9F7;border-radius:5px;
+    padding:3px 5px;font-weight:800;font-size:12px;white-space:nowrap;
   }
   #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(1){
-    grid-row:3;grid-column:1;
-    color:#76656D;
-    font-size:12px;
+    grid-row:3;grid-column:1;min-width:0;flex-wrap:wrap;gap:4px 9px;
+    color:#75636D;font-size:12px;
   }
-  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(2){
-    grid-row:3;grid-column:2;
-    color:#76656D;
-    font-size:12px;
-    justify-content:flex-end;
+  #fullResult[data-full-tab="history"] .full-table .xw-history-mobile-nota{
+    display:inline-flex;border-left:1px solid #CBB9C0;
+    padding-left:8px;color:#75636D;white-space:nowrap;
   }
-  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(2)::before{
-    content:"Nota";
-    margin-right:5px;
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(2){display:none}
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(5){
+    grid-row:3;grid-column:2;justify-content:flex-end;
+    font-size:15px;font-weight:800;white-space:nowrap;color:#4E1127;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(5)::before{
+    content:"CAJA";margin-right:7px;font-size:10px;
+    font-weight:650;color:#7C6A73;
   }
   #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(6){
-    grid-column:1 / -1;
-    grid-row:4;
-    font-size:12px;
+    grid-row:1;grid-column:2;justify-content:center;
+    min-width:94px;padding:7px 9px;border-radius:9px;
+    background:#6A1B36;color:#fff;font-size:17px;
+    line-height:1.2;font-weight:800;white-space:nowrap;
   }
-  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(6)::before{
-    content:"成交單價";
-    margin-right:8px;
-    color:#806E77;
+  #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(6)::before{content:none}
+  #fullResult[data-full-tab="history"] .full-table tbody tr.xw-inbound{
+    border-color:#BDDAE9;border-left:3px solid #347EAC;background:#EAF4FB;
+  }
+  #fullResult[data-full-tab="history"] .full-table tbody tr.xw-inbound td:nth-child(6){
+    background:#CFE6F6;color:#134F7C;
   }
   /* Reservations: SKU + date / customer full width / reservation note. */
   #fullResult[data-full-tab="reservar"] .full-table tbody td:nth-child(2){
@@ -1901,6 +1927,12 @@ body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-wid
 #fullResult[data-full-tab="camino"] .full-table tbody tr:nth-child(even)>td,
 #fullResult[data-full-tab="history"] .full-table tbody tr:nth-child(even)>td,
 #fullResult[data-full-tab="reservar"] .full-table tbody tr:nth-child(even)>td{background:#FAF7F8}
+/* INGRESO overrides zebra for both odd/even rows; all other rows stay striped. */
+#fullResult[data-full-tab="history"] .full-table tbody tr.xw-inbound,
+#fullResult[data-full-tab="history"] .full-table tbody tr.xw-inbound:nth-child(even){background:#EAF4FB}
+#fullResult[data-full-tab="history"] .full-table tbody tr.xw-inbound>td,
+#fullResult[data-full-tab="history"] .full-table tbody tr.xw-inbound:nth-child(even)>td{background:transparent}
+
 /* Taobao-style suggested SKU: it is NOT the input value. */
 #scanPanel .search-input-wrap.xw-has-suggestion #code::placeholder{color:transparent!important}
 #scanPanel .search-input-wrap #codeGhostHint{
@@ -1921,6 +1953,11 @@ body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-wid
 #codeGhostHint #codeGhostSku{font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
 @media(prefers-reduced-motion:reduce){#codeGhostHint{transition:none!important}}
 .xw-reserve-qty-note{font-size:12px!important;margin:5px 10px 8px!important;color:var(--muted);line-height:1.45}
+@media(max-width:380px){
+ #fullResult[data-full-tab="history"] .full-table tbody tr.xw-history-line{gap:7px;padding:10px}
+ #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(4){font-size:15px}
+ #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(6){font-size:15px;min-width:84px;padding:7px}
+}
 </style>
 </head>
 <body><main>
