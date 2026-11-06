@@ -170,6 +170,12 @@ class V281VisibilityTests(unittest.TestCase):
             digest,
         )
 
+    def test_public_columns_migrate_before_first_customer_request(self):
+        public = (ROOT / "services/order_public_share_fast.py").read_text(encoding="utf-8")
+        ensure = public.split("def _ensure_share_columns():", 1)[1].split("def _resolve_share(", 1)[0]
+        self.assertIn("init_order_cloud_asset_table()", ensure)
+        self.assertIn("_ensure_share_columns()", public.split("def _resolve_share(", 1)[1])
+
     def test_reregister_does_not_unhide_existing_image(self):
         self.assertIn('effective_visible = (bool(existing.get("customer_visible", True))', SERVICE)
         self.assertIn('customer_visible=None):', SERVICE)
