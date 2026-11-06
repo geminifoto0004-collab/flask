@@ -7,6 +7,7 @@ def load_pure_helpers():
     source = Path("services/order_cloud_index_v281.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     names = {
+        "_norm",
         "_clean_customer_keys",
         "_parse_cursor",
         "_next_cursor",
