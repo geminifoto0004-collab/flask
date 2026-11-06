@@ -73,6 +73,12 @@ class RetentionTests(unittest.TestCase):
         self.assertIn('if body.get("word")!="DELETE":',SOURCE)
         self.assertIn('_PLANS.pop(token, None)',SOURCE)
 
+    def test_independent_tidb_references_protected(self):
+        self.assertIn("def _other_target_clear",SOURCE)
+        self.assertIn("target_configured",SOURCE)
+        self.assertIn("active=TRUE AND storage_backend=%s",SOURCE)
+        self.assertIn("not _other_target_clear(row, target)",SOURCE)
+
     def test_no_legacy_destructive_routes(self):
         self.assertNotIn("admin-delete",SOURCE)
         self.assertNotIn("DELETE FROM cloud_assets",SOURCE)
