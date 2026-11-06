@@ -30,13 +30,22 @@ _SCOPE_RANK = {'current': 0, '6m': 1, '12m': 2, 'all': 3}
 # Render <-> TiDB network.
 _SHARE_CACHE_TTL = 10.0  # V140: cross-worker visibility edits converge within 10s
 _SPACE_CACHE_TTL = 30.0
-_ASSET_CACHE_TTL = 120.0
+_ASSET_CACHE_TTL = 10.0
 _cache_lock = threading.RLock()
 _share_cache = {}
 _space_cache = {}
 _asset_cache = {}
 _share_columns_ready = False
 _share_columns_lock = threading.Lock()
+
+
+def invalidate_asset_cache(asset_keys):
+    keys = [str(x or '').strip().lower() for x in (asset_keys or []) if str(x or '').strip()]
+    if not keys:
+        return
+    with _cache_lock:
+        for key in keys:
+            _asset_cache.pop(key, None)
 
 
 def _cache_get(cache, key):
