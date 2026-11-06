@@ -336,7 +336,7 @@ def _list_customer_assets(customer_key):
                       sha256, object_key, storage_backend, content_type, file_size, display_name,
                       thumb_object_key, thumb_sha256, thumb_content_type, thumb_file_size,
                       source_site, updated_at
-               FROM cloud_assets WHERE customer_key=? AND active=TRUE
+               FROM cloud_assets WHERE customer_key=? AND active=TRUE AND customer_visible=TRUE
                ORDER BY order_number, created_at, asset_key""",
             (customer_key,),
         )
@@ -356,7 +356,7 @@ def _get_asset(asset_key):
                       sha256, object_key, storage_backend, content_type, file_size,
                       thumb_object_key, thumb_sha256, thumb_content_type, thumb_file_size,
                       display_name, source_site, active
-               FROM cloud_assets WHERE asset_key=? AND active=TRUE""",
+               FROM cloud_assets WHERE asset_key=? AND active=TRUE AND customer_visible=TRUE""",
             (asset_key,),
         )
         row = cur.fetchone()
@@ -396,7 +396,7 @@ def _load_build_rows(customer_key):
                INNER JOIN cloud_orders o ON o.order_number=a.order_number
                                       AND o.customer_key=a.customer_key AND o.active=TRUE
                                       AND UPPER(COALESCE(NULLIF(TRIM(o.order_status),''),'ACTIVE'))='ACTIVE'
-               WHERE a.customer_key=? AND a.active=TRUE
+               WHERE a.customer_key=? AND a.active=TRUE AND a.customer_visible=TRUE
                ORDER BY a.order_number, a.created_at, a.asset_key""",
             (customer_key,),
         )
@@ -454,7 +454,7 @@ def _authorized_asset_from_tidb(token, asset_key):
                       a.asset_type, a.object_key, a.content_type, a.file_size, a.storage_backend,
                       a.thumb_object_key, a.thumb_sha256, a.thumb_content_type, a.thumb_file_size
                FROM cloud_share_tokens s
-               INNER JOIN cloud_assets a ON a.asset_key=? AND a.active=TRUE
+               INNER JOIN cloud_assets a ON a.asset_key=? AND a.active=TRUE AND a.customer_visible=TRUE
                INNER JOIN cloud_orders o ON o.order_number=a.order_number
                                          AND o.customer_key=s.customer_key AND o.active=TRUE
                WHERE s.token_hash=? LIMIT 1""",

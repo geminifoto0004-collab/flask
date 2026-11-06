@@ -162,7 +162,7 @@ def _load_build_rows(customer_key):
                                       AND o.customer_key=a.customer_key
                                       AND o.active=TRUE
                                       AND UPPER(COALESCE(NULLIF(TRIM(o.order_status),''),'ACTIVE'))='ACTIVE'
-               WHERE a.customer_key=? AND a.active=TRUE
+               WHERE a.customer_key=? AND a.active=TRUE AND a.customer_visible=TRUE
                ORDER BY a.order_number, a.created_at, a.asset_key""",
             (customer_key,),
         )

@@ -134,6 +134,7 @@ def init_order_cloud_asset_table():
                 display_name VARCHAR(255) NULL,
                 source_site VARCHAR(16) NULL,
                 active BOOLEAN NOT NULL DEFAULT TRUE,
+                customer_visible BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_cloud_assets_customer (customer_key),
@@ -145,6 +146,10 @@ def init_order_cloud_asset_table():
         if not check_column_exists(cur, "cloud_assets", "storage_backend"):
             cur.execute(
                 "ALTER TABLE cloud_assets ADD COLUMN storage_backend VARCHAR(32) NOT NULL DEFAULT 'b2_primary'"
+            )
+        if not check_column_exists(cur, "cloud_assets", "customer_visible"):
+            cur.execute(
+                "ALTER TABLE cloud_assets ADD COLUMN customer_visible BOOLEAN NOT NULL DEFAULT TRUE"
             )
         conn.commit()
     except Exception:
@@ -425,7 +430,8 @@ def _asset_key(order_number, workflow_key, sha256_hex):
 
 
 def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, content_type,
-                           file_size, source_site=None, storage_backend="b2_primary"):
+                           file_size, source_site=None, storage_backend="b2_primary",
+                           customer_visible=None):
     sha256_hex = _validate_sha256(sha256_hex)
     content_type = _validate_content_type(content_type)
     object_key = _validate_object_key(object_key, sha256_hex, content_type)
@@ -441,17 +447,23 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
         display_name = f"Imagen {order_number}"
         source_site = str(source_site or "").strip().upper()[:16] or None
 
-        cur.execute("SELECT asset_key FROM cloud_assets WHERE asset_key=?", (asset_key,))
+        cur.execute("SELECT asset_key, customer_visible FROM cloud_assets WHERE asset_key=?", (asset_key,))
+        existing = _safe_row(cur.fetchone(), cur)
+        # Registration/retry must never unhide a previously hidden asset.
+        effective_visible = (bool(existing.get("customer_visible", True)) if customer_visible is None and existing
+                             else True if customer_visible is None else bool(customer_visible))
         values = (
             customer_key, order_number, workflow_key, sha256_hex, object_key,
-            storage_backend, content_type, int(file_size), display_name, source_site, asset_key,
+            storage_backend, content_type, int(file_size), display_name, source_site,
+            effective_visible, asset_key,
         )
-        if cur.fetchone():
+        if existing:
             cur.execute(
                 """UPDATE cloud_assets
                    SET customer_key=?, order_number=?, workflow_key=?, asset_type='IMAGE',
                        sha256=?, object_key=?, storage_backend=?, content_type=?, file_size=?,
-                       display_name=?, source_site=?, active=TRUE, updated_at=CURRENT_TIMESTAMP
+                       display_name=?, source_site=?, customer_visible=?, active=TRUE,
+                       updated_at=CURRENT_TIMESTAMP
                    WHERE asset_key=?""",
                 values,
             )
@@ -459,8 +471,9 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
             cur.execute(
                 """INSERT INTO cloud_assets
                    (customer_key, order_number, workflow_key, asset_type, sha256, object_key,
-                    storage_backend, content_type, file_size, display_name, source_site, asset_key)
-                   VALUES (?, ?, ?, 'IMAGE', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    storage_backend, content_type, file_size, display_name, source_site,
+                    customer_visible, asset_key)
+                   VALUES (?, ?, ?, 'IMAGE', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 values,
             )
         conn.commit()
@@ -477,7 +490,70 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
             "file_size": int(file_size),
             "display_name": display_name,
             "source_site": source_site,
+            "customer_visible": bool(effective_visible),
         }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def set_asset_visibility_batch(customer_key, items, expected_target):
+    """Update only per-asset customer visibility flags; never touches B2 objects."""
+    customer_key = str(customer_key or "").strip()
+    expected_target = str(expected_target or "").strip().upper()
+    if not customer_key:
+        raise ValueError("customer_key is required")
+    if expected_target not in {"TIDB1", "TIDB2"}:
+        raise ValueError("target must be TIDB1 or TIDB2")
+    if not isinstance(items, list) or not items or len(items) > 1000:
+        raise ValueError("items must contain 1..1000 asset visibility updates")
+    updates = {}
+    for raw in items:
+        if not isinstance(raw, dict):
+            raise ValueError("invalid asset visibility item")
+        key = str(raw.get("asset_key") or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", key):
+            raise ValueError("invalid asset_key")
+        if "customer_visible" not in raw:
+            raise ValueError("customer_visible is required")
+        updates[key] = bool(raw.get("customer_visible"))
+    if len(updates) != len(items):
+        raise ValueError("duplicate asset_key in visibility batch")
+
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        actual_target = str(getattr(conn, "active_target", "") or "").strip().upper()
+        if actual_target != expected_target:
+            raise ValueError("TiDB target changed; visibility update refused")
+        # Do not permit publication changes for a customer with no active WEB share.
+        cur.execute(
+            "SELECT token_hash FROM cloud_share_tokens WHERE customer_key=? "
+            "AND status='active' AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP) LIMIT 1",
+            (customer_key,),
+        )
+        if not cur.fetchone():
+            raise ValueError("customer has no active WEB share")
+        keys = list(updates)
+        placeholders = ",".join(["?"] * len(keys))
+        cur.execute(
+            "SELECT asset_key FROM cloud_assets WHERE customer_key=? AND asset_key IN (" + placeholders + ")",
+            tuple([customer_key] + keys),
+        )
+        found = {str((get_row_dict(row, cur) or {}).get("asset_key") or "").lower()
+                 for row in cur.fetchall()}
+        if found != set(keys):
+            raise ValueError("asset visibility batch contains missing or foreign customer assets")
+        for key, visible in updates.items():
+            cur.execute(
+                "UPDATE cloud_assets SET customer_visible=?, updated_at=CURRENT_TIMESTAMP "
+                "WHERE customer_key=? AND asset_key=?",
+                (bool(visible), customer_key, key),
+            )
+        conn.commit()
+        return {"target": actual_target, "updated": len(updates), "asset_keys": keys, "deleted": 0, "b2_touched": False}
     except Exception:
         conn.rollback()
         raise
@@ -601,7 +677,7 @@ def direct_presign(order_number, workflow_key, sha256_hex, content_type, file_si
 
 
 def direct_register(order_number, workflow_key, sha256_hex, content_type, file_size,
-                    object_key, storage_backend, source_site=None):
+                    object_key, storage_backend, source_site=None, customer_visible=True):
     sha256_hex = _validate_sha256(sha256_hex)
     content_type = _validate_content_type(content_type)
     object_key = _validate_object_key(object_key, sha256_hex, content_type)
@@ -618,6 +694,7 @@ def direct_register(order_number, workflow_key, sha256_hex, content_type, file_s
     result = _upsert_asset_metadata(
         order_number, workflow_key, sha256_hex, object_key, content_type,
         actual_size or expected_size, source_site=source_site, storage_backend=storage_backend,
+        customer_visible=customer_visible,
     )
     result["deduplicated"] = False
     result["uploaded_to_b2"] = True
@@ -800,9 +877,9 @@ def list_customer_assets(customer_key):
         cur.execute(
             """SELECT asset_key, customer_key, order_number, workflow_key, asset_type,
                       sha256, storage_backend, content_type, file_size, display_name,
-                      source_site, updated_at
+                      source_site, customer_visible, updated_at
                FROM cloud_assets
-               WHERE customer_key=? AND active=TRUE
+               WHERE customer_key=? AND active=TRUE AND customer_visible=TRUE
                ORDER BY order_number, created_at, asset_key""",
             (customer_key,),
         )
@@ -836,8 +913,8 @@ def get_asset(asset_key):
         cur.execute(
             """SELECT asset_key, customer_key, order_number, workflow_key, asset_type,
                       sha256, object_key, storage_backend, content_type, file_size,
-                      display_name, source_site, active
-               FROM cloud_assets WHERE asset_key=? AND active=TRUE""",
+                      display_name, source_site, active, customer_visible
+               FROM cloud_assets WHERE asset_key=? AND active=TRUE AND customer_visible=TRUE""",
             (asset_key,),
         )
         return _safe_row(cur.fetchone(), cur)
@@ -984,6 +1061,7 @@ def direct_repair_register(asset_key, sha256_hex, content_type, file_size, objec
     result = direct_register(
         old.get("order_number"), old.get("workflow_key"), sha256_hex, content_type,
         file_size, object_key, storage_backend, source_site=source_site,
+        customer_visible=bool(old.get("customer_visible", True)),
     )
     if result.get("asset_key") != old.get("asset_key"):
         conn = get_db_connection()
@@ -1038,7 +1116,7 @@ def probe_order_deltas(fingerprints, *, include_new=False):
         target = getattr(conn, "active_target", "")
         cur = get_cursor(conn)
         cur.execute(
-            "SELECT order_number, active, SHA2(render_payload, 256) AS digest "
+            "SELECT order_number, active, COALESCE(sync_fingerprint, SHA2(render_payload, 256)) AS digest "
             "FROM cloud_orders WHERE order_number IN (" + ",".join(["?"] * len(fingerprints)) + ")",
             tuple(fingerprints),
         )
@@ -1090,7 +1168,7 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
     history_by_workflow = {}
     existing_orders = {}
     cur.execute(
-        "SELECT order_number, customer_key, active, render_payload FROM cloud_orders "
+        "SELECT order_number, customer_key, active, render_payload, sync_fingerprint FROM cloud_orders "
         "WHERE order_number IN (" + ",".join(["?"] * len(numbers)) + ")" +
         (" FOR UPDATE" if changed_only else ""), numbers,
     )
@@ -1108,8 +1186,12 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
         prior = existing.get("render_payload")
         p = _preserve_existing_logistics(original, prior)
         encoded = _order_json(p, sort_keys=changed_only)
+        # Fingerprint the exact local source payload before Render preserves any
+        # cloud-only logistics fields omitted by an offline/secondary workstation.
+        source_encoded = _order_json(original, sort_keys=True)
+        sync_fingerprint = hashlib.sha256(source_encoded.encode("utf-8")).hexdigest()
         same_order = changed_only and existing.get("active") and existing.get("customer_key") == key
-        if same_order and prior == encoded:
+        if same_order and prior == encoded and existing.get("sync_fingerprint") == sync_fingerprint:
             continue
         written.append(number)
         all_customers.add(key)
@@ -1133,6 +1215,7 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
             str(p["quantity"]) if p.get("quantity") is not None else None,
             source_site,
             encoded,
+            sync_fingerprint,
         ))
         if same_order and isinstance(previous, dict) and previous.get("workflows") == p.get("workflows"):
             continue
@@ -1190,15 +1273,15 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
     cur.executemany(
         "INSERT INTO cloud_orders "
         "(order_number,customer_key,customer_name,order_status,order_date,expected_delivery_date,"
-        "production_type,product_name,product_code,pattern_code,quantity,source_site,render_payload) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE "
+        "production_type,product_name,product_code,pattern_code,quantity,source_site,render_payload,sync_fingerprint) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE "
         "customer_key=VALUES(customer_key),customer_name=VALUES(customer_name),"
         "order_status=VALUES(order_status),order_date=VALUES(order_date),"
         "expected_delivery_date=VALUES(expected_delivery_date),"
         "production_type=VALUES(production_type),product_name=VALUES(product_name),"
         "product_code=VALUES(product_code),pattern_code=VALUES(pattern_code),"
         "quantity=VALUES(quantity),source_site=VALUES(source_site),"
-        "render_payload=VALUES(render_payload),active=TRUE,updated_at=CURRENT_TIMESTAMP",
+        "render_payload=VALUES(render_payload),sync_fingerprint=VALUES(sync_fingerprint),active=TRUE,updated_at=CURRENT_TIMESTAMP",
         order_rows)
     if workflow_rows:
         cur.executemany(

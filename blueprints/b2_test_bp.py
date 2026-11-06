@@ -356,6 +356,43 @@ def order_cloud_asset_check_batch():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@b2_test_bp.route("/api/order-cloud/assets/visibility-batch", methods=["POST"])
+def order_cloud_asset_visibility_batch():
+    _source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    # ORDER=1 is a feature flag, never authorization to mutate customer media.
+    import hmac
+    from services.order_desktop_grant import authorized
+    secret = str(os.environ.get("ORDER_SYNC_CHECKPOINT_KEY") or "").strip()
+    supplied = str(request.headers.get("X-Order-Checkpoint-Key") or "")
+    if not (authorized("replicas:verify-repair") or
+            (len(secret) >= 24 and hmac.compare_digest(secret, supplied))):
+        return jsonify({"ok": False, "error": "asset visibility authorization required"}), 401
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import set_asset_visibility_batch
+        payload = request.get_json(silent=True) or {}
+        result = set_asset_visibility_batch(
+            payload.get("customer_key"), payload.get("items"), payload.get("target"))
+        customer_key = str(payload.get("customer_key") or "").strip()
+        from services.order_public_share_fast import invalidate_asset_cache, invalidate_customer_space_cache
+        invalidate_asset_cache(result.get("asset_keys") or [])
+        invalidate_customer_space_cache(customer_key)
+        # No B2 I/O: only caches for a changed customer are invalidated.
+        from services.order_share_direct_cover_cache import _drop_customer
+        from services.order_share_render_cache import invalidate_customer_html_cache
+        from services.order_customer_share_snapshot import queue_snapshot_refresh
+        _drop_customer(customer_key)
+        invalidate_customer_html_cache(customer_key)
+        queue_snapshot_refresh(customer_key, delay=0.1)
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @b2_test_bp.route("/api/order-cloud/assets/register", methods=["POST"])
 def order_cloud_asset_register():
     source_site, auth_error = _order_cloud_auth_source()

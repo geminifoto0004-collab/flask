@@ -133,6 +133,9 @@ from . import order_b2_safe_cleanup_v279 as _order_b2_safe_cleanup_v279  # noqa:
 # TiDB/B2 cross-target checkpoint ledger; does not require a read from inactive TiDB.
 from . import order_cloud_sync_ledger as _order_cloud_sync_ledger  # noqa: E402,F401
 
+# V281 batched, strictly read-only TiDB order/asset index for local Dictionary comparison.
+from . import order_cloud_index_v281 as _order_cloud_index_v281  # noqa: E402,F401
+
 # Read-only, authenticated parity report: tables, columns and indexes only.
 from . import order_cloud_schema_compare as _order_cloud_schema_compare  # noqa: E402,F401
 
