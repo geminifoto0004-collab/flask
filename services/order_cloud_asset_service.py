@@ -1110,7 +1110,7 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
         encoded = _order_json(p, sort_keys=changed_only)
         # Fingerprint the exact local source payload before Render preserves any
         # cloud-only logistics fields omitted by an offline/secondary workstation.
-        source_encoded = _order_json(original, sort_keys=changed_only)
+        source_encoded = _order_json(original, sort_keys=True)
         sync_fingerprint = hashlib.sha256(source_encoded.encode("utf-8")).hexdigest()
         same_order = changed_only and existing.get("active") and existing.get("customer_key") == key
         if same_order and prior == encoded and existing.get("sync_fingerprint") == sync_fingerprint:
