@@ -54,6 +54,12 @@ class RetentionTests(unittest.TestCase):
         order={**self.ready,"logistics":[]}
         self.assertEqual(self.fn(order,self.asset,[{"history_scope":"current"}],True),"")
 
+    def test_partial_shipment_never_deletes(self):
+        order={**self.ready,"logistics":[
+            {"status":"ARRIVED_IQUIQUE","pickup_status":"picked_up"},
+            {"status":"CAMINO","pickup_status":"pending"}]}
+        self.assertEqual(self.fn(order,self.asset,[{"history_scope":"current"}],True),"")
+
     def test_incomplete_workflow_never_deletes(self):
         order={**self.ready,"workflows":[{"status":"EN_PROCESO"}]}
         self.assertEqual(self.fn(order,self.asset,[{"history_scope":"current"}],True),"")
