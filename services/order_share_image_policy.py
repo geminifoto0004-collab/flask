@@ -32,6 +32,8 @@ def asset_allowed(asset, settings):
     if not isinstance(asset, dict):
         return True
     settings = settings or {}
+    if not bool_default(asset.get('customer_visible'), default=True):
+        return False
     override = _order_override(settings, asset.get('order_number'))
     if override and override.get('show_order') is False:
         return False
