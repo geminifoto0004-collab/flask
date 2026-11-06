@@ -60,6 +60,21 @@
 <script defer src="{{ url_for('tracking_bp.static', filename='js/media_new.js') }}?v=152"></script>
 <link rel="stylesheet" href="{{ url_for('tracking_bp.static', filename='css/guest_detail.css') }}?v=153">
 <script defer src="{{ url_for('tracking_bp.static', filename='js/guest_detail.js') }}?v=153"></script>
+<style>
+/* Deliberately invisible until the existing customer name is held for 1.5 s. */
+#guestShareQrName { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; touch-action:manipulation; }
+#guestShareQrOverlay {position:fixed;inset:0;z-index:10050;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(12,16,25,.7);}
+#guestShareQrOverlay.open {display:flex}
+.guest-share-qr-box {box-sizing:border-box;width:min(100%,340px);padding:18px;border-radius:20px;background:#fff;color:#202229;box-shadow:0 16px 50px rgba(0,0,0,.3);text-align:center}
+.guest-share-qr-top {display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;text-align:left}
+.guest-share-qr-top strong {font-size:15px}
+.guest-share-qr-close {width:36px;height:36px;border:0;border-radius:50%;background:#f1f2f4;color:#30343b;font-size:24px;line-height:1;cursor:pointer}
+#guestShareQrCode {box-sizing:content-box;width:224px;height:224px;margin:auto;padding:12px;border:1px solid #e8e9ee;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center}
+#guestShareQrCode img,#guestShareQrCode canvas {max-width:224px;max-height:224px}
+.guest-share-qr-help {margin:15px 0 14px;color:#777b84;font-size:12px;line-height:1.45}
+#guestShareQrCopy {width:100%;min-height:42px;border:0;border-radius:10px;background:#272a30;color:#fff;font-size:13px;font-weight:750;cursor:pointer}
+#guestShareQrMessage {min-height:16px;margin:9px 0 0;color:#71747b;font-size:11px}
+</style>
 </head>
 <body class="guest-customer-page" data-guest-token="{{ token }}" data-guest-report-base="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" data-guest-status-filter-mode="{{ status_filter_mode|default('simple') }}" data-guest-pickup-policy="all-batches-v1">
 <!--
@@ -132,7 +147,7 @@ SOFTWARE.
         <div class="guest-brand">
             <a class="guest-logo" href="{{ url_for('tracking_bp.local_guest_customer', token=token) }}" aria-label="Volver al inicio">KC</a>
             <div class="guest-title">
-                <h1>{{ customer_name }}</h1>
+                <h1 id="guestShareQrName">{{ customer_name }}</h1>
                 <p class="guest-subtitle"><span data-mobile-text="subtitle">Consulta temporal</span> · {% if is_permanent %}<span data-mobile-text="permanent">Acceso permanente</span> ∞{% else %}<span data-mobile-text="expires">Caduca en</span> <strong id="guestExpiry" data-expiry="{{ expires_at_epoch }}">--:--</strong>{% endif %}</p>
             </div>
         </div>
@@ -1250,5 +1265,102 @@ document.addEventListener('tracking:guestcardsupdated',bindGuestCarousels);
 })();
 </script>
 <script src="{{ url_for('tracking_bp.static', filename='js/guest_reports.js') }}?v={{ STATIC_VER }}"></script>
+
+<!-- Private client-side share QR: shown only by holding the customer name. -->
+<div id="guestShareQrOverlay" aria-hidden="true">
+  <div class="guest-share-qr-box" role="dialog" aria-modal="true" aria-labelledby="guestShareQrHeading">
+    <div class="guest-share-qr-top">
+      <strong id="guestShareQrHeading">Compartir esta página</strong>
+      <button id="guestShareQrClose" class="guest-share-qr-close" type="button" aria-label="Cerrar">×</button>
+    </div>
+    <div id="guestShareQrCode"></div>
+    <p id="guestShareQrHelp" class="guest-share-qr-help">Escanea con otro dispositivo para abrir esta página</p>
+    <button id="guestShareQrCopy" type="button">Copiar enlace</button>
+    <p id="guestShareQrMessage" aria-live="polite"></p>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='js/order_guest_qrcode.min.js') }}?v=20261106"></script>
+<script>
+(function(){
+  'use strict';
+  const name=document.getElementById('guestShareQrName');
+  const modal=document.getElementById('guestShareQrOverlay');
+  const target=document.getElementById('guestShareQrCode');
+  const status=document.getElementById('guestShareQrMessage');
+  const closeButton=document.getElementById('guestShareQrClose');
+  const copyButton=document.getElementById('guestShareQrCopy');
+  if(!name||!modal||!target||!closeButton||!copyButton)return;
+  const currentUrl=()=>location.origin+location.pathname+location.search;
+  const chinese=()=>{try{return localStorage.getItem('tracking_ui_language')==='zh_cn';}catch(_){return false;}};
+  let activeUrl='',timer=0,pointerId=null,x0=0,y0=0,previousOverflow='';
+  function cancel(){if(timer)clearTimeout(timer);timer=0;pointerId=null;}
+  function translate(){
+    const zh=chinese();
+    document.getElementById('guestShareQrHeading').textContent=zh?'分享此页面':'Compartir esta página';
+    document.getElementById('guestShareQrHelp').textContent=zh?'使用另一台设备扫描二维码':'Escanea con otro dispositivo para abrir esta página';
+    copyButton.textContent=zh?'复制链接':'Copiar enlace';
+  }
+  function show(){
+    cancel();
+    const url=currentUrl();
+    status.textContent='';
+    if(activeUrl!==url){
+      target.replaceChildren();
+      try{
+        if(typeof QRCode!=='function')throw new Error('QR library unavailable');
+        new QRCode(target,{text:url,width:224,height:224,colorDark:'#111827',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+        activeUrl=url;
+      }catch(_){
+        activeUrl='';
+        target.textContent=chinese()?'二维码无法生成':'No se pudo crear el código QR';
+      }
+    }
+    translate();
+    previousOverflow=document.body.style.overflow;
+    document.body.style.overflow='hidden';
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden','false');
+    closeButton.focus({preventScroll:true});
+  }
+  function hide(){
+    if(!modal.classList.contains('open'))return;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden','true');
+    document.body.style.overflow=previousOverflow;
+  }
+  name.addEventListener('pointerdown',function(e){
+    if(e.pointerType==='mouse'&&e.button!==0)return;
+    cancel();pointerId=e.pointerId;x0=e.clientX;y0=e.clientY;
+    timer=setTimeout(show,1500);
+  });
+  name.addEventListener('pointermove',function(e){
+    if(pointerId===e.pointerId&&(Math.abs(e.clientX-x0)>12||Math.abs(e.clientY-y0)>12))cancel();
+  });
+  for(const type of ['pointerup','pointercancel','pointerleave','lostpointercapture'])name.addEventListener(type,cancel);
+  name.addEventListener('contextmenu',function(e){e.preventDefault();});
+  name.addEventListener('selectstart',function(e){e.preventDefault();});
+  window.addEventListener('blur',cancel);
+  document.addEventListener('scroll',cancel,{passive:true,capture:true});
+  closeButton.addEventListener('click',hide);
+  modal.addEventListener('click',function(e){if(e.target===modal)hide();});
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&modal.classList.contains('open')){
+      e.preventDefault();e.stopImmediatePropagation();hide();
+    }
+  },true);
+  copyButton.addEventListener('click',async function(){
+    const url=currentUrl();let ok=false;
+    try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(url);ok=true;}}catch(_){}
+    if(!ok){
+      const ta=document.createElement('textarea');
+      ta.value=url;ta.readOnly=true;ta.style.cssText='position:fixed;left:-9999px';
+      document.body.appendChild(ta);ta.select();
+      try{ok=document.execCommand('copy');}catch(_){}
+      ta.remove();
+    }
+    status.textContent=ok?(chinese()?'已复制':'Enlace copiado'):(chinese()?'请从浏览器复制网址':'Copia el enlace desde el navegador');
+  });
+})();
+</script>
 </body>
 </html>
