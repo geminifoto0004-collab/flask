@@ -421,11 +421,28 @@ def _render_native(app, name, context):
 
 
 def _native_skeleton(app, share, bundle):
-    space = copy.deepcopy((bundle or {}).get("space") or {})
-    if not space:
+    if not app:
         return None
-    _fast._filter_space(space, share)
-    return _render_native(app, "guest_customer.html", _customer_context(space, share, _render._TOKEN_PLACEHOLDER))
+    # Snapshot workers run outside an HTTP request. The native guest template
+    # still uses url_for(), so render it inside a synthetic request context.
+    # Without this, every owner-batch refresh logs "Unable to build URLs
+    # outside an active request" and silently loses the pre-rendered HTML.
+    with app.test_request_context(
+        f"/share/{_render._TOKEN_PLACEHOLDER}",
+        method="GET",
+        base_url="https://flask-393d.onrender.com",
+    ):
+        if not share or not bundle:
+            return None
+        space = copy.deepcopy((bundle or {}).get("space") or {})
+        if not space:
+            return None
+        _fast._filter_space(space, share)
+        return _render_native(
+            app,
+            "guest_customer.html",
+            _customer_context(space, share, _render._TOKEN_PLACEHOLDER),
+        )
 
 
 def _native_fallback(template_name, *args, **kwargs):
