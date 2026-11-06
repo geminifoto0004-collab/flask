@@ -2689,11 +2689,36 @@ function incomingOrderCustomer(description){
  }
  return code+(name.length?' '+name.join(' '):'');
 }
+// V44 history does not yet expose the signed movement. Prefer a signed
+// movement field whenever available; otherwise a container prefix on NOMBRE
+// is a verified INGRESO / packing-list indication.
+function xwHistoryMovement(row){
+ let sign=null;
+ for(const key of ['movement','movimiento','movement_sign','stock_sign','direction','in_out','stock','STOCK']){
+  const raw=row?.[key];if(raw==null||raw==='')continue;
+  const value=String(raw).trim().toUpperCase();
+  if(['1','+1','INGRESO'].includes(value)){sign=1;break}
+  if(['-1','SALIDA'].includes(value)){sign=-1;break}
+ }
+ const customer=String(row?.customer??'').trim();
+ const parsed=/^([A-Z]{4}\d{7})(?:\s+(.+))?$/i.exec(customer);
+ const candidate=String(row?.container??'').trim();
+ const container=parsed?.[1]?.toUpperCase()||(/^[A-Z]{4}\d{7}$/i.test(candidate)?candidate.toUpperCase():'');
+ return {incoming:sign===1||(sign===null&&Boolean(container)),container,name:parsed?(parsed[2]||''):customer};
+}
+function xwHistoryUSD(raw){
+ if(raw==null||String(raw).trim()==='')return '—';
+ const number=Number(raw);
+ return Number.isFinite(number)?'US$'+new Intl.NumberFormat('en-US',{
+  minimumFractionDigits:2,maximumFractionDigits:3
+ }).format(number):'—';
+}
 function fullTable(rows,columns){
  const outer=document.createElement('div');outer.className='full-table';
  const table=document.createElement('table'),thead=document.createElement('thead'),trh=document.createElement('tr');
  for(const [key,label] of columns){
   const th=document.createElement('th');th.textContent=label+(fullSort===key?(fullDesc?' ▼':' ▲'):'');
+  th.dataset.xwCol=key;
   th.tabIndex=0;th.setAttribute('role','button');th.setAttribute('aria-label',label+'排序');
   if(fullSort===key)th.setAttribute('aria-sort',fullDesc?'descending':'ascending');
   const sort=()=>{if(fullSort===key)fullDesc=!fullDesc;else{fullSort=key;fullDesc=false}renderFullResult(fullData)};
@@ -2708,10 +2733,14 @@ function fullTable(rows,columns){
  }
  for(const row of rows){
   const tr=document.createElement('tr');
+  const isHistory=fullKind==='product'&&fullTab==='history';
+  const historyMeta=isHistory?xwHistoryMovement(row):null;
+  if(isHistory)tr.classList.add('xw-history-line',historyMeta.incoming?'xw-inbound':'xw-outbound');
   for(const [key] of columns){
    const td=document.createElement('td');
    const value=key==='reserved'?(row.reserved?'有預定':'')
      :key==='eta'?String(fullTxt(row.eta)).replace(/Iquique\s*,\s*Chile$/i,'').trim()
+     :isHistory&&key==='price'?xwHistoryUSD(row[key])
      :fullTxt(row[key],['meters','units','stock_meters'].includes(key)?1:null);
    if(key==='customer'){
     // Telegram sends the complete customer name. Never make it a control.
@@ -2720,6 +2749,19 @@ function fullTable(rows,columns){
     name.className='full-customer-text';
     name.textContent=value;
     td.append(name);
+    if(isHistory){
+     const mobile=document.createElement('span');mobile.className='xw-history-mobile-name';
+     if(historyMeta.container){
+      const container=document.createElement('span');container.className='xw-history-container';
+      container.textContent=historyMeta.container;mobile.append(container);
+      if(historyMeta.name){const person=document.createElement('span');person.textContent=historyMeta.name;mobile.append(person)}
+     }else mobile.textContent=historyMeta.name||'—';
+     td.append(mobile);
+    }
+   }else if(isHistory&&key==='date'){
+    td.textContent=value;
+    const note=document.createElement('span');note.className='xw-history-mobile-nota';
+    note.textContent='Nota '+fullTxt(row.nota);td.append(note);
    }else if(fullKind==='product'&&fullTab==='camino'&&key==='code'){
     // V42 already returns description: keep table width unchanged while
     // surfacing an explicit order/customer directly beneath the SKU.
@@ -2872,11 +2914,11 @@ function fullRenderProduct(data){
   return fullDesc?-diff:diff;
  });
  $('fullCount').textContent=rows.length+' / '+all.length+' 筆';
- const cols=fullTab==='history'&&data.price_allowed?[...fullFields.history,['price','成交單價']]:fullFields[fullTab];
+ const cols=fullTab==='history'&&data.price_allowed?[...fullFields.history,['price','US$']]:fullFields[fullTab];
  $('fullDetails').replaceChildren(fullTab==='stock'?ccFullStockRows(rows):fullTable(rows,cols));
  $('fullHistoryMore').classList.toggle('hidden',fullTab!=='history'||!Number.isInteger(data.history_next_cursor)||data.history_next_cursor >= Number(data.history_retrievable_count??data.history_total_count??0));
  const needsOrder=fullTab==='stock'&&(fullStockMode==='order'||fullStockMode==='all');
- $('fullNote').textContent=fullTab==='history'?'本頁為公司唯讀查詢，不提供成交單價。':
+ $('fullNote').textContent=fullTab==='history'?(data.price_allowed?'':'此帳號未開放價格。'):
   fullTab==='camino'&&data.xwCaminoDetailState==='loading'?'正在读取待到货订单描述…':
   fullTab==='camino'&&data.xwCaminoDetailState==='error'?'本机旧版无法返回订单描述，请安装 XINGWANG V44；待到货数量仍可查看。':
   needsOrder&&data.xwOrderStatus==='loading'?'正在核对本机 V41 订单库存…':
