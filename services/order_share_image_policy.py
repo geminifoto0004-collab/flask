@@ -1,11 +1,23 @@
 def source_match(asset, order):
+    """Enrich metadata from a local manifest, never treat its omissions as deletion.
+
+    COMPANY and HOME each see only their own on-disk image files. Both currently
+    identify to Render as ORDER, so image_sources_authoritative describes ONE PC's
+    local inventory, not the complete cloud_assets ledger. If HOME has no COMPANY
+    photo on disk, it must not remove that registered image from customer pages.
+
+    The customer visibility authority is cloud_assets.active/customer_visible
+    plus the WEB share permission flags, enforced independently in the snapshot
+    and public routes. Missing from a local manifest is not a hide instruction.
+    """
     if not order.get('image_sources_authoritative'):
         return None
     key = (str(asset.get('workflow_key') or ''), str(asset.get('sha256') or ''))
     matches = [s for s in order.get('image_sources') or []
                if (str(s.get('workflow_key') or ''), str(s.get('sha256') or '')) == key]
-    return max(matches, key=lambda s: int(s.get('uploaded_at_epoch') or 0)) if matches else False
-
+    if matches:
+        return max(matches, key=lambda s: int(s.get('uploaded_at_epoch') or 0))
+    return None
 
 """Shared image-source policy for public HTML and authorized media reads."""
 

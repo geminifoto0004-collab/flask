@@ -303,6 +303,7 @@ def _fingerprint():
         Path(__file__), TPL / "guest_customer.html", TPL / "guest_order.html",
         TPL / "_guest_share_common.html", ROOT / "templates" / "tracking" / "_guest_share_common.html",
         ROOT / "services" / "order_public_share_fast.py",
+        ROOT / "services" / "order_share_image_policy.py",
         ORDER / "status_definitions.py", STATIC / "css" / "guest.css",
         STATIC / "js" / "ui_i18n.js", STATIC / "js" / "theme.js",
         STATIC / "js" / "guest_reports.js",
