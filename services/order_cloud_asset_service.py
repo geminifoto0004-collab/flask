@@ -1018,7 +1018,7 @@ def _delete_keys(cur, table, column, keys):
         cur.execute(f"DELETE FROM {table} WHERE {column} IN (" + ",".join(["?"] * len(part)) + ")", part)
 
 
-def probe_order_deltas(fingerprints):
+def probe_order_deltas(fingerprints, *, include_new=False):
     """Read indexed order digests from the current TiDB without fetching payloads."""
     if not isinstance(fingerprints, dict) or not 1 <= len(fingerprints) <= _DELTA_MAX_ORDERS:
         raise ValueError("fingerprints must contain 1..2000 orders")
@@ -1032,6 +1032,7 @@ def probe_order_deltas(fingerprints):
     if len(numbers) != len(fingerprints):
         raise ValueError("duplicate order_number in fingerprints")
     changed = dict.fromkeys(fingerprints, "")
+    found = set()
     conn = get_db_connection()
     try:
         target = getattr(conn, "active_target", "")
@@ -1044,13 +1045,18 @@ def probe_order_deltas(fingerprints):
         for raw in cur.fetchall():
             row = get_row_dict(raw, cur)
             number = numbers.get(row["order_number"].casefold())
+            if number is not None:
+                found.add(number)
             if number is None:
                 continue
             if row["active"] and row["digest"] == fingerprints[number]:
                 del changed[number]
     finally:
         conn.close()
-    return {"changed": changed, "target": target}
+    result = {"changed": changed, "target": target}
+    if include_new:
+        result["new"] = [key for key in fingerprints if key not in found]
+    return result
 
 
 def _validate_order_batch(orders, limit):
