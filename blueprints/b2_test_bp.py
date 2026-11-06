@@ -367,6 +367,9 @@ def order_cloud_asset_visibility_batch():
         payload = request.get_json(silent=True) or {}
         result = set_asset_visibility_batch(
             payload.get("customer_key"), payload.get("items"), payload.get("target"))
+        from services.order_public_share_fast import invalidate_asset_cache, invalidate_customer_space_cache
+        invalidate_asset_cache(result.get("asset_keys") or [])
+        invalidate_customer_space_cache(str(payload.get("customer_key") or '').strip())
         return jsonify({"ok": True, "result": result})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
