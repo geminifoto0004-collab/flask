@@ -23,7 +23,7 @@ from blueprints.b2_test_bp import b2_test_bp, _order_cloud_auth_source
 _LOCK = threading.RLock()
 _SITES = ("COMPANY", "HOME")
 _TARGETS = ("TIDB1", "TIDB2", "GLOBAL")
-_KINDS = ("media", "audit", "scope", "status")
+_KINDS = ("MEDIA", "AUDIT", "SCOPE", "STATUS")
 _HEX = re.compile(r"^[a-f0-9]{64}$")
 
 
