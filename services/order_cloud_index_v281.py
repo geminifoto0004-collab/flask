@@ -5,6 +5,9 @@ objects, or downloads customer payloads to the desktop.
 """
 from __future__ import annotations
 
+import hmac
+import os
+
 from flask import jsonify, request
 
 from blueprints.b2_test_bp import b2_test_bp, _order_cloud_auth_source
@@ -174,7 +177,7 @@ def _fetch_page(cur, entity, customer_keys, cursor, limit):
     if entity == "orders":
         sql = (
             "SELECT order_number,customer_key,order_status,active,"
-            "COALESCE(sync_fingerprint,SHA2(render_payload,256)) AS fp "
+            "COALESCE(NULLIF(sync_fingerprint,''),SHA2(render_payload,256)) AS fp "
             "FROM cloud_orders WHERE customer_key IN (" + key_placeholders + ")"
             + cursor_clause + " ORDER BY customer_key,order_number LIMIT ?"
         )
@@ -217,6 +220,14 @@ def order_cloud_sync_orders_index_v281():
     _source_site, auth_error = _order_cloud_auth_source()
     if auth_error:
         return auth_error
+    # ORDER=1 is a feature toggle, not proof that the caller is a trusted PC.
+    # Require an explicit shared sync grant or an authorized desktop session.
+    from services.order_desktop_grant import authorized
+    configured = str(os.environ.get("ORDER_SYNC_CHECKPOINT_KEY") or "").strip()
+    supplied = str(request.headers.get("X-Order-Checkpoint-Key") or "")
+    if not (authorized("replicas:verify-repair") or
+            (len(configured) >= 24 and hmac.compare_digest(configured, supplied))):
+        return jsonify({"ok": False, "error": "index authorization required"}), 401
     try:
         body = request.get_json(silent=True) or {}
         entity = str(body.get("entity") or "orders").strip().lower()
