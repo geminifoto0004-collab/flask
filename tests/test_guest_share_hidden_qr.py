@@ -5,9 +5,28 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 PAGE=(ROOT/"templates/tracking/customer_share_public.html").read_text("utf-8")
 JS=(ROOT/"static/js/order_guest_qrcode.min.js").read_text("utf-8")
+NATIVE=(ROOT/"order_tracking/templates/tracking/guest_customer.html").read_text("utf-8")
 
 
 class GuestShareHiddenQRTests(unittest.TestCase):
+    def test_real_render_guest_wall_receives_qr(self):
+        self.assertIn('<h1 id="guestShareQrName">{{ customer_name }}</h1>',NATIVE)
+        self.assertIn("setTimeout(show,1500)",NATIVE)
+        self.assertIn("pointerdown",NATIVE)
+        self.assertIn("pointercancel",NATIVE)
+        self.assertIn("pointermove",NATIVE)
+        self.assertIn("document.addEventListener('scroll',cancel",NATIVE)
+        self.assertIn("id=\"guestShareQrOverlay\"",NATIVE)
+        self.assertIn("#guestShareQrOverlay {position:fixed;inset:0;z-index:10050;display:none",NATIVE)
+        self.assertIn("url_for('static', filename='js/order_guest_qrcode.min.js')",NATIVE)
+        self.assertIn("location.origin+location.pathname+location.search",NATIVE)
+        self.assertIn("new QRCode(target,{text:url",NATIVE)
+        self.assertIn("role=\"dialog\"",NATIVE)
+        self.assertIn("document.body.style.overflow=previousOverflow",NATIVE)
+        self.assertIn("e.key==='Escape'",NATIVE)
+        self.assertIn("guest-logo",NATIVE)
+        self.assertIn("id=\"guestReportQueueButton\"",NATIVE)
+
     def test_name_only_is_secret_long_press_target(self):
         self.assertEqual(PAGE.count('class="guest-qr-trigger"'),2)
         self.assertIn("setTimeout(openQr,1500)",PAGE)
