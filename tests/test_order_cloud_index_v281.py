@@ -14,7 +14,7 @@ def load_pure_helpers():
         "_asset_customer_visible",
     }
     nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
-    scope = {}
+    scope = {"_MAX_CUSTOMERS": 200}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), "order_cloud_index_v281.py", "exec"), scope)
     return scope
 
