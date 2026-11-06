@@ -89,8 +89,9 @@ def _eligible_reason(order, asset, shares, active):
         return ""
     logistics = [r for r in (order.get("logistics") or []) if isinstance(r, dict)]
     arrived = [r for r in logistics if str(r.get("status") or "").upper() == "ARRIVED_IQUIQUE"]
-    if not arrived or any(str(r.get("pickup_status") or "").lower() != "picked_up" for r in arrived):
-        return ""  # Explicit proof of FULL pickup is required.
+    if not arrived or len(arrived)!=len(logistics) or any(
+            str(r.get("pickup_status") or "").lower() != "picked_up" for r in arrived):
+        return ""  # EVERY shipment must be in Iquique and picked up.
     workflows = [w for w in (order.get("workflows") or []) if isinstance(w, dict)]
     if not workflows or any(str(w.get("status") or w.get("current_status") or "").upper()
                             != "COMPLETED" for w in workflows):
