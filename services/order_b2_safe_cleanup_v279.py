@@ -73,7 +73,7 @@ def _share_rows(cur):
     return data
 
 
-def _eligible_reason(order, shares, active):
+def _eligible_reason(order, asset, shares, active):
     if not active or not isinstance(order, dict):
         return ""
     if pending_pickup(order):
@@ -97,9 +97,7 @@ def _eligible_reason(order, shares, active):
         return ""
     # Retention policy also needs authoritative image-source evidence and
     # checks the exact three-calendar-month Chilean date cutoff.
-    marker = {"workflow_key": str(workflows[0].get("workflow_key") or ""),
-              "sha256": "__never_a_real_sha__"}
-    return "completed_picked_up" if retention_reason(order, marker, True) == (
+    return "completed_picked_up" if retention_reason(order, asset, True) == (
         "candidate_completed_over_three_months") else ""
 
 
@@ -137,7 +135,7 @@ def _asset_safe(cur, row, shares):
             updated = updated.replace(tzinfo=timezone.utc)
         if (datetime.now(timezone.utc) - updated).total_seconds() < 900:
             return ""
-    return _eligible_reason(order, shares.get(row["customer_key"], []),
+    return _eligible_reason(order, row, shares.get(row["customer_key"], []),
                             bool(row.get("order_active")))
 
 
