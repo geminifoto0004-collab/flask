@@ -565,3 +565,28 @@ def read_search_recommendations():
         return {"popular": as_dict(popular), "recent": as_dict(recent)}
     finally:
         conn.close()
+
+# Staff ranking reuses the existing 30-day daily aggregates, without raw events.
+def read_search_ranking(days=30, limit=20):
+    """Read the top N+1 SKUs; pending counts are merged by the authenticated API."""
+    if days not in (7, 30) or limit not in (20, 50):
+        raise ValueError("Unsupported search ranking window")
+    conn = _connect()
+    try:
+        _ensure_search_rank(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT sku, SUM(hits) AS hits
+                   FROM xw_scanner_search_daily
+                   WHERE day_utc BETWEEN DATE_SUB(UTC_DATE(), INTERVAL %s DAY)
+                                     AND UTC_DATE()
+                   GROUP BY sku
+                   ORDER BY hits DESC, sku ASC
+                   LIMIT %s""",
+                (days - 1, limit + 1),
+            )
+            rows = cur.fetchall()
+        return [{"code": sku, "hits": int(hits)} for sku, hits in rows
+                if isinstance(sku, str) and 2 <= len(sku) <= 40]
+    finally:
+        conn.close()

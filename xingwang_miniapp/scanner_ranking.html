@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-Hant"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>XINGWANG · 商品查詢排行</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#241017;background:#F8F4F5;--wine:#6A1B36;--stroke:#D9CDD2;--muted:#806D76;--hair:#EBE2E5}
+*{box-sizing:border-box}body{margin:0;min-height:100dvh}
+main{max-width:760px;margin:auto;padding:20px 16px calc(55px + env(safe-area-inset-bottom,0px))}
+header{display:flex;gap:14px;align-items:center;margin-bottom:26px}
+.home{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex:none;border:1px solid var(--stroke);border-radius:12px;background:#fff;color:var(--wine);text-decoration:none}
+.home:focus-visible,button:focus-visible{outline:2px solid var(--wine);outline-offset:3px}
+.brand{font-size:14px;font-weight:800;letter-spacing:.055em;color:var(--wine)}
+h1{font-size:clamp(21px,5vw,27px);margin:5px 0 0;line-height:1.2}
+section{background:#fff;border:1px solid var(--hair);border-radius:18px;overflow:hidden}
+.options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:20px 0 16px}
+button{font:inherit;cursor:pointer}
+.period{min-height:45px;border:1px solid var(--stroke);border-radius:12px;background:#fff;color:#4B3840;font-size:14px;font-weight:700}
+.period[aria-pressed="true"]{background:var(--wine);color:white;border-color:var(--wine)}
+.list-header{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:16px 16px 10px}
+h2{font-size:15px;margin:0}
+.meta{font-size:12px;color:var(--muted);white-space:nowrap}
+ol{list-style:none;margin:0;padding:0}
+li{border-top:1px solid var(--hair);padding:12px 16px;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:61px}
+li:first-child{border-top:0}
+.rank{font-size:15px;color:#86767D;font-weight:800;font-variant-numeric:tabular-nums}
+li:nth-child(-n+3) .rank{color:var(--wine)}
+.sku{font-size:16px;font-weight:750;overflow-wrap:anywhere;min-width:0}
+.hits{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;color:var(--wine);font-weight:800;font-size:17px}
+.hits small{font-size:11px;font-weight:550;color:var(--muted);margin-left:4px}
+.track{height:3px;border-radius:4px;background:#F5EAEE;margin-top:8px;overflow:hidden}
+.track>span{display:block;height:100%;border-radius:4px;background:var(--wine)}
+.footer{padding:12px 16px 16px;border-top:1px solid var(--hair)}
+.more{width:100%;min-height:45px;border:1px solid var(--stroke);border-radius:12px;color:var(--wine);font-size:14px;font-weight:750;background:#fff}
+.more:disabled{opacity:.55;cursor:wait}
+.status{padding:24px 18px;text-align:center;color:var(--muted);font-size:13px;line-height:1.6}
+.status.error{color:#A72B42}
+.help{color:var(--muted);font-size:12px;line-height:1.75;margin:14px 4px 0}
+.hidden{display:none!important}
+@media(max-width:390px){main{padding:15px 10px 55px}li{padding:11px 12px;gap:7px;grid-template-columns:28px minmax(0,1fr) auto}.sku{font-size:14px}.hits{font-size:15px}}
+</style></head>
+<body><main>
+<header>
+<a class="home" href="/scanner" aria-label="返回 Scanner / Inicio" title="返回主頁 / Inicio">
+<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/></svg>
+</a>
+<div><div class="brand">XINGWANG · STOCK</div><h1>商品查詢排行</h1></div>
+</header>
+<div class="options" role="group" aria-label="統計期間">
+<button class="period" type="button" data-days="7" aria-pressed="false">近 7 天</button>
+<button class="period" type="button" data-days="30" aria-pressed="true">近 30 天</button>
+</div>
+<section aria-label="查詢排名">
+<div class="list-header"><h2>熱門商品編號</h2><span class="meta" id="shown">前 20 名</span></div>
+<div id="status" class="status" role="status" aria-live="polite">讀取排行中…</div>
+<ol id="ranking" class="hidden"></ol>
+<div id="moreBox" class="footer hidden"><button type="button" id="loadMore" class="more">載入至前 50 名</button></div>
+</section>
+<p class="help">僅統計登入員工成功查詢的商品編號，不包含訪客。相同裝置在 15 秒內查詢相同編號，只計一次。資料按 UTC 日期彙總，最多保留最近 30 天。</p>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let days=30,limit=20,generation=0;
+const fmt=n=>Number(n).toLocaleString('en-US');
+function showStatus(message,error=false){
+ const el=$('status');el.textContent=message;el.classList.toggle('error',error);el.classList.remove('hidden');
+}
+function renderRanking(rows,canExpand){
+ const list=$('ranking');list.replaceChildren();
+ const largest=Math.max(1,...rows.map(r=>Number(r.hits)||0));
+ rows.forEach((row,i)=>{
+  const li=document.createElement('li');
+  const rank=document.createElement('span');rank.className='rank';rank.textContent=String(i+1).padStart(2,'0');
+  const middle=document.createElement('div');
+  const sku=document.createElement('div');sku.className='sku';sku.textContent=row.code;
+  const track=document.createElement('div');track.className='track';
+  const fill=document.createElement('span');
+  fill.style.width=(Math.max(0,Math.min(100,Number(row.hits)/largest*100))).toFixed(1)+'%';
+  track.append(fill);middle.append(sku,track);
+  const hits=document.createElement('span');hits.className='hits';hits.textContent=fmt(row.hits);
+  const unit=document.createElement('small');unit.textContent='次';hits.append(unit);
+  li.append(rank,middle,hits);list.append(li);
+ });
+ $('shown').textContent='已顯示 '+rows.length+' / 前 '+limit+' 名';
+ list.classList.toggle('hidden',rows.length===0);
+ $('moreBox').classList.toggle('hidden',!(canExpand&&limit===20));
+ $('status').classList.toggle('hidden',rows.length>0);
+ if(!rows.length)showStatus('這段期間還沒有查詢紀錄');
+}
+async function loadRanking(nextLimit){
+ const seq=++generation;limit=nextLimit;
+ $('loadMore').disabled=true;
+ $('moreBox').classList.add('hidden');
+ $('ranking').classList.add('hidden');
+ showStatus('讀取排行中…');
+ try{
+  const response=await fetch('/scanner/api/search-ranking?days='+days+'&limit='+nextLimit,{credentials:'same-origin',cache:'no-store'});
+  if(response.status===401){location.replace('/scanner');return}
+  const data=await response.json();
+  if(seq!==generation)return;
+  if(!response.ok||data.ok!==true)throw Error(data.detail||data.error||'查詢失敗');
+  renderRanking(Array.isArray(data.rows)?data.rows:[],Boolean(data.has_more));
+ }catch(error){
+  if(seq!==generation)return;
+  $('ranking').classList.add('hidden');$('shown').textContent='—';
+  showStatus(error.message||'無法載入排行',true);
+ }finally{
+  if(seq===generation)$('loadMore').disabled=false;
+ }
+}
+document.querySelectorAll('.period').forEach(button=>button.addEventListener('click',()=>{
+ const next=Number(button.dataset.days);if(next===days)return;
+ days=next;document.querySelectorAll('.period').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.days)===days)));
+ void loadRanking(20);
+}));
+$('loadMore').onclick=()=>void loadRanking(50);
+void loadRanking(20);
+</script></body></html>

@@ -807,7 +807,7 @@ main{padding:12px 14px calc(100px + env(safe-area-inset-bottom,0px));max-width:1
 header{margin-bottom:12px}
 header h1{font-size:20px;color:var(--ink);font-weight:800}
 header .header-actions{gap:8px}
-#adminLink,#cartNav,#logout{background:#fff;border:1px solid var(--stroke);border-radius:12px;width:44px;height:44px;color:var(--ink);padding:0}
+#adminLink,#rankingLink,#cartNav,#logout{background:#fff;border:1px solid var(--stroke);border-radius:12px;width:44px;height:44px;color:var(--ink);padding:0}
 #cartNav .cart-nav-count{background:var(--wine);color:#fff}
 button{background:var(--wine);color:white;border-radius:12px}
 button.secondary{color:var(--ink);background:#fff;border:1px solid var(--stroke)}
@@ -1109,7 +1109,6 @@ body.cc-sample-detail #result{position:relative}
  .cc-stock-row .cc-stock-count,.cc-stock-row .cc-stock-meter{font-size:12px}
  .cc-stock-row .cc-stock-count small,.cc-stock-row .cc-stock-meter small{font-size:10px}
 }
-#fullResult #fullNext{margin:9px 14px;background:#fff;color:var(--wine);border:1px solid var(--stroke)}
 #fullResult #fullDetails:not(:has(.cc-stock-list)){padding:12px}
 #fullResult .stock-note{margin:8px 14px;color:var(--muted);font-size:11px}
 /* Admin: three white cards and CC header, keep original maintenance tools */
@@ -1925,7 +1924,7 @@ body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-wid
 </style>
 </head>
 <body><main>
-<header><div><h1>XINGWANG</h1></div><div class="header-actions"><button class="admin-icon cart-nav hidden" id="cartNav" type="button" title="CART" aria-label="開啟購物車"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 2h2l3 13h13l2-9H5"/></svg><span id="cartNavCount" class="cart-nav-count">0</span></button><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden" aria-label="退出 / Salir" title="退出 / Salir"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></svg></button></div></header>
+<header><div><h1>XINGWANG</h1></div><div class="header-actions"><button class="admin-icon cart-nav hidden" id="cartNav" type="button" title="CART" aria-label="開啟購物車"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 2h2l3 13h13l2-9H5"/></svg><span id="cartNavCount" class="cart-nav-count">0</span></button><a class="admin-icon hidden" id="rankingLink" href="/scanner/ranking" title="商品查詢排行 / Ranking" aria-label="商品查詢排行榜"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><rect x="5" y="11" width="3.5" height="7" rx=".6"/><rect x="10.4" y="6" width="3.5" height="12" rx=".6"/><rect x="15.8" y="3" width="3.5" height="15" rx=".6"/></svg></a><button class="admin-icon hidden" id="adminLink" type="button" title="管理分頁" aria-label="開啟管理分頁"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.3" fill="#fff"/><circle cx="16" cy="17" r="2.3" fill="#fff"/></svg></button><button id="logout" class="ghost hidden" aria-label="退出 / Salir" title="退出 / Salir"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></svg></button></div></header>
 <section id="login" class="panel hidden cc-login">
  <h1>XINGWANG</h1>
  <div class="cc-login-types" role="group" aria-label="登录模式 / Tipo de acceso">
@@ -2087,7 +2086,7 @@ body>main>header>div:first-child{display:flex;align-items:center;gap:8px;min-wid
 <div class="stock-filter-row" id="fullFilterRow"><input id="fullFilter" type="search" placeholder="篩選查詢結果" autocomplete="off" aria-label="篩選完整查詢資料"><span id="fullCount" class="muted"></span></div>
 <div id="fullDetails"></div>
 <p id="fullNote" class="muted stock-note"></p>
-<div class="row"><button id="fullHistoryMore" class="secondary fill hidden">載入更多購買紀錄</button><button type="button" id="fullNext" class="secondary">查下一筆</button></div>
+<div class="row"><button id="fullHistoryMore" class="secondary fill hidden">載入更多購買紀錄</button></div>
 </section>
 <section id="result" class="panel hidden">
 <div class="cc-sample-top"><button id="ccSampleBack" class="cc-detail-back" type="button" aria-label="返回 / Volver"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg></button></div>
@@ -2403,7 +2402,7 @@ async function session(){
   $('cartPublicStart').classList.toggle('hidden',!(publicEntry&&role==='none'));
   if(publicEntry&&role==='none'){
    $('login').classList.add('hidden');$('app').classList.add('hidden');
-   $('logout').classList.add('hidden');$('adminLink').classList.add('hidden');
+   $('logout').classList.add('hidden');$('adminLink').classList.add('hidden');$('rankingLink').classList.add('hidden');
    $('cartNav').classList.add('hidden');
    if(window.publicStartReady)window.publicStartReady();
    return;
@@ -2413,6 +2412,7 @@ async function session(){
   $('app').classList.toggle('hidden',!signed);
   $('logout').classList.toggle('hidden',!signed);
   $('adminLink').classList.toggle('hidden',role!=='staff');
+   $('rankingLink').classList.toggle('hidden',role!=='staff');
   $('cartNav').classList.toggle('hidden',role!=='staff');
   if(role==='staff' && mode==='admin'){setMode('admin');}
   if(role==='staff' && mode==='sample')void checkFreshness();
@@ -3530,15 +3530,6 @@ function syncCameraButton(){
  $('cameraOnIcon').classList.toggle('hidden',running);$('cameraOffIcon').classList.toggle('hidden',!running);
 }
 $('cameraToggle').onclick=async()=>{if(running)await stopCamera();else await startCamera()};
-function clearFullQuery(){
- // The existing "查下一筆" action belongs only to the full-inquiry tab.
- fullData=null;fullCode='';lastQrCode='';
- $('code').value='';syncSearchClear();
- $('fullResult').classList.add('hidden');
- msg('');
- $('code').focus();
-}
-$('fullNext').onclick=clearFullQuery;
 $('saveBtn').onclick=async()=>{
  if(!current?.db_connected||!current?.scan_id||saved||!visibleSampleRows().length)return;
  const b=$('saveBtn');b.disabled=true;

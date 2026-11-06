@@ -211,6 +211,65 @@ async def scanner_record_search(request: Request):
     return {"ok": True, "recorded": True}
 
 
+
+def _merge_search_ranking(persisted, pending, days, limit, today):
+    """Combine saved and in-flight counts, then rank globally by hit count."""
+    totals = {}
+    for entry in persisted:
+        if not isinstance(entry, dict):
+            continue
+        code, hits = entry.get("code"), entry.get("hits")
+        if isinstance(code, str) and _SUGGEST_CODE.fullmatch(code) and type(hits) is int and hits >= 0:
+            totals[code] = hits
+    for (day, code), (hits, _seen) in pending:
+        if (isinstance(code, str) and _SUGGEST_CODE.fullmatch(code)
+            and isinstance(day, type(today)) and 0 <= (today - day).days < days
+            and type(hits) is int and hits > 0):
+            totals[code] = totals.get(code, 0) + hits
+    ordered = sorted(totals.items(), key=lambda entry: (-entry[1], entry[0]))
+    return {"rows": [{"code": sku, "hits": hits} for sku, hits in ordered[:limit]],
+            "has_more": len(ordered) > limit}
+
+
+@router.get("/scanner/api/search-ranking")
+async def scanner_search_ranking(request: Request):
+    # Authenticated company cookie required; guests and public users cannot read.
+    _require(request)
+    days_raw = request.query_params.get("days", "30")
+    limit_raw = request.query_params.get("limit", "20")
+    if days_raw not in ("7", "30") or limit_raw not in ("20", "50"):
+        raise HTTPException(400, "Invalid ranking scope")
+    if not scanner_tidb.configured():
+        raise HTTPException(503, "TiDB 排行統計尚未設定")
+    days, limit = int(days_raw), int(limit_raw)
+    try:
+        persisted = await asyncio.to_thread(scanner_tidb.read_search_ranking, days, limit)
+    except Exception as exc:
+        logging.getLogger("uvicorn.error").warning(
+            "SCANNER_RANKING_READ_FAILED error_type=%s", type(exc).__name__)
+        raise HTTPException(503, "排行榜暫時無法讀取，請稍後再試")
+    async with _SUGGEST_LOCK:
+        pending = list(_SUGGEST_PENDING.items())
+    merged = _merge_search_ranking(persisted, pending, days, limit,
+                                   datetime.now(timezone.utc).date())
+    return JSONResponse({"ok": True, "days": days, "limit": limit, **merged},
+                        headers={"Cache-Control": "no-store, private",
+                                 "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/scanner/ranking", response_class=HTMLResponse)
+async def scanner_ranking_page(request: Request):
+    if not _authorized(request):
+        return RedirectResponse(url="/scanner", status_code=303)
+    return HTMLResponse(
+        Path(__file__).with_name("scanner_ranking.html").read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, private, max-age=0",
+                 "Pragma": "no-cache", "Referrer-Policy": "no-referrer",
+                 "X-Robots-Tag": "noindex, nofollow, noarchive",
+                 "X-Frame-Options": "DENY",
+                 "Content-Security-Policy": "frame-ancestors 'none'"},
+    )
+
 @router.get("/scanner", response_class=HTMLResponse)
 async def scanner_page():
     # Prevent browser Back/cache from displaying an old staff workspace
