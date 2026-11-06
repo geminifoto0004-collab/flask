@@ -431,7 +431,7 @@ def _asset_key(order_number, workflow_key, sha256_hex):
 
 def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, content_type,
                            file_size, source_site=None, storage_backend="b2_primary",
-                           customer_visible=True):
+                           customer_visible=None):
     sha256_hex = _validate_sha256(sha256_hex)
     content_type = _validate_content_type(content_type)
     object_key = _validate_object_key(object_key, sha256_hex, content_type)
@@ -447,13 +447,17 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
         display_name = f"Imagen {order_number}"
         source_site = str(source_site or "").strip().upper()[:16] or None
 
-        cur.execute("SELECT asset_key FROM cloud_assets WHERE asset_key=?", (asset_key,))
+        cur.execute("SELECT asset_key, customer_visible FROM cloud_assets WHERE asset_key=?", (asset_key,))
+        existing = _safe_row(cur.fetchone(), cur)
+        # Registration/retry must never unhide a previously hidden asset.
+        effective_visible = (bool(existing.get("customer_visible", True)) if customer_visible is None and existing
+                             else True if customer_visible is None else bool(customer_visible))
         values = (
             customer_key, order_number, workflow_key, sha256_hex, object_key,
             storage_backend, content_type, int(file_size), display_name, source_site,
-            bool(customer_visible), asset_key,
+            effective_visible, asset_key,
         )
-        if cur.fetchone():
+        if existing:
             cur.execute(
                 """UPDATE cloud_assets
                    SET customer_key=?, order_number=?, workflow_key=?, asset_type='IMAGE',
@@ -486,7 +490,7 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
             "file_size": int(file_size),
             "display_name": display_name,
             "source_site": source_site,
-            "customer_visible": bool(customer_visible),
+            "customer_visible": bool(effective_visible),
         }
     except Exception:
         conn.rollback()
@@ -524,6 +528,14 @@ def set_asset_visibility_batch(customer_key, items, expected_target):
         actual_target = str(getattr(conn, "active_target", "") or "").strip().upper()
         if actual_target != expected_target:
             raise ValueError("TiDB target changed; visibility update refused")
+        # Do not permit publication changes for a customer with no active WEB share.
+        cur.execute(
+            "SELECT token_hash FROM cloud_share_tokens WHERE customer_key=? "
+            "AND status='active' AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP) LIMIT 1",
+            (customer_key,),
+        )
+        if not cur.fetchone():
+            raise ValueError("customer has no active WEB share")
         keys = list(updates)
         placeholders = ",".join(["?"] * len(keys))
         cur.execute(
@@ -902,7 +914,7 @@ def get_asset(asset_key):
             """SELECT asset_key, customer_key, order_number, workflow_key, asset_type,
                       sha256, object_key, storage_backend, content_type, file_size,
                       display_name, source_site, active, customer_visible
-               FROM cloud_assets WHERE asset_key=? AND active=TRUE""",
+               FROM cloud_assets WHERE asset_key=? AND active=TRUE AND customer_visible=TRUE""",
             (asset_key,),
         )
         return _safe_row(cur.fetchone(), cur)
