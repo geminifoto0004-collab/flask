@@ -561,7 +561,7 @@ def order_cloud_sync_orders_upsert_only():
         _ensure_order_cloud_tables()
         from services.order_cloud_asset_service import ensure_order_owners_fast_batch, probe_order_deltas
         if "fingerprints" in body:
-            result = probe_order_deltas(body["fingerprints"])
+            result = probe_order_deltas(body["fingerprints"], include_new=True)
         else:
             target = body["target"]
             if target not in ("TIDB1", "TIDB2"):
