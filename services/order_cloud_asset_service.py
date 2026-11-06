@@ -541,7 +541,7 @@ def set_asset_visibility_batch(customer_key, items, expected_target):
                 (bool(visible), customer_key, key),
             )
         conn.commit()
-        return {"target": actual_target, "updated": len(updates), "deleted": 0, "b2_touched": False}
+        return {"target": actual_target, "updated": len(updates), "asset_keys": keys, "deleted": 0, "b2_touched": False}
     except Exception:
         conn.rollback()
         raise
