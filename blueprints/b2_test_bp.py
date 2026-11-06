@@ -356,6 +356,24 @@ def order_cloud_asset_check_batch():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@b2_test_bp.route("/api/order-cloud/assets/visibility-batch", methods=["POST"])
+def order_cloud_asset_visibility_batch():
+    source_site, auth_error = _order_cloud_auth_source()
+    if auth_error:
+        return auth_error
+    try:
+        _ensure_order_cloud_tables()
+        from services.order_cloud_asset_service import set_asset_visibility_batch
+        payload = request.get_json(silent=True) or {}
+        result = set_asset_visibility_batch(
+            payload.get("customer_key"), payload.get("items"), payload.get("target"))
+        return jsonify({"ok": True, "result": result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @b2_test_bp.route("/api/order-cloud/assets/register", methods=["POST"])
 def order_cloud_asset_register():
     source_site, auth_error = _order_cloud_auth_source()
