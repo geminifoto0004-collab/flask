@@ -134,6 +134,7 @@ def init_order_cloud_asset_table():
                 display_name VARCHAR(255) NULL,
                 source_site VARCHAR(16) NULL,
                 active BOOLEAN NOT NULL DEFAULT TRUE,
+                customer_visible BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_cloud_assets_customer (customer_key),
@@ -145,6 +146,10 @@ def init_order_cloud_asset_table():
         if not check_column_exists(cur, "cloud_assets", "storage_backend"):
             cur.execute(
                 "ALTER TABLE cloud_assets ADD COLUMN storage_backend VARCHAR(32) NOT NULL DEFAULT 'b2_primary'"
+            )
+        if not check_column_exists(cur, "cloud_assets", "customer_visible"):
+            cur.execute(
+                "ALTER TABLE cloud_assets ADD COLUMN customer_visible BOOLEAN NOT NULL DEFAULT TRUE"
             )
         conn.commit()
     except Exception:
@@ -425,7 +430,8 @@ def _asset_key(order_number, workflow_key, sha256_hex):
 
 
 def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, content_type,
-                           file_size, source_site=None, storage_backend="b2_primary"):
+                           file_size, source_site=None, storage_backend="b2_primary",
+                           customer_visible=True):
     sha256_hex = _validate_sha256(sha256_hex)
     content_type = _validate_content_type(content_type)
     object_key = _validate_object_key(object_key, sha256_hex, content_type)
@@ -444,14 +450,16 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
         cur.execute("SELECT asset_key FROM cloud_assets WHERE asset_key=?", (asset_key,))
         values = (
             customer_key, order_number, workflow_key, sha256_hex, object_key,
-            storage_backend, content_type, int(file_size), display_name, source_site, asset_key,
+            storage_backend, content_type, int(file_size), display_name, source_site,
+            bool(customer_visible), asset_key,
         )
         if cur.fetchone():
             cur.execute(
                 """UPDATE cloud_assets
                    SET customer_key=?, order_number=?, workflow_key=?, asset_type='IMAGE',
                        sha256=?, object_key=?, storage_backend=?, content_type=?, file_size=?,
-                       display_name=?, source_site=?, active=TRUE, updated_at=CURRENT_TIMESTAMP
+                       display_name=?, source_site=?, customer_visible=?, active=TRUE,
+                       updated_at=CURRENT_TIMESTAMP
                    WHERE asset_key=?""",
                 values,
             )
@@ -459,8 +467,9 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
             cur.execute(
                 """INSERT INTO cloud_assets
                    (customer_key, order_number, workflow_key, asset_type, sha256, object_key,
-                    storage_backend, content_type, file_size, display_name, source_site, asset_key)
-                   VALUES (?, ?, ?, 'IMAGE', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    storage_backend, content_type, file_size, display_name, source_site,
+                    customer_visible, asset_key)
+                   VALUES (?, ?, ?, 'IMAGE', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 values,
             )
         conn.commit()
@@ -477,7 +486,62 @@ def _upsert_asset_metadata(order_number, workflow_key, sha256_hex, object_key, c
             "file_size": int(file_size),
             "display_name": display_name,
             "source_site": source_site,
+            "customer_visible": bool(customer_visible),
         }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def set_asset_visibility_batch(customer_key, items, expected_target):
+    """Update only per-asset customer visibility flags; never touches B2 objects."""
+    customer_key = str(customer_key or "").strip()
+    expected_target = str(expected_target or "").strip().upper()
+    if not customer_key:
+        raise ValueError("customer_key is required")
+    if expected_target not in {"TIDB1", "TIDB2"}:
+        raise ValueError("target must be TIDB1 or TIDB2")
+    if not isinstance(items, list) or not items or len(items) > 1000:
+        raise ValueError("items must contain 1..1000 asset visibility updates")
+    updates = {}
+    for raw in items:
+        if not isinstance(raw, dict):
+            raise ValueError("invalid asset visibility item")
+        key = str(raw.get("asset_key") or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", key):
+            raise ValueError("invalid asset_key")
+        if "customer_visible" not in raw:
+            raise ValueError("customer_visible is required")
+        updates[key] = bool(raw.get("customer_visible"))
+    if len(updates) != len(items):
+        raise ValueError("duplicate asset_key in visibility batch")
+
+    conn = get_db_connection()
+    cur = get_cursor(conn)
+    try:
+        actual_target = str(getattr(conn, "active_target", "") or "").strip().upper()
+        if actual_target != expected_target:
+            raise ValueError("TiDB target changed; visibility update refused")
+        keys = list(updates)
+        placeholders = ",".join(["?"] * len(keys))
+        cur.execute(
+            "SELECT asset_key FROM cloud_assets WHERE customer_key=? AND asset_key IN (" + placeholders + ")",
+            tuple([customer_key] + keys),
+        )
+        found = {str((get_row_dict(row, cur) or {}).get("asset_key") or "").lower()
+                 for row in cur.fetchall()}
+        if found != set(keys):
+            raise ValueError("asset visibility batch contains missing or foreign customer assets")
+        for key, visible in updates.items():
+            cur.execute(
+                "UPDATE cloud_assets SET customer_visible=?, updated_at=CURRENT_TIMESTAMP "
+                "WHERE customer_key=? AND asset_key=?",
+                (bool(visible), customer_key, key),
+            )
+        conn.commit()
+        return {"target": actual_target, "updated": len(updates), "deleted": 0, "b2_touched": False}
     except Exception:
         conn.rollback()
         raise
@@ -601,7 +665,7 @@ def direct_presign(order_number, workflow_key, sha256_hex, content_type, file_si
 
 
 def direct_register(order_number, workflow_key, sha256_hex, content_type, file_size,
-                    object_key, storage_backend, source_site=None):
+                    object_key, storage_backend, source_site=None, customer_visible=True):
     sha256_hex = _validate_sha256(sha256_hex)
     content_type = _validate_content_type(content_type)
     object_key = _validate_object_key(object_key, sha256_hex, content_type)
@@ -618,6 +682,7 @@ def direct_register(order_number, workflow_key, sha256_hex, content_type, file_s
     result = _upsert_asset_metadata(
         order_number, workflow_key, sha256_hex, object_key, content_type,
         actual_size or expected_size, source_site=source_site, storage_backend=storage_backend,
+        customer_visible=customer_visible,
     )
     result["deduplicated"] = False
     result["uploaded_to_b2"] = True
@@ -800,9 +865,9 @@ def list_customer_assets(customer_key):
         cur.execute(
             """SELECT asset_key, customer_key, order_number, workflow_key, asset_type,
                       sha256, storage_backend, content_type, file_size, display_name,
-                      source_site, updated_at
+                      source_site, customer_visible, updated_at
                FROM cloud_assets
-               WHERE customer_key=? AND active=TRUE
+               WHERE customer_key=? AND active=TRUE AND customer_visible=TRUE
                ORDER BY order_number, created_at, asset_key""",
             (customer_key,),
         )
@@ -836,7 +901,7 @@ def get_asset(asset_key):
         cur.execute(
             """SELECT asset_key, customer_key, order_number, workflow_key, asset_type,
                       sha256, object_key, storage_backend, content_type, file_size,
-                      display_name, source_site, active
+                      display_name, source_site, active, customer_visible
                FROM cloud_assets WHERE asset_key=? AND active=TRUE""",
             (asset_key,),
         )
@@ -984,6 +1049,7 @@ def direct_repair_register(asset_key, sha256_hex, content_type, file_size, objec
     result = direct_register(
         old.get("order_number"), old.get("workflow_key"), sha256_hex, content_type,
         file_size, object_key, storage_backend, source_site=source_site,
+        customer_visible=bool(old.get("customer_visible", True)),
     )
     if result.get("asset_key") != old.get("asset_key"):
         conn = get_db_connection()
