@@ -153,9 +153,38 @@ def _query(cur, after, limit):
     return [get_row_dict(x, cur) for x in cur.fetchall() or []]
 
 
-def _item(cur, row, shares):
+def _other_target_clear(row, selected):
+    """Protect shared B2 bytes from the independent alternate TiDB target.
+
+    Absence or lack of permission never means "unused".  Any active reference,
+    unavailable alternate target, or unknown schema blocks deletion.
+    """
+    from tidb_targets import other_target, target_configured, pymysql_kwargs
+    import pymysql
+    other = other_target(selected)
+    if not target_configured(other):
+        return True  # The installation has only one configured TiDB.
+    try:
+        conn = pymysql.connect(**pymysql_kwargs(other, connect_timeout=5, read_timeout=8))
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM cloud_assets
+                       WHERE active=TRUE AND storage_backend=%s
+                       AND (sha256=%s OR object_key=%s OR thumb_object_key=%s)""",
+                    (row["storage_backend"], row["sha256"],
+                     row["object_key"], row.get("thumb_object_key") or ""))
+                return int(cursor.fetchone()[0]) == 0
+        finally:
+            conn.close()
+    except Exception as exc:
+        print("[B2 Cleanup] other TiDB protection: " + type(exc).__name__, flush=True)
+        return False
+
+
+def _item(cur, row, shares, target):
     reason = _asset_safe(cur, row, shares)
-    if not reason:
+    if not reason or not _other_target_clear(row, target):
         return None
     parsed = _parse(row["render_payload"])
     return {
@@ -189,7 +218,7 @@ def _preview(after):
         last = after
         for row in rows:
             last = str(row["asset_key"])
-            candidate = _item(cur, row, shares)
+            candidate = _item(cur, row, shares, target)
             if candidate:
                 items.append(candidate)
                 if len(items) >= _MAX_DELETE:
@@ -271,7 +300,7 @@ def _execute(body):
                 row = get_row_dict(cur.fetchone(),cur)
                 if not row:
                     raise ValueError("asset changed or already cleaned")
-                now = _item(cur,row,_share_rows(cur))
+                now = _item(cur,row,_share_rows(cur),plan["target"])
                 if not now or any(now[k]!=original[k] for k in (
                         "asset_key","order_number","customer_key","order_sha256","reason",
                         "storage_backend","sha256","object_key","thumb_object_key")):
