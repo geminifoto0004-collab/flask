@@ -28,7 +28,7 @@ class OrderCloudIndexV281Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             HELPERS["_clean_customer_keys"]([" "])
         with self.assertRaises(ValueError):
-            HELPERS["_clean_customer_keys(["x"] * 201)
+            HELPERS["_clean_customer_keys"](["x"] * 201)
 
     def test_cursor_is_entity_specific(self):
         self.assertEqual(
