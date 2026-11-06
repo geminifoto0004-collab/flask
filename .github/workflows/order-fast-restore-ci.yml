@@ -5,6 +5,9 @@ on:
       - "services/order_cloud_asset_service.py"
       - "blueprints/b2_test_bp.py"
       - ".github/workflows/order-fast-restore-ci.yml"
+      - "services/order_b2_safe_cleanup_v279.py"
+      - "tests/test_order_b2_cleanup_v279.py"
+      - "services/__init__.py"
   workflow_dispatch:
 jobs:
   compile:
@@ -16,7 +19,8 @@ jobs:
           python-version: "3.11"
       - name: Python syntax and route registration checks
         run: |
-          python -m py_compile services/order_cloud_asset_service.py blueprints/b2_test_bp.py
+          python -m py_compile services/order_cloud_asset_service.py blueprints/b2_test_bp.py services/order_b2_safe_cleanup_v279.py
+          python -m unittest discover -s tests -p test_order_b2_cleanup_v279.py -v
           python - <<'PY'
           import ast
           from pathlib import Path
