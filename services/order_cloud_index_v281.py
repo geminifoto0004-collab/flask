@@ -129,7 +129,8 @@ def _order_customer_visible(order, tokens, visibility_by_token):
 
 
 def _asset_customer_visible(asset, order, tokens, visibility_by_token):
-    if not order or not bool(asset.get("active", True)):
+    if (not order or not bool(asset.get("active", True))
+            or not bool(asset.get("customer_visible", True))):
         return False
     if not _order_customer_visible(order, tokens, visibility_by_token):
         return False
@@ -180,7 +181,7 @@ def _fetch_page(cur, entity, customer_keys, cursor, limit):
     else:
         sql = (
             "SELECT asset_key,customer_key,order_number,workflow_key,asset_type,sha256,"
-            "object_key,storage_backend,content_type,file_size,active,updated_at "
+            "object_key,storage_backend,content_type,file_size,active,customer_visible,updated_at "
             "FROM cloud_assets WHERE customer_key IN (" + key_placeholders + ")"
             + cursor_clause + " ORDER BY customer_key,asset_key LIMIT ?"
         )
@@ -284,7 +285,8 @@ def order_cloud_sync_orders_index_v281():
                         "content_type": str(row.get("content_type") or ""),
                         "file_size": int(row.get("file_size") or 0),
                         "active": bool(row.get("active")),
-                        "customer_visible": _asset_customer_visible(row, order, tokens, visibility_by_token),
+                        "customer_visible": bool(row.get("customer_visible", True)),
+                        "public_visible": _asset_customer_visible(row, order, tokens, visibility_by_token),
                         "b2_registered": bool(object_key),
                         "updated_at": _serialize_time(row.get("updated_at")),
                     })
