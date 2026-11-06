@@ -296,10 +296,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:12px 7px;
   #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(6){
     grid-column:1 / -1;
     grid-row:4;
-    justify-content:flex-end;
-    font-size:13px;
-    font-weight:800;
-    color:var(--wine);
+    font-size:12px;
   }
   #fullResult[data-full-tab="history"] .full-table tbody td:nth-child(6)::before{
     content:"成交單價";
@@ -2879,10 +2876,7 @@ function fullRenderProduct(data){
  $('fullDetails').replaceChildren(fullTab==='stock'?ccFullStockRows(rows):fullTable(rows,cols));
  $('fullHistoryMore').classList.toggle('hidden',fullTab!=='history'||!Number.isInteger(data.history_next_cursor)||data.history_next_cursor >= Number(data.history_retrievable_count??data.history_total_count??0));
  const needsOrder=fullTab==='stock'&&(fullStockMode==='order'||fullStockMode==='all');
- const missingHistoryPrices=fullTab==='history'?rows.filter(row=>row.price===null||row.price===undefined||String(row.price).trim()==='').length:0;
- $('fullNote').textContent=fullTab==='history'?
-  (rows.length&&missingHistoryPrices===rows.length?'本機目前沒有回傳歷史成交單價；不以現價代替。':
-   missingHistoryPrices?'其中 '+missingHistoryPrices+' 筆歷史紀錄缺少成交單價，顯示 —。':''):
+ $('fullNote').textContent=fullTab==='history'?'本頁為公司唯讀查詢，不提供成交單價。':
   fullTab==='camino'&&data.xwCaminoDetailState==='loading'?'正在读取待到货订单描述…':
   fullTab==='camino'&&data.xwCaminoDetailState==='error'?'本机旧版无法返回订单描述，请安装 XINGWANG V44；待到货数量仍可查看。':
   needsOrder&&data.xwOrderStatus==='loading'?'正在核对本机 V41 订单库存…':
