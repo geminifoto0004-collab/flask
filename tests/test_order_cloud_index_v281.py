@@ -13,9 +13,11 @@ def load_pure_helpers():
         "_next_cursor",
         "_order_customer_visible",
         "_asset_customer_visible",
+        "_load_share_context",
     }
     nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
-    scope = {"_MAX_CUSTOMERS": 200}
+    scope = {"_MAX_CUSTOMERS": 200, "get_row_dict": lambda raw, cursor: raw,
+             "RosterChanged": type("RosterChanged", (ValueError,), {})}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), "order_cloud_index_v281.py", "exec"), scope)
     return scope
 
@@ -66,6 +68,32 @@ class OrderCloudIndexV281Tests(unittest.TestCase):
         self.assertFalse(HELPERS["_asset_customer_visible"](
             asset, order, [token], {"t1": {"1001": {"show_order": False}}}
         ))
+
+    def test_mirror_parity_allows_missing_backup_shares_only_with_explicit_opt_in(self):
+        class EmptyCursor:
+            def __init__(self):
+                self.queries = []
+            def execute(self, sql, params):
+                self.queries.append((sql, tuple(params)))
+            def fetchall(self):
+                return []
+
+        cur = EmptyCursor()
+        with self.assertRaises(HELPERS["RosterChanged"]):
+            HELPERS["_load_share_context"](cur, ["SHARED CUSTOMER"])
+        tokens, hashes, flags = HELPERS["_load_share_context"](
+            cur, ["SHARED CUSTOMER"], allow_missing=True)
+        self.assertEqual(tokens, {})
+        self.assertEqual(hashes, {})
+        self.assertEqual(flags, {})
+        self.assertTrue(all("SELECT" in sql.upper() for sql, _ in cur.queries))
+
+    def test_parity_requires_customer_scope_and_target_in_api(self):
+        src = Path("services/order_cloud_index_v281.py").read_text("utf-8")
+        self.assertIn("parity_mode and not requested_target", src)
+        self.assertIn("allow_missing=parity_mode", src)
+        self.assertIn('authorized("replicas:verify-repair")', src)
+        self.assertIn('"parity": parity_mode', src)
 
 
 if __name__ == "__main__":
