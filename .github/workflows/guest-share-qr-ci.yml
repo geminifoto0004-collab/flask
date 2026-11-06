@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - "templates/tracking/customer_share_public.html"
+      - "order_tracking/templates/tracking/guest_customer.html"
       - "static/js/order_guest_qrcode.min.js"
       - "static/js/qrcodejs.LICENSE.txt"
       - "tests/test_guest_share_hidden_qr.py"
