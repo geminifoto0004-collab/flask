@@ -182,6 +182,10 @@ from . import order_share_thumb_render_patch as _order_share_thumb_render_patch 
 # Keep TiDB1/TiDB2 ORDER cloud metadata synchronized and repair drift in background.
 from . import order_tidb_cloud_reconcile as _order_tidb_cloud_reconcile  # noqa: E402,F401
 
+# V287 step 4: register the fail-closed, independently authorized diagnostic
+# endpoints before app.py registers the existing b2_test blueprint.
+from . import order_b2_classb_probe as _order_b2_classb_probe  # noqa: E402,F401
+
 __all__ = [
     'send_verification_code',
     'verify_code',
