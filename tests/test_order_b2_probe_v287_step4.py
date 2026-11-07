@@ -16,6 +16,11 @@ def extract(name, scope):
     tree = ast.parse(PATH.read_text(encoding="utf-8"))
     fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
     fn.decorator_list = []
+    if name == "order_cloud_b2_class_b_probe":
+        fn.body = [
+            ast.Pass() if isinstance(row, ast.ImportFrom) and row.module == "services.order_desktop_grant"
+            else row for row in fn.body
+        ]
     mod = ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[]))
     exec(compile(mod, str(PATH), "exec"), scope)
     return scope[name]
@@ -92,18 +97,16 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(len(sent), 4)
 
     def test_no_grant_no_probe(self):
-        fake = types.ModuleType("services.order_desktop_grant")
-        fake.authorized = lambda scope: False
         sent = []
         scope = {
             "_order_cloud_auth_source": lambda: ("ORDER", None),
             "request": types.SimpleNamespace(get_json=lambda silent=True: {"action": "probe"}),
             "jsonify": lambda **kwargs: kwargs,
             "_read_or_run_probe": lambda: sent.append("head"),
+            "authorized": lambda scope: False,
         }
         route = extract("order_cloud_b2_class_b_probe", scope)
-        with patch.dict(sys.modules, {"services.order_desktop_grant": fake}):
-            response, status = route()
+        response, status = route()
         self.assertEqual(status, 401)
         self.assertEqual(sent, [])
 
