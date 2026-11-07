@@ -174,6 +174,10 @@ def _b2_existing_object(object_keys, expected_size=0):
                     checked += 1
                     continue
                 errors.append(exc)
+                if asset_service._is_class_b_cap_exceeded(exc):
+                    # Class B quota is backend-wide: remaining key candidates
+                    # cannot be checked now. Still try the other B2 backend.
+                    break
                 continue
             except Exception as exc:
                 errors.append(exc)
