@@ -369,15 +369,10 @@ def sync_customer(customer: str | None, from_order: str | None, dry_run: bool = 
     # Only reconcile after every current local image has been successfully linked/uploaded.
     # This is the point where TiDB logical image membership becomes exactly the image
     # manifest from ACTIVE local ORDER rows. Cancelled/non-active image metadata is removed.
-    if manifest:
-        reconciled = order_sync._request_json(
-            "POST",
-            "/api/order-cloud/assets/reconcile",
-            json={"customer_key": customer_key, "items": manifest},
-        ).get("result") or {}
-    else:
-        reconciled = {"skipped_empty": True}
-        print("[ORDER Cloud] skipped_empty: no complete image manifest; cloud assets preserved")
+    # _local_customer_media omits missing files. This caller cannot certify an
+    # exhaustive image manifest, so never prune remote metadata on old/new Render.
+    reconciled = {"skipped_incomplete": True}
+    print("[ORDER Cloud] skipped_incomplete: cloud image metadata kept for review")
 
     refreshed = order_sync._request_json(
         "POST",
