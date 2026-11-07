@@ -25,6 +25,7 @@ from blueprints.b2_test_bp import (
 )
 from database import get_cursor, get_db_connection, get_row_dict
 from services import order_cloud_asset_service as asset_service
+from services.order_b2_metrics import instrument_client
 from services.order_cloud_asset_service import (
     ALLOWED_IMAGE_TYPES,
     _object_key,
@@ -62,6 +63,7 @@ def _client_for_backend(backend):
                 aws_access_key_id=cfg['key_id'],
                 aws_secret_access_key=cfg['application_key'],
             )
+            client = instrument_client(client, backend=backend, component="direct_presign")
             _CLIENTS[backend] = client
         return client
 
