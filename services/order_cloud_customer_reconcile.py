@@ -70,6 +70,27 @@ def _snapshot_manifest(raw):
         return None, None, None
 
 
+def _order_manifest_error(numbers, metadata):
+    """Reject empty, malformed or explicitly incomplete local order manifests."""
+    if not isinstance(numbers, list):
+        return "INCOMPLETE_ORDER_MANIFEST", "order_numbers must be a list"
+    if not numbers:
+        return "EMPTY_ORDER_MANIFEST", "empty order manifest cannot remove any order"
+    if len(numbers) > 50000 or any(not isinstance(x, str) or not x.strip() for x in numbers):
+        return "INCOMPLETE_ORDER_MANIFEST", "invalid or incomplete order manifest"
+    expected = {x.strip() for x in numbers}
+    if (len(expected) != len(numbers)
+            or metadata.get("manifest_complete") is False
+            or metadata.get("scan_complete") is False
+            or metadata.get("logistics_ready") is False
+            or metadata.get("skipped_orders")
+            or metadata.get("scan_errors")
+            or (metadata.get("expected_order_count") is not None
+                and str(metadata["expected_order_count"]) != str(len(expected)))):
+        return "INCOMPLETE_ORDER_MANIFEST", "local order manifest is incomplete"
+    return None
+
+
 @b2_test_bp.before_app_request
 def _reconcile_customer_orders():
     if request.method != "POST" or request.path not in {
@@ -89,7 +110,7 @@ def _reconcile_customer_orders():
         payload = request.get_json(silent=True) or {}
         customer_key = str(payload.get("customer_key") or "").strip()
         raw_orders = payload.get("order_numbers")
-        if not customer_key:
+        if not customer_key and not request.path.endswith("/reconcile-orders-batch"):
             return jsonify({"ok": False, "error": "customer_key is required"}), 400
 
         if request.path.endswith("/manifest"):
@@ -188,13 +209,13 @@ def _reconcile_customer_orders():
                     item = dict(raw_customer)
                     customer = str(item.get("customer_key") or "").strip()
                     numbers = item.get("order_numbers")
-                    if not customer or not isinstance(numbers, list) or len(numbers) > 50000:
-                        results.append({"customer_key": customer, "ok": False, "error": "invalid customer order manifest"})
+                    error = _order_manifest_error(numbers, item)
+                    if not customer or error:
+                        code, reason = error or ("INCOMPLETE_ORDER_MANIFEST", "customer_key is required")
+                        results.append({"customer_key": customer, "ok": False,
+                                        "code": code, "error": reason})
                         continue
-                    expected = {str(value or "").strip() for value in numbers if str(value or "").strip()}
-                    if not expected and not bool(item.get("confirm_empty", False)):
-                        results.append({"customer_key": customer, "ok": False, "error": "empty order manifest requires confirm_empty=true"})
-                        continue
+                    expected = {value.strip() for value in numbers}
                     try:
                         cur.execute(
                             "SELECT order_number FROM cloud_orders WHERE customer_key=?",
@@ -205,13 +226,18 @@ def _reconcile_customer_orders():
                             for row in cur.fetchall() or []
                         }
                         stale = sorted(value for value in current if value and value not in expected)
+                        if stale and item.get("manifest_complete") is not True:
+                            results.append({"customer_key": customer, "ok": False,
+                                            "code": "INCOMPLETE_ORDER_MANIFEST",
+                                            "error": "deleting stale orders requires a complete local manifest"})
+                            continue
                         _delete_stale_order_numbers(cur, customer, stale)
                         cur.execute("SELECT COUNT(*) AS n FROM cloud_orders WHERE customer_key=?", (customer,))
                         count_row = cur.fetchone()
                         count_data = get_row_dict(count_row, cur) if count_row else {}
                         remaining = int((count_data or {}).get("n") or 0)
-                        if remaining == 0:
-                            cur.execute("DELETE FROM cloud_customers WHERE customer_key=?", (customer,))
+                        # A non-empty expected manifest must never erase an empty
+                        # customer row when upstream order writes are missing.
                         conn.commit()
                         results.append({"customer_key": customer, "ok": True, "result": {
                             "customer_key": customer,
@@ -242,18 +268,11 @@ def _reconcile_customer_orders():
                 "failed": sum(1 for row in results if row.get("ok") is not True),
             }})
 
-        if not isinstance(raw_orders, list):
-            return jsonify({"ok": False, "error": "order_numbers must be a list"}), 400
-        if len(raw_orders) > 50000:
-            return jsonify({"ok": False, "error": "too many order_numbers"}), 400
-
-        expected = {
-            str(value or "").strip()
-            for value in raw_orders
-            if str(value or "").strip()
-        }
-        if not expected and not bool(payload.get("confirm_empty", False)):
-            return jsonify({"ok": False, "error": "empty order manifest requires confirm_empty=true"}), 400
+        error = _order_manifest_error(raw_orders, payload)
+        if error:
+            code, reason = error
+            return jsonify({"ok": False, "code": code, "error": reason}), 400
+        expected = {value.strip() for value in raw_orders}
 
         conn = get_db_connection()
         cur = get_cursor(conn)
@@ -267,6 +286,9 @@ def _reconcile_customer_orders():
                 for row in cur.fetchall() or []
             }
             stale = sorted(value for value in current if value and value not in expected)
+            if stale and payload.get("manifest_complete") is not True:
+                return jsonify({"ok": False, "code": "INCOMPLETE_ORDER_MANIFEST",
+                                "error": "deleting stale orders requires a complete local manifest"}), 400
 
             # Child rows first; no FK cascade is assumed. B2 objects are deliberately
             # untouched. cloud_assets is logical metadata and follows SQLite ownership.
@@ -276,8 +298,8 @@ def _reconcile_customer_orders():
             row = cur.fetchone()
             count_data = get_row_dict(row, cur) if row else {}
             remaining = int((count_data or {}).get("n") or 0)
-            if remaining == 0:
-                cur.execute("DELETE FROM cloud_customers WHERE customer_key=?", (customer_key,))
+            # Never delete a customer row for a non-empty manifest: upstream
+            # order upload may still be missing when the remote count is zero.
             conn.commit()
         except Exception:
             conn.rollback()
