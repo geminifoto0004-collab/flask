@@ -90,12 +90,18 @@ class ManifestGuards(unittest.TestCase):
             "_cache_lock": threading.Lock(), "_space_cache": {},
             "_validate_sha256": lambda value: value if len(value) == 64 else (_ for _ in ()).throw(ValueError("bad sha")),
             "_INTENT_TABLE": "cloud_asset_upload_intent",
+            "asset_service": types.SimpleNamespace(_asset_key=lambda order, wf, sha: sha),
+            "_refresh": lambda customer: {"refreshed": True},
         }
         srv = types.ModuleType("services")
         srv.__path__ = []
         snap = types.ModuleType("services.order_customer_share_snapshot")
         snap.queue_snapshot_refresh = lambda *a, **k: None
         srv.order_customer_share_snapshot = snap
+        service = types.ModuleType("services.order_cloud_snapshot_service")
+        service.replace_customer_snapshot = lambda customer, orders, source_site=None: {"orders": len(orders)}
+        srv.order_cloud_snapshot_service = service
+        snap.rebuild_snapshot = lambda customer: {"customer_key": customer}
 
         if "/customer/reconcile-orders" in path or path.endswith("/customer/snapshot"):
             file = "services/order_cloud_customer_reconcile.py"
@@ -110,6 +116,7 @@ class ManifestGuards(unittest.TestCase):
             fn = extract("services/order_public_share_fast.py", "_prune_customer_scope", scope)
         with patch.dict(sys.modules, {
             "services": srv, "services.order_customer_share_snapshot": snap,
+            "services.order_cloud_snapshot_service": service,
         }):
             response = fn()
         return response, db, created
@@ -171,6 +178,32 @@ class ManifestGuards(unittest.TestCase):
         self.assert_rejected_unchanged("/api/order-cloud/assets/reconcile",
             {"customer_key": "A", "items": [{"order_number": "O1", "sha256": "a" * 64}]},
             "INCOMPLETE_ASSET_MANIFEST")
+
+    def test_batch_nonempty_uncertified_cannot_delete_stale_order(self):
+        body, db, _ = self.make("/api/order-cloud/customer/reconcile-orders-batch",
+            {"customers": [{"customer_key": "PARTIAL", "order_numbers": ["KEEP"]}]})
+        self.assertTrue(body["ok"])
+        item = body["result"]["items"][0]
+        self.assertEqual(item["code"], "INCOMPLETE_ORDER_MANIFEST")
+        self.assertFalse(item["ok"])
+        self.assertEqual(db.writes, [])
+        self.assertEqual(db.commits, 0)
+
+    def test_certified_snapshot_nonempty_still_allowed(self):
+        body, db, _ = self.make("/api/order-cloud/customer/snapshot",
+            {"customer_key": "A", "orders": [{"order_number": "O1"}],
+             "manifest_complete": True, "expected_order_count": 1})
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["result"]["orders"], 1)
+
+    def test_certified_assets_reconcile_nonempty_still_allowed(self):
+        body, db, _ = self.make("/api/order-cloud/assets/reconcile",
+            {"customer_key": "A",
+             "items": [{"order_number": "O1", "sha256": "a" * 64}],
+             "manifest_complete": True, "expected_asset_count": 1})
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["result"]["expected_assets"], 1)
+        self.assertEqual(body["result"]["stale_metadata_removed"], 0)
 
     def test_batch_mixed_empty_skipped_other_customer_reconciles(self):
         body, db, created = self.make("/api/order-cloud/customer/reconcile-orders-batch",
