@@ -180,6 +180,26 @@ def order_cloud_admin_asset_list():
             sql = (("SELECT a.asset_key" + joined) if keys_only else _asset_select_base()) + where + " ORDER BY a.created_at DESC, a.asset_key DESC LIMIT ? OFFSET ?"
         cur.execute(sql, tuple(params + [page_size, (page - 1) * page_size]))
         raw_rows = [get_row_dict(r, cur) for r in cur.fetchall()]
+        # Admin-only attachment classification. The public share never receives
+        # this flag; the original B2 object and SHA remain untouched.
+        if view == "assets" and not keys_only and raw_rows:
+            from services.order_media_lifecycle import is_bulk_photo
+            numbers = sorted({str(row.get("order_number") or "").strip() for row in raw_rows if row.get("order_number")})
+            payloads = {}
+            for offset in range(0, len(numbers), 100):
+                chunk = numbers[offset:offset + 100]
+                marks = ",".join("?" for _ in chunk)
+                cur.execute("SELECT order_number, render_payload FROM cloud_orders WHERE order_number IN (" + marks + ")", tuple(chunk))
+                for record in cur.fetchall() or []:
+                    data = get_row_dict(record, cur) or {}
+                    try:
+                        payloads[str(data.get("order_number") or "")] = json.loads(data.get("render_payload") or "{}")
+                    except (ValueError, TypeError):
+                        payloads[str(data.get("order_number") or "")] = {}
+            for row in raw_rows:
+                marked = is_bulk_photo(row, payloads.get(str(row.get("order_number") or ""), {}))
+                row["attachment_purpose"] = "bulk_photo" if marked else "general"
+                row["is_bulk_photo"] = bool(marked)
         rows = (raw_rows if keys_only else [_row_to_public(row, preview=True) for row in raw_rows]) if view == "assets" else raw_rows
     finally:
         conn.close()
