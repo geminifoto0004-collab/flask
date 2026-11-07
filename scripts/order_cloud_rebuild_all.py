@@ -114,16 +114,9 @@ def _purge_one(key: str, reset_assignment: bool = False) -> dict:
 
 
 def _remove_cloud_only_customer(key: str) -> dict:
-    result = order_sync._request_json(
-        "POST",
-        "/api/order-cloud/customer/reconcile-orders",
-        json={"customer_key": key, "order_numbers": [], "confirm_empty": True},
-    ).get("result") or {}
-    # Snapshot can legitimately be absent after its final local-derived order is removed.
-    order_sync._request_json(
-        "POST", "/api/order-cloud/share/refresh", json={"customer_key": key}
-    )
-    return result
+    # Cloud-only is not proof of local deletion: the SQLite source might be absent.
+    print(f"[ORDER Cloud] skipped_empty cloud-only customer: {key}")
+    return {"skipped_empty": True}
 
 
 def rebuild_all(preview_only: bool, confirm: str | None) -> int:
@@ -164,14 +157,9 @@ def rebuild_all(preview_only: bool, confirm: str | None) -> int:
             # Delete its physical customer images and derived cloud projection. The old
             # share token may remain as a revoked/empty historical record, but no ORDER
             # data/image survives as an active projection.
-            purge = _purge_one(key, reset_assignment=True)
-            if not purge.get("purged"):
-                raise RuntimeError(f"purge did not complete for cloud-only {key}")
-            reconcile = _remove_cloud_only_customer(key)
-            print(
-                "CLOUD-ONLY REMOVED: "
-                f"stale_orders={int(reconcile.get('stale_orders_removed') or 0)}"
-            )
+            # Never delete B2 bytes or cloud rows from an absent local customer.
+            # Only an independently reviewed cleanup operation can do that.
+            _remove_cloud_only_customer(key)
 
     print(f"\nORDER CLOUD GLOBAL REBUILD PASSED: {completed}/{total} customers")
     return 0
