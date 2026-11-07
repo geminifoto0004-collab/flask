@@ -1,121 +1,161 @@
-"""Minimal protected Class-B health probe for both ORDER B2 backends.
+"""V287: admin-paired, cooldown-limited B2 Class-B probe.
 
-Each configured backend receives exactly one HEAD request against a unique missing
-object key. A healthy account with read permission should answer 404/NoSuchKey.
-A 403 carrying a cap-exceeded message exposes the Backblaze daily Class-B/download
-limit without doing PUT/GET loops.
+One explicit HEAD to a random nonexistent object per configured backend.
+No LIST, GET, PUT, TiDB reads/writes, or customer object checks.
+
+Safety: ORDER=1 is only a feature switch, NOT authentication. This endpoint
+also requires the existing admin-issued desktop sync grant. A 15-minute,
+process-local cooldown applies across COMPANY and HOME. Render currently
+operates a single Gunicorn instance/worker; multiple workers would need a
+shared lock before claiming an account-wide bound.
 """
 from __future__ import annotations
 
+import math
+import threading
+import time
 import uuid
 
+import boto3
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
-from flask import jsonify
+from flask import jsonify, request
 
 from blueprints.b2_test_bp import b2_test_bp, _order_cloud_auth_source
+from services.order_b2_metrics import instrument_client
 from services.order_cloud_multi_b2 import (
-    PRIMARY,
-    SECONDARY,
-    backend_ready,
-    client_for_backend,
-    config_for_backend,
+    PRIMARY, SECONDARY, backend_ready, config_for_backend,
 )
+
+_PROBE_LOCK = threading.Lock()
+_LAST_PROBE_AT = 0.0
+_LAST_RESULT = None
+_COOLDOWN_SECONDS = 900
+
+
+def _one_shot_client(backend, cfg):
+    """Disable SDK automatic retry so one logical HEAD means <=1 HTTP attempt."""
+    client = boto3.client(
+        "s3",
+        endpoint_url=cfg["endpoint"],
+        aws_access_key_id=cfg["key_id"],
+        aws_secret_access_key=cfg["application_key"],
+        config=BotoConfig(
+            connect_timeout=3, read_timeout=5,
+            retries={"total_max_attempts": 1},
+            signature_version="s3v4",
+        ),
+    )
+    return instrument_client(client, backend=backend, component="admin_b2_probe")
 
 
 def _probe_backend(backend):
     if not backend_ready(backend):
         return {
-            'configured': False,
-            'class_b_ok': None,
-            'status': 'not_configured',
+            "backend": backend, "configured": False, "status": "not_configured",
+            "class_b_ok": None, "head_requests": 0,
         }
 
     cfg = config_for_backend(backend, required=True)
-    key = f"order-cloud/images/__classb_probe__/{uuid.uuid4().hex}.jpg"
+    key = "order-cloud/images/__classb_probe__/" + uuid.uuid4().hex + ".probe"
     result = {
-        'configured': True,
-        'backend': backend,
-        'bucket_name': cfg.get('bucket_name'),
-        'endpoint': cfg.get('endpoint'),
-        'key_id_suffix': (cfg.get('key_id') or '')[-4:] or None,
-        'class_b_requests_used': 1,
+        "backend": backend, "configured": True,
+        "class_b_ok": False, "head_requests": 1,
     }
-
     try:
-        client_for_backend(backend).head_object(Bucket=cfg['bucket_name'], Key=key)
-        # A UUID key should not already exist, but a successful HEAD still proves
-        # Class-B/read access is currently available.
-        result.update({
-            'class_b_ok': True,
-            'status': 'ok',
-            'http_status': 200,
-            'note': 'HEAD succeeded on unique probe key',
-        })
+        _one_shot_client(backend, cfg).head_object(Bucket=cfg["bucket_name"], Key=key)
+        result.update(status="ok", class_b_ok=True, http_status=200)
         return result
     except ClientError as exc:
-        response = exc.response or {}
-        err = response.get('Error') or {}
-        meta = response.get('ResponseMetadata') or {}
-        status = meta.get('HTTPStatusCode')
-        code = str(err.get('Code') or '')
-        message = str(err.get('Message') or '')
-        low = (code + ' ' + message).lower()
-
-        if status == 404 or code in {'404', 'NoSuchKey', 'NotFound'}:
-            result.update({
-                'class_b_ok': True,
-                'status': 'ok',
-                'http_status': status,
-                'aws_code': code,
-                'note': '404 on missing key means HEAD/Class-B access works',
-            })
-            return result
-
-        cap_exceeded = any(token in low for token in (
-            'cap exceeded',
-            'transaction cap',
-            'class b',
-            'download bandwidth',
-        ))
-        result.update({
-            'class_b_ok': False,
-            'status': 'cap_exceeded' if cap_exceeded else 'forbidden_or_error',
-            'http_status': status,
-            'aws_code': code or None,
-            'aws_message': message or None,
-            'request_id': meta.get('RequestId'),
-        })
+        response = getattr(exc, "response", None) or {}
+        err = response.get("Error") or {}
+        meta = response.get("ResponseMetadata") or {}
+        http = meta.get("HTTPStatusCode")
+        code = str(err.get("Code") or "")
+        msg = str(err.get("Message") or "")
+        low = (code + " " + msg).lower().replace("_", " ")
+        if http == 404 or code in {"404", "NoSuchKey", "NotFound"}:
+            result.update(status="ok", class_b_ok=True, http_status=404)
+        elif http == 403 and any(token in low for token in (
+            "cap exceeded", "transaction cap", "class b",
+            "download bandwidth", "rate limit",
+        )):
+            result.update(status="cap_exceeded", http_status=403,
+                          retry_policy="pause_until_cap_reset_or_increase")
+        elif http == 403:
+            result.update(status="access_denied", http_status=403)
+        else:
+            result.update(status="b2_error", http_status=http if isinstance(http, int) else None)
         return result
     except Exception as exc:
-        result.update({
-            'class_b_ok': False,
-            'status': 'error',
-            'error_type': type(exc).__name__,
-            'error': str(exc),
-        })
+        # Never include exception text, signed URLs, bucket names or secrets.
+        result.update(status="network_error", error_type=type(exc).__name__)
         return result
 
 
-@b2_test_bp.route('/api/order-cloud/b2/class-b', methods=['POST'])
+def _read_or_run_probe(now=None):
+    """Serialize tests and cache the result for both local offices."""
+    global _LAST_RESULT, _LAST_PROBE_AT
+    with _PROBE_LOCK:
+        current = time.monotonic() if now is None else float(now)
+        if _LAST_RESULT is not None and current - _LAST_PROBE_AT < _COOLDOWN_SECONDS:
+            result = dict(_LAST_RESULT)
+            result["cached"] = True
+            result["retry_after_seconds"] = max(
+                1, math.ceil(_COOLDOWN_SECONDS - (current - _LAST_PROBE_AT))
+            )
+            result["head_requests_this_call"] = 0
+            return result
+
+        # Reserve the cooldown before making requests; an exception must not
+        # create an accidental immediate retry loop.
+        _LAST_PROBE_AT = current
+        _LAST_RESULT = {
+            "status": "unavailable", "backends": {}, "head_requests_this_call": 0,
+            "max_backend_checks": 2, "cooldown_seconds": _COOLDOWN_SECONDS,
+        }
+        rows = {}
+        for backend in (PRIMARY, SECONDARY):
+            try:
+                rows[backend] = _probe_backend(backend)
+            except Exception as exc:
+                rows[backend] = {
+                    "backend": backend, "status": "probe_error",
+                    "class_b_ok": False, "error_type": type(exc).__name__,
+                    "head_requests": 0,
+                }
+        requested = sum(int(x.get("head_requests") or 0) for x in rows.values())
+        statuses = [v["status"] for v in rows.values() if v.get("configured")]
+        status = "not_configured" if not statuses else (
+            "healthy" if all(s == "ok" for s in statuses) else "attention"
+        )
+        _LAST_RESULT = {
+            "status": status, "backends": rows, "cached": False,
+            "head_requests_this_call": requested,
+            "max_backend_checks": 2, "cooldown_seconds": _COOLDOWN_SECONDS,
+            "retry_after_seconds": _COOLDOWN_SECONDS,
+            "measurement_scope": "render_only_boto3_head",
+        }
+        return dict(_LAST_RESULT)
+
+
+@b2_test_bp.route("/api/order-cloud/b2/class-b", methods=["POST"])
 def order_cloud_b2_class_b_probe():
-    _source_site, auth_error = _order_cloud_auth_source()
-    if auth_error:
-        return auth_error
+    _, gate_error = _order_cloud_auth_source()
+    if gate_error:
+        return gate_error
 
-    primary = _probe_backend(PRIMARY)
-    secondary = _probe_backend(SECONDARY)
+    # ORDER mode can be accessed by public browsers. Require the separately
+    # administrator-issued, signed desktop repair scope before any B2 request.
+    from services.order_desktop_grant import authorized
+    if not authorized("replicas:verify-repair"):
+        return jsonify(ok=False, error="desktop_sync_grant_required"), 401
 
-    available = [x for x in (primary, secondary) if x.get('configured')]
-    healthy = [x.get('backend') for x in available if x.get('class_b_ok') is True]
-    blocked = [x.get('backend') for x in available if x.get('class_b_ok') is False]
-
-    return jsonify({
-        'ok': bool(available) and not blocked,
-        'healthy_backends': healthy,
-        'blocked_backends': blocked,
-        'backends': {
-            PRIMARY: primary,
-            SECONDARY: secondary,
-        },
-        'total_class_b_requests_used': len(available),
-    }), 200
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or payload.get("action") != "probe":
+        return jsonify(ok=False, error="explicit_probe_action_required"), 400
+    result = _read_or_run_probe()
+    response = jsonify(ok=True, result=result)
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Retry-After"] = str(result["retry_after_seconds"])
+    return response
