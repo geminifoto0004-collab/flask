@@ -26,6 +26,7 @@ from flask import Response, redirect, request
 from blueprints.b2_test_bp import b2_test_bp
 from database import get_cursor, get_db_connection, get_row_dict
 from services.order_cloud_asset_service import _cdn_asset_url
+from services.order_b2_metrics import instrument_client
 from services.order_cloud_multi_b2 import PRIMARY, SECONDARY, config_for_backend
 from services.order_share_image_policy import asset_allowed
 
@@ -63,6 +64,7 @@ def _cached_client(backend):
                     s3={'addressing_style': 'path'},
                 ),
             )
+            client = instrument_client(client, backend=backend, component="public_reader")
             _CLIENTS[cache_key] = client
         return client, cfg
 

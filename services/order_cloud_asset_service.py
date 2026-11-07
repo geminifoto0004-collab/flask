@@ -15,6 +15,8 @@ import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 
+from services.order_b2_metrics import activity_context, instrument_client
+
 from database import check_column_exists, get_cursor, get_db_connection, get_row_dict
 
 
@@ -60,7 +62,7 @@ def _b2_config():
 
 def _b2_client(cfg=None):
     cfg = cfg or _b2_config()
-    return boto3.client(
+    client = boto3.client(
         "s3",
         endpoint_url=cfg["endpoint"],
         aws_access_key_id=cfg["key_id"],
@@ -72,6 +74,7 @@ def _b2_client(cfg=None):
             signature_version="s3v4",
         ),
     )
+    return instrument_client(client, backend=cfg.get("name") or "b2_primary", component="asset_service")
 
 
 def _backend_client(name):
@@ -764,7 +767,8 @@ def check_image_hash_batch(items, max_workers=12):
         errors = []
         for backend in readable:
             try:
-                info = _head_backend_object(backend, item["object_key"], client_cfg=backend_clients[backend])
+                with activity_context("deep_audit"):
+                    info = _head_backend_object(backend, item["object_key"], client_cfg=backend_clients[backend])
             except Exception as exc:
                 errors.append(f"{backend}: {type(exc).__name__}: {exc}")
                 continue

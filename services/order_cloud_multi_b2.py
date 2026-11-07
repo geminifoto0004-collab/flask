@@ -14,6 +14,8 @@ import threading
 
 import boto3
 
+from services.order_b2_metrics import instrument_client
+
 from database import check_column_exists, get_cursor, get_db_connection, get_row_dict
 from services import order_cloud_asset_service as asset_service
 
@@ -66,12 +68,13 @@ def backend_ready(backend):
 
 def client_for_backend(backend):
     cfg = config_for_backend(backend, required=True)
-    return boto3.client(
+    client = boto3.client(
         's3',
         endpoint_url=cfg['endpoint'],
         aws_access_key_id=cfg['key_id'],
         aws_secret_access_key=cfg['application_key'],
     )
+    return instrument_client(client, backend=cfg['backend'], component="multi_b2")
 
 
 def preferred_backend():
