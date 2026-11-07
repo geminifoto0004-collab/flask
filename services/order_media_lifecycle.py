@@ -35,6 +35,49 @@ def pending_pickup(order):
                for r in order.get('logistics') or [])
 
 
+def customer_pickup_visibility(order, now=None):
+    """One-calendar-month read-time visibility, independent of manual show_order.
+
+    'hide' only with affirmative Chile Access-derived pickup evidence and every
+    recorded shipment fully picked. Missing/contradictory evidence keeps the
+    current public record; never writes any visibility or B2 fields.
+    """
+    if order.get('all_picked_up') is not True:
+        return 'keep_unknown'
+    rows = order.get('logistics')
+    workflows = order.get('workflows')
+    if not isinstance(rows, list) or not rows or not isinstance(workflows, list) or not workflows:
+        return 'keep_unknown'
+    if any(str(r.get('status') or '').upper() != 'ARRIVED_IQUIQUE'
+           or str(r.get('pickup_status') or '').lower() != 'picked_up'
+           for r in rows if isinstance(r, dict)) or any(not isinstance(r, dict) for r in rows):
+        return 'keep_unknown'
+    if any(not isinstance(w, dict) or
+           str(w.get('status') or w.get('current_status') or '').upper() != 'COMPLETED'
+           for w in workflows):
+        return 'keep_unknown'
+    raw = str(order.get('last_pickup_date') or '').strip()
+    if not raw:
+        return 'keep_unknown'
+    try:
+        from datetime import date
+        from calendar import monthrange
+        picked = date.fromisoformat(raw[:10])
+        if picked.year < 2000:
+            return 'keep_unknown'
+        clock = now or datetime.now(ZoneInfo('America/Santiago'))
+        today = clock.date() if isinstance(clock, datetime) else clock
+        if picked > today:
+            return 'keep_unknown'
+        month0 = picked.month
+        year = picked.year + month0 // 12
+        month = month0 % 12 + 1
+        cutoff = date(year, month, min(picked.day, monthrange(year, month)[1]))
+        return 'hide' if today >= cutoff else 'keep_recent_pickup'
+    except (TypeError, ValueError):
+        return 'keep_unknown'
+
+
 def retention_reason(order, asset, active=True, now=None):
     """Conservative reasons: an unknown completion/pickup date never authorizes deletion."""
     if pending_pickup(order):
