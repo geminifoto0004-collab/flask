@@ -272,8 +272,10 @@ class ManifestGuards(unittest.TestCase):
         sync = (ROOT / "scripts/order_cloud_sync_customer.py").read_text(encoding="utf-8")
         self.assertNotIn("confirm_empty", publish)
         self.assertNotIn("confirm_empty", sync)
-        self.assertIn('"manifest_complete": True', publish)
-        self.assertIn("if manifest:", sync)
+        self.assertNotIn('"/api/order-cloud/customer/reconcile-orders"', publish)
+        self.assertNotIn('"/api/order-cloud/assets/reconcile"', sync)
+        self.assertIn('"skipped_incomplete": True', publish)
+        self.assertIn('"skipped_incomplete": True', sync)
 
 
 if __name__ == "__main__":
