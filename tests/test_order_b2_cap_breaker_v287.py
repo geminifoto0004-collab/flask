@@ -8,9 +8,11 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from pathlib import Path
 import re
+import sys
 import threading
 import types
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSET = ROOT / "services" / "order_cloud_asset_service.py"
@@ -186,6 +188,102 @@ class ExistingObjectProbeTests(unittest.TestCase):
         self.assertEqual(result, ("b2_primary", "c", 12))
         self.assertEqual(calls, [
             ("b2_primary", "a"), ("b2_primary", "b"), ("b2_primary", "c")])
+
+
+
+class CapFailClosedSignerTests(unittest.TestCase):
+    """Run the real signer function and assert no PUT URL after confirmed Class B cap."""
+
+    def invoke(self, error_message):
+        counters = {"presign": 0, "metadata": 0, "selected": 0}
+        def probe(*args, **kwargs):
+            try:
+                raise ClientError(403, "AccessDenied", error_message)
+            except ClientError as original:
+                raise RuntimeError("cannot confirm whether image already exists") from original
+
+        def presign(*args, **kwargs):
+            counters["presign"] += 1
+            return "https://example.invalid/not-a-real-put"
+
+        def metadata(*args, **kwargs):
+            counters["metadata"] += 1
+            return {"asset_key": "dummy"}
+
+        def choose(*args, **kwargs):
+            counters["selected"] += 1
+            return "b2_primary", {"selected": "b2_primary"}
+
+        scope = {
+            "PRIMARY": "b2_primary",
+            "SECONDARY": "b2_secondary",
+            "_ALLOWED_BACKENDS": {"b2_primary", "b2_secondary"},
+            "_NEW_IMAGE_MAX_BYTES": 1_000_000,
+            "_LEGACY_MAX_BYTES": 15 * 1024 * 1024,
+            "_validate_sha256": lambda s: s,
+            "_validate_content_type": lambda s: s,
+            "_resolve_owner": lambda order, workflow, conn=None: (order, "customer1", workflow),
+            "_existing_asset": lambda *a, **k: None,
+            "_scoped_object_key": lambda *a: "new/object/key.jpg",
+            "_object_key": lambda *a: "old/key.jpg",
+            "_b2_existing_object": probe,
+            "_thumb_object_key": lambda sha: "thumb.jpg",
+            "_upsert_registered_asset": metadata,
+            "_choose_upload_backend": choose,
+            "_presigned_put": presign,
+            "backend_ready": lambda backend: True,
+            "asset_service": types.SimpleNamespace(
+                _is_class_b_cap_exceeded=cap_checker()),
+        }
+        fn = _function(DIRECT, "_direct_presign_result", scope)
+        customer_module = types.ModuleType("services.order_cloud_customer_storage")
+        customer_module.stable_object_key = lambda *args: "stable/object/key.jpg"
+        customer_module.find_customer_sha_asset = lambda *args: None
+        services_module = types.ModuleType("services")
+        services_module.__path__ = []
+        payload = {
+            "variant": "image", "sha256": "a" * 64, "content_type": "image/jpeg",
+            "file_size": 1200, "order_number": "O1",
+        }
+        with patch.dict(sys.modules, {
+            "services": services_module,
+            "services.order_cloud_customer_storage": customer_module,
+        }):
+            try:
+                result = fn(payload)
+                return result, counters, None
+            except RuntimeError as exc:
+                return None, counters, exc
+
+    def test_known_classb_cap_must_not_create_upload_url(self):
+        result, counters, err = self.invoke(
+            "download bandwidth or transaction (Class B) cap exceeded")
+        self.assertIsNone(result)
+        self.assertIsInstance(err, RuntimeError)
+        self.assertIn("upload deferred", str(err))
+        self.assertEqual(counters, {"presign": 0, "metadata": 0, "selected": 0})
+
+    def test_other_403_preserves_existing_warning_and_signer_behavior(self):
+        result, counters, err = self.invoke("Access denied for one object prefix")
+        self.assertIsNone(err)
+        self.assertEqual(result["upload_mode"], "pc_direct_b2_batch_ready")
+        self.assertIn("b2_probe_warning", result)
+        self.assertEqual(counters, {"presign": 1, "metadata": 0, "selected": 1})
+
+    def test_earlier_noncap_error_cannot_hide_later_cap(self):
+        forbidden = ClientError(403, "AccessDenied", "One prefix forbidden")
+        missing = ClientError(404, "NoSuchKey", "missing")
+        cap = ClientError(403, "AccessDenied", "Class B cap exceeded")
+        result, calls, err = ExistingObjectProbeTests().run_probe({
+            ("b2_primary", "a"): forbidden,
+            ("b2_primary", "b"): missing,
+            ("b2_primary", "c"): missing,
+            ("b2_secondary", "a"): cap,
+        })
+        self.assertIsNone(result)
+        self.assertIsInstance(err, RuntimeError)
+        self.assertTrue(cap_checker()(err.__cause__))
+        self.assertEqual(len(calls), 4)
 
 
 if __name__ == "__main__":
