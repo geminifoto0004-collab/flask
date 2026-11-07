@@ -122,6 +122,9 @@ _order_cloud_service.get_customer_space = _fast_get_customer_space
 # Passive, aggregated B2 SDK usage metrics; no new B2 requests are made.
 from . import order_b2_metrics_hook as _order_b2_metrics_hook  # noqa: E402,F401
 
+# Protected one-shot Class-B diagnostic, paired-admin scope required, 15m cooldown.
+from . import order_b2_classb_probe as _order_b2_classb_probe  # noqa: E402,F401
+
 # Register the protected short-lived direct-B2 upload signer on b2_test_bp before
 # app.py registers that blueprint. No B2 credential leaves Render.
 from . import order_cloud_direct_b2 as _order_cloud_direct_b2  # noqa: E402,F401
