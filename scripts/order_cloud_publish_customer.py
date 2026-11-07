@@ -66,7 +66,8 @@ def publish_customer(customer: str | None, from_order: str | None, dry_run: bool
         json={
             "customer_key": manifest["customer_key"],
             "order_numbers": manifest["order_numbers"],
-            "confirm_empty": False,
+            "manifest_complete": True,
+            "expected_order_count": len(manifest["order_numbers"]),
         },
     ).get("result") or {}
 
