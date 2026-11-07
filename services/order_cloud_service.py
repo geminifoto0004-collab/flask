@@ -589,6 +589,10 @@ def get_order(order_number):
                 render_payload = json.loads(raw_render_payload)
             logistics = (render_payload or {}).get("logistics") if isinstance(render_payload, dict) else None
             order["logistics"] = [dict(item) for item in (logistics or []) if isinstance(item, dict)]
+            # The legacy get_order path must see the same pickup evidence as
+            # persistent snapshots. Never infer it from the first arrival date.
+            order["all_picked_up"] = (render_payload or {}).get("all_picked_up") is True
+            order["last_pickup_date"] = (render_payload or {}).get("last_pickup_date")
         except Exception as exc:
             print(f"[WARN] optional public logistics read skipped for {order_number}: {type(exc).__name__}: {exc}")
             order["logistics"] = []
@@ -662,6 +666,9 @@ def get_customer_space(customer_key, history_scope="current", include_cancelled=
         order = get_order(number)
         if not order or _status_is_cancelled(order.get("order_status")):
             continue
+        from services.order_media_lifecycle import customer_pickup_visibility
+        if customer_pickup_visibility(order) == "hide":
+            continue
         workflows = list(order.get("workflows") or [])
         visible_workflows = [wf for wf in workflows if _workflow_visible_in_scope(wf, history_scope)]
         if workflows and not visible_workflows:
@@ -671,7 +678,12 @@ def get_customer_space(customer_key, history_scope="current", include_cancelled=
             # an ORDER still inside the normal 3-month window is never duplicated.
             if _has_pending_pickup_logistics(order):
                 orders.append(_prepare_extra_pickup_order(order, workflows))
-            continue
+                continue
+            # Do not discard IN_TRANSIT or unverified pickup orders after 3m.
+            visible_workflows = [wf for wf in workflows if str(wf.get("status") or wf.get("current_status") or "").upper()
+                                 not in {"CANCELLED", "CANCELED", "CANCELADO", "CANCELADA", "已取消"}]
+            if not visible_workflows:
+                continue
         order["extra_pickup_only"] = False
         order["workflows"] = visible_workflows
         apply_shipping_summary(
