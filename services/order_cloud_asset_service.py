@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
+import threading
 from urllib.parse import quote
 
 import boto3
@@ -88,6 +89,26 @@ def _is_not_found(exc):
     status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
     code = exc.response.get("Error", {}).get("Code")
     return status == 404 or code in ("404", "NoSuchKey", "NotFound")
+
+
+def _is_class_b_cap_exceeded(exc):
+    """Only a confirmed B2 Class-B 403 can stop further checks on this backend.
+
+    Ordinary AccessDenied/403 may be object-prefix-specific, so it must retain
+    the original per-key behavior and never be treated as a missing object.
+    """
+    if not isinstance(exc, ClientError):
+        return False
+    response = exc.response or {}
+    status = (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
+    if status != 403:
+        return False
+    error = response.get("Error") or {}
+    detail = (str(error.get("Code") or "") + " " +
+              str(error.get("Message") or "")).lower()
+    return any(token in detail for token in (
+        "cap exceeded", "transaction cap", "class b", "download bandwidth",
+    ))
 
 
 def _validate_content_type(content_type):
@@ -762,15 +783,30 @@ def check_image_hash_batch(items, max_workers=12):
         raise RuntimeError("no readable B2 backend is available for batch verification")
     # Reuse one boto3 client per backend across all worker threads in this batch.
     backend_clients = {backend: _backend_client(backend) for backend in readable}
+    # A capped B2 account cannot confirm image absence. Stop further HEADs
+    # to that backend for this batch instead of burning 500 more Class-B calls.
+    # Already in-flight worker requests may still finish; no global cache added.
+    cap_blocked = set()
+    cap_lock = threading.Lock()
 
     def inspect(item):
         errors = []
         for backend in readable:
+            with cap_lock:
+                blocked = backend in cap_blocked
+            if blocked:
+                errors.append(f"{backend}: Class B cap exceeded; existence unknown")
+                continue
             try:
                 with activity_context("deep_audit"):
                     info = _head_backend_object(backend, item["object_key"], client_cfg=backend_clients[backend])
             except Exception as exc:
-                errors.append(f"{backend}: {type(exc).__name__}: {exc}")
+                if _is_class_b_cap_exceeded(exc):
+                    with cap_lock:
+                        cap_blocked.add(backend)
+                    errors.append(f"{backend}: Class B cap exceeded; existence unknown")
+                else:
+                    errors.append(f"{backend}: {type(exc).__name__}: {exc}")
                 continue
             if info is not None:
                 return {"ok": True, "result": {

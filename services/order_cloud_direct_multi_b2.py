@@ -174,6 +174,10 @@ def _b2_existing_object(object_keys, expected_size=0):
                     checked += 1
                     continue
                 errors.append(exc)
+                if asset_service._is_class_b_cap_exceeded(exc):
+                    # Class B quota is backend-wide: remaining key candidates
+                    # cannot be checked now. Still try the other B2 backend.
+                    break
                 continue
             except Exception as exc:
                 errors.append(exc)
@@ -183,7 +187,11 @@ def _b2_existing_object(object_keys, expected_size=0):
                 raise RuntimeError('existing B2 image has an unexpected size')
             return backend, object_key, size
     if errors:
-        raise RuntimeError('cannot confirm whether image already exists in B2') from errors[0]
+        # A confirmed backend-wide quota failure is never evidence of absence.
+        # Preserve that exact cause so the signer can defer uploading instead
+        # of misinterpreting a failed metadata-recovery probe as a missing file.
+        cap_error = next((exc for exc in errors if asset_service._is_class_b_cap_exceeded(exc)), None)
+        raise RuntimeError('cannot confirm whether image already exists in B2') from (cap_error or errors[0])
     if not checked:
         raise RuntimeError('no readable B2 backend is configured')
     return None
@@ -374,6 +382,13 @@ def _direct_presign_result(payload, *, conn=None, owner_cache=None, selected_bac
                      object_key, _object_key(asset_sha256, content_type)), file_size,
                 )
             except RuntimeError as exc:
+                if asset_service._is_class_b_cap_exceeded(exc.__cause__):
+                    # Class B 403 means UNKNOWN, not missing: a new presigned PUT
+                    # could overwrite an object whose TiDB metadata is temporarily
+                    # unavailable. Defer this item and preserve all existing data.
+                    raise RuntimeError(
+                        'B2 Class B cap exceeded; object existence unknown, upload deferred'
+                    ) from exc
                 found = None
                 b2_probe_warning = f'{type(exc).__name__}: {exc}'[:600]
                 print(

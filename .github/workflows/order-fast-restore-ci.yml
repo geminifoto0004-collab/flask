@@ -9,6 +9,7 @@ on:
       - "services/order_b2_metrics_hook.py"
       - "services/order_cloud_multi_b2.py"
       - "services/order_cloud_direct_multi_b2.py"
+      - "tests/test_order_b2_cap_breaker_v287.py"
       - "services/order_cloud_multi_b2_public.py"
       - "tests/test_order_b2_metrics_v287_step1.py"
       - "tests/test_order_b2_probe_v287_step3.py"
@@ -45,6 +46,8 @@ jobs:
           python -m unittest discover -s tests -p test_order_b2_probe_v287_step3.py -v
           python -m py_compile services/order_b2_classb_probe.py
           python -m unittest discover -s tests -p test_order_b2_probe_v287_step4.py -v
+          python -m py_compile services/order_cloud_asset_service.py services/order_cloud_direct_multi_b2.py
+          python -m unittest discover -s tests -p test_order_b2_cap_breaker_v287.py -v
           python - <<'PY'
           import ast
           from pathlib import Path
