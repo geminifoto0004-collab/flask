@@ -22,15 +22,15 @@ class MarkedPickup(unittest.TestCase):
         cls.lifecycle={'datetime':datetime}
         from zoneinfo import ZoneInfo
         cls.lifecycle['ZoneInfo']=ZoneInfo
-        cls.is_bulk_photo=load('services/order_media_lifecycle.py','is_bulk_photo',cls.lifecycle)
-        cls.customer_pickup_visibility=load('services/order_media_lifecycle.py','customer_pickup_visibility',cls.lifecycle)
+        cls.is_bulk_photo=staticmethod(load('services/order_media_lifecycle.py','is_bulk_photo',cls.lifecycle))
+        cls.customer_pickup_visibility=staticmethod(load('services/order_media_lifecycle.py','customer_pickup_visibility',cls.lifecycle))
         ns={'source_match':lambda asset,order:next((s for s in order.get('image_sources',[])
              if s['sha256']==asset['sha256'] and s.get('workflow_key','')==asset.get('workflow_key','')),False),
             '_is_image':lambda asset:asset.get('asset_type')=='IMAGE',
             '_route':lambda token,asset:'/share/'+token+'/image/'+asset.get('asset_key',''),
             'is_bulk_photo':cls.is_bulk_photo}
-        cls.images=load('services/order_share_native_order_ui.py','_images',ns)
-        cls.covers=load('services/order_share_native_order_ui.py','_cover_assets',ns)
+        cls.images=staticmethod(load('services/order_share_native_order_ui.py','_images',ns))
+        cls.covers=staticmethod(load('services/order_share_native_order_ui.py','_cover_assets',ns))
 
     def sample(self,tag=True):
         a={'asset_type':'IMAGE','asset_key':'a'*64,'sha256':'a'*64,'workflow_key':'WF1','object_key':'one'}
