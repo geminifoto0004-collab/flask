@@ -181,8 +181,17 @@ def _reconcile_customer_orders():
             raw_payloads = payload.get("orders")
             if not isinstance(raw_payloads, list):
                 return jsonify({"ok": False, "error": "orders must be a list"}), 400
-            if not raw_payloads and not bool(payload.get("confirm_empty", False)):
-                return jsonify({"ok": False, "error": "empty customer snapshot requires confirm_empty=true"}), 400
+            if not raw_payloads:
+                return jsonify({"ok": False, "code": "EMPTY_ORDER_SNAPSHOT",
+                                "error": "empty snapshot cannot replace remote orders"}), 400
+            if (payload.get("manifest_complete") is not True
+                    or payload.get("scan_complete") is False
+                    or payload.get("logistics_ready") is False
+                    or payload.get("skipped_orders") or payload.get("scan_errors")
+                    or (payload.get("expected_order_count") is not None
+                        and str(payload["expected_order_count"]) != str(len(raw_payloads)))):
+                return jsonify({"ok": False, "code": "INCOMPLETE_ORDER_SNAPSHOT",
+                                "error": "complete local snapshot is required before replace"}), 400
             from services.order_cloud_snapshot_service import replace_customer_snapshot
             result = replace_customer_snapshot(
                 customer_key,
