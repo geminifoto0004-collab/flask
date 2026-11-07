@@ -7,6 +7,7 @@ TiDB cloud_assets (fast); an explicit orphan scan lists B2 objects only on deman
 from __future__ import annotations
 
 import math
+import json
 
 from flask import jsonify, request
 
