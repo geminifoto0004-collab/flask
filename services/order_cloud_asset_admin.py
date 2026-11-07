@@ -194,7 +194,8 @@ def order_cloud_admin_asset_list():
                 for record in cur.fetchall() or []:
                     data = get_row_dict(record, cur) or {}
                     try:
-                        payloads[str(data.get("order_number") or "")] = json.loads(data.get("render_payload") or "{}")
+                        decoded = json.loads(data.get("render_payload") or "{}")
+                        payloads[str(data.get("order_number") or "")] = decoded if isinstance(decoded, dict) else {}
                     except (ValueError, TypeError):
                         payloads[str(data.get("order_number") or "")] = {}
             for row in raw_rows:
