@@ -116,7 +116,7 @@ class B2ClassBProbeOfflineTests(unittest.TestCase):
     def test_test_suite_uses_only_fake_clients(self):
         code = PROBE_FILE.read_text(encoding="utf-8")
         self.assertIn("def _probe_backend(", code)
-        self.assertIn("client_for_backend(backend).head_object(", code)
+        self.assertIn("(client_factory or client_for_backend)(backend).head_object(", code)
 
 
 if __name__ == "__main__":
