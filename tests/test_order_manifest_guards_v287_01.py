@@ -204,6 +204,22 @@ class ManifestGuards(unittest.TestCase):
             {"customer_key": "A", "order_numbers": ["KEEP"],
              "expected_order_count": 2, "manifest_complete": True}, "INCOMPLETE_ORDER_MANIFEST")
 
+    def test_cloud_only_rebuild_never_calls_purge_or_reconcile(self):
+        script = "scripts/order_cloud_rebuild_all.py"
+        source = (ROOT / script).read_text(encoding="utf-8")
+        self.assertNotIn("confirm_empty", source)
+        self.assertNotIn("_purge_one(key, reset_assignment=True)", source)
+        fn = extract(script, "_remove_cloud_only_customer", {})
+        self.assertTrue(fn("Missing Customer")["skipped_empty"])
+
+    def test_maintenance_scripts_never_auto_confirm_empty(self):
+        publish = (ROOT / "scripts/order_cloud_publish_customer.py").read_text(encoding="utf-8")
+        sync = (ROOT / "scripts/order_cloud_sync_customer.py").read_text(encoding="utf-8")
+        self.assertNotIn("confirm_empty", publish)
+        self.assertNotIn("confirm_empty", sync)
+        self.assertIn('"manifest_complete": True', publish)
+        self.assertIn("if manifest:", sync)
+
 
 if __name__ == "__main__":
     unittest.main()
