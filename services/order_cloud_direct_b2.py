@@ -130,30 +130,42 @@ def order_cloud_asset_prune():
     if auth_error:
         return auth_error
     try:
-        _ensure_order_cloud_tables()
         payload = request.get_json(silent=True) or {}
         order_number = str(payload.get('order_number') or '').strip()
         if not order_number:
             raise ValueError('order_number is required')
-        raw_allowed = payload.get('allowed_sha256') or []
+        raw_allowed = payload.get('allowed_sha256')
         if not isinstance(raw_allowed, list):
-            raise ValueError('allowed_sha256 must be a list')
-        allowed = sorted({_validate_sha256(value) for value in raw_allowed if str(value or '').strip()})
-
+            return jsonify({'ok': False, 'code': 'INCOMPLETE_ASSET_MANIFEST',
+                            'error': 'allowed_sha256 must be a complete non-empty list'}), 400
+        if not raw_allowed:
+            return jsonify({'ok': False, 'code': 'EMPTY_ASSET_MANIFEST',
+                            'error': 'empty asset manifest cannot remove image metadata'}), 400
+        if any(not isinstance(value, str) or not value.strip() for value in raw_allowed):
+            return jsonify({'ok': False, 'code': 'INCOMPLETE_ASSET_MANIFEST',
+                            'error': 'blank or invalid sha256 in asset manifest'}), 400
+        allowed = sorted({_validate_sha256(value) for value in raw_allowed})
+        if (payload.get('manifest_complete') is not True
+                or payload.get('scan_complete') is False
+                or payload.get('logistics_ready') is False
+                or payload.get('skipped_files')
+                or payload.get('scan_errors')
+                or (payload.get('expected_asset_count') is not None
+                    and str(payload['expected_asset_count']) != str(len(allowed)))):
+            return jsonify({'ok': False, 'code': 'INCOMPLETE_ASSET_MANIFEST',
+                            'error': 'complete local scan is required before asset prune'}), 400
+        _ensure_order_cloud_tables()
         conn = get_db_connection()
         cur = get_cursor(conn)
         try:
             cur.execute('SELECT order_number FROM cloud_orders WHERE order_number=? AND active=TRUE LIMIT 1', (order_number,))
             if not cur.fetchone():
                 raise ValueError('order not found')
-            if allowed:
-                placeholders = ','.join(['?'] * len(allowed))
-                cur.execute(
-                    f'DELETE FROM cloud_assets WHERE order_number=? AND sha256 NOT IN ({placeholders})',
-                    tuple([order_number] + allowed),
-                )
-            else:
-                cur.execute('DELETE FROM cloud_assets WHERE order_number=?', (order_number,))
+            placeholders = ','.join(['?'] * len(allowed))
+            cur.execute(
+                f'DELETE FROM cloud_assets WHERE order_number=? AND sha256 NOT IN ({placeholders})',
+                tuple([order_number] + allowed),
+            )
             deleted = int(getattr(cur, 'rowcount', 0) or 0)
             conn.commit()
         except Exception:
