@@ -97,13 +97,15 @@ class ManifestGuards(unittest.TestCase):
         snap.queue_snapshot_refresh = lambda *a, **k: None
         srv.order_customer_share_snapshot = snap
 
-        if "/customer/reconcile-orders" in path:
+        if "/customer/reconcile-orders" in path or path.endswith("/customer/snapshot"):
             file = "services/order_cloud_customer_reconcile.py"
             extract(file, "_order_manifest_error", scope)
             extract(file, "_delete_stale_order_numbers", scope)
             fn = extract(file, "_reconcile_customer_orders", scope)
         elif "/assets/prune" in path:
             fn = extract("services/order_cloud_direct_b2.py", "order_cloud_asset_prune", scope)
+        elif path.endswith("/assets/reconcile"):
+            fn = extract("services/order_cloud_customer_storage_admin.py", "_customer_storage_admin", scope)
         else:
             fn = extract("services/order_public_share_fast.py", "_prune_customer_scope", scope)
         with patch.dict(sys.modules, {
@@ -149,6 +151,26 @@ class ManifestGuards(unittest.TestCase):
         self.assert_rejected_unchanged("/api/order-cloud/customer/reconcile-orders",
             {"customer_key": "A", "order_numbers": ["  "],
              "confirm_empty": True}, "INCOMPLETE_ORDER_MANIFEST")
+
+    def test_snapshot_empty_even_with_confirm_true_never_writes(self):
+        self.assert_rejected_unchanged("/api/order-cloud/customer/snapshot",
+            {"customer_key": "A", "orders": [], "confirm_empty": True},
+            "EMPTY_ORDER_SNAPSHOT")
+
+    def test_snapshot_nonempty_without_certification_never_writes(self):
+        self.assert_rejected_unchanged("/api/order-cloud/customer/snapshot",
+            {"customer_key": "A", "orders": [{"order_number": "O1"}]},
+            "INCOMPLETE_ORDER_SNAPSHOT")
+
+    def test_assets_reconcile_empty_confirm_true_never_writes(self):
+        self.assert_rejected_unchanged("/api/order-cloud/assets/reconcile",
+            {"customer_key": "A", "items": [], "confirm_empty": True},
+            "EMPTY_ASSET_MANIFEST")
+
+    def test_assets_reconcile_nonempty_no_proof_never_writes(self):
+        self.assert_rejected_unchanged("/api/order-cloud/assets/reconcile",
+            {"customer_key": "A", "items": [{"order_number": "O1", "sha256": "a" * 64}]},
+            "INCOMPLETE_ASSET_MANIFEST")
 
     def test_batch_mixed_empty_skipped_other_customer_reconciles(self):
         body, db, created = self.make("/api/order-cloud/customer/reconcile-orders-batch",
