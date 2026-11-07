@@ -14,6 +14,21 @@ def source_match(asset, order):
     return max(matches, key=lambda s: int(s.get('uploaded_at_epoch') or 0)) if matches else False
 
 
+def is_bulk_photo(asset, order):
+    """Per-attachment source metadata, never the order-level has_bulk_photo flag.
+
+    Works for legacy assets too once their unchanged SHA is registered; does not
+    query B2 or resurrect images filtered by source_match/customer_visible.
+    """
+    key = (str(asset.get('workflow_key') or ''), str(asset.get('sha256') or ''))
+    return any(
+        (str(source.get('workflow_key') or ''), str(source.get('sha256') or '')) == key
+        and str(source.get('attachment_purpose') or '').lower() == 'bulk_photo'
+        for source in (order.get('image_sources') or [])
+        if isinstance(source, dict)
+    )
+
+
 def pending_pickup(order):
     return any(str(r.get('status') or '').upper() == 'ARRIVED_IQUIQUE'
                and str(r.get('pickup_status') or '').lower() != 'picked_up'
