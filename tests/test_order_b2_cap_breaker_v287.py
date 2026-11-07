@@ -225,6 +225,7 @@ class CapFailClosedSignerTests(unittest.TestCase):
             "_resolve_owner": lambda order, workflow, conn=None: (order, "customer1", workflow),
             "_existing_asset": lambda *a, **k: None,
             "_scoped_object_key": lambda *a: "new/object/key.jpg",
+            "_customer_namespace": lambda customer: "c_test_customer",
             "_object_key": lambda *a: "old/key.jpg",
             "_b2_existing_object": probe,
             "_thumb_object_key": lambda sha: "thumb.jpg",
