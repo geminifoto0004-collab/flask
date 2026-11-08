@@ -658,22 +658,10 @@ def _cached_render_template(template_name, *args, **kwargs):
     token_hash = _token_hash(token)
     variant_key = _variant_key(share)
     now = time.monotonic()
-    html = None
-    stale_html = None
     with _LOCK:
-        token_item = _TOKEN_HTML.get(token_hash)
-        if token_item and token_item.get("variant_key") == variant_key:
-            stale_html = token_item.get("html")
-            checked_at = float(token_item.get("checked_at") or 0.0)
-            if stale_html and now - checked_at <= _PERSISTED_RECHECK_SECONDS:
-                html = stale_html
-        if not html:
-            memory_html = _HTML.get(variant_key)
-            if memory_html and stale_html is None:
-                stale_html = memory_html
-            memory_checked = float(_HTML_CHECKED_AT.get(variant_key) or 0.0)
-            if memory_html and now - memory_checked <= _PERSISTED_RECHECK_SECONDS:
-                html = memory_html
+        stale_html = _HTML.get(variant_key)
+        checked_at = float(_HTML_CHECKED_AT.get(variant_key) or 0.0)
+    html = stale_html if now - checked_at <= _PERSISTED_RECHECK_SECONDS else None
 
     # Never block a public visitor on TiDB merely to recheck a variant that is
     # already available in process memory. Serve the known-good HTML immediately and
@@ -687,12 +675,15 @@ def _cached_render_template(template_name, *args, **kwargs):
 
     if html:
         with _LOCK:
-            _TOKEN_HTML[token_hash] = {
-                "customer_key": str((share or {}).get("customer_key") or "").strip(),
-                "variant_key": variant_key,
-                "html": html,
-                "checked_at": time.monotonic(),
-            }
+            # A visit cannot extend the recheck interval or put old HTML back
+            # into the token cache after a concurrent snapshot refresh.
+            if _HTML.get(variant_key) is html:
+                _TOKEN_HTML[token_hash] = {
+                    "customer_key": str((share or {}).get("customer_key") or "").strip(),
+                    "variant_key": variant_key,
+                    "html": html,
+                    "checked_at": _HTML_CHECKED_AT.get(variant_key, 0.0),
+                }
         rendered = html.replace(_TOKEN_PLACEHOLDER, token)
 
         # first-paint may deliberately pass an empty request bundle because the HTML
