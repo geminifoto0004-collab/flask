@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import json
 import hashlib
 from services.order_share_links import share_token_hash
+from services.order_share_create_control import create_live_share as _create_live_share_control
 import secrets
 
 from database import (
@@ -687,53 +688,24 @@ def get_customer_space(customer_key, history_scope="current", include_cancelled=
 
 
 def create_live_share(customer_key, source_site=None, expires_hours=24, permanent=False,
-                      history_scope="current", include_cancelled=False):
-    customer_key = str(customer_key or "").strip()
-    if not customer_key:
-        raise ValueError("customer_key is required")
-    if get_customer_space(customer_key, history_scope=history_scope, include_cancelled=False) is None:
-        raise ValueError("customer not found")
-
-    history_scope = str(history_scope or "current").strip().lower()
-    if history_scope not in {"current", "3m", "6m", "12m", "all"}:
-        history_scope = "current"
-    include_cancelled = False
-
-    if permanent:
-        expires_at = None
-    else:
-        try:
-            hours = int(expires_hours or 24)
-        except (TypeError, ValueError):
-            raise ValueError("expires_hours must be an integer")
-        if hours < 1 or hours > 24 * 365:
-            raise ValueError("expires_hours must be between 1 and 8760")
-        expires_at = datetime.utcnow() + timedelta(hours=hours)
-
-    raw_token = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    conn = get_db_connection()
-    cur = get_cursor(conn)
-    try:
-        cur.execute(
-            """INSERT INTO cloud_share_tokens
-               (token_hash, customer_key, mode, status, source_site, history_scope, include_cancelled, expires_at)
-               VALUES (?, ?, 'LIVE', 'active', ?, ?, FALSE, ?)""",
-            (token_hash, customer_key, (str(source_site or "").upper()[:16] or None), history_scope, expires_at),
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-    return {
-        "token": raw_token,
-        "customer_key": customer_key,
-        "expires_at": expires_at,
-        "history_scope": history_scope,
-        "include_cancelled": False,
-    }
+                      history_scope="current", include_cancelled=False, status_filter_mode="simple",
+                      show_pdf_pages=True, allow_report_pdf_download=False, show_images=True,
+                      show_workflow_images=True, requested_token=None):
+    """Create or reuse the one active WEB share for this customer."""
+    return _create_live_share_control(
+        customer_key,
+        source_site=source_site,
+        expires_hours=expires_hours,
+        permanent=permanent,
+        history_scope=history_scope,
+        include_cancelled=include_cancelled,
+        status_filter_mode=status_filter_mode,
+        show_pdf_pages=show_pdf_pages,
+        allow_report_pdf_download=allow_report_pdf_download,
+        show_images=show_images,
+        show_workflow_images=show_workflow_images,
+        requested_token=requested_token,
+    )
 
 
 def resolve_live_share(raw_token):

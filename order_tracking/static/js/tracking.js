@@ -13158,16 +13158,22 @@ async function desktopGuestCollectActiveItems() {
 function desktopGuestRenderExistingLinksHint(customer, items) {
     const box = document.getElementById('desktopGuestExistingLinks');
     if (!box) return;
+    const currentMode = desktopGuestShareMode === 'render' ? 'render' : 'lan';
+    const currentLabel = currentMode === 'render' ? 'WEB' : 'LAN';
+    const generateButton = document.getElementById('desktopGuestGenerateBtn');
+    const defaultButtonLabel = currentMode === 'render' ? '建立 Render 公网链接' : '建立局网分享链接';
     const name = String(customer || '').trim();
     if (!name) {
         box.hidden = true;
         box.innerHTML = '';
+        if (generateButton) generateButton.textContent = defaultButtonLabel;
         return;
     }
     const same = (Array.isArray(items) ? items : []).filter(item => desktopGuestSameCustomer(item.customer_name || '', name));
     if (!same.length) {
         box.hidden = true;
         box.innerHTML = '';
+        if (generateButton) generateButton.textContent = defaultButtonLabel;
         return;
     }
     const modeCounts = same.reduce((acc, item) => {
@@ -13175,11 +13181,19 @@ function desktopGuestRenderExistingLinksHint(customer, items) {
         acc[key] = (acc[key] || 0) + 1;
         return acc;
     }, {lan: 0, render: 0});
-    const parts = [];
-    if (modeCounts.lan) parts.push(`LAN ${modeCounts.lan} 个`);
-    if (modeCounts.render) parts.push(`WEB ${modeCounts.render} 个`);
+    const parts = [
+        modeCounts.lan ? `LAN 已有 ${modeCounts.lan} 条` : 'LAN 尚未建立',
+        modeCounts.render ? `WEB 已有 ${modeCounts.render} 条` : 'WEB 尚未建立'
+    ];
+    const currentCount = modeCounts[currentMode] || 0;
+    if (generateButton) {
+        generateButton.textContent = currentCount ? `使用现有 ${currentLabel} 链接` : defaultButtonLabel;
+    }
+    const duplicateWarning = (modeCounts.lan > 1 || modeCounts.render > 1)
+        ? '<small style="color:#b45309">检测到旧版重复链接。新操作会沿用现有链接，不再增加；旧重复记录请在管理全部分享中核对后失效。</small>'
+        : '';
     box.hidden = false;
-    box.innerHTML = `<div class="desktop-guest-existing-links-head"><strong>此客户目前已有 ${same.length} 个有效分享</strong><button type="button" onclick="desktopGuestSetTab('active')">查看有效分享</button></div><small>${parts.join(' · ')}。可继续建立新分享，不受限制。</small>`;
+    box.innerHTML = `<div class="desktop-guest-existing-links-head"><strong>该客户每种方式只允许一条有效链接</strong><button type="button" onclick="desktopGuestSetTab('active')">查看有效分享</button></div><small>${parts.join(' · ')}。同一客户可同时拥有一条 LAN 和一条 WEB。</small>${duplicateWarning}`;
 }
 async function desktopGuestRefreshExistingLinksHint(forceReload = false) {
     const customer = desktopGuestSelectedCustomer();
@@ -13376,6 +13390,8 @@ function desktopGuestSetMode(mode) {
     if (title) title.textContent=mode==='lan'?'局网有效时间':'Render 有效时间';
     if (hint) hint.textContent=mode==='lan'?'到期后链接自动失效，不可延长':'公网提供 1 天 / 7 天 / 14 天 / 永久';
     document.getElementById('desktopGuestGenerateBtn').textContent=mode==='lan'?'建立局网分享链接':'建立 Render 公网链接';
+    const selectedCustomer = desktopGuestSelectedCustomer();
+    if (selectedCustomer) desktopGuestRenderExistingLinksHint(selectedCustomer, desktopGuestActiveItemsCache);
 }
 function desktopGuestSetDuration(button) {
     if (!button || button.disabled) return;
@@ -13502,6 +13518,11 @@ async function desktopGuestGenerateLink() {
             requestAnimationFrame(()=>resultBox.scrollIntoView({behavior:'smooth',block:'nearest'}));
         }
         desktopGuestLoadActiveLinks(true);
+        if (data.reused_existing) {
+            showToast('沿用现有链接', `该客户已有 ${desktopGuestShareMode==='render'?'WEB':'LAN'} 分享，已返回原链接，没有建立重复链接`, 'info');
+        } else {
+            showToast('建立成功', `${desktopGuestShareMode==='render'?'WEB':'LAN'} 分享链接已建立`, 'success');
+        }
     } catch(error){showToast('建立失败',String(error?.message||error),'error');}
     finally{button.disabled=false;button.textContent=oldText;}
 }

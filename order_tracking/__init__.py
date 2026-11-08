@@ -85,6 +85,8 @@ _CUSTOMER_REPORT_JOB_KEEP = 30
 _guest_report_jobs = {}
 _guest_report_jobs_lock = threading.Lock()
 _GUEST_REPORT_JOB_KEEP = 40
+# Serialize LAN/WEB create checks so two clicks cannot mint duplicate customer links.
+_guest_share_create_lock = threading.Lock()
 
 
 class CustomerReportQueueError(RuntimeError):
@@ -3818,32 +3820,68 @@ def api_create_local_guest_link():
             return jsonify({'success': False, 'error': '该客户目前没有可查看订单'}), 404
 
         now = int(time.time())
-        expires = now + (duration_minutes * 60 if not is_permanent else 36500 * 86400)
-        raw_token = secrets.token_urlsafe(32)
-        guest_url = _local_guest_public_url(raw_token)
-        guest_qr_data_uri = _local_guest_qr_data_uri(guest_url)
         creator = get_current_user_context()
         creator_name = creator.get('display_name') or creator.get('username') or session.get('username') or ''
-        cursor = conn.cursor()
-        cursor.execute("""
-            DELETE FROM local_guest_links
-            WHERE COALESCE(is_permanent, 0) = 0
-              AND (expires_at_epoch < ? OR revoked_at_epoch IS NOT NULL) AND created_at_epoch < ?
-        """, (now - 7 * 86400, now - 30 * 86400))
-        cursor.execute("""
-            INSERT INTO local_guest_links (
-                token_hash, customer_name, created_at_epoch, expires_at_epoch,
-                created_by_id, created_by_name, access_count, allow_pdf_download,
-                allow_report_pdf_download, show_pdf_pages, history_scope, include_cancelled,
-                share_mode, is_permanent, password_hash, password_kind, share_url, qr_data_uri
-            ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 'lan', ?, ?, ?, ?, ?)
-        """, (
-            _local_guest_token_hash(raw_token), customer_name, now, expires, user_id, creator_name,
-            allow_pdf_download, allow_report_pdf_download, show_pdf_pages, history_scope, include_cancelled,
-            1 if is_permanent else 0, password_hash, password_kind, guest_url, guest_qr_data_uri
-        ))
-        link_id = cursor.lastrowid
-        conn.commit()
+        with _guest_share_create_lock:
+            # The local database is SQLite. BEGIN IMMEDIATE serializes the
+            # duplicate check and INSERT even if two browser requests arrive together.
+            conn.execute('BEGIN IMMEDIATE')
+            existing = _find_active_local_guest_link(conn, customer_name, now)
+            if existing:
+                conn.commit()
+                existing_url = str(existing.get('share_url') or '').strip()
+                if not existing_url:
+                    return jsonify({
+                        'success': False,
+                        'error': '此客户已有有效 LAN 分享，但旧记录没有保存网址。为避免产生重复链接，请先在分享管理中处理该旧记录。',
+                        'code': 'EXISTING_SHARE_URL_MISSING',
+                    }), 409
+                permanent = bool(int(existing.get('is_permanent') or 0))
+                expires = int(existing.get('expires_at_epoch') or 0)
+                created = int(existing.get('created_at_epoch') or 0)
+                qr = str(existing.get('qr_data_uri') or '').strip() or _local_guest_qr_data_uri(existing_url)
+                return jsonify({'success': True, 'data': {
+                    'id': existing.get('id'),
+                    'customer_name': existing.get('customer_name') or customer_name,
+                    'duration_minutes': None if permanent else max(1, int(round(max(0, expires-created)/60.0))),
+                    'is_permanent': permanent,
+                    'share_mode': 'lan',
+                    'password_kind': existing.get('password_kind') or 'none',
+                    'allow_pdf_download': bool(existing.get('allow_pdf_download')),
+                    'allow_report_pdf_download': bool(existing.get('allow_report_pdf_download')),
+                    'show_pdf_pages': bool(existing.get('show_pdf_pages')),
+                    'history_scope': existing.get('history_scope') or 'current',
+                    'include_cancelled': bool(existing.get('include_cancelled')),
+                    'expires_at_epoch': expires,
+                    'url': existing_url,
+                    'qr_data_uri': qr,
+                    'reused_existing': True,
+                }})
+
+            expires = now + (duration_minutes * 60 if not is_permanent else 36500 * 86400)
+            raw_token = secrets.token_urlsafe(32)
+            guest_url = _local_guest_public_url(raw_token)
+            guest_qr_data_uri = _local_guest_qr_data_uri(guest_url)
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM local_guest_links
+                WHERE COALESCE(is_permanent, 0) = 0
+                  AND (expires_at_epoch < ? OR revoked_at_epoch IS NOT NULL) AND created_at_epoch < ?
+            """, (now - 7 * 86400, now - 30 * 86400))
+            cursor.execute("""
+                INSERT INTO local_guest_links (
+                    token_hash, customer_name, created_at_epoch, expires_at_epoch,
+                    created_by_id, created_by_name, access_count, allow_pdf_download,
+                    allow_report_pdf_download, show_pdf_pages, history_scope, include_cancelled,
+                    share_mode, is_permanent, password_hash, password_kind, share_url, qr_data_uri
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 'lan', ?, ?, ?, ?, ?)
+            """, (
+                _local_guest_token_hash(raw_token), customer_name, now, expires, user_id, creator_name,
+                allow_pdf_download, allow_report_pdf_download, show_pdf_pages, history_scope, include_cancelled,
+                1 if is_permanent else 0, password_hash, password_kind, guest_url, guest_qr_data_uri
+            ))
+            link_id = cursor.lastrowid
+            conn.commit()
     finally:
         conn.close()
 
@@ -3853,7 +3891,7 @@ def api_create_local_guest_link():
         'allow_pdf_download': bool(allow_pdf_download), 'allow_report_pdf_download': bool(allow_report_pdf_download),
         'show_pdf_pages': bool(show_pdf_pages), 'history_scope': history_scope,
         'include_cancelled': bool(include_cancelled), 'expires_at_epoch': expires,
-        'url': guest_url, 'qr_data_uri': guest_qr_data_uri
+        'url': guest_url, 'qr_data_uri': guest_qr_data_uri, 'reused_existing': False
     }})
 
 def _share_epoch(value, default=0):
@@ -3870,6 +3908,58 @@ def _share_epoch(value, default=0):
             return int(dt.timestamp())
         except Exception:
             return int(default or 0)
+
+
+def _guest_share_name_key(value):
+    """Case/whitespace-insensitive identity for one customer's share slot."""
+    return ' '.join(str(value or '').strip().casefold().split())
+
+
+def _find_active_local_guest_link(conn, customer_name, now):
+    wanted = _guest_share_name_key(customer_name)
+    if not wanted:
+        return None
+    rows = conn.execute(
+        """SELECT id, token_hash, customer_name, created_at_epoch, expires_at_epoch,
+                  created_by_id, created_by_name, access_count, allow_pdf_download,
+                  allow_report_pdf_download, show_pdf_pages, show_images,
+                  show_workflow_images, history_scope, include_cancelled,
+                  share_mode, is_permanent, password_hash, password_kind,
+                  share_url, qr_data_uri
+           FROM local_guest_links
+           WHERE revoked_at_epoch IS NULL
+             AND LOWER(COALESCE(share_mode, 'lan'))='lan'
+             AND (COALESCE(is_permanent, 0)=1 OR expires_at_epoch>?)
+           ORDER BY created_at_epoch ASC, id ASC""",
+        (now,),
+    ).fetchall()
+    for raw in rows:
+        item = dict(raw)
+        if _guest_share_name_key(item.get('customer_name')) == wanted:
+            return item
+    return None
+
+
+def _find_active_public_guest_link(conn, customer_name, now):
+    wanted = _guest_share_name_key(customer_name)
+    if not wanted:
+        return None
+    rows = conn.execute(
+        """SELECT share_id, customer_name, created_at_epoch, expires_at_epoch,
+                  created_by_id, created_by_name, access_count, show_pdf_pages,
+                  allow_report_pdf_download, history_scope, include_cancelled,
+                  is_permanent, password_kind, share_url, qr_data_uri
+           FROM public_guest_share_registry
+           WHERE revoked_at_epoch IS NULL
+             AND (COALESCE(is_permanent, 0)=1 OR expires_at_epoch>?)
+           ORDER BY created_at_epoch ASC, share_id ASC""",
+        (now,),
+    ).fetchall()
+    for raw in rows:
+        item = dict(raw)
+        if _guest_share_name_key(item.get('customer_name')) == wanted:
+            return item
+    return None
 
 
 def _public_share_registry_upsert(conn, item, creator=None):
@@ -3892,7 +3982,9 @@ def _public_share_registry_upsert(conn, item, creator=None):
             row['share_url'] = existing.get('share_url') or ''
         if not str(row.get('qr_data_uri') or '').strip():
             row['qr_data_uri'] = existing.get('qr_data_uri') or ''
-    customer_name = str(row.get('customer_name') or row.get('customer') or '').strip() or '—'
+    customer_name = str(row.get('customer_name') or row.get('customer') or '').strip()
+    if not customer_name or customer_name == '—':
+        customer_name = str(row.get('customer_key') or '').strip() or '—'
     now = int(time.time())
     created = _share_epoch(row.get('created_at_epoch') or row.get('created_at'), now)
     permanent = bool(row.get('is_permanent'))
@@ -3900,6 +3992,8 @@ def _public_share_registry_upsert(conn, item, creator=None):
     if permanent and not expires:
         expires = created + 36500 * 86400
     revoked = _share_epoch(row.get('revoked_at_epoch') or row.get('revoked_at'), 0) or None
+    if str(row.get('status') or '').strip().lower() == 'revoked' and not revoked:
+        revoked = now
     last_accessed = _share_epoch(row.get('last_accessed_at_epoch') or row.get('last_accessed_at'), 0) or None
     url = str(row.get('url') or row.get('public_url') or row.get('share_url') or row.get('guest_url') or '').strip()
     qr = str(row.get('qr_data_uri') or '').strip()
@@ -4091,6 +4185,16 @@ def api_admin_customer_shares():
     force_public = str(request.args.get('refresh') or '').strip().lower() in {'1','true','yes','on'}
     all_items = _admin_load_all_shares(refresh_public=True, force_public=force_public)
     now = int(time.time())
+    active_slot_counts = {}
+    for item in all_items:
+        if item.get('status') != 'active':
+            continue
+        slot = (str(item.get('share_mode') or 'lan').lower(), _guest_share_name_key(item.get('customer_name')))
+        if slot[1]:
+            active_slot_counts[slot] = active_slot_counts.get(slot, 0) + 1
+    for item in all_items:
+        slot = (str(item.get('share_mode') or 'lan').lower(), _guest_share_name_key(item.get('customer_name')))
+        item['duplicate_active_count'] = active_slot_counts.get(slot, 0) if item.get('status') == 'active' else 0
     stats = {
         'active': sum(1 for x in all_items if x['status'] == 'active'),
         'permanent': sum(1 for x in all_items if x['status'] == 'active' and x['is_permanent']),
@@ -4287,44 +4391,91 @@ def api_create_public_guest_link_placeholder():
     if not ready or not public_share_provider_ready():
         return jsonify({'success':False,'error':'Render/B2 Provider 尚未配置；未上传任何客户资料','code':'PUBLIC_SHARE_PROVIDER_NOT_READY'}), 503
     data = request.get_json(silent=True) or {}
+    customer_name = ' '.join(str(data.get('customer_name') or '').strip().split())
+    if not customer_name:
+        return jsonify({'success':False,'error':'缺少客户名称'}), 400
     if bool(data.get('is_permanent')) and not bool(current_app.config.get('TRACKING_PERMANENT_PUBLIC_GUEST_ENABLED', PERMANENT_PUBLIC_GUEST_ENABLED)):
         return jsonify({'success':False,'error':'此部署未开放永久 Render 链接'}), 403
+
     creator = get_current_user_context()
     try:
-        result = create_public_share(data, creator)
-        if not isinstance(result, dict):
-            raise RuntimeError('Public provider returned invalid result')
-        public_url = str(result.get('url') or result.get('public_url') or result.get('share_url') or result.get('guest_url') or '').strip()
-        if not public_url:
-            raise RuntimeError('Render 分享已建立，但 Provider 未返回可访问网址')
-        result['url'] = public_url
-        result.setdefault('share_mode', 'render')
-        result.setdefault('customer_name', str(data.get('customer_name') or '').strip())
-        result.setdefault('history_scope', str(data.get('history_scope') or 'current'))
-        result.setdefault('include_cancelled', bool(data.get('include_cancelled')))
-        result.setdefault('show_pdf_pages', data.get('show_pdf_pages') is not False)
-        result.setdefault('allow_report_pdf_download', bool(data.get('allow_report_pdf_download')))
-        result.setdefault('password_kind', str(data.get('password_kind') or 'none'))
-        result.setdefault('is_permanent', bool(data.get('is_permanent')))
-        result.setdefault('created_at_epoch', int(time.time()))
-        if not result.get('expires_at_epoch') and not bool(result.get('is_permanent')):
+        with _guest_share_create_lock:
+            # Refresh the provider mirror before deciding whether this customer
+            # already owns a WEB link. If the provider is unreachable, fail closed
+            # rather than minting a duplicate that cannot be checked.
+            _admin_maybe_refresh_public_registry(force=True)
+            conn = get_db()
             try:
-                result['expires_at_epoch'] = int(result['created_at_epoch']) + int(data.get('duration_minutes') or 1440) * 60
-            except Exception:
-                pass
-        if not str(result.get('qr_data_uri') or '').strip():
-            result['qr_data_uri'] = _local_guest_qr_data_uri(public_url)
-        conn = get_db()
-        try:
-            ensure_public_guest_share_registry(conn)
-            _public_share_registry_upsert(conn, result, creator)
-            conn.commit()
-        finally:
-            conn.close()
-        return jsonify({'success':True,'data':result})
+                ensure_public_guest_share_registry(conn)
+                existing = _find_active_public_guest_link(conn, customer_name, int(time.time()))
+            finally:
+                conn.close()
+
+            if existing:
+                existing_url = str(existing.get('share_url') or '').strip()
+                if not existing_url:
+                    return jsonify({
+                        'success':False,
+                        'error':'此客户已有有效 WEB 分享，但旧记录没有保存网址。为避免产生重复链接，请先在分享管理中处理该旧记录。',
+                        'code':'EXISTING_SHARE_URL_MISSING',
+                    }), 409
+                permanent = bool(int(existing.get('is_permanent') or 0))
+                return jsonify({'success':True,'data':{
+                    'id': str(existing.get('share_id') or ''),
+                    'share_id': str(existing.get('share_id') or ''),
+                    'customer_name': existing.get('customer_name') or customer_name,
+                    'share_mode':'render',
+                    'url': existing_url,
+                    'qr_data_uri': str(existing.get('qr_data_uri') or '') or _local_guest_qr_data_uri(existing_url),
+                    'is_permanent': permanent,
+                    'expires_at_epoch': int(existing.get('expires_at_epoch') or 0),
+                    'created_at_epoch': int(existing.get('created_at_epoch') or 0),
+                    'history_scope': existing.get('history_scope') or 'current',
+                    'include_cancelled': bool(existing.get('include_cancelled')),
+                    'show_pdf_pages': bool(existing.get('show_pdf_pages')),
+                    'allow_report_pdf_download': bool(existing.get('allow_report_pdf_download')),
+                    'password_kind': existing.get('password_kind') or 'none',
+                    'reused_existing': True,
+                }})
+
+            if not bool(current_app.config.get('TRACKING_PERMANENT_PUBLIC_GUEST_ENABLED', PERMANENT_PUBLIC_GUEST_ENABLED)) and bool(data.get('is_permanent')):
+                return jsonify({'success':False,'error':'此部署未开放永久 Render 链接'}), 403
+            data['customer_name'] = customer_name
+            result = create_public_share(data, creator)
+            if not isinstance(result, dict):
+                raise RuntimeError('Public provider returned invalid result')
+            public_url = str(result.get('url') or result.get('public_url') or result.get('share_url') or result.get('guest_url') or '').strip()
+            if not public_url:
+                raise RuntimeError('Render 分享已建立，但 Provider 未返回可访问网址')
+            result['url'] = public_url
+            result.setdefault('share_mode', 'render')
+            if not str(result.get('customer_name') or '').strip() or str(result.get('customer_name') or '').strip() == '—':
+                result['customer_name'] = customer_name
+            result.setdefault('history_scope', str(data.get('history_scope') or 'current'))
+            result.setdefault('include_cancelled', bool(data.get('include_cancelled')))
+            result.setdefault('show_pdf_pages', data.get('show_pdf_pages') is not False)
+            result.setdefault('allow_report_pdf_download', bool(data.get('allow_report_pdf_download')))
+            result.setdefault('password_kind', str(data.get('password_kind') or 'none'))
+            result.setdefault('is_permanent', bool(data.get('is_permanent')))
+            result.setdefault('created_at_epoch', int(time.time()))
+            if not result.get('expires_at_epoch') and not bool(result.get('is_permanent')):
+                try:
+                    result['expires_at_epoch'] = int(result['created_at_epoch']) + int(data.get('duration_minutes') or 1440) * 60
+                except Exception:
+                    pass
+            if not str(result.get('qr_data_uri') or '').strip():
+                result['qr_data_uri'] = _local_guest_qr_data_uri(public_url)
+            conn = get_db()
+            try:
+                ensure_public_guest_share_registry(conn)
+                _public_share_registry_upsert(conn, result, creator)
+                conn.commit()
+            finally:
+                conn.close()
+            result['reused_existing'] = False
+            return jsonify({'success':True,'data':result})
     except Exception as exc:
         return jsonify({'success':False,'error':str(exc) or 'Render 分享建立失败'}), 503
-
 
 @tracking_bp.route('/api/public-guest-links/<share_id>', methods=['DELETE'])
 @login_required
