@@ -1215,6 +1215,18 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
     for raw in cur.fetchall():
         row = get_row_dict(raw, cur)
         existing_orders[row["order_number"].casefold()] = row
+    # A correct cloud_orders fingerprint alone is not proof that child workflow
+    # rows exist. Check only orders explicitly sent to this upsert-only endpoint;
+    # never scan B2 and never delete existing workflow or history rows.
+    existing_workflows = {}
+    if changed_only and upsert_only:
+        cur.execute("SELECT order_number,workflow_key FROM cloud_workflows WHERE active=TRUE "
+                    "AND order_number IN (" + ",".join(["?"] * len(numbers)) + ")", numbers)
+        for raw in cur.fetchall():
+            child = get_row_dict(raw, cur) or {}
+            key = str(child.get('order_number') or '').casefold()
+            existing_workflows.setdefault(key, set()).add(
+                str(child.get('workflow_key') or '').strip().casefold())
     from services.order_cloud_service import _preserve_existing_logistics
     for original in part:
         number = str(original["order_number"]).strip()
@@ -1230,8 +1242,14 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
         # cloud-only logistics fields omitted by an offline/secondary workstation.
         source_encoded = _order_json(original, sort_keys=True)
         sync_fingerprint = hashlib.sha256(source_encoded.encode("utf-8")).hexdigest()
+        required_children = {str(w.get('workflow_key') or w.get('workflow_number') or '').strip().casefold()
+                             for w in (p.get('workflows') or []) if isinstance(w, dict)
+                             and str(w.get('workflow_key') or w.get('workflow_number') or '').strip()}
+        child_missing = bool(required_children - existing_workflows.get(number.casefold(), set())) if (
+            changed_only and upsert_only) else False
         same_order = changed_only and existing.get("active") and existing.get("customer_key") == key
-        if same_order and prior == encoded and existing.get("sync_fingerprint") == sync_fingerprint:
+        if (same_order and not child_missing and prior == encoded and
+                existing.get("sync_fingerprint") == sync_fingerprint):
             continue
         written.append(number)
         all_customers.add(key)
@@ -1257,7 +1275,8 @@ def _write_order_rows(cur, part, source_site, *, changed_only, upsert_only=False
             encoded,
             sync_fingerprint,
         ))
-        if same_order and isinstance(previous, dict) and previous.get("workflows") == p.get("workflows"):
+        if (same_order and not child_missing and isinstance(previous, dict) and
+                previous.get("workflows") == p.get("workflows")):
             continue
         wf_keys = set()
         for pos, wf in enumerate(p.get("workflows") or []):
@@ -1386,8 +1405,11 @@ def ensure_order_owners_fast_batch(orders, source_site=None, *, expected_target=
     limit = _DELTA_MAX_ORDERS if changed_only else 200
     _validate_order_batch(orders, limit)
     source_site = str(source_site or "").strip().upper()[:16] or None
-    if changed_only and any(not isinstance(row.get("workflows"), list) or
-                            not isinstance(row.get("logistics"), list) for row in orders):
+    if changed_only and any(
+            not isinstance(row.get("workflows"), list) or
+            (not isinstance(row.get("logistics"), list) and
+             not (upsert_only and "logistics" not in row)) for row in orders):
+        # A targeted child-row repair omits unknown logistics rather than erase it.
         raise ValueError("delta orders require workflows and logistics lists")
     written, customers, total_timeline = [], set(), 0
     conn = get_db_connection()

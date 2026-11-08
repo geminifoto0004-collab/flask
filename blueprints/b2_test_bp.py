@@ -596,7 +596,9 @@ def order_cloud_sync_orders_upsert_only():
         if not isinstance(body, dict) or set(body) not in ({"fingerprints"}, {"orders", "target"}):
             raise ValueError("expected fingerprints or orders with a TiDB target")
         _ensure_order_cloud_tables()
-        from services.order_cloud_asset_service import ensure_order_owners_fast_batch, probe_order_deltas
+        from services.order_cloud_asset_service import (
+            ensure_order_owners_fast_batch, fast_refresh_shared_customers, probe_order_deltas,
+        )
         if "fingerprints" in body:
             result = probe_order_deltas(body["fingerprints"], include_new=True)
         else:
@@ -605,6 +607,14 @@ def order_cloud_sync_orders_upsert_only():
                 raise ValueError("invalid TiDB target")
             result = ensure_order_owners_fast_batch(
                 body["orders"], source_site, expected_target=target, upsert_only=True)
+            if result.get("customer_keys"):
+                # The rows have committed. Refresh the affected active WEB shares
+                # even when there will be no image registration or logistics write.
+                try:
+                    result["snapshot_refresh"] = fast_refresh_shared_customers(result["customer_keys"])
+                except Exception as exc:
+                    print(f"[ORDER Upsert Only] snapshot refresh deferred: {type(exc).__name__}", flush=True)
+                    result["snapshot_refresh"] = {"queued": 0, "deferred": True}
         return jsonify({"ok": True, "result": result})
     except (ValueError, OSError, EOFError, zlib.error) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

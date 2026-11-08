@@ -88,6 +88,11 @@ def _reconcile_customer_orders():
         _ensure_order_cloud_tables()
         payload = request.get_json(silent=True) or {}
         customer_key = str(payload.get("customer_key") or "").strip()
+        workflow_numbers = payload.get("workflow_order_numbers", None)
+        if workflow_numbers is not None:
+            if (not isinstance(workflow_numbers, list) or len(workflow_numbers) > 20 or
+                    any(not isinstance(x, str) or not x.strip() or len(x) > 191 for x in workflow_numbers)):
+                raise ValueError("workflow_order_numbers must contain at most 20 order IDs")
         raw_orders = payload.get("order_numbers")
         if not customer_key:
             return jsonify({"ok": False, "error": "customer_key is required"}), 400
@@ -128,6 +133,26 @@ def _reconcile_customer_orders():
                         })
                 # Read-only verification: a successful logical ORDER upsert does
                 # not imply the customer-facing persisted snapshot is refreshed.
+                # Opt-in bounded SQL proof, independent of the persisted snapshot.
+                # B never treats the snapshot as proof that cloud_workflows exists.
+                workflow_keys = None
+                workflow_target = None
+                if workflow_numbers is not None:
+                    parents = sorted(set(workflow_numbers))
+                    workflow_keys = {parent: [] for parent in parents}
+                    workflow_target = getattr(conn, "active_target", "")
+                    if parents:
+                        placeholders = ",".join(["?"] * len(parents))
+                        cur.execute("SELECT w.order_number,w.workflow_number,w.workflow_key "
+                                    "FROM cloud_workflows w JOIN cloud_orders o "
+                                    "ON o.order_number=w.order_number "
+                                    "WHERE o.customer_key=? AND o.active=TRUE AND w.active=TRUE "
+                                    "AND w.order_number IN (" + placeholders + ")",
+                                    (customer_key, *parents))
+                        for raw in cur.fetchall():
+                            wf = get_row_dict(raw, cur) or {}
+                            workflow_keys[wf['order_number']].append(
+                                str(wf.get('workflow_number') or wf.get('workflow_key') or '').strip())
                 cur.execute("SELECT payload, updated_at FROM cloud_customer_share_snapshot "
                             "WHERE customer_key=? LIMIT 1", (customer_key,))
                 snapshot_row = cur.fetchone()
@@ -149,6 +174,8 @@ def _reconcile_customer_orders():
                 "snapshot_order_numbers": snapshot_numbers,
                 "snapshot_card_keys": snapshot_cards,
                 "snapshot_payload_hashes": snapshot_hashes,
+                "tidb_workflow_keys": workflow_keys,
+                "tidb_workflow_target": workflow_target,
                 "manifest_version": 141,
                 "snapshot_data_mode": snapshot_mode,
                 "snapshot_updated_at": str((snapshot_obj or {}).get('updated_at') or ''),
