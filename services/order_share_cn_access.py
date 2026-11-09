@@ -318,10 +318,12 @@ def login():
 
 @cn_bp.route("/cn/order-links/logout", methods=["POST"])
 def logout():
-    if not _cn_csrf_valid("logout"):
-        return make_response(
-            "退出表單已失效，請重新整理客戶清單後再試。", 403)
-    return _clear_cookie(redirect(url_for(".page"), code=303))
+    # Logout only deletes the China read-only access cookie. Do not block
+    # an explicit logout because a signed form token has expired or is stale
+    # after a Render deploy, a restored tab, or a browser/proxy header change.
+    # Never revoke or modify unrelated Flask/ORDER sessions here.
+    response = redirect(url_for(".page"), code=303)
+    return _clear_cookie(response)
 
 
 @cn_bp.get("/cn/order-links/app.js")
