@@ -1,6 +1,8 @@
 """Ensure the Render-managed China password and share URL need no TiDB auth lookup."""
 import importlib.util
 import os
+import sys
+import types
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -45,6 +47,35 @@ class ChinaLinksRenderPasswordTests(unittest.TestCase):
                                   data={"password": "123456"}).status_code, 401)
                 self.assertEqual(self.client.post("/cn/order-links/login",
                                   data={"password": "654321"}).status_code, 303)
+
+    def test_logout_always_clears_cookie_and_redirects_to_password_page(self):
+        # A stale/missing CSRF token previously stranded the user on a 403
+        # instead of logging out. The logout action is cookie revocation only.
+        with patch.dict(os.environ, {"CN_ORDER_LINKS_PASSWORD_HASH": "123456"}), \
+             patch.object(cn, "_db", side_effect=AssertionError("no auth database")):
+            response = self.client.post("/cn/order-links/login",
+                                        data={"password": "123456"})
+            self.assertEqual(response.status_code, 303)
+            self.assertIn(b'id="search"', self.client.get("/cn/order-links").data)
+            response = self.client.post("/cn/order-links/logout",
+                                        data={"csrf": "expired-or-invalid"})
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(response.headers["Location"], "/cn/order-links")
+            self.assertIn("xingwang_cn_links=", response.headers.get("Set-Cookie", ""))
+            self.assertIn(b'name="password"',
+                          self.client.get("/cn/order-links").data)
+            # The directory imports the Telegram module before auth checks.
+            # Stub only that import, not the real authorization branch.
+            lookup_stub = types.SimpleNamespace(order_share_telegram_bot=None)
+            with patch.dict(sys.modules, {"services": lookup_stub}):
+                self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+
+            # Re-login works, and even a missing token must not trap the user.
+            self.client.post("/cn/order-links/login", data={"password": "123456"})
+            response = self.client.post("/cn/order-links/logout", data={})
+            self.assertEqual(response.status_code, 303)
+            self.assertIn(b'name="password"',
+                          self.client.get("/cn/order-links").data)
 
     def test_hash_setting_and_missing_secret(self):
         hashed = generate_password_hash("long-and-safe-secret", method="pbkdf2:sha256:600000")
