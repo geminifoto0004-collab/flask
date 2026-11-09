@@ -15,6 +15,10 @@ input:focus{border-color:#287bd1;box-shadow:0 0 0 3px #287bd11c}
 button{margin-top:19px;display:block;background:#176ac6;color:white;border:0;border-radius:12px;padding:14px;width:100%;font-size:16px;font-weight:600;cursor:pointer}
 small{display:block;margin-top:22px;color:#8190a0;text-align:center;font-size:12px}
 .error{color:#b91c1c;background:#fef2f2;border-radius:9px;padding:10px 12px;margin:0 0 14px;font-size:13px}
+.qr-share{margin-top:22px;padding-top:18px;border-top:1px solid #e5eaf0;text-align:center}
+.qr-share img{display:block;width:156px;height:156px;background:white;padding:6px;margin:10px auto;border:1px solid #edf0f5;border-radius:8px}
+.qr-share p{font-size:12px;margin:8px 0;color:#667387}
+.qr-share a{font-size:12px;color:#176ac6;overflow-wrap:anywhere}
 </style>
 </head><body><main class="panel"><div class="logo">🔐</div>
 <h1>XINGWANG 客户分享</h1>
@@ -25,4 +29,10 @@ small{display:block;margin-top:22px;color:#8190a0;text-align:center;font-size:12
 <label for="password">访问密码</label>
 <input id="password" name="password" type="password" required maxlength="128" autocomplete="current-password" autofocus placeholder="请输入专用密码">
 <button type="submit">进入客户清单</button>
-</form><small>只供授权同事使用 · 登录有效期 7 天</small></main></body></html>
+</form>
+<div class="qr-share"><strong>在其他手机或平板打开</strong>
+<img src="/cn/order-links/qr.svg" alt="扫描二维码打开客户分享页面" width="156" height="156" loading="lazy">
+<p>扫码即可打开此网址，仍需输入访问密码。</p>
+<a href="https://flask-393d.onrender.com/cn/order-links">flask-393d.onrender.com/cn/order-links</a>
+</div>
+<small>只供授权同事使用 · 登录有效期 7 天</small></main></body></html>
