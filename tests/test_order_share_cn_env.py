@@ -1,6 +1,8 @@
 """Ensure the Render-managed China password and share URL need no TiDB auth lookup."""
 import importlib.util
 import os
+import sys
+import types
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -62,7 +64,11 @@ class ChinaLinksRenderPasswordTests(unittest.TestCase):
             self.assertIn("xingwang_cn_links=", response.headers.get("Set-Cookie", ""))
             self.assertIn(b'name="password"',
                           self.client.get("/cn/order-links").data)
-            self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
+            # The directory imports the Telegram module before auth checks.
+            # Stub only that import, not the real authorization branch.
+            lookup_stub = types.SimpleNamespace(order_share_telegram_bot=None)
+            with patch.dict(sys.modules, {"services": lookup_stub}):
+                self.assertEqual(self.client.get("/cn/order-links/data").status_code, 403)
 
             # Re-login works, and even a missing token must not trap the user.
             self.client.post("/cn/order-links/login", data={"password": "123456"})
