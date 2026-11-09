@@ -49,7 +49,7 @@ class ChinaLinksRenderPasswordTests(unittest.TestCase):
     def test_logout_always_clears_cookie_and_redirects_to_password_page(self):
         # A stale/missing CSRF token previously stranded the user on a 403
         # instead of logging out. The logout action is cookie revocation only.
-        with patch.dict(os.environ, {"CN_ORDER_LINKS_PASSWORD_HASH": "123456"}), \\
+        with patch.dict(os.environ, {"CN_ORDER_LINKS_PASSWORD_HASH": "123456"}), \
              patch.object(cn, "_db", side_effect=AssertionError("no auth database")):
             response = self.client.post("/cn/order-links/login",
                                         data={"password": "123456"})
