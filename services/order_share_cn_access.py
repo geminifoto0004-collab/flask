@@ -1,8 +1,7 @@
 """Password-protected read-only China entry for existing ORDER share links.
 
-This service never accepts Telegram identifiers as password substitutes. Password
-hash and current session revision are stored in TiDB, separate from ORDER logins.
-The password is set/reset exclusively via the existing XINGWANG admin session.
+The China access password is read from Render's CN_ORDER_LINKS_PASSWORD_HASH.
+Share directory contents are still read from TiDB after authentication.
 """
 from __future__ import annotations
 
@@ -12,25 +11,26 @@ import os
 import secrets
 import threading
 import time
-from datetime import datetime
+from collections import deque
+from io import BytesIO
 from urllib.parse import urlsplit
 
 from flask import (Blueprint, current_app, jsonify, make_response, redirect,
                    render_template, request, session, url_for)
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash
 
 cn_bp = Blueprint("order_share_cn", __name__)
-_SCHEMA_READY = False
-_SCHEMA_LOCK = threading.Lock()
+_FAILURES = {}
+_FAILURES_LOCK = threading.Lock()
+_GLOBAL_FAILURE_KEY = "__all__"
+_GLOBAL_FAILURE_LIMIT = 40
+_PUBLIC_LINK = "https://flask-393d.onrender.com/cn/order-links"
 _COOKIE_NAME = "xingwang_cn_links"
 _COOKIE_AGE = 7 * 24 * 3600
 _COOKIE_PATH = "/cn/order-links"
 _LOGIN_WINDOW = 15 * 60
 _MAX_FAILURES = 8
-_ADMIN_CSRF_COOKIE = "xingwang_cn_admin_csrf"
-_ADMIN_CSRF_AGE = 60 * 60
-_ADMIN_CSRF_PATH = "/admin/automation/china-links"
 _CN_CSRF_AGE = 60 * 60
 
 
@@ -61,108 +61,74 @@ def _row(row, cur):
     return get_row_dict(row, cur) or {}
 
 
-def _ensure_schema():
-    global _SCHEMA_READY
-    if _SCHEMA_READY:
-        return
-    with _SCHEMA_LOCK:
-        if _SCHEMA_READY:
-            return
-        from database import get_id_type
-        conn = _db()
-        try:
-            cur = _cursor(conn)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS order_share_cn_settings (
-                    id INTEGER PRIMARY KEY,
-                    password_hash VARCHAR(255) NOT NULL,
-                    revision VARCHAR(64) NOT NULL,
-                    updated_at VARCHAR(32) NOT NULL
-                )""")
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS order_share_cn_failures (
-                    id {id_type},
-                    client_hash VARCHAR(64) NOT NULL,
-                    attempted_at BIGINT NOT NULL
-                )""".format(id_type=get_id_type()))
-            conn.commit()
-            _SCHEMA_READY = True
-        finally:
-            conn.close()
-
-
 def _settings():
-    _ensure_schema()
-    conn = _db()
-    try:
-        cur = _cursor(conn)
-        cur.execute("SELECT password_hash, revision FROM order_share_cn_settings WHERE id=1")
-        return _row(cur.fetchone(), cur)
-    finally:
-        conn.close()
+    """No TiDB lookup: derive the cookie revision from the active Render secret.
+
+    Accept an existing Werkzeug PBKDF2/scrypt hash or a raw passcode for
+    compatibility with the six-digit Render setting. A missing configuration
+    fails closed rather than falling back to the old TiDB password.
+    """
+    configured = os.environ.get("CN_ORDER_LINKS_PASSWORD_HASH", "").strip()
+    if not 1 <= len(configured) <= 256 or not _secret_ready():
+        return {}
+    key = str(current_app.secret_key).encode("utf-8")
+    revision = hmac.new(
+        key, b"china-links-password-revision-v1:\x00" + configured.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {"password_hash": configured, "revision": revision}
 
 
-def _update_password(password):
-    """Store only salted PBKDF2 hash. Changing it revokes all issued cookies."""
-    if not _secret_ready():
-        raise RuntimeError("Flask SECRET_KEY is missing")
-    if not isinstance(password, str) or not 1 <= len(password) <= 128:
-        raise ValueError("password must contain 1 to 128 characters")
-    _ensure_schema()
-    digest = generate_password_hash(password, method="pbkdf2:sha256:600000", salt_length=16)
-    revision = secrets.token_hex(20)
-    conn = _db()
-    try:
-        cur = _cursor(conn)
-        # A single admin-only transaction. This table is independent of order data.
-        cur.execute("DELETE FROM order_share_cn_settings WHERE id=1")
-        cur.execute(
-            "INSERT INTO order_share_cn_settings (id,password_hash,revision,updated_at) "
-            "VALUES (1,?,?,?)",
-            (digest, revision, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")),
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+def _password_matches(configured, supplied):
+    if not isinstance(supplied, str):
+        return False
+    if configured.startswith(("pbkdf2:", "scrypt:")) and configured.count("$") == 2:
+        try:
+            return check_password_hash(configured, supplied)
+        except (ValueError, TypeError):
+            return False
+    return hmac.compare_digest(configured.encode("utf-8"), supplied.encode("utf-8"))
 
 
 def _client_hash():
-    # Use the server's peer address, never a user-supplied forwarding header.
+    # Preserve the original peer-based bucket. Do not trust spoofable headers.
     peer = str(request.remote_addr or "unknown")[:128]
     key = str(current_app.secret_key or "no-key").encode("utf-8")
     return hmac.new(key, peer.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def _prune_bucket(key, now):
+    attempts = _FAILURES.get(key)
+    if attempts is not None:
+        while attempts and attempts[0] <= now - _LOGIN_WINDOW:
+            attempts.popleft()
+        if not attempts:
+            _FAILURES.pop(key, None)
+    return _FAILURES.get(key, ())
+
+
 def _failure_count():
-    _ensure_schema()
-    conn = _db()
-    try:
-        cur = _cursor(conn)
-        cur.execute("SELECT COUNT(*) AS n FROM order_share_cn_failures "
-                    "WHERE client_hash=? AND attempted_at>=?",
-                    (_client_hash(), int(time.time()) - _LOGIN_WINDOW))
-        return int(_row(cur.fetchone(), cur).get("n") or 0)
-    finally:
-        conn.close()
+    now = time.monotonic()
+    with _FAILURES_LOCK:
+        # The global cap also limits attempts from many different client IPs.
+        global_attempts = _prune_bucket(_GLOBAL_FAILURE_KEY, now)
+        peer_attempts = _prune_bucket(_client_hash(), now)
+        if len(global_attempts) >= _GLOBAL_FAILURE_LIMIT:
+            return _MAX_FAILURES
+        return len(peer_attempts)
 
 
 def _record_failure():
-    _ensure_schema()
-    conn = _db()
-    try:
-        cur = _cursor(conn)
-        cur.execute("INSERT INTO order_share_cn_failures "
-                    "(client_hash, attempted_at) VALUES (?,?)",
-                    (_client_hash(), int(time.time())))
-        # Clean old attempts periodically to avoid an ever-growing TiDB table.
-        cur.execute("DELETE FROM order_share_cn_failures WHERE attempted_at<?",
-                    (int(time.time()) - 2 * _LOGIN_WINDOW,))
-        conn.commit()
-    finally:
-        conn.close()
+    now = time.monotonic()
+    with _FAILURES_LOCK:
+        peer_key = _client_hash()
+        for key in (peer_key, _GLOBAL_FAILURE_KEY):
+            _prune_bucket(key, now)
+            _FAILURES.setdefault(key, deque()).append(now)
+        # Bound stale per-peer state if many addresses hit this small endpoint.
+        if len(_FAILURES) > 4096:
+            for key in list(_FAILURES):
+                _prune_bucket(key, now)
 
 
 def _set_cookie(response, revision):
@@ -206,59 +172,6 @@ def _same_origin():
     parsed = urlsplit(source)
     target_host = request.host.strip().lower()
     return bool(parsed.scheme == "https" and parsed.netloc.lower() == target_host)
-
-
-def _csrf(scope):
-    key = "share_cn_csrf_" + scope
-    if key not in session:
-        session[key] = secrets.token_urlsafe(28)
-    return session[key]
-
-
-def _csrf_valid(scope):
-    supplied = str(request.form.get("csrf") or "")
-    actual = str(session.get("share_cn_csrf_" + scope) or "")
-    # The CSRF token lives in Flask's signed session. Some mainland
-    # embedded browsers omit Origin/Referer; reject mismatches if supplied.
-    origin_present = bool(request.headers.get("Origin") or request.headers.get("Referer"))
-    return bool(supplied and actual and hmac.compare_digest(supplied, actual)
-                and (not origin_present or _same_origin()))
-
-
-def _admin_csrf_serializer():
-    """Signed admin form token, independent from the parent Flask session."""
-    if not _secret_ready():
-        raise RuntimeError("Flask SECRET_KEY is not configured securely")
-    return URLSafeTimedSerializer(str(current_app.secret_key),
-                                  salt="order-share-cn-admin-csrf-v2")
-
-
-def _admin_identity():
-    return "|".join((str(session.get("user_id") or ""),
-                     str(session.get("username") or ""),
-                     str(session.get("role") or "")))
-
-
-def _new_admin_csrf():
-    return _admin_csrf_serializer().dumps({
-        "user": _admin_identity(), "nonce": secrets.token_urlsafe(24)
-    })
-
-
-def _admin_csrf_valid():
-    """Signed double-submit token bound to the admin and a separate cookie."""
-    form_token = str(request.form.get("csrf") or "")
-    cookie_token = str(request.cookies.get(_ADMIN_CSRF_COOKIE) or "")
-    if (not form_token or not cookie_token or len(form_token) > 700
-            or not hmac.compare_digest(form_token, cookie_token)):
-        return False
-    try:
-        payload = _admin_csrf_serializer().loads(form_token, max_age=_ADMIN_CSRF_AGE)
-        return bool(isinstance(payload, dict) and payload.get("nonce")
-                    and hmac.compare_digest(
-                        str(payload.get("user") or ""), _admin_identity()))
-    except (BadSignature, SignatureExpired, ValueError, RuntimeError):
-        return False
 
 
 def _cn_csrf_serializer():
@@ -342,43 +255,27 @@ def _admin():
                 session.get("role") in {"admin", admin_config.SUPER_ADMIN_ROLE})
 
 
-@cn_bp.route("/admin/automation/china-links", methods=["GET", "POST"])
+@cn_bp.get("/admin/automation/china-links")
 def admin_password():
+    """Display status and share QR; credentials are managed only in Render."""
     if not _admin():
         return redirect(url_for("login", next=request.path))
-    if request.method == "GET":
-        try:
-            ready = bool(_settings().get("password_hash"))
-        except Exception:
-            return make_response("TiDB 暫時無法讀取，請稍後再試。", 503)
-        try:
-            token = _new_admin_csrf()
-        except RuntimeError:
-            return make_response("SECRET_KEY 設定異常，無法安全設定密碼。", 503)
-        response = make_response(render_template(
-            "order_share_telegram/cn_admin.html",
-            ready=ready, csrf=token, notice=None))
-        response.set_cookie(_ADMIN_CSRF_COOKIE, token, max_age=_ADMIN_CSRF_AGE,
-                            secure=True, httponly=True, samesite="Strict",
-                            path=_ADMIN_CSRF_PATH)
-        return response
+    ready = bool(_settings().get("password_hash"))
+    return make_response(render_template(
+        "order_share_telegram/cn_admin.html", ready=ready, public_url=_PUBLIC_LINK))
 
-    if request.content_length is not None and request.content_length > 4096:
-        return make_response("Request too large", 413)
-    if not _admin_csrf_valid():
-        return make_response(
-            "密碼設定請求未通過安全驗證，請重新開啟管理頁後再試。", 403)
-    password = request.form.get("password", "")
-    confirm = request.form.get("confirm", "")
-    if password != confirm or not 1 <= len(password) <= 128:
-        return make_response("密碼必須至少 1 字元、最多 128 字元，且兩次輸入一致。", 400)
-    try:
-        _update_password(password)
-    except Exception:
-        return make_response("無法儲存密碼，請檢查 TiDB 和 SECRET_KEY 設定。", 503)
-    response = redirect(url_for(".admin_password", updated="1"), code=303)
-    response.delete_cookie(_ADMIN_CSRF_COOKIE, path=_ADMIN_CSRF_PATH,
-                           secure=True, httponly=True, samesite="Strict")
+
+@cn_bp.get("/cn/order-links/qr.svg")
+def share_qr():
+    """Locally render a QR containing only the public URL, never the secret."""
+    import qrcode
+    from qrcode.image.svg import SvgPathImage
+
+    out = BytesIO()
+    qrcode.make(_PUBLIC_LINK, image_factory=SvgPathImage,
+                box_size=8, border=4).save(out)
+    response = make_response(out.getvalue())
+    response.headers["Content-Type"] = "image/svg+xml; charset=utf-8"
     return response
 
 
@@ -399,9 +296,8 @@ def page():
 def login():
     if request.content_length is not None and request.content_length > 4096:
         return make_response("Request too large", 413)
-    # This only checks the submitted password and does not change any
-    # authenticated user state. CSRF protection remains required for the
-    # ADMIN password configuration and for authenticated logout.
+    # Login changes no pre-existing authenticated state. Logout keeps CSRF
+    # verification; administrator password changes are handled in Render.
     password = request.form.get("password", "")
     if not isinstance(password, str) or len(password) > 128:
         return make_response("密碼不正確。", 403)
@@ -411,7 +307,7 @@ def login():
             return make_response("入口尚未啟用。", 503)
         if _failure_count() >= _MAX_FAILURES:
             return make_response("嘗試次數過多，請 15 分鐘後再試。", 429)
-        if not check_password_hash(settings["password_hash"], password):
+        if not _password_matches(settings["password_hash"], password):
             _record_failure()
             return _login_page(error="密碼錯誤，請重新輸入。", status=401)
     except Exception:

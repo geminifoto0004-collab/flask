@@ -14,6 +14,12 @@
   header p{font-size:12px;margin:0;color:var(--hint)}
   button{cursor:pointer;font:inherit;touch-action:manipulation}
   .refresh{border:1px solid var(--border);border-radius:11px;padding:10px 13px;background:var(--panel);color:var(--fg);white-space:nowrap}
+  .share-qr{position:relative}
+  .share-qr summary{list-style:none;cursor:pointer;user-select:none}
+  .share-qr summary::-webkit-details-marker{display:none}
+  .share-qr-panel{position:absolute;right:0;top:calc(100% + 9px);z-index:7;width:228px;border:1px solid var(--border);border-radius:14px;background:var(--panel);box-shadow:0 8px 30px #0002;padding:14px;text-align:center}
+  .share-qr-panel img{display:block;width:176px;height:176px;margin:0 auto;background:white;border-radius:8px}
+  .share-qr-panel p{font-size:12px;color:var(--hint);line-height:1.5;margin:8px 0 0}
   .search{position:sticky;top:0;z-index:2;padding:8px 0 15px;background:var(--bg)}
   input{width:100%;border:1px solid var(--border);border-radius:13px;padding:14px 16px;font-size:16px;background:var(--panel);color:var(--fg);outline:none}
   input:focus{border-color:var(--accent)}
@@ -52,6 +58,11 @@
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="refresh" id="refresh" type="button">↻ 更新</button>
+        {% if china %}<details class="share-qr">
+          <summary class="refresh" aria-label="用 QR Code 分享本頁">▦ QR</summary>
+          <div class="share-qr-panel"><img src="/cn/order-links/qr.svg" alt="客戶分享入口 QR Code" width="176" height="176">
+          <p>掃描後在其他手機或平板開啟，仍需輸入密碼</p></div>
+        </details>{% endif %}
         {% if china %}<form action="/cn/order-links/logout" method="post" style="margin:0">
           <input type="hidden" name="csrf" value="{{ logout_csrf }}">
           <button class="refresh" type="submit">退出</button></form>{% endif %}
