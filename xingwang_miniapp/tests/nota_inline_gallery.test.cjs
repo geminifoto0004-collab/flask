@@ -41,11 +41,11 @@ function gallery(fetchMock) {
 }
 
 test('existing local preview and read-only media contract are preserved', () => {
-  assert.match(html, /action:'nota_media'/);
-  assert.match(html, /data:image\\/jpeg;base64,/);
-  assert.match(html, /classList\\.toggle\\('zoomed'\\)/);
-  assert.match(html, /init_data:tg\\.initData/);
-  assert.match(html, /mediaCache/);
+  assert(html.includes("action:'nota_media'"));
+  assert(html.includes('data:image/jpeg;base64,'));
+  assert(html.includes("classList.toggle('zoomed')"));
+  assert(html.includes('init_data:tg.initData'));
+  assert(html.includes('mediaCache'));
 });
 
 test('cloud photos appear inline, never as an external link, and zoom inside Mini App', async () => {
@@ -93,8 +93,8 @@ test('unsafe image paths cannot be used as remote image sources', async () => {
 });
 
 test('visible NOTA cards load automatically, without another button click', () => {
-  assert.match(html, /new IntersectionObserver\\(/);
-  assert.match(html, /loadNotaMedia\\(doc,host\\)/);
-  assert.doesNotMatch(html, /button\\.onclick=\\(\\)=>loadNotaMedia\\(doc,button,host\\)/);
-  assert.doesNotMatch(html, /target='_blank'.*NOTA/);
+  assert(html.includes('new IntersectionObserver('));
+  assert(html.includes('loadNotaMedia(doc,host)'));
+  assert(!html.includes('button.onclick=()=>loadNotaMedia(doc,button,host)'));
+  assert(!html.includes("link.target='_blank'"));
 });
