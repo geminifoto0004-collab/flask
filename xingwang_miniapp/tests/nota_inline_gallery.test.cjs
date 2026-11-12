@@ -28,7 +28,7 @@ function textOf(root) {
   return [root.textContent, ...root.children.map(textOf)].join(' ');
 }
 function gallery(fetchMock) {
-  const first = html.indexOf('async function appendNotaCloudPhotos(');
+  const first = html.indexOf('function zoomableNotaImage(');
   const last = html.indexOf('async function loadNotaMedia(', first);
   assert(first >= 0 && last > first, 'Cloud gallery code must remain in its owning module');
   const code = html.slice(first, last);
@@ -39,6 +39,14 @@ function gallery(fetchMock) {
   vm.runInNewContext(code + '\nthis.appendNotaCloudPhotos = appendNotaCloudPhotos;', sandbox);
   return sandbox.appendNotaCloudPhotos;
 }
+
+test('the full browser script remains valid JavaScript', () => {
+  const opening = html.indexOf('<script>', html.indexOf('</style>'));
+  const ending = html.lastIndexOf('</script>');
+  assert(opening>=0&&ending>opening);
+  const script=html.slice(opening+'<script>'.length,ending);
+  assert.doesNotThrow(()=>new vm.Script(script, {filename:'index-inline.js'}));
+});
 
 test('existing local preview and read-only media contract are preserved', () => {
   assert(html.includes("action:'nota_media'"));
@@ -80,6 +88,17 @@ test('no NOTA photos and cloud failures never break the surrounding card', async
   await offline(fallback,'44833');
   assert.equal(allNodes(fallback,'img').length,0);
   assert.match(textOf(fallback),/暂时无法查询/);
+});
+
+test('cloud photo failure does not hide local media content', async () => {
+  const append=gallery(async()=>{throw Error('cloud is offline');});
+  const host=new FakeNode('div');
+  const local=new FakeNode('div', '已找到本机重量 20 KG');
+  host.append(local);
+  await append(host,'44833');
+  assert.equal(allNodes(host,'img').length,0);
+  assert.match(textOf(host),/本机重量 20 KG/);
+  assert.match(textOf(host),/暂时无法查询/);
 });
 
 test('unsafe image paths cannot be used as remote image sources', async () => {
