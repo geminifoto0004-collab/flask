@@ -1,0 +1,21 @@
+name: STOCK NOTA Inline Media Regression
+on:
+  pull_request:
+    branches: [xingwang-stock]
+    paths:
+      - 'xingwang_miniapp/index.html'
+      - 'xingwang_miniapp/tests/nota_inline_gallery.test.cjs'
+      - '.github/workflows/stock-nota-inline-media.yml'
+permissions:
+  contents: read
+jobs:
+  miniapp-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify inline cloud gallery and automatic loading
+        run: node --test xingwang_miniapp/tests/nota_inline_gallery.test.cjs
