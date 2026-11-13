@@ -122,6 +122,47 @@ class HtmlCacheLockTests(unittest.TestCase):
         self.assertEqual(scope['_HTML'], {})
         self.assertEqual(scope['_HTML_CUSTOMERS'], {})
 
+    def test_native_background_prerender_has_request_context(self):
+        """A snapshot refresh must render public links without a live HTTP request."""
+        from copy import deepcopy
+        from flask import has_request_context, url_for
+
+        app = Flask('background-share-cover-test')
+        app.add_url_rule(
+            '/tracking/static/tracking/<path:filename>',
+            endpoint='tracking_bp.static',
+            view_func=lambda filename: '',
+        )
+        calls = []
+
+        def render_native(app, template, context):
+            self.assertEqual(template, 'guest_customer.html')
+            self.assertTrue(has_request_context())
+            with app.app_context():
+                return url_for('tracking_bp.static', filename='css/guest.css') + (
+                    '|images=' + str(context['image_count'])
+                )
+
+        scope = load_functions('services/order_share_native_order_ui.py', {'_native_skeleton'}, {
+            'copy': SimpleNamespace(deepcopy=deepcopy),
+            '_render': SimpleNamespace(_TOKEN_PLACEHOLDER='TEST_TOKEN'),
+            '_fast': SimpleNamespace(_filter_space=lambda space, share: calls.append('filtered')),
+            '_customer_context': lambda space, share, token: {
+                'token': token,
+                'image_count': len(space['orders'][0].get('assets') or []),
+            },
+            '_render_native': render_native,
+        })
+        bundle = {'space': {'orders': [{'order_number': '1008177-1', 'assets': []}]}}
+        self.assertFalse(has_request_context())
+        self.assertEqual(scope['_native_skeleton'](app, {}, bundle),
+                         '/tracking/static/tracking/css/guest.css|images=0')
+        bundle['space']['orders'][0]['assets'].append({'asset_type': 'IMAGE', 'asset_key': 'a' * 64})
+        self.assertEqual(scope['_native_skeleton'](app, {}, bundle),
+                         '/tracking/static/tracking/css/guest.css|images=1')
+        self.assertEqual(calls, ['filtered', 'filtered'])
+        self.assertFalse(has_request_context())
+
     def test_performance_log_contains_timings_but_no_raw_share_token(self):
         scope = load_functions('services/order_share_server_timing.py', {'_add_order_share_server_timing'}, {
             'g': g, 'request': request, 'time': time, 'hashlib': hashlib,
