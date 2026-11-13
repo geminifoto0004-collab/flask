@@ -424,8 +424,17 @@ def _native_skeleton(app, share, bundle):
     space = copy.deepcopy((bundle or {}).get("space") or {})
     if not space:
         return None
-    _fast._filter_space(space, share)
-    return _render_native(app, "guest_customer.html", _customer_context(space, share, _render._TOKEN_PLACEHOLDER))
+    # Snapshot and HTML cache rebuilds run in background workers, without an
+    # incoming HTTP request. Guest templates still resolve url_for('static', ...).
+    # Supply the same request environment as a real /share page so a successful
+    # snapshot refresh can replace the persisted HTML (instead of retaining
+    # a pre-upload wall that says "Sin imagen").
+    with app.test_request_context(f"/share/{_render._TOKEN_PLACEHOLDER}", method="GET"):
+        _fast._filter_space(space, share)
+        return _render_native(
+            app, "guest_customer.html",
+            _customer_context(space, share, _render._TOKEN_PLACEHOLDER),
+        )
 
 
 def _native_fallback(template_name, *args, **kwargs):
