@@ -276,6 +276,10 @@ def _filter_space(space, share):
         ).strip().upper()
         if order_status and order_status != 'ACTIVE':
             continue
+        from services.order_media_lifecycle import customer_pickup_visibility
+        pickup_view = customer_pickup_visibility(order)
+        if pickup_view == 'hide':
+            continue
         workflows = list(order.get('workflows') or [])
         if workflows:
             visible = [wf for wf in workflows if _wf_visible(wf, scope, include_cancelled)]
@@ -288,7 +292,15 @@ def _filter_space(space, share):
                 if _has_pending_pickup_logistics(order):
                     order = _prepare_extra_pickup_order(order, workflows)
                 else:
-                    continue
+                    # Beyond three months, a shipment still in transit or
+                    # pickup not authoritatively established must stay visible.
+                    # Do not mutate manual visibility or create extra pickup cards.
+                    valid = [wf for wf in workflows if str(wf.get('status') or wf.get('current_status') or '').upper()
+                             not in {'CANCELLED', 'CANCELED', 'CANCELADO', 'CANCELADA', '已取消'}]
+                    if not valid:
+                        continue
+                    order['extra_pickup_only'] = False
+                    order['workflows'] = valid
             else:
                 order['extra_pickup_only'] = False
                 order['workflows'] = visible

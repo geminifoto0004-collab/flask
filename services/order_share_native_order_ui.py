@@ -23,6 +23,7 @@ from services import order_share_direct_cover_cache as _direct
 from services import order_share_render_cache as _render
 from order_tracking.share_common import apply_shipping_summary, derive_shipping_summary
 from services.order_share_image_policy import filter_assets_in_space, bool_default
+from services.order_media_lifecycle import is_bulk_photo
 
 ROOT = Path(__file__).resolve().parents[1]
 ORDER = ROOT / "order_tracking"
@@ -130,6 +131,7 @@ def _images(order, workflow, token):
                     'url': url, 'preview_url': url, '_source_kind': kind,
                     'uploaded_at': str(asset.get('source_uploaded_at') or ''),
                     'uploaded_at_epoch': int(asset.get('source_uploaded_at_epoch') or 0),
+                    '_marked_for_sort': is_bulk_photo(asset, order),
                 })
         by_sha = {str(a.get('sha256') or ''): a for a in rows}
         for doc in sorted(documents, key=lambda d: (str(d.get('uploaded_at') or ''), str(d.get('id') or '')), reverse=True):
@@ -153,6 +155,11 @@ def _images(order, workflow, token):
                     'url': url, 'preview_url': url.replace('/image/', '/thumb/', 1), '_source_kind': kind,
                 })
 
+    # Stable partition after visibility filtering; neither purpose nor mark is
+    # emitted in the customer-facing HTML/JSON.
+    result.sort(key=lambda row: not row.get('_marked_for_sort', False))
+    for row in result:
+        row.pop('_marked_for_sort', None)
     return result
 
 
@@ -447,12 +454,15 @@ def _cover_assets(space, limit=6):
     result = []
     for order in (space or {}).get("orders") or []:
         assets = [a for a in (order.get("assets") or []) if _is_image(a) and a.get("object_key")]
+        assets.sort(key=lambda asset: not is_bulk_photo(asset, order))
         workflows = [w for w in (order.get("workflows") or []) if isinstance(w, dict)]
         if not workflows and assets:
             result.append(assets[0])
         for workflow in workflows:
             keys = {str(workflow.get("workflow_key") or "").strip(), str(workflow.get("workflow_number") or "").strip()} - {""}
-            chosen = next((a for a in assets if str(a.get("workflow_key") or "").strip() in keys), None) or next((a for a in assets if not str(a.get("workflow_key") or "").strip()), None)
+            # Rank marked images first among workflow + order fallback sources.
+            candidates = [a for a in assets if str(a.get("workflow_key") or "").strip() in keys or not str(a.get("workflow_key") or "").strip()]
+            chosen = candidates[0] if candidates else None
             if chosen:
                 result.append(chosen)
             if len(result) >= limit:
