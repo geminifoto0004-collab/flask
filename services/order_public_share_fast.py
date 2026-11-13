@@ -455,11 +455,33 @@ def _update_share_settings():
 def _prune_customer_scope():
     source_site, auth_error = _order_cloud_auth_source()
     if auth_error: return auth_error
-    _ensure_order_cloud_tables(); _ensure_share_columns()
     payload = request.get_json(silent=True) or {}
-    customer = str(payload.get('customer_key') or '').strip(); allowed = {str(x).strip() for x in (payload.get('order_numbers') or []) if str(x).strip()}
-    requested_scope = _scope(payload.get('history_scope')); requested_cancelled = bool(payload.get('include_cancelled'))
-    if not customer: return jsonify({'ok':False,'error':'customer_key is required'}), 400
+    customer = str(payload.get('customer_key') or '').strip()
+    if not customer:
+        return jsonify({'ok': False, 'error': 'customer_key is required'}), 400
+    raw_allowed = payload.get('order_numbers')
+    if not isinstance(raw_allowed, list):
+        return jsonify({'ok': False, 'code': 'INCOMPLETE_ORDER_SCOPE',
+                        'error': 'order_numbers must be a complete non-empty list'}), 400
+    if not raw_allowed:
+        return jsonify({'ok': False, 'code': 'EMPTY_ORDER_SCOPE',
+                        'error': 'empty customer scope cannot remove orders'}), 400
+    if any(not isinstance(x, str) or not x.strip() for x in raw_allowed):
+        return jsonify({'ok': False, 'code': 'INCOMPLETE_ORDER_SCOPE',
+                        'error': 'blank or invalid order number in manifest'}), 400
+    allowed = {x.strip() for x in raw_allowed}
+    if (payload.get('manifest_complete') is False
+            or payload.get('scan_complete') is False
+            or payload.get('logistics_ready') is False
+            or payload.get('skipped_orders')
+            or payload.get('scan_errors')
+            or (payload.get('expected_order_count') is not None
+                and str(payload['expected_order_count']) != str(len(allowed)))):
+        return jsonify({'ok': False, 'code': 'INCOMPLETE_ORDER_SCOPE',
+                        'error': 'local order scope is incomplete; no prune permitted'}), 400
+    requested_scope = _scope(payload.get('history_scope'))
+    requested_cancelled = bool(payload.get('include_cancelled'))
+    _ensure_order_cloud_tables(); _ensure_share_columns()
     conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute("SELECT history_scope, include_cancelled FROM cloud_share_tokens WHERE customer_key=? AND status='active'", (customer,))
@@ -470,6 +492,9 @@ def _prune_customer_scope():
         cur.execute('SELECT order_number FROM cloud_orders WHERE customer_key=?', (customer,))
         existing = [str((get_row_dict(r, cur) or {}).get('order_number') or '') for r in cur.fetchall()]
         stale = [x for x in existing if x and x not in allowed]
+        if stale and payload.get('manifest_complete') is not True:
+            return jsonify({'ok': False, 'code': 'INCOMPLETE_ORDER_SCOPE',
+                            'error': 'pruning orders requires a complete local manifest'}), 400
         for number in stale:
             cur.execute('DELETE FROM cloud_assets WHERE customer_key=? AND order_number=?', (customer, number))
             cur.execute('DELETE FROM cloud_workflow_history WHERE order_number=?', (number,))

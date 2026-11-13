@@ -208,13 +208,24 @@ def _customer_storage_admin():
                 return jsonify({"ok": False, "error": "items must be a list"}), 400
             if len(items) > 20000:
                 return jsonify({"ok": False, "error": "too many asset items"}), 400
-            if not items and not bool(payload.get("confirm_empty", False)):
-                return jsonify({"ok": False, "error": "empty manifest requires confirm_empty=true"}), 400
+            if not items:
+                return jsonify({"ok": False, "code": "EMPTY_ASSET_MANIFEST",
+                                "error": "empty asset manifest cannot remove image registrations"}), 400
+            if (payload.get("manifest_complete") is not True
+                    or payload.get("scan_complete") is False
+                    or payload.get("logistics_ready") is False
+                    or payload.get("skipped_files") or payload.get("skipped_orders")
+                    or payload.get("scan_errors")
+                    or (payload.get("expected_asset_count") is not None
+                        and str(payload["expected_asset_count"]) != str(len(items)))):
+                return jsonify({"ok": False, "code": "INCOMPLETE_ASSET_MANIFEST",
+                                "error": "complete local image manifest is required"}), 400
 
             expected = set()
             for item in items:
                 if not isinstance(item, dict):
-                    continue
+                    return jsonify({"ok": False, "code": "INCOMPLETE_ASSET_MANIFEST",
+                                    "error": "every asset manifest entry must be an object"}), 400
                 order_number = str(item.get("order_number") or "").strip()
                 workflow_key = str(item.get("workflow_key") or "").strip() or None
                 sha256_hex = _validate_sha256(item.get("sha256"))

@@ -60,15 +60,10 @@ def publish_customer(customer: str | None, from_order: str | None, dry_run: bool
 
     # This is deliberately after all current order/image writes succeed. Cloud rows that
     # are no longer in SQLite are removed only when the new snapshot is already usable.
-    order_reconcile = order_sync._request_json(
-        "POST",
-        "/api/order-cloud/customer/reconcile-orders",
-        json={
-            "customer_key": manifest["customer_key"],
-            "order_numbers": manifest["order_numbers"],
-            "confirm_empty": False,
-        },
-    ).get("result") or {}
+    # This CLI has not certified every file and Access record. Preserve remote
+    # orders even on an old Render that ignores manifest_complete.
+    order_reconcile = {"skipped_incomplete": True}
+    print("[ORDER Cloud] skipped_incomplete: cloud-only orders retained until full local verification")
 
     # Customer sync already refreshes once. Refresh again after order reconciliation so
     # an existing share sees the final exact SQLite projection, with the same token/URL.
